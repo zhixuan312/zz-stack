@@ -1,8 +1,8 @@
 /**
  * eval-grade — score what one step produced, across the whole corpus.
  *
- *   ZZ_URL=… ZZ_TOKEN=… npm run eval-grade -- --flow sm/ops-flow --step sm-intent --out evals/intent-1.0
- *   npm run eval-grade -- --flow sm/ops-flow --step sm-intent --out … --json
+ *   ZZ_URL=… ZZ_TOKEN=… npm run eval-grade -- --flow ops/ops-flow --step ops-intent --out evals/intent-1.0
+ *   npm run eval-grade -- --flow ops/ops-flow --step ops-intent --out … --json
  *
  * MECHANICAL FIRST, AND ALMOST ENTIRELY. Every grader here reads the document the step wrote
  * and checks something the step's own contract states — the sections the flow manifest
@@ -11,7 +11,7 @@
  * That is a deliberate limit, not an oversight. A rubric is the easy thing to write and the
  * hard thing to trust: grade thirty documents with a judge and the number you get is partly
  * about the judge, and it moves when the judge does. Where a mechanical check exists it is
- * worth more than a better-worded rubric, and for sm-intent nearly everything that matters has
+ * worth more than a better-worded rubric, and for ops-intent nearly everything that matters has
  * one — because the skill's contract is unusually concrete: exactly four sections, and
  * "nothing added, nothing solved, nothing dropped".
  *
@@ -37,7 +37,7 @@ import { Mcp } from "@zz/mcp-client";
 import { die, envRequired, optional, parseArgs, required } from "../lib/cli.js";
 
 interface Requirement {
-  agency: string;
+  requester: string;
   title: string;
   brief: string;
   must_survive: string[][];
@@ -74,7 +74,7 @@ function docFor(documents: FlowDoc[], step: string, flow: string): FlowDoc {
 
 /** Technology a business document should not be naming. Used for a FLAG, never for a score:
  *  "the outcome must not be a solution" is a judgement, and this is only its cheapest proxy. */
-const TECHNOLOGY = /\b(casebox|n8n|bookit|mcp|webhook|api|database|workflow engine|case management system)\b/i;
+const TECHNOLOGY = /\b(casebox|RuleMill|bookit|mcp|webhook|api|database|workflow engine|case management system)\b/i;
 
 /**
  * Whether a fact survived, allowing for the words a writer puts BETWEEN its words.
@@ -116,7 +116,7 @@ function carried(alternatives: string[], text: string): boolean {
 
 interface Scored {
   id: string;
-  agency: string;
+  requester: string;
   found: boolean;
   sections: { present: string[]; missing: string[] };
   facts: { carried: number; total: number; dropped: string[] };
@@ -197,7 +197,7 @@ async function main(argv: string[]): Promise<number> {
     const text = bodies.get(id);
     if (!text) {
       scored.push({
-        id, agency: r.agency, found: false,
+        id, requester: r.requester, found: false,
         sections: { present: [], missing: doc.sections },
         facts: { carried: 0, total: r.must_survive.length, dropped: r.must_survive.map((a) => a[0]) },
         flags: [`no ${doc.name} at ${ran.get(id)} — the step ran and produced nothing readable`],
@@ -209,7 +209,7 @@ async function main(argv: string[]): Promise<number> {
     // WHICH FACTS A DOCUMENT MUST CARRY DEPENDS ON THE DOCUMENT. An intent and a spec restate what the
     // stakeholder said, so every fact in the brief should survive into them. A SELECTION does
     // not: it is a fit ledger about technology, and "9:30, 11:00 and 1:30" belongs in the spec
-    // it answers to. Scoring it on brief facts marked sm-select down for correctly declining to
+    // it answers to. Scoring it on brief facts marked ops-select down for correctly declining to
     // repeat the schedule — 85.4%, every point of it earned by not restating a spec.
     //
     // So a selection is scored on what it DOES owe: a verdict for the work, and the call shapes
@@ -221,7 +221,7 @@ async function main(argv: string[]): Promise<number> {
     const flags: string[] = [];
     // DID THE GATE PASS. A document that exists and was never approved does not let the flow
     // continue, and checking only that the file is there reports it as a success. This was found
-    // the expensive way: sm-spec scored 30 of 30 on documents and sections, and then sm-select
+    // the expensive way: ops-spec scored 30 of 30 on documents and sections, and then ops-select
     // refused two of them because the spec was still a draft — the step downstream noticed what
     // the grader had not.
     //
@@ -248,7 +248,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     scored.push({
-      id, agency: r.agency, found: true,
+      id, requester: r.requester, found: true,
       sections: { present, missing: doc.sections.filter((s) => !present.includes(s)) },
       facts: { carried: r.must_survive.length - dropped.length, total: r.must_survive.length, dropped },
       flags,
@@ -261,7 +261,7 @@ async function main(argv: string[]): Promise<number> {
   // its own sections: four of the thirty requirements cannot be built with the blocks on this
   // deployment — no payment block, no identity block, no mapping block, no streaming block is
   // connected, and none of those is a matter of opinion. Keyed on `role`, not on the step's
-  // name, so a flow that calls its selection step something other than sm-select still gets
+  // name, so a flow that calls its selection step something other than ops-select still gets
   // this check — the name was ops-flow's, the role is the manifest's.
   //
   // A selection step that never answers `not_possible` has not been shown to be capable of it,
@@ -309,11 +309,11 @@ async function main(argv: string[]): Promise<number> {
   console.log("");
   console.log(`== ${step} @ ${version} over ${scored.length} requirement(s) - ${doc.name}`);
   console.log("");
-  console.log(`  ${pad("id", 6)}${pad("agency", 20)}${pad("sections", 12)}${pad("facts", 10)}flags`);
+  console.log(`  ${pad("id", 6)}${pad("requester", 20)}${pad("sections", 12)}${pad("facts", 10)}flags`);
   for (const s of scored) {
     const sec = s.found ? `${s.sections.present.length}/${doc.sections.length}` : "-";
     const f = s.found ? `${s.facts.carried}/${s.facts.total}` : "-";
-    console.log(`  ${pad(s.id, 6)}${pad(s.agency, 20)}${pad(sec, 12)}${pad(f, 10)}${s.flags.length || ""}`);
+    console.log(`  ${pad(s.id, 6)}${pad(s.requester, 20)}${pad(sec, 12)}${pad(f, 10)}${s.flags.length || ""}`);
   }
 
   console.log("");
@@ -346,7 +346,7 @@ async function main(argv: string[]): Promise<number> {
     console.log("  WHAT WENT MISSING, worst first - this is the material a change is written from:");
     for (const s of worst) {
       if (!s.facts.dropped.length) continue;
-      console.log(`    ${s.id} ${s.agency}: ${s.facts.dropped.join(", ")}`);
+      console.log(`    ${s.id} ${s.requester}: ${s.facts.dropped.join(", ")}`);
     }
   }
 

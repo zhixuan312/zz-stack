@@ -29,30 +29,6 @@ first, 1px hairlines, no shadows, and nothing drawn that a paragraph would have 
 Self-contained apart from three webfonts, each with a real fallback stack, so it still reads on a
 machine that blocks font hosts.
 
-## architecture-for-government.html
-
-The same platform, framed for a director who runs delivery in government. Six tabs instead of
-eight, in the order that audience asks: what the platform is made of and who owns each layer,
-what the Operations flow is, how we know it is getting more reliable, and how the two
-ends bind to what government already runs — corporate directory for sign-in, one AI gateway instead of a
-connection per system.
-
-    open docs/architecture-for-government.html
-
-It inherits `architecture.html`'s stylesheet unchanged so the two read as one set. Two things
-it adds, both because this document has a job the other one refuses:
-
-**A layer diagram where colour is ownership** — orange is ours, green is government's, grey is
-deliberately somebody else's. A technical director's first question is what you built versus
-what you consume, and a paragraph answers that worse than a drawing does.
-
-**A status pill, with three states and no more.** This is framed as a proof of concept, so the
-only distinction that earns its place is between what can be shown running now (`Working
-today`), what is designed and not yet built (`Next`), and what is not ours to decide
-(`To confirm`). The finer §6/§6b reading — deployed versus exercised by a real round — is
-carried in STATE.md, where the audience knows what it means; putting it here made a reader ask
-what "built but not used" meant instead of reading the architecture.
-
 ## repository-architecture.md
 
 What lives where, and why the boundaries are where they are. Read by the gate and by
@@ -75,14 +51,10 @@ verification rather than as current fact; the gate names both when their stamp g
 
 ---
 
-**Two things this directory no longer holds, and why:**
-
-`architecture-for-government.md` was the earlier markdown draft of the HTML beside it, kept
-"only until the HTML settles" — and the HTML has been the one to send for some time. Two copies
-of one document is one copy nobody updates.
+**One thing this directory no longer holds, and why:**
 
 `oauth-uat-walkthrough.md` walked the OAuth delegation flow in a browser on UAT, through
-LibreChat, against the bookit and n8n mocks. There is no UAT (one deployment since
+LibreChat, against the bookit and RuleMill mocks. There is no UAT (one deployment since
 2026-09-10), no LibreChat, and no block registered here at all — every prerequisite it opens
 with is gone, and it could not be rewritten for the current platform because you cannot walk a
 delegation flow with nothing to delegate to. The mechanism it described is live and configured

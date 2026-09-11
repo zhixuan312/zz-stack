@@ -48,7 +48,7 @@ function teamRoot(slug: string): string {
  * NOT a string prefix. `/artifacts/teams/foo` is a prefix of
  * `/artifacts/teams/foobar`, so `startsWith` let a member of one team read another's
  * documents by passing `initiative=../foobar` — as long as a slug existed with theirs as a
- * prefix. `product_group_1` and `product_group_10` would have been enough.
+ * prefix. `team_one` and `team_one0` would have been enough.
  *
  * `relative()` answers the question that was actually being asked: an escape produces a
  * path that starts with "..", and an absolute result means a different root entirely. */

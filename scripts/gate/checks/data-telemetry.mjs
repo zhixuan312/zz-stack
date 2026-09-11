@@ -48,7 +48,7 @@ check("a tool that changes something records that it did", () => {
 check("the evolution loop is closed, and separate from what it measures", () => {
   // Evidence -> which step is not working -> change one thing -> re-verify -> next round
   // says. Two of those had tools already: tool-report says which TOOL is refused,
-  // flow-compare which FLOW costs more. Neither says "sm-select is where this stalls", and
+  // flow-compare which FLOW costs more. Neither says "ops-select is where this stalls", and
   // that is the only form of the answer a skill can be edited from — so the loop was open
   // at exactly the step that names what to change.
   //
@@ -385,7 +385,7 @@ check("a count of what is on this deployment says when it was counted", () => {
   // things — and nothing drew it for a skill a tenant reads.
   //
   // WHITESPACE IS NORMALISED, and that is the whole reason this is a check rather than a grep.
-  // A third instance sits in sm-intent as "...an initiative on this\ndeployment...", wrapped
+  // A third instance sits in ops-intent as "...an initiative on this\ndeployment...", wrapped
   // across two lines, so `grep "this deployment"` reports zero matches on a file that contains
   // it. A line-oriented sweep would have found two of the three and reported the file clean.
   //
@@ -586,7 +586,7 @@ check("every header the telemetry correlates on is actually sent", () => {
   // provisioner, zz-tool and that person's own chat session, all mutating it.
   //
   // Measured on UAT during a live round: 160 `render_agent_definition` rows from the
-  // 60-second timer were attributed to `sm-build 1.2` and 35 to `zz-knowledge 2.0`, and one
+  // 60-second timer were attributed to `ops-build 1.2` and 35 to `zz-knowledge 2.0`, and one
   // write_file came out carrying one skill's name beside another skill's version. Those rows
   // are what tool-report, evolve-report and step-score count.
   //

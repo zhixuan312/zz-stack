@@ -20,7 +20,7 @@ casebox RUNS ITS OWN AUTOMATION, and missing this is the most expensive mistake 
 can make. It has a workflow engine, instant and scheduled, that fires on a case event or a clock,
 evaluates criteria, updates cases, moves statuses, assigns people and SENDS EMAIL — all without
 anything else involved. "There is automation in this requirement" is therefore NOT a reason to
-add n8n. A blind reading of these briefs did exactly that and marked two correct single-block
+add RuleMill. A blind reading of these briefs did exactly that and marked two correct single-block
 selections as missing a block.
 
 Good fit: complaints, applications, objections, inspections, escalations, anything with a queue
@@ -37,20 +37,20 @@ Good fit: facilities, appointments, courses, anything where a finite slot is cla
 open-ended casework with no slot, and any approval chain more elaborate than a booking's own
 status.
 
-## n8n — workflow automation
+## RuleMill — workflow automation
 
 A workflow engine: named workflows built from typed nodes, published or draft, triggered on a
 schedule or an event, with nodes that can call another system over HTTP. This is the only block
 that can *join* the other two, or reach anything outside them.
 
-Reach for n8n when the work CROSSES a boundary the owning block cannot: joining casebox to bookit,
+Reach for RuleMill when the work CROSSES a boundary the owning block cannot: joining casebox to bookit,
 calling something outside both, or running a schedule over data that lives somewhere with no
-scheduler of its own — bookit has no automation, so a reminder about a booking needs n8n,
+scheduler of its own — bookit has no automation, so a reminder about a booking needs RuleMill,
 while the identical reminder about a case does not.
 
 Good fit: multi-system orchestration, inbound and outbound HTTP, scheduled work over a block that
 cannot schedule. Poor fit: being the system of record, and automation that the owning block
-already does natively. n8n moves and decides; it does not hold the case or own the slot.
+already does natively. RuleMill moves and decides; it does not hold the case or own the slot.
 
 ## The honest gap
 

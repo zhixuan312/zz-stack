@@ -1,8 +1,39 @@
 # zz-stack
 
-Zhang Zhixuan's agent stack: delivery flows (skills), MCP servers, agent
-presets, and a one-command deployable platform for running AI delivery
-agents against real a large organisation building blocks.
+**A platform for running AI delivery agents against real systems, where every
+document, gate and approval is recorded rather than remembered.**
+
+An agent asked to deliver something real needs three things this gives it: a set of
+skills that say how the work is done, MCP doors onto the systems it must touch, and a
+governance layer that will not let it claim a decision nobody made. A document is
+approved by a person, under their name, at a recorded time — or it is not approved.
+
+**What it is not.** Not a chat product; there is no browser front end. Not an agent
+framework; it does not run the model loop. It is the platform underneath one — doors,
+identity, a team's document store, and the rules about who may write what.
+
+**Who it is for.** Somebody standing up delivery agents for a team, who needs the
+result to be auditable by someone who was not in the room.
+
+```bash
+npm install && npm run gate     # 278 offline checks, a few seconds
+```
+
+**Start there.** The gate is the most useful thing in this repository: every check
+encodes a failure that actually happened, and they are named as claims rather than as
+test cases — *"a hostile document cannot become script in a reader's browser"*, *"every
+route this gateway serves has a caller"*, *"redaction lets no secret through, on the
+real predicate"*. Reading its output is the fastest way to learn what the platform
+believes about itself.
+
+`docs/findings/` is the companion to that: a catalogue of defects found in the
+measuring instrument itself — every one of which had been reporting success.
+
+To install it on a server, read **`deploy/README.md`**. That path needs no repository,
+no toolchain and no build: it runs published images from a release bundle.
+To work on it, read **`CONTRIBUTING.md`**.
+
+## What is where
 
 Everything here is TypeScript (npm workspaces, `npm run build`) — services and
 tools alike, with no dependency outside what the services already carry:
@@ -42,8 +73,6 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 audit, plan, audit, execute, review (closing
                                 the initiative is an act, not a stage), plus
                                 the deck / tldr / breakout tools
-            sm/ops-flow          the Operations delivery flow, 7 skills
-            zz/zz-flow-builder  flow creation as a service (ZZ Flow Builder)
             zz/zz-access        access, on one door: a person's own token, block
                                 keys and client setup (zz-access), and the platform
                                 register behind them — people, teams, installs,
@@ -61,7 +90,6 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 defects, what we ask for — gated, and it is what the
                                 block team receives.
                                 The MCP surface itself, never the skills about it
-            zz/zz-knowledge         post-initiative analysis: learn, journal, okr
 skills/     platform skills, served whatever flow a team runs. Two are UNIVERSAL and
             bookend every flow: zz-backbone (the spine, loaded first — file tools,
             gates, documents, credentials, the tag kinds the knowledge base
@@ -75,18 +103,14 @@ skills/     platform skills, served whatever flow a team runs. Two are UNIVERSAL
             — one file per VERSION, so opening a skill shows both what it says
             and how that version scored. What a flow's evaluation found lives in
             catalog/<owner>/<flow>/findings/, and goes when the flow does
-catalog/casebox/casebox-assist — the "CaseBox Assist" flow: one entry skill saying which of casebox's own
-            field guides to read and when to reach past casebox to n8n. The guides
-            themselves live with the block, not here — a block carries its
-            team's skills, a flow is an agent that uses blocks
 blocks/     one directory per building block, holding everything written ON TOP
             of it — its usage skill and the tests that check our usage still
             holds. Separate from skills/ because a usage skill is written about
             somebody ELSE's server, is true only against the version it was
             checked on, and has to be deletable in one move when the block goes.
-            casebox/skills/ holds the CaseBox team's own four field guides, vendored,
-            beside our staging notes as a reference on theirs; casebox/findings/ is
-            evidence for its team, not defects of ours
+            Only the standard lives here — `_standard/` is what a block team is
+            asked to meet. The blocks themselves are somebody else's and are not
+            in this repository.
 docs/       written for somebody who does not work on this every day.
             architecture.html is the platform end to end — one page, eight
             tabs, every capability described by what it is, how we look at it,
@@ -199,20 +223,18 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             is how a probe ends up testing nothing
 ```
 
-Interfaces are projections, not the platform: LibreChat today, and Claude
+Interfaces are projections, not the platform: Claude
 Code / Codex / Hermes through the client package (`my_client_setup` for your
 own, `render_harness_config` for someone else's). The same PAT, knowledge store
 and gates apply whichever one a team uses — and a flow declares which of them
 it runs on, so a flow meant for a terminal never appears in the browser.
 
 
-Third-party building blocks are NOT in this repo: mock blocks live in the
-sibling [`zz-blocks`](https://github.com/zhixuan312/zz-blocks) repo (clone
-next to zz-stack; compose builds from it), and real blocks (e.g. CaseBox staging) are remote MCP endpoints reached through the credential
-gateway. The requirements every block team must meet are `docs/release/
-building-block-contract.md`, here, and only here — the copy that used to sit
-in zz-blocks was deleted once it had drifted, because a standard that exists
-twice is one nobody can trust. That repo holds the two worked examples and
-points back at this file.
+Building blocks are NOT in this repo. A block is somebody else's MCP server, reached
+through the credential gateway; nothing here builds one. What the platform owns is its
+side of that relationship — the per-block door, the credential proxy, and the usage
+skills written about a block that are true only against the version they were checked
+on. The requirements a block team must meet are `docs/release/building-block-contract.md`,
+here and only here: a standard that exists twice is one nobody can trust.
 
 Start here: `deploy/README.md` (server install and day-2 operations).

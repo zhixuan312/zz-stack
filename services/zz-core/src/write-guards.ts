@@ -95,8 +95,8 @@ export function outcomeCheck(chain: Chain, relPath: string, content: string): st
  * is the answer the model reaches for when it has no name to hand.
  *
  * Twice observed live, in consecutive smoke runs on the same flow: run one wrote
- * `approved_by: product_group_1` on all four gates, and run two — after acceptance was
- * given a mandatory `accepted_by` — wrote `accepted_by: product_group_1` into the close.
+ * `approved_by: team_one` on all four gates, and run two — after acceptance was
+ * given a mandatory `accepted_by` — wrote `accepted_by: team_one` into the close.
  * The rule was already stated in prose in every stage skill; a rule prose loses twice is
  * a rule that belongs in code.
  *
@@ -330,7 +330,7 @@ export function envelopeFor(
   // ONE EXCEPTION, AND IT IS READ. This said "the platform does not read these and must not
   // pretend to" and listed `server` among them, and indexDoc reads exactly that field: it
   // splits it into zz.decision.blocks, which is the column `reconcile --block` joins on to
-  // answer "what has this team predicted about casebox". sm-select writes it — `server: "<tool
+  // answer "what has this team predicted about casebox". ops-select writes it — `server: "<tool
   // prefix>"` — and there is no other way for a stage to say which block its claims are
   // about, so the coupling is deliberate and the sentence denying it was simply false.
   //

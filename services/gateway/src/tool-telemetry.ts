@@ -440,7 +440,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // `currentStep` is the last skill SERVED, which is right until an agent consults
         // something mid-flow — and then everything after belongs to that consultation. On
         // 2026-09-06 twenty intent.md documents were written and TWO write_file calls were
-        // stamped sm-intent; the rest landed under sm-verify, zz-knowledge and sm-build,
+        // stamped ops-intent; the rest landed under ops-verify, zz-knowledge and ops-build,
         // which had been loaded later in the same conversation. Every one of those documents
         // is unattributable, because attribution needs a run of the stage that owes the
         // document and no such run exists.

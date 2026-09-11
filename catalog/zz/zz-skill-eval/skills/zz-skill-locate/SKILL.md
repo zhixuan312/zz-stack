@@ -21,7 +21,7 @@ The output is confidently, silently about something else.
 
 **Do this before anything else.** An evaluation is the platform's own work and belongs in the
 platform's store. Without the switch you act for whichever team you last worked in, and the
-first real run of this flow wrote its report into `product-1` — a delivery team's store,
+first real run of this flow wrote its report into `team-one` — a delivery team's store,
 mixed in with their initiatives, invisible to anybody looking for evaluations.
 
 Nothing warned about it and nothing could: every write succeeded, because writing into a team
@@ -45,7 +45,7 @@ Every skill on this platform is one of exactly two things. `zz.skill.kind` is th
     block_usage   belongs to a BLOCK. It is about operating an MCP surface — either the
                   block team's own skill, vendored to us, or one of ours written about
                   their block. The platform is a block too, so our own spine is one of these.
-                  Its owner is a block: casebox, n8n, bookit, platform.
+                  Its owner is a block: casebox, RuleMill, bookit, platform.
 
 **Ask which kind first.** Not "which skill" — the list of every skill on the platform is
 long enough that a person scanning it picks the wrong one. Two options is a question anybody

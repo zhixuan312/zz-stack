@@ -423,7 +423,7 @@ check("every envelope field the platform reads is one the schema publishes", () 
     [...contracts.slice(at, end).matchAll(/^ {2}([a-zA-Z_]+):/gm)].map((m) => m[1]));
   if (declared.size < 10) return `only ${declared.size} envelope fields read — the shape moved`;
 
-  // ONE EXCEPTION, and it is not an oversight. sm-select writes `server: "<tool prefix>"` as
+  // ONE EXCEPTION, and it is not an oversight. ops-select writes `server: "<tool prefix>"` as
   // the flow's own field, indexDoc splits it into zz.decision.blocks, and that column is what
   // `reconcile --block` joins on to answer "what has this team predicted about casebox". Declaring
   // it would put it in RESERVED_ENVELOPE and refuse the write the feature depends on. The

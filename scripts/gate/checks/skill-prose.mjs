@@ -18,7 +18,7 @@ check("a skill_view a skill spells out names a skill that exists", () => {
   // THE DIRECT INSTRUCTION, checked directly. The prefix check below covers a backticked
   // sibling name, which is what a citation usually looks like WITHIN a flow. It cannot
   // cover a cross-family name: `blocks-capabilities` shares no prefix with ops-flow's
-  // skills, so `skill_view("blocks-capabilities")` sat in sm-select AND in zz-backbone —
+  // skills, so `skill_view("blocks-capabilities")` sat in ops-select AND in zz-backbone —
   // the platform skill every flow on this platform loads first — for as long as the skill
   // was gone, and the gate was green the whole time. A block evaluation loaded zz-backbone,
   // did what it said, and was refused: "no skill named 'blocks-capabilities' is available
@@ -169,7 +169,7 @@ check("every stage that writes a document names show_document, or says why not",
   // ops-flow told its agent to present documents in full and its records show it did.
   // sdlc-flow's eleven skill files never mentioned the subject, and its records show that
   // too. The difference was never a decision — it was which prose happened to be loaded.
-  // The departure regex is verified against sm-plan:177's actual wording.
+  // The departure regex is verified against ops-plan:177's actual wording.
   const bad = [];
   for (const f of flows) {
     const mf = join(f.dir, "flow.json");
@@ -193,8 +193,8 @@ check("a skill citing another document's section cites one that exists", () => {
   // "read section 10 ('about this stakeholder') of their records". The producing template is
   // edited, the numbers move, and the citation goes on looking authoritative.
   //
-  // Four were wrong at once: learnings.md has SEVEN sections, and sm-spec sent readers to 10
-  // and 4 while sm-select sent them to 10 and 9. An agent that follows one of those opens the
+  // Four were wrong at once: learnings.md has SEVEN sections, and ops-spec sent readers to 10
+  // and 4 while ops-select sent them to 10 and 9. An agent that follows one of those opens the
   // document, cannot find the section, and concludes the instruction is stale.
   //
   // The templates declare their sections as `N. **Title**`, so the numbering is readable.
@@ -290,7 +290,7 @@ check("no flow tells an agent to refuse a person's own words", () => {
     for (const sk of (f.dir === null ? platformSkills() : skillsOf(f))) {
       for (const m of readFileSync(sk.path, "utf8").matchAll(/^.*\bapprov\w*\b.*$/gim)) {
         const line = m[0].trim();
-        // Three shapes, because the second and third slipped past the first. sm-intent
+        // Three shapes, because the second and third slipped past the first. ops-intent
         // carried `(the same discipline as every gate: "approved", not "ok" or "continue")`
         // — a phrase whitelist in every respect, using none of the words the original
         // pattern looked for. A list of accepted words beside a list of rejected ones IS
@@ -455,7 +455,7 @@ check("a re-entry section names the tool that can change an approved document", 
   //
   // Re-entry is where this always bites, and it is identifiable rather than guessable: a stage
   // re-entered from verification is by definition working on a document a stakeholder already
-  // approved. sm-spec and sm-plan both said "amend it in place" there — the plan section says
+  // approved. ops-spec and ops-plan both said "amend it in place" there — the plan section says
   // one line above that "the stakeholder approved the old one" — so the skill routed the agent
   // into a refusal, and before the guard existed, into something worse: a silent write leaving
   // the approver's name over text they never read.
@@ -583,13 +583,13 @@ check("a skill a person types is not one a model is told to load", () => {
 });
 
 check("a skill citing another's section cites one that is there", () => {
-  // Three skills read `learnings.md` by section NUMBER and TITLE — sm-select wants section 4
-  // ("platform gaps"), sm-spec wants 5 ("stakeholder patterns") and 6 ("repeated-question
+  // Three skills read `learnings.md` by section NUMBER and TITLE — ops-select wants section 4
+  // ("platform gaps"), ops-spec wants 5 ("stakeholder patterns") and 6 ("repeated-question
   // candidates"). zz-knowledge is what writes that file, as a numbered list in its own text, and
   // nothing tied the two together: renumbering the list, or renaming an item, sends a reader
   // to a section that is not there and nothing says so.
   //
-  // Found by changing zz-knowledge's section 4 and leaving sm-select describing what it used to
+  // Found by changing zz-knowledge's section 4 and leaving ops-select describing what it used to
   // say. The citation still resolved by number, so only the description was wrong — which is
   // the version of this that no reader catches, because the section exists.
   //
@@ -631,7 +631,7 @@ check("a skill describing acceptance describes the honest close too", () => {
   // expensive one, but it is never free either" — and the whole point is that the cheap word
   // must never be the only one an agent can see.
   //
-  // sm-build said "the platform refuses that close, because every outcome needs an
+  // ops-build said "the platform refuses that close, because every outcome needs an
   // `accepted_by` you cannot honestly supply". Both halves wrong: the close is refused
   // because guide.md is requiredForClose, and an acceptor is optional. An agent that believed
   // it would go looking for a name to get past a guardrail — inventing the acceptance that

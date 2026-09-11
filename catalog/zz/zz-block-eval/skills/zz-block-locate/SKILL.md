@@ -16,7 +16,7 @@ meant. This one resolves **identity and reality**, and they are different proble
 
 **Do this before anything else.** An evaluation is the platform's own work and belongs in the
 platform's store. Without the switch you act for whichever team you last worked in, and the
-first real run of this flow wrote its report into `product-1` — a delivery team's store,
+first real run of this flow wrote its report into `team-one` — a delivery team's store,
 mixed in with their initiatives, invisible to anybody looking for evaluations.
 
 Nothing warned about it and nothing could: every write succeeded, because writing into a team
@@ -29,7 +29,7 @@ From the block registry. `origin` decides whether this evaluation may run at all
     team        a real team's platform. casebox is the only one today.  EVALUATE
     platform    ourselves. We are an MCP surface like any other, and ours is
                 the one whose defects we can actually fix.            EVALUATE
-    stand_in    a mock we wrote — n8n, bookit.                    REFUSE
+    stand_in    a mock we wrote — RuleMill, bookit.                    REFUSE
 
 **A stand-in is not a block.** It is a fixture we wrote to exercise a flow, so evaluating one
 measures our own test data and produces a handover note addressed to a team that does not

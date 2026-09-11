@@ -7,7 +7,7 @@ were handed is the one still in force.
 **R1–R14 are word for word what they were in v1.1, so nothing a block team has built needs
 revisiting.** v1.3 adds §2a, which is OPTIONAL and describes what a block must publish for a
 person to sign in to it as themselves instead of the platform holding one shared key for a
-whole agency. A block that does none of it keeps working exactly as it does today.
+whole organisation. A block that does none of it keeps working exactly as it does today.
 
 **The date moved for 0.4.0 and the version did not, which is the split working as
 intended.** The battery is invoked as `npm run conformance` now — the Python it used to
@@ -19,7 +19,7 @@ hands still the live one" (not if it predates this).
 > **This file is the single source of truth for the block standard.** It lives
 > in zz-stack because the platform is what defines the contract. Block teams are
 > handed this file, and the two worked examples that satisfy it live in the
-> sibling repository `zz-blocks` (`n8n/`, `bookit/`).
+> sibling repository `zz-blocks` (`RuleMill/`, `bookit/`).
 > There is deliberately no second copy: the previous duplicate in zz-blocks had
 > already drifted out of date, and a standard that exists twice is a standard
 > nobody can trust.
@@ -83,7 +83,7 @@ usage skill stays loadable even when the platform is degraded.
 
 ## 2a. Delegated access — OPTIONAL (D1–D5)
 
-Everything above works with one API key per block, held by the platform on an agency's
+Everything above works with one API key per block, held by the platform on an requester's
 behalf. That key is the same for everybody: your audit log records the platform, not the
 person, and the key can do far more than any individual person needs.
 
@@ -149,10 +149,10 @@ marketing.
   requires every server to send, so this asks for no new surface. What it does ask is that the
   value be *comparable*: a version that a reader can order against the last one they saw, and
   that MOVES when behaviour moves. The protocol constrains the field's presence and not its
-  contents, which is the whole gap — today `n8n` and `bookit` answer `3.4.7`, and `casebox`
-  answers `2026-08-30T14:42:01+08:00`, a build timestamp that changes on every deploy whether
-  or not anything a caller can see has changed. Both are honest; only one can be used to
-  decide whether a usage skill written last month still holds.
+  contents, which is the whole gap — a block may answer a semantic version, and a block may answer
+  a build timestamp that changes on every deploy whether or not anything a caller can see has
+  changed. Both are honest; only one can be used to decide whether a usage skill written last
+  month still holds.
 
   Everything the platform attaches to a block — a usage skill, a script, a recorded trap —
   declares `block:` and `verified_against:` naming the version its claims were checked
@@ -161,7 +161,7 @@ marketing.
   verified one behind, everything attached goes back to be re-verified. That is the only
   mechanism by which a block improving on its own schedule does not silently invalidate the
   knowledge built on top of it.
-- **The delivery flow** owns process knowledge → the flow's skills (e.g. the SM flow in
+- **The delivery flow** owns process knowledge → the flow's skills (e.g. the Operations flow in
   zz-stack's catalog, whose six stages run intent → spec → select → plan → build →
   verify); they never contain block-specific content. Every flow declares its own stages,
   so this list is one flow's, not the standard's — nothing in this contract depends on it.
@@ -181,7 +181,7 @@ because a sample that claims to pass and does not teaches the wrong lesson.
 
 | Sample | Category | Where |
 |---|---|---|
-| n8n-like (workflow automation) | connective automation | `zz-blocks/n8n/` |
+| RuleMill-like (workflow automation) | connective automation | `zz-blocks/RuleMill/` |
 | BookIt-like (appointments) | public-facing bookings | `zz-blocks/bookit/` |
 
 **Where each block stands is measured, not written down here.** This section used
@@ -201,22 +201,23 @@ this standard never granted.
 
 Two things that measurement says, which the hand-written table did not:
 
-- **R5 is where the real block is furthest from the standard.** CaseBox
-  staging serves 178 tools. Not one is undescribed — and 173 of them describe
-  themselves by restating their own name: `read_user_guide` as "Read user guide",
-  `get_my_info` as "Get my info". An agent choosing among 178 tools learns nothing
-  from 97% of them about WHEN to reach for one, which is the decision it is
-  actually making.
-- **R10 was unmet in the samples and nobody had counted it.** `n8n` ships
+- **R5 is where a large tool surface is furthest from the standard.** A block can publish
+  a couple of hundred tools with not one of them undescribed, and still fail this
+  requirement outright, because the overwhelming majority describe themselves by
+  restating their own name — a tool called `read_user_guide` whose description is
+  "Read user guide". An agent choosing among two hundred tools learns nothing from
+  a description like that about WHEN to reach for one, which is the decision it is
+  actually making. Counted descriptions are not the measure; useful ones are.
+- **R10 was unmet in the samples and nobody had counted it.** `RuleMill` ships
   `create_decision_table` and `create_schedule` with no `get_*` to read either
   back; `bookit` has the same gap.
 
-**R9 is met by nobody today**, including the real block, which exposes
-`generate_app_url` rather than `get_app_url` — the report says so in those words
-rather than calling it absent. Either the requirement names the wrong verb or
-every implementation is wrong; that is a decision for the next revision of this
-standard, not something to paper over here. R2 has the same shape: CaseBox
-answers it with `read_user_guide`.
+**R9 is met by nobody today.** Where it is implemented at all it is implemented under
+a different verb — `generate_*` where this standard asks for `get_*` — and the report
+says so in those words rather than calling it absent. Either the requirement names the
+wrong verb or every implementation is wrong; that is a decision for the next revision of
+this standard, not something to paper over here. R2 has the same shape: a block can meet
+its intent through a differently-named tool and score zero against the letter.
 
 They compose: a booking event webhooks into an automation workflow that
 creates a case — each side discovered through R2/R3/R8 tools and each team's
@@ -225,6 +226,13 @@ usage skills, none of it hard-coded in the agent.
 ## Appendix — evidence log from real delivery runs (why we will ask you for these)
 
 | Date | Block (mock) | Gap | Requirement |
+
+> **Rows about a third party's own deployment are not in this table.** Several of the sharpest
+> findings came from calling a real system belonging to another organisation, and its defects are
+> that organisation's to publish or not. What is left is measured against blocks written here. The
+> rules the missing rows produced — R3, R6, R9, R13 — are stated in full above and stand on their
+> own; it is only the evidence that is somebody else's.
+
 |---|---|---|---|
 | 2026-08-20 | all three | no usage skills shipped initially — selection relied on tool-surface guesswork | R4 |
 | 2026-08-20 | case mgmt | smoke tests can move live counters with no restore guidance | R13 |
@@ -238,12 +246,6 @@ usage skills, none of it hard-coded in the agent.
 | 2026-08-20 | automation | simulate stubs for integration nodes were shape-blind (always a dict) — a foreach over a list result could never pass simulation, deadlocking the enforced lifecycle. Fixed: shape-aware stubs (search/list ops stub as lists). Generic rule: simulation must produce payloads of the same SHAPE as real calls | R7, R3 |
 | 2026-08-20 | automation | foreach item-template bindings ({{item.*}}) not rendered in fan-out emails — blank recipients; agent held the blocker honestly. Fixed: item exposed as pseudo-node to the template resolver. Also: workflows had no delete primitive (same create-without-delete gap class) — delete_workflow added | R10, R3 |
 | 2026-08-20 | bookings | which lifecycle events natively email the requester was undocumented — the agent assumed no rejection email existed and composed an unnecessary automation bridge (over-composition). Fixed: notification matrix in read_api_spec. Generic rule: document your NOTIFICATION MATRIX (event -> who gets told, via what) | R3 |
-| 2026-08-20 | **REAL CaseBox staging** | advanced-mode workflows rejected with bare HTTP 422 (no reason in the error) — agent had to discover by exhaustive variants, then fall back to basic mode | R6 (errors must teach the rule) |
-| 2026-08-20 | **REAL CaseBox staging** | basic-mode workflows cannot create app variables at runtime — undocumented; discovered by failure | R3 |
-| 2026-08-20 | **REAL CaseBox staging** | workflow-initiated case assignment does NOT cascade into case_assigned trigger (rotation-assigned cases get no notification email) — undocumented behavior, surfaced as an honest AC caveat at acceptance | R3 (notification matrix), R14 |
-| 2026-08-20 | **REAL CaseBox staging** | platform ships read_api_spec/how_to_* docs tools (good, R2/R3 partly met) but NO usage skills and no Agent Plugins packaging | R4 |
-| 2026-08-20 | **REAL CaseBox staging** | API-key session cannot manually trigger scheduled workflows (permission granularity) — smoke-testing a schedule requires UI access or waiting for the cron; agent held the build honestly and the record marks the live leg unverified | R13 (safe test mode must include a triggerable path), R6 |
-| 2026-08-24 | all three | `get_app_url` (R9) is implemented by none of them — the real block exposes `generate_app_url`; the two samples expose no app-url tool at all. Measured through the gateway, not read from a README | R9 |
+| 2026-08-24 | all three | `get_app_url` (R9) is implemented by none of them — none of the three exposes an app-url tool. Measured through the gateway, not read from a README | R9 |
 | 2026-08-24 | automation | `read_api_spec` (R3) absent, while the other two blocks have it — the sample listed in §6 as a template does not meet the requirement it is meant to demonstrate | R3 |
-| 2026-08-26 | **REAL CaseBox staging** | R6 again, and this time it cost two scenarios. `create_case` with an unknown case type answers a bare `400`; an invalid field answers `422` whose body is an HTML page redirecting to `/error`. Two agents hit it, could not tell "my arguments are wrong" from "the integration is broken", chose the second, and parked finished builds. One had transposed a case type name it created itself. Reproduced through the gateway and through a live workflow node: same call, correct name, case created | R6 |
-| 2026-08-26 | n8n (sample) | the same requirement, met on our side: a failing peer call now names the operation and the arguments sent, and says not to assume the peer is down. It cannot recover a reason the peer never gave — which is why R6 is a requirement on the BLOCK and cannot be worked around by its caller | R6 |
+| 2026-08-26 | RuleMill (sample) | the same requirement, met on our side: a failing peer call now names the operation and the arguments sent, and says not to assume the peer is down. It cannot recover a reason the peer never gave — which is why R6 is a requirement on the BLOCK and cannot be worked around by its caller | R6 |

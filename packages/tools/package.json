@@ -11,5 +11,6 @@
     "@zz/contracts": "*",
     "@zz/mcp-client": "*",
     "pg": "^8.13.0"
-  }
+  },
+  "license": "MIT"
 }

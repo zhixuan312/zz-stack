@@ -132,7 +132,7 @@ export function registerSkillTools(server: McpServer): void {
    * Two questions an agent could not answer, and the cost of each is measured on this
    * deployment.
    *
-   * WHICH SKILLS DOES THIS BLOCK SHIP. sm-select told the agent to look for "usage guides in
+   * WHICH SKILLS DOES THIS BLOCK SHIP. ops-select told the agent to look for "usage guides in
    * the shared skills library named `<block>-usage`". casebox ships four live ones and not one of
    * them is named that way: `using-casebox`, `writing-case-queries`, `writing-scripts`
    * and `writing-templates`. So an agent following the instruction guessed `casebox-usage`, found
@@ -228,7 +228,7 @@ export function registerSkillTools(server: McpServer): void {
           if (e.skills.length) {
             lines.push("");
             // THE TOOL, NAMED, because a live run reached for the wrong one. An agent that had
-            // just been handed these names called `bookit:usage_skill_view` with an casebox skill
+            // just been handed these names called `bookit:usage_skill_view` with a casebox skill
             // name in it — a block's own reader knows only that block's skills, so it answered
             // "no usage skill", which reads as the skill not existing rather than as the wrong
             // door. These sit on the PLATFORM's shelf; the platform's reader is what opens them.
@@ -286,9 +286,9 @@ export function registerSkillTools(server: McpServer): void {
 
   /** A team's own additions to a stage of the flow they run, appended to it.
    *
-   * A team running ops-flow may want two more considerations at sm-select — the vendors they
+   * A team running ops-flow may want two more considerations at ops-select — the vendors they
    * are not allowed to use, the question their director always asks. That is not a different
-   * sm-select and they should not have to fork one to say it.
+   * ops-select and they should not have to fork one to say it.
    *
    * APPENDED, never substituted, and the difference is the whole design. A replacement can
    * quietly delete a rule the platform depends on; an addition cannot. So the shelf's text

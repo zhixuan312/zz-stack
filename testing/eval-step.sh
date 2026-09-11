@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Run every requirement in the corpus through ONE step, and keep what it produced.
 #
-#   ZZ_URL=… ZZ_TOKEN=… ./testing/eval-step.sh --step sm-intent --out evals/intent-1.0
-#   ./testing/eval-step.sh --step sm-intent --out … --only r01,r02   # while iterating
+#   ZZ_URL=… ZZ_TOKEN=… ./testing/eval-step.sh --step ops-intent --out evals/intent-1.0
+#   ./testing/eval-step.sh --step ops-intent --out … --only r01,r02   # while iterating
 #
 # WHY A STEP AT A TIME. A full run scores one number after thirty minutes and gives no way to
 # tell which of six steps caused it — an integration test standing in for a unit one. Thirty
-# briefs through sm-intent gives that step thirty scored instances for a fraction of the cost,
+# briefs through ops-intent gives that step thirty scored instances for a fraction of the cost,
 # and the number that comes out is about the SKILL rather than about the flow.
 #
 # EACH REQUIREMENT GETS ITS OWN INITIATIVE, because that is how the step works and a step
@@ -14,7 +14,7 @@
 # platform records everything the usual way: which step, which version, which block, what was
 # refused. Nothing here needs its own telemetry.
 #
-# NO STAKEHOLDER. There is nobody to ask and the step is told so. sm-intent is the right place
+# NO STAKEHOLDER. There is nobody to ask and the step is told so. ops-intent is the right place
 # to start precisely because it has no interview — its own anti-pattern says ambiguity becomes
 # an open question rather than a conversation, so running it without a person to ask is running
 # it as designed rather than crippling it.
@@ -26,7 +26,7 @@
 # NEVER TWO OF THESE AT ONCE against the same deployment. The platform attributes a call to the
 # step whose skill was loaded most recently BY THAT CALLER, and a caller is the token plus the
 # client name — so two runs under one token share a single trace slot. Interleave them and
-# sm-spec's calls get filed under a block's usage skill and the block's under sm-spec, silently,
+# ops-spec's calls get filed under a block's usage skill and the block's under ops-spec, silently,
 # with both measurements looking entirely normal. Serialise them.
 set -euo pipefail
 
@@ -64,7 +64,7 @@ done
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 : "${CORPUS:=catalog/$FLOW/tests/requirements.json}"
 STEPS="catalog/$FLOW/tests/steps.json"
-[ -f "$HERE/catalog/$FLOW/flow.json" ] || { echo "no flow at catalog/$FLOW — --flow is <owner>/<flow>, e.g. sm/ops-flow" >&2; exit 2; }
+[ -f "$HERE/catalog/$FLOW/flow.json" ] || { echo "no flow at catalog/$FLOW — --flow is <owner>/<flow>, e.g. ops/ops-flow" >&2; exit 2; }
 [ -f "$HERE/$CORPUS" ] || { echo "no corpus at $HERE/$CORPUS" >&2; exit 2; }
 [ -f "$HERE/$STEPS" ] || { echo "no steps file at $HERE/$STEPS" >&2; exit 2; }
 mkdir -p "$OUT"
@@ -94,9 +94,9 @@ VERSION="$(sed -n 's/^version: *//p' "$SKILL_FILE" | head -1)"
   echo "---"
 } | tee "$OUT/run.txt"
 
-# WHETHER THIS STEP INTERVIEWS, from the one place that says so. sm-intent has no interview —
+# WHETHER THIS STEP INTERVIEWS, from the one place that says so. ops-intent has no interview —
 # its own anti-pattern is that ambiguity becomes an open question rather than a conversation —
-# so running it with nobody to ask is running it as designed. sm-spec is the opposite: "the
+# so running it with nobody to ask is running it as designed. ops-spec is the opposite: "the
 # interview exists to close the intent's open questions", and evaluating it without a
 # stakeholder would measure a crippled version of the step rather than the step.
 OWES="$(node -e '
@@ -118,9 +118,9 @@ for id in $IDS; do
   BRIEF="$(node -e '
     const r = require(process.argv[1]).requirements[process.argv[2]];
     process.stdout.write(r.brief);' "$HERE/$CORPUS" "$id")"
-  AGENCY="$(node -e '
+  REQUESTER="$(node -e '
     const r = require(process.argv[1]).requirements[process.argv[2]];
-    process.stdout.write(r.agency);' "$HERE/$CORPUS" "$id")"
+    process.stdout.write(r.requester);' "$HERE/$CORPUS" "$id")"
 
   printf '\n──── %s (%d)\n' "$id" "$n"
 
@@ -181,7 +181,7 @@ stage of the flow."
     # the round then scores the pair rather than the step.
     SID="$(uuidgen | tr 'A-Z' 'a-z')"
     echo '{"mcpServers":{}}' > "$OUT/$id.nomcp.json"
-    PERSONA="You are the manager at ${AGENCY} who asked for this. In your own words, this is what
+    PERSONA="You are the manager at ${REQUESTER} who asked for this. In your own words, this is what
 you want:
 
 ---
@@ -256,8 +256,8 @@ Reply as yourself." < /dev/null 2>/dev/null || true)"
         if (c.type === "tool_use" && /write_file$/.test(c.name ?? "")) {
           const p = c.input?.path;
           if (typeof p !== "string" || !p.includes("/")) continue;
-          // THE DOCUMENT THIS STEP OWES, not simply the last thing written. Two sm-plan runs
-          // carried on past their own stopping point and wrote sm-verify guide.md as well, and
+          // THE DOCUMENT THIS STEP OWES, not simply the last thing written. Two ops-plan runs
+          // carried on past their own stopping point and wrote ops-verify guide.md as well, and
           // taking the last write recorded the wrong document for both. Preferring the owed one
           // fixes the record; the crossing itself is a finding and is reported separately.
           if (p.endsWith("/" + process.argv[4])) path = p;

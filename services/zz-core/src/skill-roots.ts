@@ -153,7 +153,7 @@ async function installedFlows(team: string | null): Promise<Set<string> | null> 
  * included zz-block-eval and zz-skill-eval — they were simply invisible to the check,
  * because they have no zz.flow_install row and never will.
  *
- * Both halves of that mattered on this deployment. product-1 has one install, so the check
+ * Both halves of that mattered on this deployment. team-one has one install, so the check
  * asked nothing, and a zz-block-eval initiative it opened was governed by ops-flow end to
  * end. zz-platform has none at all, so `flows.size < 2` skipped the check entirely for the
  * one team whose whole purpose is running these flows. */
@@ -179,8 +179,8 @@ export async function governingFlows(team: string | null): Promise<Set<string> |
  * by us. Here it costs nothing: the store is already theirs, already a git repository, and
  * already the thing they take with them. The contribution path starts where the work is.
  *
- * Additive, never a replacement. What a team wants at `sm-select` is usually another
- * consideration alongside it, not a different sm-select — and the ordering means the
+ * Additive, never a replacement. What a team wants at `ops-select` is usually another
+ * consideration alongside it, not a different ops-select — and the ordering means the
  * platform never has to decide whether they meant to replace one, because they cannot.
  *
  * Returns the roots AND whether the scoping behind them could be established.
@@ -188,7 +188,7 @@ export async function governingFlows(team: string | null): Promise<Set<string> |
  * `degraded` is not decoration. teamFor THROWS when the platform database cannot be reached
  * and there is no cached answer — it says so rather than guessing, which is right — and this
  * function swallowed that into `team = null`, which resolves to platform packages only. So
- * during an outage skill_view answered "no skill named 'sm-select' is available to you —
+ * during an outage skill_view answered "no skill named 'ops-select' is available to you —
  * either it does not exist, or its flow is not installed for your team", and the reader goes
  * to an admin to install a flow they already have. The one thing the caller needed to know
  * was the one thing the message could not say.

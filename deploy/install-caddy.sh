@@ -45,7 +45,7 @@ echo "$HOST: address $ADDR, gateway at $UPSTREAM"
 # wearing a different mask. It took a host down a second time, four minutes after the first.
 #
 # BOTH LITERALS BELOW MUST MATCH WHAT THE Caddyfile ACTUALLY CONTAINS, and one of them
-# silently stopped matching. The upstream pattern read `100.120.252.47:8764` — a tailnet
+# silently stopped matching. The upstream pattern read `<tailnet-address>:8764` — a tailnet
 # address from when this platform had a second deployment — long after the template had been
 # repointed at loopback. A sed that matches nothing does not fail: it emits the file
 # unchanged, so $UPSTREAM was discarded and every install hardcoded whatever the template

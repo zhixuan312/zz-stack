@@ -303,7 +303,7 @@ export function between(src, startMark, endMark) {
  *
  * Four checks here each grew their own, and they did not agree. Two got it right the hard
  * way: one strips a `//` only when the whole line is a comment, "a mid-line strip cuts
- * http://n8n… in half"; another checks whether the `//` sits inside a quote on that line.
+ * http://RuleMill… in half"; another checks whether the `//` sits inside a quote on that line.
  * Two got it wrong. The straight `line.replace(/\/\/.*$/, "")` cuts any URL, and a
  * comments-then-strings pass read the `//` in `"http://zz-core:8000/mcp"` as a comment, took
  * the closing quote with it, and let the string pass match from that stray quote across a

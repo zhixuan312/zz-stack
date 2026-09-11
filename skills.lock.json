@@ -85,7 +85,7 @@
   },
   "zz-block-locate": {
     "version": "0.1",
-    "sha": "7c3b43a962cd"
+    "sha": "12a24cc68cfb"
   },
   "zz-block-measure": {
     "version": "0.1",
@@ -97,23 +97,23 @@
   },
   "zz-skill-define": {
     "version": "0.5",
-    "sha": "d5e4374cd38e"
+    "sha": "e9a1524be5ed"
   },
   "zz-skill-eval": {
     "version": "0.4",
-    "sha": "4fe264f2e75a"
+    "sha": "ff1055cfc3e8"
   },
   "zz-skill-judge": {
     "version": "0.5",
-    "sha": "637b1af7068d"
+    "sha": "5dc8dfa5cfa8"
   },
   "zz-skill-locate": {
     "version": "0.3",
-    "sha": "a3707e02a57b"
+    "sha": "266febe39a9f"
   },
   "zz-skill-profile": {
     "version": "0.3",
-    "sha": "8ae1a76de805"
+    "sha": "e83dc4ebb0be"
   },
   "zz-skill-report": {
     "version": "0.11",
@@ -121,7 +121,7 @@
   },
   "zz-backbone": {
     "version": "3.22",
-    "sha": "69dfb959d64c"
+    "sha": "4e4934cda772"
   },
   "zz-knowledge": {
     "version": "2.4",

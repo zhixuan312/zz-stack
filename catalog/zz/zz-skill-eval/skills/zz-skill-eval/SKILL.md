@@ -84,5 +84,5 @@ mechanism for any of that would be a second mechanism to keep correct.
 ## Ending
 
 Close it like any initiative, and the platform's handover applies: `zz-knowledge` mints what
-generalises. An evaluation that recurs across rounds IS knowledge — "sm-intent bleeds goals
+generalises. An evaluation that recurs across rounds IS knowledge — "ops-intent bleeds goals
 into constraints" was observed in two unrelated initiatives before it was worth writing down.

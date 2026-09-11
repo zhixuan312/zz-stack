@@ -214,7 +214,7 @@ check("the model writes the body and the platform writes the envelope", () => {
   // this initiative, what role the manifest gives the document, what day it is — or from an
   // explicit act. "The model typed it into some YAML" was a third source, and the cost was
   // countable: of 93 approved documents here, four had no approved_at and two no
-  // approved_by; two smoke runs signed a gate as `product_group_1`, a team slug; the first
+  // approved_by; two smoke runs signed a gate as `team_one`, a team slug; the first
   // live run closed an initiative `accepted` that nobody had accepted. The ANONYMOUS
   // blocklist exists to catch the worst of that, and its own comment admits there is no way
   // to test whether a string is a person — it exists only because a model typed the field.

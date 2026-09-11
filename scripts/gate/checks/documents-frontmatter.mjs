@@ -181,7 +181,7 @@ check("a caller's words cannot write a frontmatter field", () => {
   };
   // Both halves: adding a field that was absent, and rewriting one that was there.
   for (const [field, why] of [["approved_by", "approve(on_behalf_of)"], ["status", "a rewrite"]]) {
-    const after = read(put(base, field, "Dana Lim\nflow: some-other-flow\noutcome: accepted"));
+    const after = read(put(base, field, "Dana Reyes\nflow: some-other-flow\noutcome: accepted"));
     if (after.flow !== "ops-flow") {
       bad.push(`${why} rewrote the envelope's flow to ${JSON.stringify(after.flow)}`);
     }

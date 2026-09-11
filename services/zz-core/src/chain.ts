@@ -137,7 +137,7 @@ async function chainForTeam(team: string | null): Promise<Chain | null> {
       const m = rows[0].manifest;
       // THE CATALOG FIRST, the stored manifest only when the catalog cannot resolve the flow.
       //
-      // This was the other way round, and the snapshot is old. product-1's stored ops-flow
+      // This was the other way round, and the snapshot is old. team-one's stored ops-flow
       // manifest carries neither `stage` nor `sections` on any document — both were added to
       // flow.json after that install and no reinstall has happened since — so sectionCheck
       // had nothing to require and the stage guards had nothing to place. Two guards silently

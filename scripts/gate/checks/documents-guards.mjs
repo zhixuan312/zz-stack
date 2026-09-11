@@ -21,7 +21,7 @@ import { envelopeFields } from "../facts.mjs";
  * This banner read "no service exists only as build output" and carried that check's whole
  * explanation — for a check that sits a thousand lines below, at the very END of the run
  * that follows. Checks were added under the heading for months and the heading stayed
- * pinned to its original occupant, so a reader here met a paragraph about services/sm-core
+ * pinned to its original occupant, so a reader here met a paragraph about services/ops-core
  * above twenty-nine checks about something else, and the check itself had no reason at all
  * beside it. The paragraph moved to where it belongs. */
 

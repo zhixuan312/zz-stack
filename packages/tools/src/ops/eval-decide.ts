@@ -2,7 +2,7 @@
  * eval-decide — what we decided about an evaluation finding, and whether a run's work landed
  *
  *   zz-tool eval-decide --outcomes                       # what happened to each run's work
- *   zz-tool eval-decide --finding <id> --applied --skill sm-intent --version 1.1
+ *   zz-tool eval-decide --finding <id> --applied --skill ops-intent --version 1.1
  *   zz-tool eval-decide --finding <id> --rejected --why 'measured below the floor'
  *   zz-tool eval-decide --outcomes --psql '<command>'    # a database somewhere else
  *
@@ -11,7 +11,7 @@
  * halves have to be written down or the next evaluation cannot ask the only question that matters
  * -- did the thing we changed actually help.
  *
- * REJECTED IS A REAL OUTCOME AND THE COMMON ONE. sm-intent 1.1 was written for a fault seen in 13
+ * REJECTED IS A REAL OUTCOME AND THE COMMON ONE. ops-intent 1.1 was written for a fault seen in 13
  * of 30 pieces of work, measured, and reverted: the comparison was invalid (the second version
  * resumed the first's initiatives) and the delta was 0.000 against a threshold of 0.31. Recording
  * that as `rejected` with the reason is the difference between a loop that learns and one that
@@ -37,7 +37,7 @@ function refreshOutcomes(psql: string): number {
   //
   // A RUN WITH NO DOCUMENT IS LEFT BLANK, NOT CALLED ABANDONED. The first version of this marked
   // it abandoned and reported 100 of 187 runs that way, which was an invented failure twice over:
-  // sm-build, zz-backbone and every block usage skill OWE no document, so having none is them
+  // ops-build, zz-backbone and every block usage skill OWE no document, so having none is them
   // working correctly; and documents written before attribution existed have no run to link to,
   // so their runs look empty when the work is sitting right there.
   //

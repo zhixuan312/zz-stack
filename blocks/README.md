@@ -5,7 +5,7 @@ block lives in it: the usage skill that says how to use it well, and the tests t
 still can.
 
 **There is no such directory today, and that is the mechanism working rather than an omission.**
-casebox, bookit and n8n each had one; all three moved to their own repository, and everything
+casebox, bookit and RuleMill each had one; all three moved to their own repository, and everything
 written about them went in the same move — which is exactly what the paragraph below says should
 happen. `services/gateway/src/blocks.ts` ships an empty registry: a deployment's blocks come
 entirely from `PLATFORMS`, so the first block somebody integrates gets the first directory here.
@@ -54,7 +54,7 @@ selection comes to name three blocks for a brief that needed one.
 
 ## The baseline that makes a usage skill measurable
 
-casebox has a usage skill. bookit and n8n do not, and that is not a gap to rush.
+casebox has a usage skill. bookit and RuleMill do not, and that is not a gap to rush.
 
 What a block's task set scores with NO usage skill is the number its first usage skill has to
 beat. Write the skill first and that baseline is gone permanently — every later score becomes a

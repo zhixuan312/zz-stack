@@ -1,9 +1,9 @@
 -- Every claim a stage document makes, as a row.
 --
--- A flow's stages already write their commitments down. sm-select produces a fit ledger
+-- A flow's stages already write their commitments down. ops-select produces a fit ledger
 -- keyed by acceptance criterion — seventeen rows on a real initiative, each naming a verdict
 -- (Native / Achievable / Workaround / Not possible) and the tool or mechanism that carries
--- it. sm-spec writes the acceptance criteria themselves, each marked with who verifies it.
+-- it. ops-spec writes the acceptance criteria themselves, each marked with who verifies it.
 -- Both are written every single run, and both were markdown tables that nothing read back.
 --
 -- So the platform held the ARTIFACT of every decision and none of its content in a form

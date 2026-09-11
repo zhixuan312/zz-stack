@@ -29,7 +29,7 @@
  *
  * ── AND A VERSION, WHICH IS THE WHOLE POINT ──────────────────────────────────
  *
- * Knowing `sm-select` refused eight times is not improvement. Improvement is knowing it
+ * Knowing `ops-select` refused eight times is not improvement. Improvement is knowing it
  * refused eight times under ONE version of that skill and once under the next — otherwise a
  * change can be shipped and never proved. So a `skill_view` answer is hashed as it streams and
  * every call attributed to that step carries the hash of the skill text the agent was ACTUALLY
@@ -76,7 +76,7 @@ interface Trace {
 
 /** The version a skill DECLARES, read out of the frontmatter that `skill_view` serves.
  *
- * A declared version is what a person cites — "sm-select v2 fixed it" — and it is the only
+ * A declared version is what a person cites — "ops-select v2 fixed it" — and it is the only
  * form of the answer that is orderable and arguable. The hash beside it is what makes the
  * claim checkable, and the two are not redundant: on the day this was written EVERY skill in
  * the repository declared `version: 1.0`, including three that had been edited four times
@@ -125,7 +125,7 @@ export const callerKey = (headers: Record<string, unknown>): string =>
 /** A skill was served. Everything this caller does next belongs to it.
  *
  * `whole` says whether the bytes ARE the skill, or a supporting file beside it —
- * `skill_view(name, file: "references/blocks-capabilities.md")`, which sm-select's own
+ * `skill_view(name, file: "references/blocks-capabilities.md")`, which ops-select's own
  * instructions tell the agent to read. Both are the same step; only the first carries the
  * skill's version.
  *
@@ -134,7 +134,7 @@ export const callerKey = (headers: Record<string, unknown>): string =>
  * a file inside it, and the SEVEN casebox calls that followed were written with an empty
  * step_version — which `runs.ts` joins against `zz.skill_version`, so they matched no version
  * and vanished from every per-version report. Worse where the file has frontmatter of its own:
- * a document template declares a document's `version`, so `sm-select` was recorded at 1.0 and
+ * a document template declares a document's `version`, so `ops-select` was recorded at 1.0 and
  * then 1.1 — numbers that are real, belong to something else, and are indistinguishable from
  * the skill's own.
  *
@@ -238,7 +238,7 @@ export const blockOf = (surface: string): string | undefined =>
  *
  * Observed on the handshake and remembered per block, then stamped on every call to it, since
  * the handshake and the calls are separate requests. What the three connected blocks answer
- * today: n8n `3.4.7`, bookit `3.4.7`, casebox `2026-08-30T14:42:01+08:00` — the last one a
+ * today: RuleMill `3.4.7`, bookit `3.4.7`, casebox `2026-08-30T14:42:01+08:00` — the last one a
  * build timestamp rather than a version, which is a real answer and a poor one, and now
  * visible as such rather than absent.
  */

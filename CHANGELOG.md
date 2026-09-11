@@ -17,15 +17,21 @@ zz-blocks versions separately and has its own changelog — the mock building bl
 for other teams' services and change for their own reasons. All three are released together
 by `zz-stack/scripts/release.mjs`; separate lifecycles never meant separate deployments.
 
-**Some names in entries before 0.28.0 were changed when this repository was opened up.** Two of
-the three building blocks this platform was built against are systems belonging to one
-organisation, and so is the identity provider; below they are `CaseBox`, `BookIt` and
-`SsoAuth`, which are inventions. `n8n` is not — it is the workflow tool of that name, and
-calling it anything else would have made the entries less true for no gain. Every address is
-`@example.com`. Nothing else was altered: the dates, the defects and the reasoning are what
-happened.
-Said once, here, because a reader chasing "when did CaseBox land" otherwise finds a coherent
-account of something that never had that name.
+**Names and some evidence in entries before 0.28.0 were changed when this repository was opened
+up.** This project was built alongside a job, against systems belonging to one organisation, and
+none of those systems are named here. `CaseBox`, `BookIt`, `RuleMill` and `SsoAuth` are all four
+inventions — three building blocks and an identity provider — and every address is
+`@example.com`. Sector and country words went with them.
+
+**Evidence was removed as well as names, and that matters more.** Findings measured by calling
+somebody else's production system — their error bodies, their payload sizes, their undocumented
+behaviour — were that organisation's to publish or not, and are gone. The rules those findings
+produced are stated in full and stand on their own; where a table is short, it is short because
+rows were taken out, and it says so.
+
+Nothing else was altered: the dates, the author's own defects, and the reasoning are what
+happened. Said once, here, because a reader chasing "when did CaseBox land" would otherwise
+find a coherent account of something that never had that name.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
@@ -226,7 +232,7 @@ things found were not dormant code.** They were things that looked like they wer
 - **`gate.mjs` 11,521 → 11,391**, with its file and text helpers in a module anything can
   import. Verified by diffing all 272 verdicts before and after: identical.
 - **Block OAuth stops naming three blocks this platform does not have.** `OAUTH_CLIENTS` and
-  `OAUTH_SCOPES` listed casebox, bookit and n8n; with those gone `connect_block` — a registered,
+  `OAUTH_SCOPES` listed casebox, bookit and RuleMill; with those gone `connect_block` — a registered,
   documented tool — could not succeed for any block configurable through `PLATFORMS`. Both maps
   are empty, nine compose lines and six `.env.example` keys went with them, and adding one is
   three edits written down in all three places. **Breaking** only for a deployment that had set
@@ -245,7 +251,7 @@ things found were not dormant code.** They were things that looked like they wer
 ### Upgrade notes
 
 **Nothing here changes how the platform behaves for a caller**, with one exception: a
-deployment that had set `CASEBOX_/BOOKIT_/N8N_OAUTH_*` loses those knobs. No deployment has.
+deployment that had set `CASEBOX_/BOOKIT_/RULEMILL_OAUTH_*` loses those knobs. No deployment has.
 
 **Re-run `deploy/install-backup-cron.sh` on any host that still has the hourly collector line.**
 It removes it. Until then that host creates a container every hour to fail.
@@ -311,7 +317,7 @@ already made.
 
 - **`deploy/Caddyfile` and `STATE.md` named addresses that belong to another platform.**
   `203.0.113.10` and `203.0.113.11` were this platform's hosts before it became a single
-  deployment; both now serve another deployment, whose PATs are `sap_…`. `STATE.md` stated one of them
+  deployment; both now serve an unrelated deployment. `STATE.md` stated one of them
   as the live gateway. Repointed to `165.232.169.165`, and the template's config body now
   matches the running `/etc/caddy/Caddyfile` line for line.
 - **`install-caddy.sh` was discarding `$UPSTREAM` silently.** Its substitution still targeted
@@ -464,7 +470,7 @@ discovered by someone counting versions.
 - **LibreChat and ops-flow**, with the smoke suite, the connection checker and the onboarding
   timer that existed to keep a browser front end honest. What is left is the SDLC flow, our
   own MCP, and the console.
-- **The third-party building blocks** (casebox, bookit, n8n) and their catalog flows. They
+- **The third-party building blocks** (casebox, bookit, RuleMill) and their catalog flows. They
   live in their own repositories now.
 - **The password door.** `/auth/password`, `passwordSetAuthority`, the scrypt verifier, its
   rate limiter and its check engine. Migration 043 drops `zz.principal.password_verifier`.
@@ -792,7 +798,7 @@ actually produced.
   to a document whose stage declares no block and whose body NAMES one. Only `ops-flow`
   declares any; the other five flows behave exactly as before.
 - **`block_skills`** — which building blocks this platform routes and which usage skills each
-  one ships, from the registry rather than from a naming convention. `sm-select` told agents to
+  one ships, from the registry rather than from a naming convention. `ops-select` told agents to
   look for `<block>-usage`; casebox ships four usage skills and not one is named that way, so all
   four came through a whole evaluation campaign never opened.
 - **`blocks` on a selection document**, written as its own `write_file` argument and capped at
@@ -824,7 +830,7 @@ actually produced.
 ### Fixed
 - Deleting an initiative was impossible: `zz.run`'s foreign key orphaned its runs into a
   unique index that then refused them.
-- `sm-spec` 1.2 makes the one change its own evaluation recommended — a criterion names its
+- `ops-spec` 1.2 makes the one change its own evaluation recommended — a criterion names its
   check and its owner in one sentence.
 
 ### Upgrade notes
@@ -835,7 +841,7 @@ actually produced.
 - **`eval_skill_scores` and `eval_block_usage` return markdown, not JSON.** Anything parsing
   them breaks.
 - **Set `ZZ_TZ`** in `.env` — it defaults to `Asia/Singapore`.
-- **`sm-intent` and `sm-spec` can no longer call a building block**, and a spec naming one is
+- **`ops-intent` and `ops-spec` can no longer call a building block**, and a spec naming one is
   refused. If a stakeholder names their current system, store their words with `add_source`
   and write "their current system" in the document.
 - **Installed clients need `claude plugin update`** to pick up the skill changes.
@@ -1061,12 +1067,12 @@ actually produced.
 
 ### Fixed
 - **`zz-backbone` told every flow to load a skill that no longer exists.** `blocks-capabilities`
-  became sm-select's own reference when it stopped being a skill — a capability sheet is a
+  became ops-select's own reference when it stopped being a skill — a capability sheet is a
   document you consult, not a method you follow — and two SKILL.md files still said
   `skill_view("blocks-capabilities")`. One of them was zz-backbone, which every flow on this
   platform loads first, so every run began with a refused call. zz-backbone now names no sheet
   of its own: there is no flow-agnostic capability sheet to name, and what is flow-agnostic is
-  the rule. sm-select points at `references/blocks-capabilities.md` beside it.
+  the rule. ops-select points at `references/blocks-capabilities.md` beside it.
 - **The console selected `retired` and emitted everything but.** The column was added to the
   skills query and to nothing else, so `casebox-stg-usage` and `zz-learn` were still listed exactly
   like skills that are still served.
@@ -1083,7 +1089,7 @@ actually produced.
 - **Every team must now declare its flow on an initiative's first document.** The check that
   refuses an undeclared first document only ran for a team with two or more rows in
   `zz.flow_install` — and a platform flow never gets a row there, because the shelf ships it
-  to everyone. So the teams the check excused were the two it went wrong on: `product-1`, with
+  to everyone. So the teams the check excused were the two it went wrong on: `team-one`, with
   one install, opened a `zz-block-eval` initiative that was governed by `ops-flow` from the
   second document onward; `zz-platform`, with no installs at all, was never asked anything,
   and every evaluation it runs was governed by nothing — no gate on the one document the flow
@@ -1119,14 +1125,14 @@ actually produced.
   `flow: "<name>"` as an argument. Nothing existing breaks — a document already carrying the
   field is unaffected — but a caller that relied on the single-install fallback must declare.
 - Initiatives written before this release keep whatever flow was stamped into their
-  documents. `2026-09-05-blockeval-casebox` in `product-1` was mis-stamped by the bug above and is
+  documents. `2026-09-05-blockeval-casebox` in `team-one` was mis-stamped by the bug above and is
   archived rather than repaired.
 
 ## [0.11.4] — 2026-09-05
 
 ### Fixed
 - **An evaluation wrote its report into a delivery team's store.** The first real run of
-  zz-block-eval put `2026-09-05-blockeval-casebox` into `product-1`. `issue_pat` says a person
+  zz-block-eval put `2026-09-05-blockeval-casebox` into `team-one`. `issue_pat` says a person
   keeps one token and "picks the team by picking that team's agent" — but an agent carries no
   team to the gateway, which resolves it from `principal.active_team_id`, so picking the
   evaluation agent picked whichever team the person last worked in. Nothing warned, and
@@ -1219,7 +1225,7 @@ actually produced.
 - **Non-document skills can be judged at all.** The run trace is the document: one run per
   subject, its ordered events as the text, every score citing specific events. Five of
   forty-six skills write a gated document; the rest were previously unjudgeable, including
-  `sm-build`, which has the largest surface on the platform.
+  `ops-build`, which has the largest surface on the platform.
 - `eval-record` stores a judgement from any judge, with the judge named; `rubric-load
   --affirm` records that a version is judged by a ruler, which the evaluation gate decides
   and only `eval-store` could previously write.
@@ -1233,7 +1239,7 @@ actually produced.
   base rather than that a file exists, because the promotion step it used to rely on never
   ran once in any initiative.
 - `zz-evolve` → `zz-skill-evolve`, `zz-distil` → `zz-block-evolve`, named for the flows they
-  consume. `blocks-capabilities` moved to `sm-select`'s references.
+  consume. `blocks-capabilities` moved to `ops-select`'s references.
 - Two platform rules moved into `zz-backbone` from the skill that held them: what a team
   overlay may and may not do, and the tag kinds the knowledge base enforces.
 
@@ -1269,7 +1275,7 @@ actually produced.
 ### Added
 
 - **A skill can be read in the browser, and so can what ships beside it.** The console could
-  say sm-intent scored 3.42 and never show a line of what sm-intent asks for. Every skill —
+  say ops-intent scored 3.42 and never show a line of what ops-intent asks for. Every skill —
   a flow's steps, a flow's own front door, a block's published method — now serves its text
   and its reference material, at `/flows/<flow>/skills/<skill>` and
   `/blocks/<block>/skills/<skill>`.
@@ -1283,13 +1289,13 @@ actually produced.
 
 - **Every document now knows which skill version wrote it.** Derived, not stored: from the
   run that produced it, then from the eval that judged it, then from the version in force
-  when it was created. sm-intent went from 30 attributable documents of 81 to all 81. The
+  when it was created. ops-intent went from 30 attributable documents of 81 to all 81. The
   scores view filters on it, so "how is 1.1 doing" no longer averages 1.0's work into the
   answer.
 
 - **Every document a skill produced, scored or not.** A mean over the documents a judge
   happened to read is a mean over an undisclosed sample. `/skills/<name>/scores` lists the
-  whole set — sm-intent has 81 intent.md documents and 30 have ever been judged.
+  whole set — ops-intent has 81 intent.md documents and 30 have ever been judged.
 
 - **The console reads flows and blocks as separate things**, each with its skills. A flow is
   an agent method that runs against blocks; a block is something reached over MCP carrying
@@ -1457,12 +1463,12 @@ actually produced.
 
 - **`CaseBox Assist`, an agent for working INSIDE CaseBox** — vendored under catalog/casebox,
   and since removed with the rest of the third-party blocks. It
-  carries casebox and n8n, and the CaseBox team's own four field guides: operating casebox's tools,
+  carries casebox and RuleMill, and the CaseBox team's own four field guides: operating casebox's tools,
   writing its case queries, its scripts, and its `{{template}}` strings. Vendored from the
   CaseBox plugin, so the block team owns the content; the version and `when_to_use` lines are
   ours, because this platform requires them.
 - It is deliberately not a delivery flow: no gates, no documents, no approvals. Its prompt says
-  so and routes anyone who wants something BUILT to the Solution Agent, because a build with no
+  so and routes anyone who wants something BUILT to the Operations Agent, because a build with no
   spec and no gate is the thing the gates exist to prevent.
 - The four guides are the ones that would have saved most of the evening this package came out
   of: a round-robin switch is a *script*, an assignment email is a *template*, and a
@@ -1526,17 +1532,17 @@ in front of the door rather than a helpful warning.
 - **Confirm reachability when a flow WRITES DOWN that it will use a block** — not at the first
   call, by which point the work is planned around it. Every flow has that moment because every
   flow records its decisions; what the document is called is the flow's business.
-- **`sm-select` narrows on the capability sheet before opening any server**, then profiles the
+- **`ops-select` narrows on the capability sheet before opening any server**, then profiles the
   one or two candidates that survive. It used to profile every connected block from its tool
   surface, which costs a hundred tools each and still leaves the judgement undone.
-- **`sm-plan` is where reachability is confirmed**, for the blocks `selection.md` names and no
+- **`ops-plan` is where reachability is confirmed**, for the blocks `selection.md` names and no
   others. A person who needs one block signs in to one block.
 
 ### Added
 
 - **`blocks-capabilities`, a platform skill: what each building block is FOR.** The prose existed
   — fit, poor fit, honest limits — and only the EVALUATION read it. So the judge knew casebox runs its
-  own workflow engine and that adding n8n is the expensive mistake, while the agent being graded
+  own workflow engine and that adding RuleMill is the expensive mistake, while the agent being graded
   was told to work it out from verb names. The two now read the same sheet.
 - **A gate check that every block in the registry has a section in it**, because a block nobody
   can read about is a block chosen by guesswork — and the fallback is the tool-surface trawl this
@@ -1752,10 +1758,10 @@ against the real CaseBox, not only against our mocks.
   One agent owns credentials: platform tokens, block API keys, and `connect_block`. Delivery
   agents need no credential tools, because the gateway resolves a person's credentials from
   who they are rather than from which agent asked.
-- **`CASEBOX_OAUTH_SCOPE`, `BOOKIT_OAUTH_SCOPE`, `N8N_OAUTH_SCOPE`** — what to ask a block's
+- **`CASEBOX_OAUTH_SCOPE`, `BOOKIT_OAUTH_SCOPE`, `RULEMILL_OAUTH_SCOPE`** — what to ask a block's
   authorization server for. Unset means ask for whatever the block's own protected-resource
   document advertises, which is right for a block that publishes its whole list. CaseBox does
-  not: its resource names `cms:full_access` while the client also holds `offline_access`, and
+  not: its resource names `<block>:full_access` while the client also holds `offline_access`, and
   without that no refresh token is issued.
 - **A judge that scores substance rather than shape**, with the controls that show it does: a
   scrambled control scoring each document against a neighbour's requirement caught 104 of 104,
@@ -2019,7 +2025,7 @@ read this as one release and note that the breaking changes take the minor.
 - **Everything is TypeScript. There is no Python left.** Thirteen files and ~3,600 lines —
   the smoke harness, the conformance measurer, the chain probe, the outcome audit, the tool
   report, the classifier cases, the block probe, the credential batcher, the provisioner, the
-  turn collector, the shared MCP client and the SM flow's scenarios. They live in
+  turn collector, the shared MCP client and the Operations flow's scenarios. They live in
   `packages/tools`, each with an npm script, and the client they all use is
   `packages/mcp-client` — the counterpart to `@zz/mcp-http`, which hosts one.
 
@@ -2096,7 +2102,7 @@ read this as one release and note that the breaking changes take the minor.
 
   The cost of the old arrangement was countable: of 93 approved documents on this deployment
   four carried no `approved_at` and two no `approved_by`; two smoke runs signed a gate as
-  `product_group_1`, a team slug; the first live run closed an initiative `accepted` that
+  `team_one`, a team slug; the first live run closed an initiative `accepted` that
   nobody had accepted. The ANONYMOUS blocklist exists to catch the worst of that, and its own
   comment admits there is no way to test whether a string is a person.
 
@@ -2122,7 +2128,7 @@ read this as one release and note that the breaking changes take the minor.
   version citing the source is what it means.
 
 - **Identity is a port with adapters.** The PAT and the forwarded compose-network header are
-  two adapters behind one interface; adding TechPass OIDC, Keycloak or corporate directory is adding an
+  two adapters behind one interface; adding Keycloak, another OIDC provider or a corporate directory is adding an
   array entry rather than surgery on identity resolution. Behaviour is unchanged, and
   authorisation still converges on one path for every door. One property became explicit: a
   door that says NO ends the request, so a revoked PAT 401s instead of falling through to be
@@ -2359,7 +2365,7 @@ read this as one release and note that the breaking changes take the minor.
   field the platform owns" refuses a skill template that carries any of the five owned fields as
   a key.
 - **Four skills still told the agent to write the verdict by hand**, which the platform now
-  refuses: `ops-flow` and `sdlc-flow` on `outcome:`, `sm-verify` contradicting itself between
+  refuses: `ops-flow` and `sdlc-flow` on `outcome:`, `ops-verify` contradicting itself between
   two sections forty lines apart, and `sdlc-record` handing over an `outcome: delivered`
   block plus a `closed:` field the platform has never had — while the same file, further
   down, correctly said `close()` derives it. The stale half came first, which is the half an
@@ -2507,7 +2513,7 @@ Carries **zz-blocks 0.3.2**.
   accepted and both normalised by the index" — which is precisely how both got into the
   store, since the platform stamps ISO while every sm skill told the author to name the
   folder day-month-year. ISO also sorts, so a listing of a team's store is a timeline.
-  `sm-intent` no longer says "take the date from the system", which is what an agent
+  `ops-intent` no longer says "take the date from the system", which is what an agent
   believed it was doing while reasoning from the newest stored row; it names `get_my_info`.
 
 ### Fixed
@@ -2712,7 +2718,7 @@ at somebody's own words.
   nothing says why. The note had said UNVERIFIED since it was written and its guess did not
   work either. The package now carries `codex mcp add --bearer-token-env-var`, and names two
   other refusals that read as platform faults and are not.
-- **`sm-select` must write what past work recorded** about each candidate block, under a heading
+- **`ops-select` must write what past work recorded** about each candidate block, under a heading
   a reader and a check can both find, with `(nothing recorded)` as a required answer. The lookup
   was already instructed and produced no artifact, so nothing could tell it had been skipped —
   and two runs of one scenario showed the cost: one consulted the corpus and passed, the other
@@ -2785,7 +2791,7 @@ at somebody's own words.
   empty key and that key is read back only when there is exactly one call and one answer — wrong
   in the one situation where the key matters. Multi-byte characters straddling a write boundary
   also became U+FFFD, silently, since the JSON around them is ASCII and still parses.
-- **`sm-select`'s ledger template produced zero rows.** The skill's Output section says the
+- **`ops-select`'s ledger template produced zero rows.** The skill's Output section says the
   ledger is keyed by acceptance criterion; its Choose section showed a template grouped the
   other way, with no key opening any row. The claim index is non-empty only because the authors
   believed the prose over the example. The template is that table now.
@@ -3018,7 +3024,7 @@ behaved that way.
   compose file, so an empty environment resolves; `ZZ_VERSION` and `ZZ_BLOCKS_VERSION` still
   override, which is what makes a rollback one edit.
 - **One image per repo instead of two.** gateway and zz-core are the same image with a
-  different `SERVICE`; n8n and bookit the same with a different `SERVER_DIR`. They remain
+  different `SERVICE`; RuleMill and bookit the same with a different `SERVER_DIR`. They remain
   separate containers — the internet-facing one keeps `/artifacts` read-only.
 - **The catalog ships inside the image.** A released version now describes the method as well
   as the code. The build override mounts the working tree back over it for development.

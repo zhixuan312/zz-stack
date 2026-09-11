@@ -67,7 +67,7 @@ One tool capability is likewise platform-owned: **zz-knowledge**, the
 improvement analysis every team's every flow gets for free.
 
 Everything else is deliberately replaceable: flows evolve and get
-discarded; interfaces follow the times (LibreChat today; Claude Code,
+discarded; interfaces follow the times (Claude Code,
 Codex, Hermes, our own web tomorrow); models rotate; blocks belong to
 other teams.
 
@@ -110,7 +110,7 @@ declares its own documents, roles, gate chain and — per document — the secti
 headings it must carry, in its plugin. The platform enforces the headings
 without knowing what any of them mean: WHICH headings is the flow's business,
 THAT they are present is the platform's. A list of them in zz-core would make
-this an sdlc platform. The SM
+this an sdlc platform. The Operations
 flow declares five documents and three gates — `intent.md`, `spec.md`, `plan.md`, each
 `gate: true`, with the acceptance at verification being a stakeholder verdict rather than a
 fourth gate; a minimal flow may declare one spec and one gate; both are fully compliant. The platform enforces
@@ -226,7 +226,7 @@ Stated once, in `zz-backbone`, inherited by every flow on every harness.
   nobody can answer for.
 - **Structure is the platform's job.** `flow` and `type` are stamped by
   zz-core on write from the manifest — asking every flow author to repeat
-  them in every template is how three of five SM documents once indexed
+  them in every template is how three of five Operations documents once indexed
   with no provenance at all.
 - **A verdict is recorded by an ACT, not by typing a field.** `status`,
   `approved_by`, `approved_at`, `outcome` and `closed_by` are the platform's;
@@ -258,7 +258,7 @@ replaceable; the platform services and the state they guard are not.**
 | Clients | web front end (LibreChat) · CLI harnesses (Claude Code, Codex) · agent runtime (Hermes) · read surface (Web KB) | yes, all of them | ZZ (projections) |
 | Catalog | sdlc-flow · zz-access (access and the platform register, two skills on one door) · zz-skill-eval · zz-block-eval · each team's own packages under `catalog/<team>/` (flows, and skills-only packages) | yes, per team | flow team (content) / ZZ (machinery) |
 | Platform services | gateway · zz-core | **no** | ZZ |
-| Blocks | CaseBox · n8n · BookIt | yes, behind R1–R14 | third parties |
+| Blocks | CaseBox · RuleMill · BookIt | yes, behind R1–R14 | third parties |
 | State | Postgres `zz` schema · artifacts volume | **no** | ZZ |
 
 Each service has one focus, and questions belong to exactly one of them:
@@ -408,13 +408,13 @@ around a gate.
 | Continuity | `initiative_status`: the same next move in every harness | zz-core |
 | Credentials | each person's own block keys, stored once, injected per call, never echoed | gateway |
 | Evaluation | smoke engine, manifest audit, the tool record, block conformance against the published standard, the cross-flow comparison, and the claim index — all flow-agnostic | packages/tools + zz-core (`testing/` is the shell around them) |
-| Operations | one compose file; `issue-first-pat.sh` for the one token a fresh install needs; `install-backup-cron.sh`, idempotent by construction, scheduling a nightly backup, a weekly restore drill and the hourly turn collector | deploy/ |
+| Running it | one compose file; `issue-first-pat.sh` for the one token a fresh install needs; `install-backup-cron.sh`, idempotent by construction, scheduling a nightly backup, a weekly restore drill and the hourly turn collector | deploy/ |
 
 ## 6. Where we are (verified, in production)
 
 **Re-established on 2026-09-11, against the deployment rather than against memory.** Everything
 below was checked by calling the live platform or reading its database while writing this. The
-previous §6 opened with the Operations flow "running on LibreChat against REAL CaseBox staging plus two reference mock blocks" — ops-flow is not in the catalog, LibreChat was
+previous §6 opened with the Operations flow "running against a real block plus two reference mocks" — ops-flow is not in the catalog, LibreChat was
 removed on 2026-09-10, and no block is registered. A section held to "verified, in production"
 had become the one place describing a platform that was dismantled.
 
@@ -442,7 +442,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 278 checks**, and six of them RUN code rather than reading it: the
+- **The offline gate is 279 checks**, and six of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, plus the two behaviour suites the zz-core split made reachable.
 
@@ -502,7 +502,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 627 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **278 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **279 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".
@@ -861,7 +861,7 @@ Two faults, one consequence. The resolver walked the initiative's folder in `rea
 and took the first `flow:` it met, where the design — stated in zz-backbone and repeated in
 every comment around the resolver — is that the FIRST document declares it. And the check
 that refuses an undeclared first document counted only rows in `zz.flow_install`, which a
-platform flow never has: `product-1` was excused because it had exactly one install, and
+platform flow never has: `team-one` was excused because it had exactly one install, and
 `zz-platform`, which runs nothing BUT platform flows, was excused because it had none.
 
 **What is true now:** documents are consulted oldest first, and the set a team must choose
@@ -888,7 +888,7 @@ never scores anything.
 
 **What is NOT yet true:** neither flow has completed a run. No `rulers.md` has been approved,
 no `findings.md` has closed an initiative, and `zz-platform`'s store holds no evaluation. The
-numbers the flows already produce — sm-intent at 2.27 on constraints over 30 documents,
+numbers the flows already produce — ops-intent at 2.27 on constraints over 30 documents,
 casebox's `get_apps` refusing on every call across nineteen initiatives — were produced by running
 the scripts, not the flows. Running both end to end is the acceptance test and has not
 happened.
@@ -904,7 +904,7 @@ reachable at all: block skills are packaged into no plugin, so MCP is their only
 path and it served SKILL.md and nothing else.
 
 Every document now carries the skill version that wrote it — from the run that produced it,
-then the eval that judged it, then the version in force when it was created. sm-intent went
+then the eval that judged it, then the version in force when it was created. ops-intent went
 from 30 attributable documents of 81 to all 81, and a score can be read against one version
 instead of averaged across two. The derivation was validated before it was trusted: on the
 one skill that has ever changed version, the window predicts the record on every document
@@ -1035,8 +1035,8 @@ our own work.
 | Phase | Shipped | Proof |
 |---|---|---|
 | 1 · One door | zz schema in OUR db (the front end was a guest in it and is now gone — db+role renamed webui→zz); PAT identity (hashed, scoped, revocable); /admin/mcp with RBAC + confirm-params + audit; /core proxy; render_agent_definition; render_harness_config | tailnet w/o PAT → 401; spoofed header + PAT → identity rewritten to PAT owner; skills via one URL |
-| 2 · Registry | flow.json manifests drive the guardrail chain; install_flow/grant_tool registry; /p enforcement once a team has grants | chain enforced from manifest; registry seeded for product_group_1 |
-| 3 · Knowledge | the journal is the PLATFORM's, on zz-platform, read by every team (search covers the caller's team and that shelf); version snapshots at approval; sources/ (ungated, immutable, auto envelope); mechanical ledger row at close; zz.doc index-on-write + reindex; search_knowledge with provenance; knowledge_add/supersede; zz-knowledge, run at the end of every flow; envelope fields in SM templates | full chain test: 3 snapshots + ledger row + citable search hit; journal node 0001; OKR graded 0.75 |
+| 2 · Registry | flow.json manifests drive the guardrail chain; install_flow/grant_tool registry; /p enforcement once a team has grants | chain enforced from manifest; registry seeded for team_one |
+| 3 · Knowledge | the journal is the PLATFORM's, on zz-platform, read by every team (search covers the caller's team and that shelf); version snapshots at approval; sources/ (ungated, immutable, auto envelope); mechanical ledger row at close; zz.doc index-on-write + reindex; search_knowledge with provenance; knowledge_add/supersede; zz-knowledge, run at the end of every flow; envelope fields in Operations templates | full chain test: 3 snapshots + ledger row + citable search hit; journal node 0001; OKR graded 0.75 |
 | 4 · Collaboration | /app web v1 (PAT login, browse, rendered docs, search, attach a source, activity) | browser note → lands as a source on the initiative → agent revises the document citing it → the new version IS the resolution; the proof-loop demo is real |
 | 5 · Many flows | flow-agnostic guardrails: the chain comes from each flow's manifest | proven with a one-document/one-gate fixture — same zz-core image, different manifest, different discipline, zero code changes; the fixture was deleted once it had done its job |
 
@@ -1049,12 +1049,12 @@ phase 0 and the Ongoing row.
 
 | Phase | Deliverable | Definition of done |
 |---|---|---|
-| **0 · Converge (now)** | SM flow clean pass | one full smoke round, zero changes, audits all PASS; deploy the catalog/sm structure; round report + deck refresh |
-| **1 · One door** | gateway as the single platform endpoint + PAT identity | any harness configures ONE URL + one token; self-declared headers dead; Codex/CC run the SM flow end-to-end with no Open WebUI involvement |
+| **0 · Converge (now)** | Operations flow clean pass | one full smoke round, zero changes, audits all PASS; deploy the catalog/ops structure; round report + deck refresh |
+| **1 · One door** | gateway as the single platform endpoint + PAT identity | any harness configures ONE URL + one token; self-declared headers dead; Codex/CC run the Operations flow end-to-end with no Open WebUI involvement |
 | **2 · Install registry** | team → flows → agents → tool grants as platform truth | Open WebUI bootstrap and Codex config are *generated projections*; per-flow tool scoping enforced by the gateway |
 | **3 · Knowledge plane** | zz-kb read/search/provenance API + web v1 (read-only, responsive) | "search across teams by envelope" works; browse retires; today's team store migrates in place |
 | **4 · Collaboration** | sources from the browser, activity feeds, agent-reads-sources | the loop: B writes from a phone → it lands as a source → A's agent revises citing it → versions show it |
-| **5 · Many flows** | chain-from-manifest guardrails; second real flow in the catalog | a non-SM flow (e.g. personal zz-flow) installs and runs with zero platform changes |
+| **5 · Many flows** | chain-from-manifest guardrails; second real flow in the catalog | a non-Operations flow (e.g. personal zz-flow) installs and runs with zero platform changes |
 | **Ongoing** | contract evangelism · smoke gating · zz-knowledge cadence | block teams ship their own plugins (casebox's landed; our interim casebox-stg-usage became a reference on theirs); nothing ships that fails the suite; the ledger shows question-load falling |
 
 ## 8. Principles (the rules that settle arguments)

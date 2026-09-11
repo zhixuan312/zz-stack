@@ -15,7 +15,7 @@ import { flows } from "../facts.mjs";
 
 check("a selection stage requires the past-work lookup and names where it goes", () => {
   // An instruction that produces no artifact is one nothing can check, and this one had
-  // already been skipped. sm-select §"Check what past initiatives learned about these blocks"
+  // already been skipped. ops-select §"Check what past initiatives learned about these blocks"
   // told the agent to search; the Output section did not require the answer to appear. On
   // 2026-08-27 two runs of the same scenario showed what that costs: one wrote what past work
   // recorded, took the six verified traps from casebox-stg-usage, and passed; the other did not,
@@ -395,8 +395,8 @@ check("no evaluation tool is wired to one flow", () => {
 });
 
 check("a team overlay adds and cannot replace", () => {
-  // A team running ops-flow may want two more considerations at sm-select. That is not a
-  // different sm-select, and forking one to say it is how five teams end up with five
+  // A team running ops-flow may want two more considerations at ops-select. That is not a
+  // different ops-select, and forking one to say it is how five teams end up with five
   // slightly different flows and a `flow` column nobody can group by.
   //
   // So an overlay is APPENDED to the skill, never substituted for it, and that is a property

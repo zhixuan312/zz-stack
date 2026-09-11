@@ -2,10 +2,10 @@
  * WHICH BUILDING BLOCKS A STAGE MAY CALL, decided per call at the proxy.
  *
  * Until this existed the platform had exactly one block boundary and it was the TEAM: a
- * manifest's `tools` granted casebox, n8n and bookit to the whole of ops-flow, so sm-intent —
- * which interviews a person and names no technology at all — had the same reach as sm-build.
- * The event log shows what that cost: 62 casebox calls, 53 n8n and 27 bookit stamped
- * `sm-intent`, one of them `update_case_type`, which is a write. Every stage skill said in
+ * manifest's `tools` granted casebox, RuleMill and bookit to the whole of ops-flow, so ops-intent —
+ * which interviews a person and names no technology at all — had the same reach as ops-build.
+ * The event log shows what that cost: 62 casebox calls, 53 RuleMill and 27 bookit stamped
+ * `ops-intent`, one of them `update_case_type`, which is a write. Every stage skill said in
  * prose not to, and prose is not a boundary.
  *
  * WHAT THIS DOES NOT DO is take the tools out of the model's context. A client is handed its
@@ -43,8 +43,8 @@ function declaredBlocks(flow: string, step: string): FlowStage["blocks"] | undef
  *
  * Read from the document's FRONTMATTER, never from its prose. A selection document explains
  * itself at length, and the one on this deployment names casebox in a heading and then names
- * bookit and n8n in the paragraphs REJECTING them — so a parser reading the body would
- * grant exactly the blocks the document argued against. `blocks:` is written by sm-select
+ * bookit and RuleMill in the paragraphs REJECTING them — so a parser reading the body would
+ * grant exactly the blocks the document argued against. `blocks:` is written by ops-select
  * through write_file's `fields` and is the flow's own frontmatter key.
  *
  * Cached briefly and per initiative: this runs on every block call, and a selection document

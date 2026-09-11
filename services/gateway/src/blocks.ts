@@ -52,8 +52,9 @@ function registry(raw: string): PlatformMap {
 /** The blocks this gateway routes.
  *
  * EMPTY BY DEFAULT, AND THAT IS A REAL STATE. This deployment routes no building block: the
- * two stand-ins were their own repository and went with it on 2026-09-10, and the one real
- * block belonged to work rather than to this project. `/p/<block>/mcp` therefore answers "no
+ * stand-ins were their own repository and went with it on 2026-09-10, and the blocks this
+ * platform was developed against are other people's servers, not part of it.
+ * `/p/<block>/mcp` therefore answers "no
  * such block" for everything, which is the honest answer and the one its own refusal already
  * gives by name.
  *

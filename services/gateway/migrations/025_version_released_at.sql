@@ -1,7 +1,7 @@
 -- WHEN EACH SKILL VERSION BEGAN, so a document can be attributed to the one that wrote it.
 --
 -- `zz.doc.produced_by_run_id` is the mechanical record and it is the best answer where it
--- exists — but it only began being written on 2026-08-31, and forty of sm-intent's
+-- exists — but it only began being written on 2026-08-31, and forty of ops-intent's
 -- eighty-one documents predate it. Their version was never recorded anywhere, and a mean
 -- over "the documents we happen to have a run link for" is a mean over an accident.
 --
@@ -10,7 +10,7 @@
 -- between two of those moments was written by the version in force at the time — which is
 -- not a guess but the only version that existed.
 --
--- IT IS VALIDATED, NOT ASSUMED. sm-select is the only document-producing skill that has ever
+-- IT IS VALIDATED, NOT ASSUMED. ops-select is the only document-producing skill that has ever
 -- changed version (1.0 → 1.1). Every one of the twenty-nine selection.md documents whose
 -- version IS recorded falls after that boundary and is recorded as 1.1; every unrecorded one
 -- falls before it, the two groups separated by two and a half days. The window predicts the
@@ -29,7 +29,7 @@
 -- By NAME, so this runs the same against production's own uuids.
 insert into zz.skill_version (skill_id, version)
 select k.id, v.version
-  from (values ('sm-select','1.0'), ('sm-build','1.0')) as v(skill, version)
+  from (values ('ops-select','1.0'), ('ops-build','1.0')) as v(skill, version)
   join zz.skill k on k.name = v.skill
  where not exists (
    select 1 from zz.skill_version sv where sv.skill_id = k.id and sv.version = v.version)
@@ -42,15 +42,15 @@ select k.id, v.version
 update zz.skill_version sv
    set released_at = t.at
   from (values
-    ('sm-intent', '1.0', timestamptz '2026-08-23 00:07:10+08'),
-    ('sm-spec',   '1.0', timestamptz '2026-08-23 00:07:10+08'),
-    ('sm-select', '1.0', timestamptz '2026-08-23 00:07:10+08'),
-    ('sm-select', '1.1', timestamptz '2026-08-30 16:57:28+08'),
-    ('sm-plan',   '1.0', timestamptz '2026-08-23 00:07:10+08'),
-    ('sm-verify', '1.0', timestamptz '2026-08-23 00:07:10+08'),
-    ('sm-build',  '1.0', timestamptz '2026-08-23 00:07:10+08'),
-    ('sm-build',  '1.1', timestamptz '2026-08-30 16:57:28+08'),
-    ('sm-build',  '1.2', timestamptz '2026-08-30 18:08:11+08')
+    ('ops-intent', '1.0', timestamptz '2026-08-23 00:07:10+08'),
+    ('ops-spec',   '1.0', timestamptz '2026-08-23 00:07:10+08'),
+    ('ops-select', '1.0', timestamptz '2026-08-23 00:07:10+08'),
+    ('ops-select', '1.1', timestamptz '2026-08-30 16:57:28+08'),
+    ('ops-plan',   '1.0', timestamptz '2026-08-23 00:07:10+08'),
+    ('ops-verify', '1.0', timestamptz '2026-08-23 00:07:10+08'),
+    ('ops-build',  '1.0', timestamptz '2026-08-23 00:07:10+08'),
+    ('ops-build',  '1.1', timestamptz '2026-08-30 16:57:28+08'),
+    ('ops-build',  '1.2', timestamptz '2026-08-30 18:08:11+08')
   ) as t(skill, version, at)
   join zz.skill k on k.name = t.skill
  where sv.skill_id = k.id and sv.version = t.version

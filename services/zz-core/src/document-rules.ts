@@ -113,7 +113,7 @@ export function fieldRefusal(fields: Record<string, unknown> | undefined): strin
  *
  * The cost of that was countable rather than theoretical. Of 93 approved documents on this
  * deployment, four carried no `approved_at` and two no `approved_by`; two consecutive smoke
- * runs signed a gate as `product_group_1`, which is a team slug and not a person; the first
+ * runs signed a gate as `team_one`, which is a team slug and not a person; the first
  * live run closed an initiative `accepted` when the scripted stakeholder had accepted
  * nothing. The platform grew an ANONYMOUS blocklist to catch the worst of it, whose own
  * comment admits there is no way to test whether a string is a person — and that list exists
@@ -291,7 +291,7 @@ export function decisionRows(body: string): DecisionRow[] {
   // skill can be tightened to one shape later; the rows already written cannot.
   //
   // The verdict carries a parenthetical in this shape — `*Native (BookIt).*`,
-  // `*Achievable (n8n -> CaseBox).*` — and it is the most useful half: it names the
+  // `*Achievable (RuleMill -> CaseBox).*` — and it is the most useful half: it names the
   // block PER ROW, where the document's frontmatter only names them for the whole choice.
   // A first regex demanded a bare `*Native.*` and matched one selection document out of six.
   for (const m of body.matchAll(new RegExp(

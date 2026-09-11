@@ -210,7 +210,7 @@ export function registerEvaluationTools(server: McpServer): void {
       const r = (runs[0] ?? {}) as Record<string, string>;
       const sf = (surface[0] ?? {}) as Record<string, string>;
       // ACROSS EVERY ROUND OF THIS VERSION, not the last round's tally. A resumed evaluation
-      // splits into two rows — sm-verify v1.0 has one of 3 and one of 7 because a call timed
+      // splits into two rows — ops-verify v1.0 has one of 3 and one of 7 because a call timed
       // out and finished server-side — and reading the last one reported 3 of 7 judged when
       // all 7 were.
       const judged = Number((scored[0] ?? {}).judged ?? 0);
@@ -226,7 +226,7 @@ export function registerEvaluationTools(server: McpServer): void {
       // whatever the store looked like that day. What is AVAILABLE is now. The link between a
       // document and the version that produced it runs through zz.run, and reconcileRuns
       // rebuilds runs from the event log, so a document can change hands between versions
-      // after it was judged. sm-verify reads 9 judged against 7 available for exactly that
+      // after it was judged. ops-verify reads 9 judged against 7 available for exactly that
       // reason, and a coverage line that printed "9 of 7" as a ratio would be inventing
       // precision the data does not have.
       row("Judged", `${judged} — ${pop.population.what.replace(/^the /, "")}, ` +

@@ -322,7 +322,7 @@ async function fromComposeNetwork(req: Request): Promise<boolean> {
  * logging in means surgery on identity resolution — and that is the first thing an
  * organisation asks about and the most expensive place to change late.
  *
- * So the two doors that exist today are two adapters, and adding TechPass OIDC, Keycloak,
+ * So the two doors that exist today are two adapters, and adding Keycloak, another OIDC provider,
  * the directory or anything else is adding one more to this array. `pat` stays forever in every
  * profile as the fallback that needs no directory.
  *
@@ -513,7 +513,7 @@ export function callerAuth(headers: Record<string, string | string[] | undefined
  * A TEAM-BOUND token never carries platform authority, whoever holds it. Narrowing `teams`
  * in resolvePat did nothing for a superadmin, because every tool short-circuits on
  * platformRole and never looks at `teams` at all — so a token stamped "(scope admin, team
- * product_group_1)" listed every team on the platform. Verified live before this.
+ * team_one)" listed every team on the platform. Verified live before this.
  *
  * "Bound" has to mean the same thing for everyone or it means nothing. A superadmin who
  * wants a token confined to one team's work asks for one and gets it; the unbound token

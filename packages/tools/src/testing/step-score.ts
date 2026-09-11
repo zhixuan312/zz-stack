@@ -4,7 +4,7 @@
  *   zz-tool step-score [--since '7 days'] [--json] [--psql '<command>']
  *
  * WHY THIS EXISTS. Every other report here says where a run went; none says whether that was
- * GOOD. "sm-select refused 8 of 44 calls" is a fact nobody can act on until somebody decides
+ * GOOD. "ops-select refused 8 of 44 calls" is a fact nobody can act on until somebody decides
  * whether 18% is bad — and for ten rounds that decision was made by eye, one round at a time,
  * which is how variance gets written up as improvement. Idle turns went 32% then 0% then 31%
  * across three rounds of one configuration, and the 0% was reported as a rule working.
@@ -66,7 +66,7 @@ interface Row {
   run: string | null;
   /** THE UNIT OF EVIDENCE. Not the round and not the scenario — an initiative is one piece of
    * work, and in production there are no scenarios, only initiatives. "Across 500 initiatives
-   * that reached sm-select, is sm-select effective" is the question this table exists to
+   * that reached ops-select, is ops-select effective" is the question this table exists to
    * answer, and the initiative is what makes it countable. */
   initiative: string | null;
 }

@@ -54,16 +54,16 @@ interface Case {
 }
 
 const oneTeam = identity({
-  teams: [{ slug: "product_group_1", role: "member" }],
-  activeTeam: "product_group_1",
+  teams: [{ slug: "team_one", role: "member" }],
+  activeTeam: "team_one",
 });
 
 const twoTeams = identity({
   teams: [
-    { slug: "product_group_1", role: "member" },
+    { slug: "team_one", role: "member" },
     { slug: "product_group_2", role: "member" },
   ],
-  activeTeam: "product_group_1",
+  activeTeam: "team_one",
 });
 
 const superadmin = identity({
@@ -79,14 +79,14 @@ const CASES: Case[] = [
     name: "a member with one team",
     id: oneTeam,
     query: {},
-    expect: { kind: "team", slug: "product_group_1" },
+    expect: { kind: "team", slug: "team_one" },
     why: "the only team they have is also their activeTeam — nothing to choose between",
   },
   {
     name: "a member with two teams and no parameter",
     id: twoTeams,
     query: {},
-    expect: { kind: "team", slug: "product_group_1" },
+    expect: { kind: "team", slug: "team_one" },
     why: "no ?team= must fall back to activeTeam, the ONE team the platform says they are " +
          "acting as — not the first or last row of `teams`",
   },
@@ -110,7 +110,7 @@ const CASES: Case[] = [
     name: "a member sending the platform-scope parameter",
     id: oneTeam,
     query: { scope: "platform" },
-    expect: { kind: "team", slug: "product_group_1" },
+    expect: { kind: "team", slug: "team_one" },
     why: "a non-superadmin asking for platform scope is not an error — it must fall through " +
          "to team scope silently, with nothing in the response disclosing that the " +
          "parameter exists or what it would have done for someone else",
@@ -141,10 +141,10 @@ const CASES: Case[] = [
   {
     name: "a member sending a malformed slug",
     id: oneTeam,
-    query: { team: "Product Group 1" },
+    query: { team: "Team One" },
     expect: { kind: "refused", status: 400, error: "team must be a slug" },
     why: "checked before membership, so a string that was never a slug gets \"team must be " +
-         "a slug\" rather than a misleading \"not a member of Product Group 1\"",
+         "a slug\" rather than a misleading \"not a member of Team One\"",
   },
   {
     name: "a superadmin naming a team they do not belong to",
@@ -153,8 +153,8 @@ const CASES: Case[] = [
       teams: [{ slug: "zz-platform", role: "admin" }],
       activeTeam: "zz-platform",
     }),
-    query: { team: "product_group_1" },
-    expect: { kind: "team", slug: "product_group_1" },
+    query: { team: "team_one" },
+    expect: { kind: "team", slug: "team_one" },
     why: "a superadmin's whole point is reading a team they do not belong to — the " +
          "membership check must not refuse them the way it refuses a member",
   },
@@ -186,13 +186,13 @@ interface TeamAuthorityCase {
 }
 
 const teamAdminOfP1 = identity({
-  teams: [{ slug: "product_group_1", role: "admin" }],
-  activeTeam: "product_group_1",
+  teams: [{ slug: "team_one", role: "admin" }],
+  activeTeam: "team_one",
 });
 
 const memberOfP1 = identity({
-  teams: [{ slug: "product_group_1", role: "member" }],
-  activeTeam: "product_group_1",
+  teams: [{ slug: "team_one", role: "member" }],
+  activeTeam: "team_one",
 });
 
 const teamAdminOfP2 = identity({
@@ -212,30 +212,30 @@ const superadminBoundToP2 = identity({
 const TEAM_AUTHORITY_CASES: TeamAuthorityCase[] = [
   {
     name: "a team admin on their own team",
-    id: teamAdminOfP1, team: "product_group_1", expect: true,
+    id: teamAdminOfP1, team: "team_one", expect: true,
     why: "an admin of the team named is exactly who add_member, install_flow and their " +
          "console-side routes exist for",
   },
   {
     name: "a plain member of that team",
-    id: memberOfP1, team: "product_group_1", expect: false,
+    id: memberOfP1, team: "team_one", expect: false,
     why: "membership is not administration — a member changing their own team's roster " +
          "or flows is exactly the escalation this function exists to refuse",
   },
   {
     name: "a team admin of a different team",
-    id: teamAdminOfP2, team: "product_group_1", expect: false,
+    id: teamAdminOfP2, team: "team_one", expect: false,
     why: "administering one team grants nothing about another — the console's own control-" +
          "hiding rule (me.teams.some(...)) depends on this staying false",
   },
   {
     name: "a superadmin",
-    id: superadmin, team: "product_group_1", expect: true,
+    id: superadmin, team: "team_one", expect: true,
     why: "a superadmin is every team, the same rule isTeamAdmin states for its own reason",
   },
   {
     name: "a superadmin holding a team-bound PAT for another team",
-    id: superadminBoundToP2, team: "product_group_1", expect: false,
+    id: superadminBoundToP2, team: "team_one", expect: false,
     why: "isSuper returns false the moment a PAT names a team — a token deliberately " +
          "confined to product_group_2 must not reach back into platform authority for a " +
          "team it was never bound to, which a naive `platformRole === \"superadmin\"` " +

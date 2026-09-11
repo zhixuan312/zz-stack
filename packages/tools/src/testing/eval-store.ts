@@ -1,8 +1,8 @@
 /**
  * eval-store — put an evaluation where it survives, which is not a temp directory.
  *
- *   zz-tool eval-store --dir <rundir> --flow sm/ops-flow --skill sm-intent --version 1.0
- *   zz-tool eval-store --dir <rundir> --flow sm/ops-flow --skill sm-intent --version 1.0 --psql '<command>'
+ *   zz-tool eval-store --dir <rundir> --flow ops/ops-flow --skill ops-intent --version 1.0
+ *   zz-tool eval-store --dir <rundir> --flow ops/ops-flow --skill ops-intent --version 1.0 --psql '<command>'
  *
  * WHY THIS EXISTS AT ALL. Every per-round score, every deviation classification and the whole
  * variance study lived in a session-scoped scratch directory — 57MB of it — and only the derived
@@ -39,7 +39,7 @@ import { DEFAULT_PSQL, psqlRows, psqlText } from "../lib/psql.js";
 import { upsertRubric } from "../lib/rubric.js";
 
 interface Mark { dimension: string; score: number; quote: string; why: string }
-interface Judgement { id: string; agency: string; marks: Mark[]; mean: number;
+interface Judgement { id: string; requester: string; marks: Mark[]; mean: number;
                       worst: { quote: string; fix: string }; addressed: boolean }
 interface Judged { step: string; overall: number; judgements: Judgement[] }
 interface Rubric { step: string; role: string; dimensions: { name: string; five: string; one: string }[] }
@@ -69,7 +69,7 @@ function writing(psql: string, insert: string): string {
 function main(argv: string[]): number {
   const args = parseArgs(argv, []);
   const dir = required(args, "dir", "the run directory holding judged.json");
-  // No default and no fallback to sm/ops-flow. This tool used to hardcode the one flow that
+  // No default and no fallback to ops/ops-flow. This tool used to hardcode the one flow that
   // existed; every other flow's rubric lived at a path this tool could never reach, and
   // nothing said so until eval-store silently scored against the wrong flow's rubric.
   const flow = required(args, "flow", "which flow's catalog owns this skill, e.g. sdlc/sdlc-flow", 2);

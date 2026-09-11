@@ -170,8 +170,8 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     const claims = /^(selection|agreement|plan)$/.test(role) && !snapshotOf
       ? decisionRows(body) : [];
     // THE BLOCK'S NAME, NORMALISED — because `server:` is free text an author wrote, and they
-    // wrote it seventeen different ways for three blocks: `casebox`, `sm_og`, `mcp_og`, `mcp-casebox`,
-    // `mcp__plugin_sm_og`, `mcp__plugin_sm_og__*`, and `n8n"`, `"bookit`, plus `+` and `MCP`
+    // wrote it seventeen different ways for three blocks: `casebox`, `ops_casebox`, `mcp_casebox`, `mcp-casebox`,
+    // `mcp__plugin_ops_casebox`, `mcp__plugin_ops_casebox__*`, and `RuleMill"`, `"bookit`, plus `+` and `MCP`
     // which are not blocks at all.
     //
     // That is not cosmetic. `blocks` is GIN-indexed so that "what have we predicted about casebox"
@@ -179,25 +179,26 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // is always the bare `casebox`. With six spellings in the column the join matched the sixth of
     // rows that happened to agree, and reported the rest as predictions about nothing.
     //
-    // A client prefix is not part of a block's identity: `mcp__plugin_sm_og__get_cases` is the
+    // A client prefix is not part of a block's identity: `mcp__plugin_ops_casebox__get_cases` is the
     // casebox block seen through one client's naming, and a record that keeps the client's spelling
     // is a record that changes when somebody swaps clients.
     const blocks = [...new Set((env.server ?? "")
       .split(/[\s/,]+/)
       .map((raw) => raw.trim().toLowerCase().replace(/^["'`]+|["'`*]+$/g, ""))
-      // Peel the layers a client wraps a server name in, longest first so `mcp__plugin_sm_`
+      // Peel the layers a client wraps a server name in, longest first so `mcp__plugin_ops_`
       // goes before `mcp_`.
       .map((t) => t.replace(/^mcp__plugin_[a-z0-9]+_/, "")
                    .replace(/^mcp__/, "").replace(/^mcp[_-]/, "")
-                   .replace(/^plugin[_-]/, "").replace(/^sm[_-]/, "")
+                   .replace(/^plugin[_-]/, "").replace(/^ops[_-]/, "")
                    .replace(/__.*$/, "").replace(/[^a-z0-9-]/g, ""))
       // What is left has to look like a name. `+` reduces to nothing; `mcp` and `plugin` are
       // wrappers rather than blocks and are named explicitly.
       //
-      // The length bound is TWO, not three, and the difference is the whole column: `casebox` is a
-      // two-letter block, and a rule written as `> 2` deleted the most-used block on the
-      // deployment while leaving n8n and bookit looking correct. Found by running the rule
-      // over every spelling the store actually holds instead of over the ones I had in mind.
+      // The length bound is TWO, not three, and the difference is the whole column: the shortest
+      // block id on this deployment is two characters, so a rule written as `> 2` deleted the
+      // most-used block outright while leaving the longer names looking correct. Found by running
+      // the rule over every spelling the store actually holds instead of over the ones I had in
+      // mind. Do not "fix" this to `> 2`; it is the bound that is right.
       .filter((t) => t.length >= 2 && t !== "mcp" && t !== "plugin"))];
     const hash = createHash("sha256")
       // env.blocks is hashed as well as written. Without it a re-selection that changed only

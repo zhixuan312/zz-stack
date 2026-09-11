@@ -2,8 +2,8 @@
 --
 -- Two facts the platform acted on and never recorded.
 --
--- ONE. `zz.block` held bookit, casebox and n8n as three equal rows, and they are not three
--- of a kind. `casebox` is a real team's real service. `n8n` and `bookit` are OUR stand-ins,
+-- ONE. `zz.block` held bookit, casebox and RuleMill as three equal rows, and they are not three
+-- of a kind. `casebox` is a real team's real service. `RuleMill` and `bookit` are OUR stand-ins,
 -- served from the zz-blocks image, and they exist only until those teams onboard — at which
 -- point the directory is deleted. Improving a stand-in's skills is improving a puppet, so
 -- the console must be able to leave them out; averaging a refusal rate across a real service
@@ -32,8 +32,8 @@ insert into zz.block (name, origin) values ('platform', 'platform')
 
 -- BY NAME, not by id. This has to run against production's data sight unseen, where the
 -- uuids differ and only the names are the same.
-update zz.block set origin = 'stand_in' where name in ('n8n', 'bookit');
-update zz.block set origin = 'team'     where name not in ('n8n', 'bookit', 'platform');
+update zz.block set origin = 'stand_in' where name in ('RuleMill', 'bookit');
+update zz.block set origin = 'team'     where name not in ('RuleMill', 'bookit', 'platform');
 
 update zz.skill
    set kind = 'block_usage',

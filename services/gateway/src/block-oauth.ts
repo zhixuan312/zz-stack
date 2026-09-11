@@ -91,7 +91,7 @@ async function endpointsFor(mcpUrl: string): Promise<Endpoints | null> {
         issuer = meta.authorization_servers[0];
         // RFC 9728 puts the resource's scopes HERE, not in the authorization server's own
         // metadata, and this read discarded them. CaseBox advertises exactly one —
-        // `cms:full_access` — declares none in its AS document, and answers `invalid_scope`
+        // `<block>:full_access` — declares none in its AS document, and answers `invalid_scope`
         // to a request that omits the parameter. So the field we were dropping was the field
         // that made the request valid.
         scopes = meta.scopes_supported ?? [];
@@ -131,7 +131,7 @@ const b64 = (b: Buffer): string => b.toString("base64url");
  *  the source. A computed lookup passes that check while documenting nothing. */
 // EMPTY, AND THAT IS THE TRUE ANSWER. This deployment ships no block: `blocks.ts` has an empty
 // built-in registry and a deployment's blocks come entirely from `PLATFORMS`, which this one
-// does not set. These two maps named `casebox`, `bookit` and `n8n` — three mock blocks that
+// does not set. These two maps named `casebox`, `bookit` and `RuleMill` — three mock blocks that
 // moved to their own repository — so `clientFor` returned null for every block a person could
 // actually configure, and `connect_block`, a registered tool, could not succeed for any of
 // them. Three names that resolve to nothing read, to an operator, exactly like a feature that
@@ -216,7 +216,7 @@ export async function beginAuthorization(
   // person the choice, which is the better arrangement and the one our mocks are built for.
   //
   // The override exists because discovery cannot see the whole answer. CaseBox's resource
-  // advertises `cms:full_access` alone, while the CLIENT also carries `offline_access` — and
+  // advertises `<block>:full_access` alone, while the CLIENT also carries `offline_access` — and
   // without that there is no refresh token, so every person would re-consent every twelve
   // hours and the entire refresh path below would be dead code that still compiled.
   //

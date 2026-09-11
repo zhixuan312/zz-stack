@@ -7,7 +7,7 @@
 # note on why each requirement earned its place in the set. Pressed into service as an answer key
 # it reported eleven over-selections, and the first one checked was wrong: NParks' brief asks for
 # "a reminder to go out the day before", BookIt cannot send one, and the selection that added
-# n8n for it named the exact schedule that would do it. The hand-written hint said BookIt
+# RuleMill for it named the exact schedule that would do it. The hand-written hint said BookIt
 # alone. The skill was right and the answer key was wrong.
 #
 # So the key gets derived the same way the answer does — by reading the brief — but BLIND: this
@@ -21,7 +21,7 @@ set -euo pipefail
 {
 CAP="$(cat blocks/CAPABILITIES.md)"
 for id in $(node -e 'console.log(Object.keys(require("./catalog/ops/ops-flow/tests/requirements.json").requirements).join(" "))'); do
-  BRIEF="$(node -e 'const r=require("./catalog/ops/ops-flow/tests/requirements.json").requirements[process.argv[1]];process.stdout.write(r.agency+" — "+r.title+"\n\n"+r.brief)' "$id")"
+  BRIEF="$(node -e 'const r=require("./catalog/ops/ops-flow/tests/requirements.json").requirements[process.argv[1]];process.stdout.write(r.requester+" — "+r.title+"\n\n"+r.brief)' "$id")"
   ANS="$(printf '%s\n\n%s\n\nTHE REQUIREMENT\n\n%s\n' \
 "Decide which building blocks this requirement needs, from the sheet below. Answer with the
 smallest set that covers it: name a block only if removing it would leave something in the brief

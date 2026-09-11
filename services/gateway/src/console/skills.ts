@@ -15,7 +15,7 @@ export function mountSkills(app: Express): void {
    *
    * COST FIRST. A mean score with no idea how many calls or how long it took is
    * a number nobody can act on, and it was the first thing asked for when this
-   * view was reviewed. The eval half may legitimately be absent — sm-build
+   * view was reviewed. The eval half may legitimately be absent — ops-build
    * produces side effects, not a document a judge can read — and an absent
    * rubric is reported as absent rather than as a zero. */
   app.get("/api/console/skills", teamless("skills", async (_req, res) => {
@@ -148,7 +148,7 @@ export function mountSkills(app: Express): void {
    *
    * The skill page gives a mean per dimension and nothing under it — a number
    * with no way to ask which documents made it, or which documents are missing
-   * from it. That second question is the one that matters: sm-intent has 81
+   * from it. That second question is the one that matters: ops-intent has 81
    * intent.md documents in the store and 30 of them have ever been judged, and
    * a page that only lists the 30 reports a mean over a sample it does not
    * disclose.
@@ -198,7 +198,7 @@ export function mountSkills(app: Express): void {
         order by d.ordinal`, [name]);
     // No eval has ever named a document for this skill, so there is no set to
     // list. Said as an empty list with the path missing, which the page reads
-    // as "this skill produces nothing a judge can score" — sm-build's answer,
+    // as "this skill produces nothing a judge can score" — ops-build's answer,
     // and a true one.
     if (!path) {
       res.json({ skill: name, path: null, versions: [],
@@ -237,7 +237,7 @@ export function mountSkills(app: Express): void {
         //
         // GUARDED BY SKILL, and this is not defensive coding: a document is stamped
         // with whichever run last wrote it, and an intent.md revised inside an
-        // sm-spec run points at that run. Version strings collide — "1.0" is every
+        // ops-spec run points at that run. Version strings collide — "1.0" is every
         // skill's first — so an unguarded join reads another skill's 1.0 as this
         // one's. One intent.md on this deployment carries a zz-knowledge run.
         `select d.team_slug as team, d.initiative, d.path, d.title, d.status,

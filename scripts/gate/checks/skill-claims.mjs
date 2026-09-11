@@ -17,8 +17,8 @@ import { catalogRoot, flows } from "../facts.mjs";
 check("a flow's skills state its gate count as the manifest declares it", () => {
   // Written as prose, this number drifts and nothing notices. It was wrong in three places
   // at once: ops-flow's defining sentence said "three gates" and then listed spec, plan and
-  // the acceptance — leaving out the intent gate the platform enforces — sm-spec called the
-  // spec gate "the first gate", and state.md (then direction.md) said the SM flow declares four.
+  // the acceptance — leaving out the intent gate the platform enforces — ops-spec called the
+  // spec gate "the first gate", and state.md (then direction.md) said the Operations flow declares four.
   //
   // The manifest is the only thing that decides: a document with `gate: true` is a gate.
   const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
@@ -47,7 +47,7 @@ check("a flow's skills state its gate count as the manifest declares it", () => 
 
 check("a stage skill's ordinal for its own gate matches the manifest", () => {
   // "N gates" is checked above; the ORDINAL form is the same claim and slips past it.
-  // sm-plan's description said it holds "the second approval gate" — plan.md is the third
+  // ops-plan's description said it holds "the second approval gate" — plan.md is the third
   // gated document, after intent and spec, and it is the last one before anything is built,
   // which is the fact that makes the sentence worth writing at all.
   const ORD = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
@@ -61,7 +61,7 @@ check("a stage skill's ordinal for its own gate matches the manifest", () => {
     for (const sk of readdirSync(skills)) {
       const md = join(skills, sk, "SKILL.md");
       if (!existsSync(md)) continue;
-      // sm-plan -> plan.md, sdlc-spec -> spec.md: the stage skill is named for its document.
+      // ops-plan -> plan.md, sdlc-spec -> spec.md: the stage skill is named for its document.
       const doc = `${sk.replace(/^[a-z0-9]+-/, "")}.md`;
       const pos = gated.indexOf(doc) + 1;
       if (!pos) continue;                          // this skill holds no gate
@@ -403,9 +403,9 @@ check("a heading that counts its own list counts it right", () => {
   // perspectives", "Failure-Mode Taxonomy (10 Categories)", "The seven verified traps". Each
   // is a number a person maintains by hand against a list right underneath it.
   //
-  // casebox-stg-usage grew a seventh trap on 2026-08-28 and its own heading was updated; sm-select,
+  // casebox-stg-usage grew a seventh trap on 2026-08-28 and its own heading was updated; ops-select,
   // which cited "the six verified traps in `casebox-stg-usage`", was not — so one document counted
-  // another's list and went stale the day that list grew. The count in sm-select carried no
+  // another's list and went stale the day that list grew. The count in ops-select carried no
   // information and is gone; these four do carry it, and are checked instead.
   //
   // Counted to the next heading of the same or higher level, which is the section the number

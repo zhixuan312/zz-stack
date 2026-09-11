@@ -140,7 +140,7 @@ function doorOf(resource: string): string | null {
 
 /** Whether a browser on somebody's laptop could actually open this.
  *
- * A hostname with no dot in it is a compose service name — `n8n`, `bookit`, `cred-proxy`
+ * A hostname with no dot in it is a compose service name — `RuleMill`, `bookit`, `cred-proxy`
  * — which resolves inside the Docker network and nowhere else. Redirecting a person there
  * produces a dead tab and no error anybody sees. `localhost` is the same shape from the
  * other direction: it resolves, to the wrong machine. */
@@ -341,7 +341,7 @@ export function mountMcpOauth(app: Express): void {
       if (conf?.header) {
         const started = await beginAuthorization(me.email, block, conf.url, code);
         // A REDIRECT IS FOLLOWED BY A BROWSER, so the address has to be one a browser can
-        // reach. A block on the compose network publishes `http://n8n:8000/authorize` —
+        // reach. A block on the compose network publishes `http://RuleMill:8000/authorize` —
         // a perfectly good authorization endpoint that resolves only inside Docker, so
         // sending someone there is sending them nowhere, with no error we would ever see.
         //

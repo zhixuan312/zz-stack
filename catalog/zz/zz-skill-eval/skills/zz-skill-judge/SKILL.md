@@ -55,7 +55,7 @@ protected was never the invocation channel: it was that a judge varying with the
 makes every number incomparable with every other. Taking the inputs out of the conversation
 protects it more tightly than a shell prompt did.
 
-**The run trace IS the document.** A skill like sm-build leaves a changed system and a trail
+**The run trace IS the document.** A skill like ops-build leaves a changed system and a trail
 of tool calls, and that trail is an artifact a judge reads exactly as it reads a spec. One RUN
 is one subject (`zz.eval_subject.run_id`), its ordered events are the text, and the rubric is
 the ruler — the same shape as `eval-judge`, with a different artifact.

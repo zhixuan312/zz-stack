@@ -147,7 +147,7 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   // that wrote it — the join the whole evaluation track stands on. It was written once, by
   // migration 018's backfill, and by nothing ever since. Every document written after that
   // migration carried NULL, so the track could only ever see the corpus as it stood on
-  // 2026-08-31: sm-select's installed version reported zero subjects, sm-verify reported nine
+  // 2026-08-31: ops-select's installed version reported zero subjects, ops-verify reported nine
   // judged against seven available, and six specs written this morning under a version
   // released to fix a measured weakness were invisible to the round that would measure it.
   //

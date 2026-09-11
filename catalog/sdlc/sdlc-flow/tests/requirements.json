@@ -42,7 +42,7 @@
   ],
   "requirements": {
     "r01": {
-      "agency": "Platform Engineering",
+      "requester": "Platform Engineering",
       "title": "Per-tenant rate limit on the public API gateway",
       "brief": "Our public API gateway serves multiple external tenants off shared capacity. Last month one tenant's misbehaving script sent 40,000 requests in ten minutes and starved everyone else on the same node — 22 minutes of outage for tenants who did nothing wrong.\n\nI want a per-tenant limit of 600 requests per minute, with a burst allowance up to 900 for at most ten seconds. Over the limit, the gateway returns a 429 with a Retry-After header rather than dropping the connection. I also want a dashboard showing how often each tenant is hitting the ceiling, because right now we'd have no way to tell if the limit itself is wrong.\n\nRoll it out behind a feature flag, starting with our three largest tenants before it applies to everyone. Rollback has to be a single flag flip, not a redeploy, in case the limit turns out to be too aggressive for someone we didn't expect.",
       "exercises": {
@@ -101,7 +101,7 @@
       ]
     },
     "r02": {
-      "agency": "SRE",
+      "requester": "SRE",
       "title": "On-call paging nobody trusts",
       "brief": "Our on-call rotation keeps paging the wrong person, and engineers have started just fixing things in the team Slack channel instead of going through PagerDuty, which means we lose the incident record entirely.\n\nLast quarter we had four incidents where the page went to someone who was on vacation and nothing happened for over an hour before somebody noticed in Slack. I don't know if the fix is a better rotation tool, better escalation rules, or just retraining people on the process we already have. Figure out what's actually going wrong before anyone builds anything — I'd rather spend a week understanding it than ship a fix for the wrong problem again.",
       "exercises": {
@@ -141,7 +141,7 @@
       ]
     },
     "r03": {
-      "agency": "Customer Support",
+      "requester": "Customer Support",
       "title": "Let customers export their own data as CSV",
       "brief": "Customers keep emailing support asking for a copy of their data — order history, saved addresses, and support ticket transcripts. I want a button on the account page that generates a CSV and emails it to them within a few minutes.\n\nThis should be simple: three tables, zip it up, done — ops thinks it's a half-day job. The only thing I'd add on top is that we need to log every export request for six months, in case a customer later disputes what we sent them.",
       "exercises": {

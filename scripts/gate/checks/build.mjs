@@ -327,7 +327,7 @@ check("no workspace package can be published by accident", () => {
 });
 
 check("every service has source, not just build output", () => {
-  // services/sm-core survived a rename as a dist/ with no src/ — invisible to git, since
+  // services/ops-core survived a rename as a dist/ with no src/ — invisible to git, since
   // dist is ignored, and harmless until the image started listing that directory to tell a
   // reader which services it could run. Then it began offering a service that cannot start.
   // It was also being COPYed into every image.

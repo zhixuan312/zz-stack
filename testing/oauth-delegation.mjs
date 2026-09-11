@@ -13,7 +13,7 @@
 // mean whoami always names a person. Start from a revoked grant:
 //   docker compose exec -T postgres psql -U zz -d zz -c \
 //     "delete from zz.block_token t using zz.principal p \
-//       where p.id=t.principal_id and p.email='<you>' and t.block in ('bookit','n8n')"
+//       where p.id=t.principal_id and p.email='<you>' and t.block in ('bookit','RuleMill')"
 //
 // Usage: ZZ_URL=... ZZ_TOKEN=... node testing/oauth-delegation.mjs <block> [block ...]
 
@@ -25,7 +25,7 @@ const { Mcp } = await import("../packages/mcp-client/dist/index.js");
 // naming two environment variables nobody would think to set.
 const BASE = process.env.ZZ_URL, PAT = process.env.ZZ_TOKEN;
 const SUB = process.env.OAUTH_TEST_SUBJECT || "person@example.com";
-// NAMED, NEVER DEFAULTED. The default was ["bookit", "n8n"] — two mock blocks that moved
+// NAMED, NEVER DEFAULTED. The default was ["bookit", "RuleMill"] — two mock blocks that moved
 // to their own repository — and `blocks.ts` ships an empty registry, so there is no block this
 // platform can assume. A run with no argument would have exercised nothing and reported it as
 // two failures against blocks that are not there.

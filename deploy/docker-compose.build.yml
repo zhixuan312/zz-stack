@@ -40,12 +40,3 @@ services:
       - ../skills:/skills:ro
       - ../blocks:/blocks:ro
 
-  n8n:
-    build:
-      context: ../../zz-blocks
-      dockerfile: Dockerfile
-
-  bookit:
-    build:
-      context: ../../zz-blocks
-      dockerfile: Dockerfile

@@ -113,7 +113,7 @@ export async function skillRuns(p: pg.Pool, versionId: string): Promise<Row[]> {
 /** WHAT THE SKILL ACTUALLY TOUCHED: how many distinct tools, on how many blocks.
  *
  * Every findings.md so far reported what a judge thought of the documents and nothing about
- * what the skill DID. sm-build made 960 calls across 88 distinct tools and three blocks in
+ * what the skill DID. ops-build made 960 calls across 88 distinct tools and three blocks in
  * the window it was judged on, and none of that reached the page — a reader was told a
  * document scored 3.22 with no idea whether the skill ran twice or two hundred times.
  *
@@ -131,7 +131,7 @@ export async function skillSurface(p: pg.Pool, skill: string): Promise<Row[]> {
 /** HOW MANY DISTINCT SUBJECTS THIS VERSION HAS ACTUALLY BEEN SCORED ON, across every round.
  *
  * Not "the last evaluation's subject count", which is what the coverage line first used and
- * which understates the moment a round is resumed. sm-verify v1.0 was judged in two sessions
+ * which understates the moment a round is resumed. ops-verify v1.0 was judged in two sessions
  * — a call timed out after 3 subjects and finished server-side, the next call scored the
  * remaining 7 — so the last row says 3 and the truth is 7. A denominator is worth nothing if
  * the numerator beside it is a session's tally rather than the version's. */

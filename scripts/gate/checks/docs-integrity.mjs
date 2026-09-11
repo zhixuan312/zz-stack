@@ -23,7 +23,14 @@ check("the README's map names every package, flow and script, and no others", ()
   // and sends them to a script that does not.
   const readme = readFileSync(join(root, "README.md"), "utf8");
   // The map is the fenced block. Everything below reads THAT, not the prose around it.
-  const fenceOf = (md) => md.match(/```\n([\s\S]*?)```/)?.[1] ?? "";
+  // THE MAP FENCE, not merely the FIRST fence. This took `match` on the first code block,
+  // which quietly assumed the map is the first thing in the README — so adding a quickstart
+  // above it made this check read `npm install && npm run gate` as the directory tree and
+  // report every package as missing. The map is the fence that names the packages; find it
+  // by what it contains rather than by where it sits.
+  const fenceOf = (md) => (md.match(/```[a-z]*\n([\s\S]*?)```/g) ?? [])
+    .map((b) => b.replace(/^```[a-z]*\n/, "").replace(/```$/, ""))
+    .find((b) => /^packages\//m.test(b)) ?? "";
   const bad = [];
 
   // A package is a directory with a package.json, exactly as the catalog loop below asks for
@@ -69,6 +76,28 @@ check("the README's map names every package, flow and script, and no others", ()
   }
   for (const m of readme.matchAll(/\b([a-z][a-z0-9-]*\.(?:py|mjs))\b/g)) {
     if (!everywhere.has(m[1])) bad.push(`the map names ${m[1]}, which no longer exists`);
+  }
+  // AND THE SAME QUESTION FOR DIRECTORIES, which is the half this check asserted and did not
+  // ask. Its name has always ended "and no others", but the reverse pass above matches only
+  // `*.py|*.mjs` FILENAMES — so the map could name four catalog packages and a blocks/
+  // subdirectory that had all been removed, and this check stayed green while saying in its
+  // own title that it would not. It did: `ops/ops-flow`, `zz/zz-flow-builder`,
+  // `catalog/casebox/casebox-assist` and `blocks/casebox/` were all advertised to a reader
+  // and none of them existed.
+  //
+  // A check that claims more than it tests is worse than no check, because the claim is what
+  // people rely on. Read of the fence only: the prose around the map talks about things that
+  // are deliberately elsewhere.
+  for (const m of fence.matchAll(/(?:^|\s)((?:catalog|blocks)\/[a-z0-9][a-z0-9._/-]*)/g)) {
+    const rel = m[1].replace(/[.,;]$/, "").replace(/\/$/, "");
+    if (!existsSync(join(root, rel))) bad.push(`the map names ${rel}/, which does not exist`);
+  }
+  // A catalog package written as `<owner>/<name>` with no `catalog/` prefix, which is how the
+  // map lists the shelf.
+  for (const m of fence.matchAll(/^\s{8,}([a-z][a-z0-9-]*\/[a-z][a-z0-9-]*)\s{2,}\S/gm)) {
+    if (!existsSync(join(root, "catalog", m[1]))) {
+      bad.push(`the map names catalog/${m[1]}, which does not exist`);
+    }
   }
   return bad.length ? [...new Set(bad)].join("; ") : null;
 });
@@ -226,7 +255,11 @@ check("the README describes the tree it ships with", () => {
   // bounded by the next one. The regex here required the count on the SAME LINE as the flow
   // path, which is true of both entries today and is a property of how the paragraph happens
   // to wrap — a count pushed onto the following line stops being checked and nothing says so.
-  const fence = readme.match(/```\n([\s\S]*?)```/)?.[1] ?? "";
+  // The map fence, found by content — see the note on fenceOf above. A quickstart block
+  // ahead of the map is allowed, and used to make this check read it as the tree.
+  const fence = (readme.match(/```[a-z]*\n([\s\S]*?)```/g) ?? [])
+    .map((b) => b.replace(/^```[a-z]*\n/, "").replace(/```$/, ""))
+    .find((b) => /^packages\//m.test(b)) ?? "";
   const starts = flows
     .map((f) => ({ f, at: fence.indexOf(`${f.owner}/${f.flow}`) }))
     .filter((e) => e.at >= 0).sort((a, b) => a.at - b.at);

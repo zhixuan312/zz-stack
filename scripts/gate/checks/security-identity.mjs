@@ -157,7 +157,7 @@ check("identity is a port, and a door that says no ends the request", () => {
   // adapters. The shape has to be right before it is needed: "we have our own auth, SSO
   // later" is the road that welds itself shut, because once a PAT is the foundation rather
   // than one adapter, every new way of logging in means surgery on identity resolution.
-  // Adding TechPass OIDC or Keycloak should be adding an entry to an array.
+  // Adding Keycloak or another OIDC provider should be adding an entry to an array.
   //
   // The property that is not visible by reading is the ORDERING. A door that says NO must
   // end the request, not pass the caller to the next door — a revoked PAT falling through to

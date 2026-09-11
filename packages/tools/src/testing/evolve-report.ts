@@ -7,7 +7,7 @@
  * guardrail or a contract changes, the suite re-verifies, and the next round's evidence says
  * whether the change was right. Two of those steps already had tools — tool-report says which
  * TOOL is refused and flow-compare says which FLOW costs more — and the one in between did
- * not. Neither answers "sm-select is where this stalls", which is the only form of the answer
+ * not. Neither answers "ops-select is where this stalls", which is the only form of the answer
  * a skill can be edited from.
  *
  * ATTRIBUTION BY TRACE, NOT BY GUESS. Every `skill_view` says which skill an agent loaded;

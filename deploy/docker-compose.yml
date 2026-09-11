@@ -21,7 +21,7 @@
 # copies inside them, so editing a skill stays instant.
 services:
   # The browser front end. It replaced Open WebUI, and the difference that mattered is
-  # not the UI: Open WebUI ran a chat loop, and a Operations scenario makes tens
+  # not the UI: Open WebUI ran a chat loop, and an Operations scenario makes tens
   # of sequential tool calls. Turns stalled with no output and no error, and there was no
   # step budget, compaction or pruning to configure — the ceiling was architectural.
   #
@@ -73,7 +73,7 @@ services:
     # tunnel, which is how deploy/README already reaches Postgres.
     ports: ["${INTERNAL_BIND:-127.0.0.1}:${ZZ_CORE_PORT:-8763}:8000"]
 
-  # n8n & bookit are mock building blocks — stand-ins for services other teams own.
+  # RuleMill & bookit are mock building blocks — stand-ins for services other teams own.
   # Same image, different SERVER_DIR, versioned separately from the platform because they
   # change for reasons the platform has nothing to do with.
   cred-proxy:
@@ -124,7 +124,7 @@ services:
       # keeps using a stored key — nobody's access breaks by leaving these blank.
       # What to ASK a block's authorization server for. Unset means ask for what the block's
       # own protected-resource document advertises — right for a block that publishes its
-      # whole list, and wrong for CaseBox, whose resource names cms:full_access while the
+      # whole list, and wrong for CaseBox, whose resource names <block>:full_access while the
       # client also holds offline_access. Without offline_access there is no refresh token.
       # The admin console's passkey sign-in. This one value IS the relying party: its
       # hostname becomes the RP ID and its origin the expected origin, so the two can never

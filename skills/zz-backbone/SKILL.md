@@ -528,7 +528,7 @@ the document moving.
 
 Your team can add to any skill of the flow it runs, without forking it and without asking
 anybody. Put the addition in your own store at `overlays/<skill-name>/SKILL.md` — for
-example `overlays/sm-select/SKILL.md` — and it is appended whenever anyone on the team loads
+example `overlays/ops-select/SKILL.md` — and it is appended whenever anyone on the team loads
 that skill, under a heading saying it is yours.
 
 - **It adds; it never replaces.** The shelf's skill arrives first and entire, yours follows.

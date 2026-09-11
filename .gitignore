@@ -1,5 +1,5 @@
 # secrets & runtime state — never commit
-# internal context — not for a public repo
+# working material: notes and captures that belong to no release
 docs/support/
 runs/
 

@@ -4,7 +4,7 @@
  * Read-only against a live gateway with your own token — and reports the requirements that a
  * tool surface can actually settle.
  *
- *   npm run conformance -- --gateway https://api.<host> --block n8n
+ *   npm run conformance -- --gateway https://api.<host> --block RuleMill
  *   npm run conformance -- --gateway https://api.<host> --block all --json
  *
  * NOT every requirement is checkable this way, and the report says so rather than scoring

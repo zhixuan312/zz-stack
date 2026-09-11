@@ -180,7 +180,7 @@ export function mountCatalog(app: Express): void {
     // stop showing is called constantly, so it would come straight back. The registry
     // says what exists and where it came from; the telemetry says what happened to it.
     //
-    // `origin <> 'stand_in'` is the whole point. n8n and bookit are our own mocks
+    // `origin <> 'stand_in'` is the whole point. RuleMill and bookit are our own mocks
     // from the zz-blocks image and this page is where a block's skills get improved —
     // there is nobody on the other end of a puppet. They stay in Overview, Activity
     // and a skill's own call mix, because those report what our flows DID and hiding
@@ -224,7 +224,7 @@ export function mountCatalog(app: Express): void {
 
 /** ONE SKILL A FLOW RUNS — the same shape as a block's, because it is the same thing.
  *
- * The flow page could say sm-intent scored 3.42 and never show a line of what sm-intent
+ * The flow page could say ops-intent scored 3.42 and never show a line of what ops-intent
  * SAYS. Reading the skill is most of judging it: a score without the text is a number
  * about something the reader cannot see.
  *

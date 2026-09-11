@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>zz-stack — Platform Architecture</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<!-- NO WEBFONT REQUEST. This page is served by the gateway at /architecture WITHOUT a token,
+     so every anonymous reader's IP went to a font host on load — a third party learning who
+     looks at this platform, from a page whose whole claim is that it discloses nothing.
+     Every stack below names real system faces after the webfont, so the page loses a
+     typeface and nothing else. -->
 <style>
 /* ─────────────────────────────────────────────────────────────────────────
    Palette inherited from catalog/sdlc/sdlc-flow/skills/sdlc-deck/deck-chassis.html
@@ -635,14 +637,14 @@ footer.foot .wrap{padding:var(--s5) var(--s5) var(--s8);font-size:13px;color:var
   </div>
 
   <h3 style="margin-bottom:var(--s2)">One measurement, end to end</h3>
-  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">This is a real run against the first stage of <span class="mono">ops-flow</span>, the step that turns a stakeholder's brain dump into a stated need. Thirty pieces of work, twenty-seven different agencies.</p>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">This is a run against the first stage of <span class="mono">ops-flow</span>, the step that turns a stakeholder's brain dump into a stated need. Thirty pieces of work from twenty-seven different teams.</p>
 
   <ol class="steps-num">
-    <li><b>Collect</b><span>Thirty deliveries, each a different team's real request. Nothing authored as a test — the corpus is work the method was asked to do.</span></li>
+    <li><b>Collect</b><span>Thirty deliveries, each a different team's request. The corpus is work the method was asked to do.</span></li>
     <li><b>Define good, without writing it ourselves</b><span>A model reads the step's own instructions and three of its real documents, and states what separates a strong one from a weak one. Five dimensions come back. Every one needs a reader; anything a script could check is rejected.</span></li>
     <li><b>Score, with the evidence attached</b><span>Each document is marked against those five dimensions, and every score must quote the document. <strong>3.42 of 5</strong> overall.</span></li>
     <li><b>Test the judge, not the work</b><span>All thirty are scored again against a <em>neighbour's</em> requirement. The result collapses to <strong>1.00</strong>, and 104 of 104 are caught as answering a different problem. The control is a real document, not a scrambled one — a harder test to pass. The reviewer is reading.</span></li>
-    <li><b>Find what recurs</b><span>An expectation written blind from each request is compared to what was produced. One fault appears in <strong>13 of 30</strong> — in agencies sharing no vocabulary: an ambiguity in the request is quietly settled and written down as though it had been stated.</span></li>
+    <li><b>Find what recurs</b><span>An expectation written blind from each request is compared to what was produced. One fault appears in <strong>13 of 30</strong> — in organisations sharing no vocabulary: an ambiguity in the request is quietly settled and written down as though it had been stated.</span></li>
     <li><b>Propose exactly one change</b><span>A passage is drafted for the step's instructions, quoting the fault that earned it. <em>The step already contained a rule against this.</em> The defect was not a missing rule but one pitched too abstractly to survive a real brain dump.</span></li>
     <li><b>Measure it, and refuse to claim it</b><span>Run on eight deliveries the change was <em>not</em> derived from. The floor is <strong>0.436</strong>, so at that sample nothing under <strong>0.31</strong> can be distinguished from noise. Measured delta: <strong>0.000</strong>. Verdict: <strong>untested</strong> — and the change was reverted.</span></li>
   </ol>
@@ -650,7 +652,7 @@ footer.foot .wrap{padding:var(--s5) var(--s5) var(--s8);font-size:13px;color:var
   <div class="specimen">
     <div class="sp-h"><span>Specimen · what the lens outputs for that step</span><b>weakest dimension names the next change</b></div>
     <div class="sp-b">
-<pre><b>sm-intent · 30 deliveries · 27 agencies · rubric of 5 dimensions</b>
+<pre><b>ops-intent · 30 deliveries · 27 teams · rubric of 5 dimensions</b>
 
   Outcome stated as a state, not a solution              4.50   ████████████████████·····
   Fidelity — nothing invented, nothing quietly settled    3.86   ██████████████████·······
@@ -831,7 +833,7 @@ See [[an-instruction-that-produces-no-artifact-will-be-skipped]].</pre>
   </div>
 
   <h3 style="margin-bottom:var(--s2)">One real document's envelope</h3>
-  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">The top of a specification from a live delivery. Everything here is written by the platform — the author writes the prose below it and cannot type any of this.</p>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">The top of a specification. The example is invented; the SHAPE is not. Everything here is written by the platform — the author writes the prose below it and cannot type any of this.</p>
 
   <div class="specimen">
     <div class="sp-h"><span>Specimen · the envelope of one agreement</span><b>note the version number</b></div>
@@ -839,14 +841,14 @@ See [[an-instruction-that-produces-no-artifact-will-be-skipped]].</pre>
 <pre>---
 flow: ops-flow
 type: agreement
-title: Specification — Nature Walk Bookings
+title: Specification — Equipment Loan Requests
 <b>version: 4</b>
 status: <b>approved</b>
-<i>sources: sources/…-stakeholder-decision-drop-amend-use-cancel-and-rebook-wording.md,
-         sources/…-stakeholder-decision-accept-booking-count-backstop-manual-wa.md</i>
-revision_note: Same root cause as the capacity backstop: catching a same-email duplicate
-  booking needs the identical counting n8n cannot do, and the booking system has no native
-  dedupe tool either. AC-1.4's "refused" promise …
+<i>sources: sources/…-stakeholder-decision-who-may-approve-an-overdue-return.md,
+         sources/…-stakeholder-decision-partial-returns-close-a-loan.md</i>
+revision_note: Same root cause as the overdue rule: deciding whether a partial return
+  closes a loan needs a count neither block can do alone, and neither exposes a tool for
+  it. AC-2.1's "closed" promise …
 intent: intent.md
 approved_by: &lt;the stakeholder&gt;        approved_at: 2026-08-30
 outcome: accepted                      closed_by: &lt;the stakeholder&gt;
@@ -909,10 +911,10 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
   </div>
 
   <h3 style="margin-bottom:var(--s2)">One block, measured</h3>
-  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">The case-management system we integrate with. Every number here is read from the platform's own record of calls it has already made — nothing was instrumented to produce them.</p>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">A case-management system of the kind this platform integrates with. Every number here is read from the platform's own record of calls it has already made — nothing was instrumented to produce them.</p>
 
   <div class="specimen">
-    <div class="sp-h"><span>Specimen · what we know about one third-party system</span><b>all measured, none remembered</b></div>
+    <div class="sp-h"><span>Specimen · what a platform can know about a block it did not write</span><b>all measured, none remembered</b></div>
     <div class="sp-b">
 <pre><b>Its surface</b>
   tools the block publishes                        <b>178</b>
@@ -928,7 +930,7 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
      the only symptom is a caller whose working memory is gone</i>
 
 <b>What it says when it refuses</b>
-  27 refusals across a day of real work, of the form:
+  27 refusals across a day of work, of the form:
       "Request failed with status code 422"
   <i>— no field, no value, no reason. A caller cannot learn from that, and
      neither can any guidance we write beside it</i>
@@ -987,7 +989,7 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
   </div>
 
   <h3 style="margin-bottom:var(--s2)">One person, one call, traced through</h3>
-  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">What actually happens when an person asks an agent to look at a case — and what the third-party system records at the far end of it.</p>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">What actually happens when a person asks an agent to look at a case — and what the third-party system records at the far end of it.</p>
 
   <div class="specimen">
     <div class="sp-h"><span>Specimen · a single call, end to end</span><b>the credential is theirs, not ours</b></div>
@@ -1000,7 +1002,7 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
 <b>2 · their own key is attached</b>
     the credential store is keyed by person, then by system:
 
-        { "&lt;person@team&gt;": { "casebox": "…", "n8n": "…", "bookit": "…" } }
+        { "&lt;person@team&gt;": { "casebox": "…", "RuleMill": "…", "bookit": "…" } }
 
     <i>three systems, three separate credentials, all belonging to that one person.
     Nobody inherits anybody else's.</i>

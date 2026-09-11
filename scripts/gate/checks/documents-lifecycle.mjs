@@ -195,7 +195,7 @@ check("the store audit applies the platform's close rules, not stricter ones", (
   const accepted = run({
     "/activity.jsonl": {},
     "/intent.md": { status: "draft" },
-    "/spec.md": closingEnv("accepted", { accepted_by: "Dana Lim" }),
+    "/spec.md": closingEnv("accepted", { accepted_by: "Dana Reyes" }),
     "/guide.md": { status: "draft" },
   }, "accepted");
   if (!accepted.problems.some((p) => p.includes("intent.md"))) {

@@ -128,7 +128,7 @@ export class Mcp {
       // session, all mutating it.
       //
       // Measured on UAT during a live round: 160 `render_agent_definition` rows from the
-      // 60-second onboarding timer were attributed to `sm-build 1.2`, 35 to `zz-knowledge
+      // 60-second onboarding timer were attributed to `ops-build 1.2`, 35 to `zz-knowledge
       // 2.0`, and a `write_file` came out carrying one skill's name beside another's version.
       // Those rows are what tool-report, evolve-report and step-score count, so every
       // per-skill number was inflated by whatever automation happened to be running.

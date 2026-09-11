@@ -1,7 +1,7 @@
 -- zz.doc gets a surrogate key, an initiative, and the run that produced it.
 --
 -- THE MISSING LINK THIS CLOSES. zz.doc recorded `flow` but never which SKILL VERSION wrote the
--- document. So "evaluate everything sm-intent 1.0 ever produced" -- the question the whole
+-- document. So "evaluate everything ops-intent 1.0 ever produced" -- the question the whole
 -- re-evaluation framework is built on -- had to be inferred by joining through zz.event and
 -- guessing from `type`, which cross-products: one such query reported 351 documents across 10
 -- initiatives.
@@ -43,11 +43,11 @@ update zz.doc d set produced_by_run_id = r.id
  where d.produced_by_run_id is null
    and r.initiative_id = d.initiative_id
    and d.type = case s.name
-                  when 'sm-intent' then 'intent'
-                  when 'sm-spec'   then 'agreement'
-                  when 'sm-select' then 'selection'
-                  when 'sm-plan'   then 'plan'
-                  when 'sm-verify' then 'verification'
+                  when 'ops-intent' then 'intent'
+                  when 'ops-spec'   then 'agreement'
+                  when 'ops-select' then 'selection'
+                  when 'ops-plan'   then 'plan'
+                  when 'ops-verify' then 'verification'
                   else '\x00' end;
 
 -- ── a decision's blocks become foreign keys ──

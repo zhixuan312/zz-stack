@@ -12,15 +12,15 @@ set -euo pipefail
 {
 J=packages/tools/dist/testing/eval-judge.js
 run() {   # step, rundir
-  node "$J" --flow sm/ops-flow --step "$1" --expect                       > "$SP/evals/$2/expect.log"  2>&1 || true
-  node "$J" --flow sm/ops-flow --step "$1" --out "$SP/evals/$2" --compare  > "$SP/evals/$2/compare.log" 2>&1 || true
-  node "$J" --flow sm/ops-flow --step "$1" --out "$SP/evals/$2" --pattern  > "$SP/evals/$2/pattern.log" 2>&1 || true
+  node "$J" --flow ops/ops-flow --step "$1" --expect                       > "$SP/evals/$2/expect.log"  2>&1 || true
+  node "$J" --flow ops/ops-flow --step "$1" --out "$SP/evals/$2" --compare  > "$SP/evals/$2/compare.log" 2>&1 || true
+  node "$J" --flow ops/ops-flow --step "$1" --out "$SP/evals/$2" --pattern  > "$SP/evals/$2/pattern.log" 2>&1 || true
   echo "  done: $1"
 }
-run sm-spec   spec-1.0   &
-run sm-select select-1.1 &
+run ops-spec   spec-1.0   &
+run ops-select select-1.1 &
 wait
-run sm-plan   plan-1.0   &
-run sm-verify verify-1.0 &
+run ops-plan   plan-1.0   &
+run ops-verify verify-1.0 &
 wait
 }

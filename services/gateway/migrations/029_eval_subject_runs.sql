@@ -1,7 +1,7 @@
 -- A judgement need not be about a document.
 --
 -- zz.eval_subject.path was NOT NULL, so the only thing this platform could score was a file.
--- Of 40 registered skills, 5 write one. sm-build writes none — and sm-build made 278 calls
+-- Of 40 registered skills, 5 write one. ops-build writes none — and ops-build made 278 calls
 -- with 57 refusals across two initiatives on 2026-09-04, more than every other skill
 -- combined. It had a rubric, it had a judgement against that rubric, and it had nowhere to
 -- put it: the storage assumed every evaluation is about a file, so the busiest skill on the

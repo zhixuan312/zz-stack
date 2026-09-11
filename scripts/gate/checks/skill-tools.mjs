@@ -61,7 +61,7 @@ check("no skill calls a tool the platform does not register", () => {
       // in another repository that is not required to be present. So a skill naming a real
       // block tool in call form, `usage_skill_view(...)`, would fail here. That is the
       // deliberate outcome: block tools are discovered at runtime and a skill must not
-      // promise a particular one exists — sm-select names those two in backticks and says
+      // promise a particular one exists — ops-select names those two in backticks and says
       // so in the same sentence.
       bad.push(`${rel}: ${name}()`);
     }
@@ -100,7 +100,7 @@ check("a skill never names a platform tool that does not exist", () => {
   served.add("credential_required");   // served by a block only to someone who cannot reach it
   // A block's own tools are named in skills too and are that block's business, so anything a
   // block registers is left alone even where this deployment cannot reach it. That used to be
-  // a loop over casebox/n8n/bookit reading blocks/<b>/skills — and its body was a single
+  // a loop over casebox/RuleMill/bookit reading blocks/<b>/skills — and its body was a single
   // `continue`, so it read nothing and decided nothing. It became a no-op when those blocks
   // moved to their own repository, and looked like the mechanism enforcing this paragraph.
   // The `OURS` stems above are what actually does it: a name outside them is a block's.

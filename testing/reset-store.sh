@@ -5,10 +5,10 @@
 #   ./testing/reset-store.sh --team smoke-0828 --prefix 2026-08-3
 #   ./testing/reset-store.sh --team smoke-0828 --prefix 2026-08-3 --dry-run
 #
-# WHY THIS HAS TO EXIST. sm-intent names its folder from the date and the title, and both
-# zz-backbone and sm-intent instruct a step that finds an existing folder to RESUME it rather than
+# WHY THIS HAS TO EXIST. ops-intent names its folder from the date and the title, and both
+# zz-backbone and ops-intent instruct a step that finds an existing folder to RESUME it rather than
 # create a duplicate — which is correct behaviour and the reason a second run of one corpus is not
-# a second measurement. Eight held-out requirements at sm-intent 1.1 produced five documents;
+# a second measurement. Eight held-out requirements at ops-intent 1.1 produced five documents;
 # three resumed 1.0's initiatives, and the five that wrote could read 1.0's answer while writing.
 # The delta that came out of that (0.000) measured nothing. See docs/findings/H9.md.
 #
@@ -25,7 +25,7 @@ set -euo pipefail
 # READ WHOLE BEFORE RUN. bash reads a script incrementally by byte offset, so editing one while it
 # runs shifts the text under the running shell and it resumes mid-line.
 {
-HOST="${ZZ_SSH_HOST:-root@100.67.161.15}"
+HOST="${ZZ_SSH_HOST:?set it to the host this should reset}"
 # THROUGH COMPOSE, BY SERVICE NAME. `docker exec` needs a container name, and a container's name
 # carries the compose project prefix — which is set per host in deploy/.env, so a name spelled
 # here is correct on at most one deployment and silently wrong on the next.

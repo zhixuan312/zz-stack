@@ -63,7 +63,7 @@ The line to hold is between DESCRIBING and JUDGING:
     describe   "109 refusals, 84 of them one opaque 422 from a single block."
     describe   "Not opened in any of the 5 runs that used its block."
 
-    judge      "sm-build is the weakest skill on the platform."
+    judge      "ops-build is the weakest skill on the platform."
     judge      "This refusal rate is unacceptable."
     judge      "The block skills are not earning their place."
 
@@ -77,7 +77,7 @@ better sentence than a confident one.
 
 ## Hard rules
 
-- **No judgement in this document.** Not "sm-build struggled" — `sm-build: 278 calls, 57
+- **No judgement in this document.** Not "ops-build struggled" — `ops-build: 278 calls, 57
   refusals, 51 of them 422`. The next stage decides what good is; this one would prejudice it.
 - **Never estimate a number you cannot query.** A refusal rate inferred from reading
   documents is the one figure in the record nobody can check.

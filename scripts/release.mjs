@@ -459,7 +459,7 @@ try {
 // zz.skill_version is what every question about a skill joins against: which version wrote
 // this document, which rubric judged it, what it scored. register-skills mirrors the catalog
 // into it — and it was a day-2 command nobody ran, so the registry sat at whatever the last
-// person to remember had put there. On this deployment that was 2026-08-22: sm-spec had been
+// person to remember had put there. On this deployment that was 2026-08-22: ops-spec had been
 // edited and released and the registry still said 1.0, so all 61 spec.md documents were
 // credited to the version before the change and the change could not be measured at all.
 // That is the improvement loop's own instrument reading the wrong dial.

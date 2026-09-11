@@ -92,7 +92,7 @@ const CASES: Case[] = [
   {
     name: "set_team_credential / admin_set_credential — team-scoped, admin-set",
     build: () => ({
-      team: "product_group_1", platform: "openai", api_key: "sk-liveabcdefghijklmno",
+      team: "team_one", platform: "openai", api_key: "sk-liveabcdefghijklmno",
       set_by: ROOT, set_at: "2026-03-02T00:00:00Z",
     }),
     secrets: ["sk-liveabcdefghijklmno"],
@@ -116,7 +116,7 @@ const CASES: Case[] = [
       { id: "11111111-1111-1111-1111-111111111111", label: "laptop", scope: "member",
         team: null, created_at: "2026-01-01T00:00:00Z", last_used_at: null, revoked_at: null },
       { id: "22222222-2222-2222-2222-222222222222", label: "ci", scope: "member",
-        team: "product_group_1", created_at: "2026-01-02T00:00:00Z",
+        team: "team_one", created_at: "2026-01-02T00:00:00Z",
         last_used_at: "2026-02-01T00:00:00Z", revoked_at: "2026-02-15T00:00:00Z",
         // list_pats's real query never selects this — but nothing in the TYPE SYSTEM stops
         // a future column from being added to the select list without anyone deciding
@@ -213,12 +213,12 @@ function checkDatesAndBuffers(): string[] {
 function checkCircularReferences(): string[] {
   const failures: string[] = [];
 
-  const direct: Record<string, unknown> = { team: "product_group_1", api_key: "sk-cycletest0001", label: "direct" };
+  const direct: Record<string, unknown> = { team: "team_one", api_key: "sk-cycletest0001", label: "direct" };
   direct.self = direct;
   const gotDirect = redact(direct) as Record<string, unknown>;
   if (gotDirect.self !== "[Circular]") failures.push(`a direct self-reference came back as ${JSON.stringify(gotDirect.self)}, expected "[Circular]"`);
   if (!isMarker(gotDirect.api_key)) failures.push("a secret survived on an object that also contains a direct cycle");
-  if (gotDirect.team !== "product_group_1" || gotDirect.label !== "direct") failures.push("metadata was lost on an object that also contains a direct cycle");
+  if (gotDirect.team !== "team_one" || gotDirect.label !== "direct") failures.push("metadata was lost on an object that also contains a direct cycle");
 
   const arr: unknown[] = ["a", "b"];
   const nested: Record<string, unknown> = { platform: "github", api_key: "sk-cycletest0002", items: arr };

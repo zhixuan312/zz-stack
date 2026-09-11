@@ -144,7 +144,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
  * WHO IS ASKED is every team, now. It used to be only a team with two or more installs, on
  * the reasoning that one install answers for itself — but the platform flows ship to every
  * team without an install row, so "one install" never meant "one flow it can run". The teams
- * that reasoning excused are exactly the two it went wrong on: product-1, one install and a
+ * that reasoning excused are exactly the two it went wrong on: team-one, one install and a
  * zz-block-eval initiative governed by ops-flow throughout; zz-platform, no installs at all
  * and every eval it runs governed by nothing. governingFlows() is the corrected question.
  */
@@ -401,7 +401,7 @@ function ownershipCheck(root: string, relPath: string, content: string,
  * is a decision, and a decision that cannot be counted or read back is not one.
  *
  * `blocks:` in the frontmatter. The selection document argues its case at length — the live
- * one on this deployment names casebox in its heading and then names bookit and n8n in the
+ * one on this deployment names casebox in its heading and then names bookit and RuleMill in the
  * paragraphs REJECTING them — so nothing downstream can learn the answer by reading the
  * prose. A stage declaring `blocks: "selected"` resolves through this field, so without it
  * the flow's own authority declaration has nothing to resolve to.
@@ -489,12 +489,12 @@ async function blockVocabulary(): Promise<string[]> {
 }
 /** A stage that may call no building block may not NAME one either.
  *
- * The rule is sm-intent's and sm-spec's, and both skills state it at length: "No technology
+ * The rule is ops-intent's and ops-spec's, and both skills state it at length: "No technology
  * anywhere. No product names, no tool names." It stayed prose, and prose does not hold — the
  * same lesson attributionCheck records above, where a rule stated in every stage skill was
  * broken twice in consecutive smoke runs.
  *
- * Removing the TOOLS from a stage does not cover this. An agent at sm-spec has read the
+ * Removing the TOOLS from a stage does not cover this. An agent at ops-spec has read the
  * intent and is writing a document; it can put a product name into spec.md without calling
  * anything at all. So the same declaration drives both: the manifest says which blocks a
  * stage may call, the gateway enforces the calling, and this enforces the naming.

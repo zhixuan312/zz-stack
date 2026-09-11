@@ -16,7 +16,7 @@ const PlatformConfig = z.object({
   url: z.string().url(),
   /** The header that carries the caller's personal key. OMIT IT for a block that needs no
    * credential — a mock, or one reached over a private network. Requiring a header of every
-   * block is why n8n and bookit could not be registered at all: they are reachable
+   * block is why RuleMill and bookit could not be registered at all: they are reachable
    * without a key, so there was no honest value to put here, so they were left out of
    * PLATFORMS, so /p/<block>/mcp answered 404 for them while the browser (which bypasses
    * this proxy) worked fine. */
@@ -299,7 +299,7 @@ export const Envelope = z.object({
    * line. Before it existed the only record of the choice was the selection document's prose
    * — and prose is exactly what a machine must not read here, because a selection argues its
    * case: the live one on this deployment names casebox in its heading and then names bookit
-   * and n8n in the paragraphs REJECTING them, so a parser reading the body would authorise
+   * and RuleMill in the paragraphs REJECTING them, so a parser reading the body would authorise
    * the two blocks the document turned down.
    *
    * Comma-separated block ids, and few of them. A selection naming half the shelf is a
@@ -386,9 +386,9 @@ export type FlowDoc = z.infer<typeof FlowDoc>;
  *
  * `blocks` is a CALL AUTHORITY, and it is the only one this platform has that is finer than a
  * team. The manifest's own `tools` grants building blocks to a whole flow, so every stage of
- * ops-flow could reach casebox, n8n and bookit — including sm-intent, which states what a person
- * wants and names no technology at all, and sm-spec, which writes the agreement in their words.
- * The event log has 62 casebox calls, 53 n8n and 27 bookit stamped `sm-intent`, one of them
+ * ops-flow could reach casebox, RuleMill and bookit — including ops-intent, which states what a person
+ * wants and names no technology at all, and ops-spec, which writes the agreement in their words.
+ * The event log has 62 casebox calls, 53 RuleMill and 27 bookit stamped `ops-intent`, one of them
  * `update_case_type`, which is a write. Nothing was broken by an agent going around a rule:
  * there was no rule to go around, because a flow had no way to say it.
  *
@@ -413,7 +413,7 @@ export const FlowStage = z.object({
    * selection document chose.
    *
    * A named list is the honest declaration for a stage whose reach does not depend on the
-   * work: sm-select may read every block the flow carries, because choosing between them is
+   * work: ops-select may read every block the flow carries, because choosing between them is
    * what it does. It is the wrong declaration for the three stages AFTER selection. Naming
    * all three blocks there would say a build may call whatever it likes, when the whole point
    * of the selection document is that a person approved a shorter list — so `"selected"`

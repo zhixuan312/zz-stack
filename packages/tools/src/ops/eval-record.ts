@@ -1,8 +1,8 @@
 /**
  * eval-record — store ONE judgement of one document, from a judge that is not eval-judge.
  *
- *   zz-tool eval-record --step sm-intent --version 1.0 \
- *     --team product-1 --initiative 2026-09-04-noise-complaint-mediation --path intent.md \
+ *   zz-tool eval-record --step ops-intent --version 1.0 \
+ *     --team team-one --initiative 2026-09-04-noise-complaint-mediation --path intent.md \
  *     --judge sam@example.com \
  *     --score "Outcome as state, not solution=4" --score "Fidelity — no invention, no silent resolution=5" \
  *     --note "constraints/outcome bleed, second occurrence"

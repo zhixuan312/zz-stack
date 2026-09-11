@@ -5,7 +5,7 @@
  *   node scripts/skill-versions.mjs            # print the table
  *   node scripts/skill-versions.mjs --write    # record the current state as the baseline
  *
- * WHY BOTH NUMBERS. A declared version is what a person cites — "sm-select v2 fixed it" — and
+ * WHY BOTH NUMBERS. A declared version is what a person cites — "ops-select v2 fixed it" — and
  * it is the only form that is orderable and arguable. It is also a CLAIM, and on the day this
  * was written every skill in this repository declared `version: 1.0`, including three that had
  * been edited four times that same day shipping five separate changes. Ten rounds of evidence

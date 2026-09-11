@@ -72,7 +72,7 @@ const LLM_BASE = (process.env.LLM_BASE_URL || "").replace(/\/+$/, "");
 const LLM_KEY = process.env.LLM_API_KEY || "";
 
 /** Events shown to the judge, per subject. The cap is announced in the text and recorded in
- *  the stored note — an sm-build run reaches 569 events, and a judge handed the first 400
+ *  the stored note — an ops-build run reaches 569 events, and a judge handed the first 400
  *  scores a different run from the one that happened. */
 const TRACE_CAP = 400;
 

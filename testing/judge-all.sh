@@ -17,20 +17,20 @@ SP="${SP:-$(pwd)}"
 J=packages/tools/dist/testing/eval-judge.js
 
 one() {  # step, rundir
-  node "$J" --flow sm/ops-flow --step "$1" --out "$SP/evals/$2"           >  "$SP/evals/$2/judge.log"   2>&1 || true
-  node "$J" --flow sm/ops-flow --step "$1" --out "$SP/evals/$2" --control >  "$SP/evals/$2/control.log" 2>&1 || true
+  node "$J" --flow ops/ops-flow --step "$1" --out "$SP/evals/$2"           >  "$SP/evals/$2/judge.log"   2>&1 || true
+  node "$J" --flow ops/ops-flow --step "$1" --out "$SP/evals/$2" --control >  "$SP/evals/$2/control.log" 2>&1 || true
   echo "  done: $1"
 }
 
-one sm-select select-1.1 &
-one sm-intent intent-1.0 &
+one ops-select select-1.1 &
+one ops-intent intent-1.0 &
 wait
-one sm-spec spec-1.0 &
-one sm-plan plan-1.0 &
+one ops-spec spec-1.0 &
+one ops-plan plan-1.0 &
 wait
 
 echo
-for pair in "sm-intent:intent-1.0" "sm-spec:spec-1.0" "sm-select:select-1.1" "sm-plan:plan-1.0"; do
+for pair in "ops-intent:intent-1.0" "ops-spec:spec-1.0" "ops-select:select-1.1" "ops-plan:plan-1.0"; do
   d="$SP/evals/${pair##*:}"
   real=$(node -e 'try{console.log(require(process.argv[1]).overall.toFixed(2))}catch{console.log("—")}' "$d/judged.json" 2>/dev/null)
   ctl=$(node -e 'try{console.log(require(process.argv[1]).overall.toFixed(2))}catch{console.log("—")}' "$d/judged-control.json" 2>/dev/null)

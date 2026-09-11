@@ -1,7 +1,7 @@
 /**
  * skill-reflect — read the evidence, propose ONE change to ONE skill, in the skill's own words
  *
- *   zz-tool skill-reflect --skill sm-select --file catalog/.../SKILL.md [--since '7 days']
+ *   zz-tool skill-reflect --skill ops-select --file catalog/.../SKILL.md [--since '7 days']
  *   zz-tool skill-reflect --file skills/casebox-stg-usage/SKILL.md --json
  *   zz-tool skill-reflect --file … --psql '<command>'    # a database somewhere else
  *

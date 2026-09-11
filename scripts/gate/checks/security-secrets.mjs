@@ -5,11 +5,68 @@
  * the platform holds no team's key. Each check here is one way that could stop being true.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { COMMENTS, between, firstOf, gateOwnSource, gatewaySource, root, scan, sourceFiles, splitTopLevel, toolsIn, unbuilt, withoutComments } from "../read.mjs";
 import { check } from "../run.mjs";
+
+/* THE CHECK server.ts SAYS EXISTS.
+ *
+ * `PUBLIC_PATHS` exempts `/architecture` from authentication and justifies it in a comment:
+ * "it describes the shape of the platform and contains nothing from inside it — no tenant
+ * document, no name, no key. IT IS CHECKED FOR THAT BEFORE IT SHIPS."
+ *
+ * It was not. Across every module here nothing read that file, and on 2026-09-11 the live
+ * page was serving measured telemetry about a third party's production system to anonymous
+ * callers, plus a webfont request that handed every reader's IP to a font host. This
+ * repository names that exact failure mode about itself elsewhere — "two security checks
+ * existed, passed, and had never been run" — and then shipped a third instance of it.
+ *
+ * A comment asserting a safety property IS a claim somebody relies on. Either the check
+ * exists or the sentence should not. This is the check.
+ */
+check("the unauthenticated architecture page discloses nothing from inside", () => {
+  const rel = "docs/architecture.html";
+  if (!existsSync(join(root, rel))) {
+    return `${rel} does not exist, and server.ts still serves /architecture from it`;
+  }
+  const src = readFileSync(join(root, rel), "utf8");
+  const bad = [];
+  // An address that is not an example address. RFC 2606 and RFC 5737 exist for this.
+  for (const m of src.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/g)) {
+    if (!/@(example\.(com|org|net)|[a-z0-9.-]*\.example)$/i.test(m[0])) {
+      bad.push(`serves the address ${m[0]}`);
+    }
+  }
+  // A routable IP. TEST-NET-1/2/3 and the private ranges are documentation addresses.
+  for (const m of src.matchAll(/\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}\b/g)) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    const doc = (a === 192 && b === 0) || (a === 198 && (b === 51 || b === 18 || b === 19)) ||
+                (a === 203 && b === 0) || a === 10 || a === 127 ||
+                (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+    if (!doc) bad.push(`serves the address ${m[0]}`);
+  }
+  // Anything credential-shaped.
+  for (const re of [/zzp_[A-Za-z0-9]{16}/, /zze_[A-Za-z0-9]{16}/, /BEGIN [A-Z ]*PRIVATE KEY/,
+                    /AKIA[0-9A-Z]{16}/, /sk-[A-Za-z0-9]{20}/]) {
+    if (re.test(src)) bad.push(`serves something shaped like a credential (${re.source})`);
+  }
+  // AND WHAT IT ASKS A READER'S BROWSER TO FETCH ON LOAD. A page that discloses nothing in
+  // its own bytes still discloses every reader to whoever it fetches a font or a script
+  // from — this page handed each anonymous visitor's IP to a font host until 2026-09-11.
+  //
+  // `src=` and `<link>` only. An `<a href>` to an external site is a link a reader may
+  // choose to follow, and treating the two the same makes the check fire on every citation
+  // — which is how a check gets a reputation for crying wolf and stops being read.
+  for (const m of src.matchAll(/<(?:script|img|iframe|source|video|audio)\b[^>]*\bsrc\s*=\s*["'](?:https?:)?\/\/([^"'/]+)/gi)) {
+    bad.push(`fetches from ${m[1]} on load`);
+  }
+  for (const m of src.matchAll(/<link\b[^>]*\bhref\s*=\s*["'](?:https?:)?\/\/([^"'/]+)/gi)) {
+    bad.push(`fetches from ${m[1]} on load`);
+  }
+  return bad.length ? [...new Set(bad)].join("; ") : null;
+});
 
 check("the credential store is only mutated through withCredentials", () => {
   // load() -> mutate -> save() rewrites the whole file, so two calls interleaving lose one

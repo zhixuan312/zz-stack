@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run one of the platform's own tools on a deployment host.
 #
-#   ./deploy/zz-tool provision --email alice@example.com --team product-1 --flow ops-flow
+#   ./deploy/zz-tool provision --email alice@example.com --team team-one --flow ops-flow
 #   ./deploy/zz-tool set-credential --csv keys.csv
 #   ./deploy/zz-tool audit --manifest /catalog/ops/ops-flow/flow.json --store /artifacts/teams/<team>
 #   ./deploy/zz-tool smoke /catalog/ops/tests/scenarios.json

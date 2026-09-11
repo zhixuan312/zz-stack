@@ -2,8 +2,8 @@
  * rubric-load — put every definition of good the catalog carries into the platform's tables.
  *
  *   zz-tool rubric-load
- *   zz-tool rubric-load --skill sm-build --psql '<command>' --dry-run
- *   zz-tool rubric-load --skill sm-select --version 1.1 --affirm
+ *   zz-tool rubric-load --skill ops-build --psql '<command>' --dry-run
+ *   zz-tool rubric-load --skill ops-select --version 1.1 --affirm
  *
  * WHY A SKILL NEEDS ONE EVEN WHEN NOTHING SCORES IT. A rubric is not only a judge's
  * instruction sheet. It is the answer to "what would better look like", written down before

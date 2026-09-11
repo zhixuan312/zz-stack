@@ -267,7 +267,7 @@ check("a stray file in the catalog cannot empty it", () => {
   // A catalog with a stray file at its root, a package that ships a manifest, and one that
   // ships only skills — which is a package kind the platform supports.
   const dir = join(root, "node_modules", ".zz-catalog-probe");
-  for (const p of [join(dir, "zz", "zz-knowledge"), join(dir, "sm", "ops-flow", "skills")]) {
+  for (const p of [join(dir, "zz", "zz-knowledge"), join(dir, "ops", "ops-flow", "skills")]) {
     execFileSync("mkdir", ["-p", p]);
   }
   writeFileSync(join(dir, ".DS_Store"), "");
@@ -285,7 +285,7 @@ check("a stray file in the catalog cannot empty it", () => {
   } catch (err) {
     return `the catalog walk could not be run: ${String(err.stderr ?? err).slice(-200)}`;
   }
-  if (got.names.join(",") !== "sm/ops-flow,zz/zz-knowledge") {
+  if (got.names.join(",") !== "ops/ops-flow,zz/zz-knowledge") {
     bad.push(`a stray file at the catalog root left ${JSON.stringify(got.names)} — every ` +
              "package after it in sort order is gone, and skill_view would find nothing");
   }

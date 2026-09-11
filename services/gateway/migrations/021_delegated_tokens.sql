@@ -3,7 +3,7 @@
 -- WHAT THIS CHANGES ABOUT WHO IS ACTING. Today every call the platform makes to casebox carries one
 -- shared API key, so casebox's audit log records `Zhixuan-STG` for every action by every person of
 -- every team. The platform is multi-tenant and that tenancy stops at the block boundary: casebox
--- cannot tell two agencies apart, everybody inherits the key's full powers whatever their own
+-- cannot tell two organisations apart, everybody inherits the key's full powers whatever their own
 -- role allows, and one revocation stops everyone.
 --
 -- OAuth fixes that by changing the ACTOR rather than the credential. CaseBox's own words: it

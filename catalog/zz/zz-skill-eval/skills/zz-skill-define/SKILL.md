@@ -68,7 +68,7 @@ were written on 2026-09-04 for skills that had none, and they are the template:
 - **document skills** — `eval-judge --derive` reads the corpus that skill produced and
   proposes dimensions from it. A rubric derived from real output beats one imagined.
 - **non-document skills** — written by hand, and each dimension **names its evidence**: an
-  event-log join, a refusal class, the state a block was left in. `sm-build`'s five are the
+  event-log join, a refusal class, the state a block was left in. `ops-build`'s five are the
   worked example.
 - **vendored skills** — score whether the copy earns its place beside the block's own live
   tools, never the prose, which is not ours to change.

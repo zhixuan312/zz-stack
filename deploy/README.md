@@ -145,7 +145,7 @@ first one from the host, because before anyone has a passkey there is no superad
 to mint it with:
 
 ```bash
-./deploy/issue-enrolment.sh someone@example.com
+./issue-enrolment.sh someone@example.com      # from deploy/, where the bundle unpacks
 ```
 
 Later ones come from the console, or from `issue_enrolment` on `/manage/mcp`.

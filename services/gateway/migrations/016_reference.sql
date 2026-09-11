@@ -3,8 +3,8 @@
 -- Until now a skill existed as two text columns on zz.event (`step`, `step_version`) and a block
 -- as two more (`block`, `block_version`). That is not a schema, it is a spelling convention, and
 -- it failed exactly the way spelling conventions fail: `zz.decision.blocks` accumulated
--- SEVENTEEN distinct spellings for three blocks -- `casebox`, `sm_og`, `mcp_og`, `mcp-casebox`,
--- `mcp__plugin_sm_og`, `mcp__plugin_sm_og__*`, plus `+` and `MCP` which are not blocks at all.
+-- SEVENTEEN distinct spellings for three blocks -- `casebox`, `ops_casebox`, `mcp_casebox`, `mcp-casebox`,
+-- `mcp__plugin_ops_casebox`, `mcp__plugin_ops_casebox__*`, plus `+` and `MCP` which are not blocks at all.
 -- Reconcile joined on about a third of the rows it should have and reported the rest as
 -- predictions about nothing, silently, for a day and a half.
 --
@@ -101,8 +101,8 @@ create table if not exists zz.skill_version (
 -- loop can measure whether attaching one improved anything.
 --
 -- The rule for reaching for an asset instead of a sentence: WHEN THE FAULT IS COMPLETENESS OVER
--- AN ENUMERABLE SET, BUILD AN ASSET; WHEN IT IS JUDGEMENT, WRITE WORDS. sm-select omits a
--- candidate block in 25 of 27 documents, and sm-intent silently settles an ambiguity in 13 of 30
+-- AN ENUMERABLE SET, BUILD AN ASSET; WHEN IT IS JUDGEMENT, WRITE WORDS. ops-select omits a
+-- candidate block in 25 of 27 documents, and ops-intent silently settles an ambiguity in 13 of 30
 -- -- both against rules those skills ALREADY STATE. That is the evidence that prose does not
 -- hold for completeness.
 create table if not exists zz.skill_asset (
@@ -111,7 +111,7 @@ create table if not exists zz.skill_asset (
   -- script:     makes a guarantee the prose can only request.
   -- reference:  a block's real quirks, quoted from refusals we actually met.
   -- tool_index: the 178-tool answer. casebox advertises 178 tools and ~268KB of schema in every
-  --             prompt; bookit and n8n advertise 24 and 25 at ~6KB. A caller cannot choose
+  --             prompt; bookit and RuleMill advertise 24 and 25 at ~6KB. A caller cannot choose
   --             well from 178, and this narrows it. Generated from zz.block_tool, not typed.
   kind             text not null check (kind in ('script', 'reference', 'tool_index')),
   path             text not null,

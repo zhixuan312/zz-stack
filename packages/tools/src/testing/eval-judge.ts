@@ -1,16 +1,16 @@
 /**
  * eval-judge — ask a model whether what a step wrote is any GOOD, not whether it is well-formed.
  *
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-select --out <rundir> --derive   # the rubric, once
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-select --out <rundir>            # score every instance
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-select --out <rundir> --control  # deliberately wrong
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-select --out <rundir> --reflect  # the recurring mistake
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-select --out <rundir> --derive   # the rubric, once
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-select --out <rundir>            # score every instance
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-select --out <rundir> --control  # deliberately wrong
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-select --out <rundir> --reflect  # the recurring mistake
  *
  * and the expected-versus-actual loop, which is the one that says WHY:
  *
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-intent --expect                  # the answer, written blind
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-intent --out <rundir> --compare  # every deviation, classified
- *   zz-tool eval-judge --flow sm/ops-flow --step sm-intent --out <rundir> --pattern  # what recurs, and the guideline
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-intent --expect                  # the answer, written blind
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-intent --out <rundir> --compare  # every deviation, classified
+ *   zz-tool eval-judge --flow ops/ops-flow --step ops-intent --out <rundir> --pattern  # what recurs, and the guideline
  *
  * WHY THIS EXISTS. eval-grade counts sections and checks that facts from the brief survived. Both
  * are worth having and neither is a quality measurement. A selection that names three blocks for
@@ -49,7 +49,7 @@ import { die, envRequired, optional, parseArgs, required } from "../lib/cli.js";
 const MODEL = process.env.JUDGE_MODEL || "sonnet";
 
 interface Requirement {
-  agency: string;
+  requester: string;
   title: string;
   brief: string;
   exercises?: { shape?: string; blocks?: string[] };
@@ -78,7 +78,7 @@ interface Mark {
 
 interface Judgement {
   id: string;
-  agency: string;
+  requester: string;
   marks: Mark[];
   worst: { quote: string; fix: string };
   mean: number;
@@ -106,7 +106,7 @@ async function ask(system: string, user: string, temperature = 0): Promise<Recor
   // TWICE, THEN GIVE UP ON THIS ONE. A model occasionally answers with JSON it did not finish, or
   // with a stray quote inside a quoted passage. The first version of this called die() on that,
   // and one malformed reply out of thirty killed a run that had already paid for twenty-nine —
-  // sm-intent's control died at position 2399 of one answer and returned nothing at all.
+  // ops-intent's control died at position 2399 of one answer and returned nothing at all.
   //
   // A retry is honest here because the fault is in the reply, not in the question: the same
   // prompt asked again usually parses. What is NOT honest is silently scoring an unparseable
@@ -180,7 +180,7 @@ const COMPARE_SYSTEM = [
   "For each real deviation, decide the thing that matters most here: is it SPECIFIC or GENERIC?",
   "",
   "- SPECIFIC: it is about this requirement's own subject matter. Another requirement would not",
-  "  hit it. Missing a domain fact peculiar to this agency's process is specific.",
+  "  hit it. Missing a domain fact peculiar to this requester's process is specific.",
   "- GENERIC: it is a habit. The step would do the same thing on a different requirement in a",
   "  different domain, because the cause is how the step works rather than what it was asked",
   "  about. Restating a section, hedging a verdict, always reaching for the same tool.",
@@ -362,7 +362,7 @@ async function main(argv: string[]): Promise<number> {
       for (let id = queue.shift(); id; id = queue.shift()) {
         const r = reqs[id];
         const said = await ask(EXPECT_SYSTEM, [
-          `THE REQUIREMENT (${r.agency} — ${r.title})`, "", r.brief, "",
+          `THE REQUIREMENT (${r.requester} — ${r.title})`, "", r.brief, "",
           `THE DOCUMENT THAT ANSWERS IT: ${doc.name}, sections ${doc.sections.join(", ")}`, "",
           "THE STEP'S OWN CONTRACT, so the expectation asks for what this step owes and not what a",
           "later one does:", "", skill,
@@ -370,14 +370,14 @@ async function main(argv: string[]): Promise<number> {
         const list = (k: string): string[] =>
           (said[k] as string[] ?? []).map((x) => String(x).trim()).filter(Boolean);
         const expectation = {
-          id, agency: r.agency, step, role,
+          id, requester: r.requester, step, role,
           must_decide: list("must_decide"),
           must_surface: list("must_surface"),
           must_not: list("must_not"),
         };
         writeFileSync(join(expectDir, `${id}.json`), `${JSON.stringify(expectation, null, 2)}\n`);
         written++;
-        console.log(`  ${id}  ${r.agency.slice(0, 26).padEnd(26)} decide ${expectation.must_decide.length}  surface ${expectation.must_surface.length}  must-not ${expectation.must_not.length}`);
+        console.log(`  ${id}  ${r.requester.slice(0, 26).padEnd(26)} decide ${expectation.must_decide.length}  surface ${expectation.must_surface.length}  must-not ${expectation.must_not.length}`);
       }
     }));
     console.log(`\n  ${written} expectations written to ${expectDir}`);
@@ -418,14 +418,14 @@ async function main(argv: string[]): Promise<number> {
     if (!existsSync(expectDir)) die(`no expectations at ${expectDir} — run with --expect first`);
     const queue = [...bodies.keys()].filter((id) => existsSync(join(expectDir, `${id}.json`)));
     if (!queue.length) die(`no requirement has both an expectation and a document`);
-    const deviations: { id: string; agency: string; what: string; class: string; why: string; severity: number; quote: string }[] = [];
+    const deviations: { id: string; requester: string; what: string; class: string; why: string; severity: number; quote: string }[] = [];
     const pending = [...queue];
     await Promise.all(Array.from({ length: Math.min(4, pending.length) }, async () => {
       for (let id = pending.shift(); id; id = pending.shift()) {
         const e = JSON.parse(readFileSync(join(expectDir, `${id}.json`), "utf8")) as
           { must_decide: string[]; must_surface: string[]; must_not: string[] };
         const said = await ask(COMPARE_SYSTEM, [
-          `THE REQUIREMENT (${reqs[id].agency})`, "", reqs[id].brief, "",
+          `THE REQUIREMENT (${reqs[id].requester})`, "", reqs[id].brief, "",
           "WHAT A CAREFUL READER EXPECTED, knowing only that requirement", "",
           "MUST DECIDE:", ...e.must_decide.map((x) => `  - ${x}`),
           "MUST SURFACE:", ...e.must_surface.map((x) => `  - ${x}`),
@@ -433,7 +433,7 @@ async function main(argv: string[]): Promise<number> {
           `WHAT THE STEP ACTUALLY WROTE (${docName})`, "", bodies.get(id) ?? "",
         ].join("\n"));
         const found = (said.deviations as Record<string, unknown>[] ?? []).map((d) => ({
-          id, agency: reqs[id].agency,
+          id, requester: reqs[id].requester,
           what: String(d.what ?? "").trim(),
           class: String(d.class ?? "").trim().toLowerCase() === "generic" ? "generic" : "specific",
           why: String(d.why ?? "").trim(),
@@ -442,7 +442,7 @@ async function main(argv: string[]): Promise<number> {
         })).filter((d) => d.what);
         deviations.push(...found);
         const g = found.filter((d) => d.class === "generic").length;
-        console.log(`  ${id}  ${reqs[id].agency.slice(0, 24).padEnd(24)} ${found.length} deviation(s), ${g} generic`);
+        console.log(`  ${id}  ${reqs[id].requester.slice(0, 24).padEnd(24)} ${found.length} deviation(s), ${g} generic`);
       }
     }));
     deviations.sort((a, b) => a.id.localeCompare(b.id));
@@ -501,7 +501,7 @@ async function main(argv: string[]): Promise<number> {
   if (args.flags.has("derive")) {
     const skillPath = flowPath(root, flow, "skills", step, "SKILL.md");
     const samples = [...bodies.entries()].slice(0, 3)
-      .map(([id, b]) => `--- example (${id}, ${reqs[id]?.agency}) ---\n${b.slice(0, 3000)}`);
+      .map(([id, b]) => `--- example (${id}, ${reqs[id]?.requester}) ---\n${b.slice(0, 3000)}`);
     const said = await ask(DERIVE_SYSTEM, [
       "THE STEP'S OWN INSTRUCTIONS", "", readFileSync(skillPath, "utf8"), "",
       "WHAT IT ACTUALLY PRODUCED", "", ...samples,
@@ -515,7 +515,7 @@ async function main(argv: string[]): Promise<number> {
 
     // ONE DIMENSION IS REQUIRED RATHER THAN DERIVED, and only for a selection. Asking a model to
     // read a step's own output and say what good looks like produces a rubric in that output's
-    // own terms: the first derivation for sm-select produced five sharp dimensions about how a
+    // own terms: the first derivation for ops-select produced five sharp dimensions about how a
     // fit ledger READS — verdict accuracy, candour about limits, specificity of rejections — and
     // not one about whether the blocks it picked were the right blocks. That is the circularity
     // of self-derivation. A step that always chose all three blocks would score full marks on
@@ -619,7 +619,7 @@ async function main(argv: string[]): Promise<number> {
   const judgeOne = async (id: string): Promise<Judgement> => {
     const r = reqs[id];
     const said = await ask(system, [
-      `THE REQUIREMENT (${r.agency})`, "", briefFor(id), "",
+      `THE REQUIREMENT (${r.requester})`, "", briefFor(id), "",
       `THE ${role.toUpperCase()} THAT WAS WRITTEN FOR IT`, "", bodies.get(id) ?? "",
     ].join("\n"));
     const marks = (said.marks as Mark[] ?? []).map((m) => ({
@@ -630,7 +630,7 @@ async function main(argv: string[]): Promise<number> {
     })).filter((m) => m.dimension);
     const worst = (said.worst ?? {}) as { quote?: string; fix?: string };
     return {
-      id, agency: r.agency, marks,
+      id, requester: r.requester, marks,
       worst: { quote: String(worst.quote ?? "").trim(), fix: String(worst.fix ?? "").trim() },
       mean: mean(marks.map((m) => m.score)),
       addressed: said.addressed !== false,
@@ -643,7 +643,7 @@ async function main(argv: string[]): Promise<number> {
       const j = await judgeOne(next);
       judgements.push(j);
       const bar = "\u2588".repeat(Math.round(j.mean)).padEnd(5, "\u00b7");
-      console.log(`  ${j.id}  ${bar} ${j.mean.toFixed(1)}  ${j.agency.slice(0, 28).padEnd(28)} ${j.worst.fix.slice(0, 60)}`);
+      console.log(`  ${j.id}  ${bar} ${j.mean.toFixed(1)}  ${j.requester.slice(0, 28).padEnd(28)} ${j.worst.fix.slice(0, 60)}`);
     }
   }));
   // Finished out of order because they ran concurrently; the file should read in corpus order.

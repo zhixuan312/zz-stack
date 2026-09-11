@@ -1,0 +1,51 @@
+# Development override — build from the checkout instead of pulling published images.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Two things this adds on top of docker-compose.yml:
+#
+#   build:    each zz service builds from source. `image:` stays, so the built image
+#             lands under the same name and tag the base file names — which means a
+#             later `docker compose up -d` without this override runs exactly what you
+#             just built, rather than silently pulling a different one.
+#
+#   volumes:  ../catalog and ../skills are mounted OVER the copies inside the image.
+#             Baking them is what makes a released version mean something; mounting
+#             them back is what keeps editing a skill instant. Both are true, in
+#             different files, and which one applies is a flag rather than a guess.
+#
+# Requires the sibling zz-blocks checkout for the block images:
+#
+#   zz-parent/
+#   ├── zz-stack/     (here)
+#   └── zz-blocks/
+#
+# An installer needs neither, which is the whole point of the split.
+services:
+  zz-core:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    volumes:
+      - ../catalog:/catalog:ro
+      - ../skills:/skills:ro
+      - ../blocks:/blocks:ro
+
+  cred-proxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    volumes:
+      - ../catalog:/catalog:ro
+      - ../skills:/skills:ro
+      - ../blocks:/blocks:ro
+
+  n8n:
+    build:
+      context: ../../zz-blocks
+      dockerfile: Dockerfile
+
+  bookit:
+    build:
+      context: ../../zz-blocks
+      dockerfile: Dockerfile

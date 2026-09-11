@@ -1,0 +1,212 @@
+{
+  "why": "Hostile documents, rendered through renderMarkdown and judged on the TAGS that actually survive into the output. Every case is a real technique; the first two are the holes found here against the live deployment, and the third — raw HTML inside a link body — is the one this corpus itself found, which reading the code had missed. A document is drafted from what stakeholders write, so a payload does not need an attacker inside the platform, and the page injects this output with innerHTML while the reader's platform token sits in localStorage.",
+  "cases": [
+    {
+      "name": "raw img with an error handler",
+      "source": "<img src=x onerror=alert(1)>"
+    },
+    {
+      "name": "a javascript: link",
+      "source": "[click](javascript:alert(1))"
+    },
+    {
+      "name": "mixed case scheme",
+      "source": "[click](JaVaScRiPt:alert(1))"
+    },
+    {
+      "name": "scheme split by a tab",
+      "source": "[click](java\tscript:alert(1))"
+    },
+    {
+      "name": "scheme split by a newline",
+      "source": "[click](java\nscript:alert(1))"
+    },
+    {
+      "name": "scheme behind a null byte",
+      "source": "[click](java\u0000script:alert(1))"
+    },
+    {
+      "name": "leading whitespace before the scheme",
+      "source": "[click](   javascript:alert(1))"
+    },
+    {
+      "name": "raw html inside a link body",
+      "source": "[<img src=x onerror=alert(2)>](https://ok.example)"
+    },
+    {
+      "name": "quote break-out through a title",
+      "source": "[a](https://ok.example \"x\\\" onmouseover=alert(3)\")"
+    },
+    {
+      "name": "image with a javascript source",
+      "source": "![alt](javascript:alert(4))"
+    },
+    {
+      "name": "a script tag",
+      "source": "<script>alert(5)</script>"
+    },
+    {
+      "name": "a data: url",
+      "source": "[click](data:text/html,<script>alert(6)</script>)"
+    },
+    {
+      "name": "an iframe",
+      "source": "<iframe src=\"https://evil.example\"></iframe>"
+    },
+    {
+      "name": "svg with an onload",
+      "source": "<svg onload=alert(7)></svg>"
+    },
+    {
+      "name": "a body onload",
+      "source": "<body onload=alert(8)>"
+    },
+    {
+      "name": "an autofocus onfocus input",
+      "source": "<input autofocus onfocus=alert(9)>"
+    },
+    {
+      "name": "vbscript scheme",
+      "source": "[click](vbscript:msgbox(1))"
+    },
+    {
+      "name": "html in an image alt",
+      "source": "![<img src=x onerror=alert(10)>](https://ok.example/a.png)"
+    },
+    {
+      "name": "a reference-style javascript link",
+      "source": "[click][ref]\n\n[ref]: javascript:alert(11)"
+    },
+    {
+      "name": "an autolink to javascript",
+      "source": "<javascript:alert(12)>"
+    },
+    {
+      "name": "scheme behind a decimal html entity",
+      "source": "[click](&#106;avascript:alert(1))"
+    },
+    {
+      "name": "scheme behind a hex html entity",
+      "source": "[click](&#x6a;avascript:alert(1))"
+    },
+    {
+      "name": "hostile image inside a link body",
+      "source": "[![alt](javascript:alert(1))](https://ok.example)"
+    },
+    {
+      "name": "raw html in a table cell",
+      "source": "| a | b |\n|---|---|\n| <img src=x onerror=alert(1)> | y |"
+    },
+    {
+      "name": "raw html in a heading",
+      "source": "# <img src=x onerror=alert(1)>"
+    },
+    {
+      "name": "raw html in a list item",
+      "source": "- <img src=x onerror=alert(1)>"
+    },
+    {
+      "name": "a link destination that closes the href attribute",
+      "source": "[click](/foo\"onmouseover=\"alert(1))"
+    },
+    {
+      "name": "an image destination that closes the src attribute",
+      "source": "![i](/foo\"onerror=\"alert(1))"
+    },
+    {
+      "name": "an attribute breakout with no space before the next attribute",
+      "source": "[click](/a\"onclick=\"alert(1)\"x=\")"
+    },
+    {
+      "name": "a single-quoted breakout, in case the renderer ever emits single quotes",
+      "source": "[click](/foo'onmouseover='alert(1))"
+    },
+    {
+      "name": "a code fence whose language closes the class attribute",
+      "source": "```js\"onload=\"alert(1)\nconst a = 1;\n```"
+    }
+  ],
+  "must_still_render": [
+    {
+      "name": "an ordinary link",
+      "source": "[docs](https://example.com/a)",
+      "expect": "<a href=\"https://example.com/a\">docs</a>"
+    },
+    {
+      "name": "a relative link to another document",
+      "source": "[spec](./spec.md)",
+      "expect": "<a href=\"./spec.md\">spec</a>"
+    },
+    {
+      "name": "a mailto",
+      "source": "[mail](mailto:a@b.example.com)",
+      "expect": "<a href=\"mailto:a@b.example.com\">mail</a>"
+    },
+    {
+      "name": "bold inside a link",
+      "source": "[**bold** link](https://example.com)",
+      "expect": "<strong>bold</strong> link</a>"
+    },
+    {
+      "name": "a fenced code block",
+      "source": "```\n<img src=x onerror=alert(1)>\n```",
+      "expect": "<code>"
+    },
+    {
+      "name": "a table",
+      "source": "| a | b |\n|---|---|\n| 1 | 2 |",
+      "expect": "<table>"
+    },
+    {
+      "name": "a task list",
+      "source": "- [ ] not done\n- [x] done\n",
+      "expect": "<input checked=\"\" disabled=\"\" type=\"checkbox\">"
+    }
+  ],
+  "allowed_tags": [
+    "p",
+    "a",
+    "img",
+    "strong",
+    "em",
+    "code",
+    "pre",
+    "blockquote",
+    "hr",
+    "br",
+    "del",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "ul",
+    "ol",
+    "li",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "input"
+  ],
+  "allowed_attributes": [
+    "href",
+    "src",
+    "alt",
+    "title",
+    "class",
+    "align",
+    "type",
+    "checked",
+    "disabled",
+    "start"
+  ],
+  "allowed_url_schemes": [
+    "http",
+    "https",
+    "mailto"
+  ]
+}

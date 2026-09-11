@@ -1,0 +1,13 @@
+-- THE OTHER CONSTRAINT. Migration 024 emptied `kind = 'common'` and rewrote
+-- `skill_belongs_correctly` to permit two kinds — and left `skill_kind_check`, a second
+-- constraint on the same column, still listing three.
+--
+-- The result was a column whose two checks disagreed: one said `common` was a legal value,
+-- the other refused every row that used it. That is worse than either alone. The schema
+-- advertised a state nothing could write and nothing could read, and the gate's rule about
+-- unreachable states is exactly the rule that found it.
+--
+-- Dropped rather than rewritten: `skill_belongs_correctly` already says which kinds exist
+-- AND what each one requires, so a second list of the same names is a second place to edit
+-- and the one that gets forgotten. It was forgotten here two migrations ago.
+alter table zz.skill drop constraint if exists skill_kind_check;

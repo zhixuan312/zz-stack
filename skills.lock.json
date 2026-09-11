@@ -1,0 +1,130 @@
+{
+  "building-a-block": {
+    "version": "1.0",
+    "sha": "f895f6491da4"
+  },
+  "sdlc-audit-criteria": {
+    "version": "1.0",
+    "sha": "2e6e7658e10d"
+  },
+  "sdlc-authoring": {
+    "version": "1.0",
+    "sha": "36835b1ba955"
+  },
+  "sdlc-breakout": {
+    "version": "1.3",
+    "sha": "053edf157618"
+  },
+  "sdlc-deck": {
+    "version": "2.0",
+    "sha": "bb0f737c315b"
+  },
+  "sdlc-execute": {
+    "version": "1.0",
+    "sha": "9a04bd96e3dd"
+  },
+  "sdlc-explore": {
+    "version": "1.1",
+    "sha": "9a753290ce0b"
+  },
+  "sdlc-flow": {
+    "version": "1.2",
+    "sha": "6aa89ba0a1f8"
+  },
+  "sdlc-investigate": {
+    "version": "1.0",
+    "sha": "c52bfb4eff39"
+  },
+  "sdlc-method": {
+    "version": "1.2",
+    "sha": "52e2f6ef2b3f"
+  },
+  "sdlc-plan-audit": {
+    "version": "1.0",
+    "sha": "7ad834323396"
+  },
+  "sdlc-plan": {
+    "version": "1.3",
+    "sha": "895cd03f4da6"
+  },
+  "sdlc-recall": {
+    "version": "1.2",
+    "sha": "11d3248df3c0"
+  },
+  "sdlc-research": {
+    "version": "1.0",
+    "sha": "356f31a674f0"
+  },
+  "sdlc-review": {
+    "version": "1.0",
+    "sha": "aa2dd0db648a"
+  },
+  "sdlc-spec-audit": {
+    "version": "1.0",
+    "sha": "a8861d50826a"
+  },
+  "sdlc-spec": {
+    "version": "1.2",
+    "sha": "77e51ec5f4ac"
+  },
+  "sdlc-tldr": {
+    "version": "1.0",
+    "sha": "2469c2720bad"
+  },
+  "zz-access": {
+    "version": "2.1",
+    "sha": "79e356db63d7"
+  },
+  "zz-admin": {
+    "version": "2.1",
+    "sha": "6fd5f6827f61"
+  },
+  "zz-block-eval": {
+    "version": "0.1",
+    "sha": "5b372d293822"
+  },
+  "zz-block-locate": {
+    "version": "0.1",
+    "sha": "7c3b43a962cd"
+  },
+  "zz-block-measure": {
+    "version": "0.1",
+    "sha": "0a542d7e577c"
+  },
+  "zz-block-report": {
+    "version": "0.8",
+    "sha": "cd4fe801e8e4"
+  },
+  "zz-skill-define": {
+    "version": "0.5",
+    "sha": "d5e4374cd38e"
+  },
+  "zz-skill-eval": {
+    "version": "0.4",
+    "sha": "4fe264f2e75a"
+  },
+  "zz-skill-judge": {
+    "version": "0.5",
+    "sha": "637b1af7068d"
+  },
+  "zz-skill-locate": {
+    "version": "0.3",
+    "sha": "a3707e02a57b"
+  },
+  "zz-skill-profile": {
+    "version": "0.3",
+    "sha": "8ae1a76de805"
+  },
+  "zz-skill-report": {
+    "version": "0.11",
+    "sha": "38306c845a45"
+  },
+  "zz-backbone": {
+    "version": "3.22",
+    "sha": "69dfb959d64c"
+  },
+  "zz-knowledge": {
+    "version": "2.4",
+    "sha": "93465dacc57f"
+  }
+}

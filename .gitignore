@@ -1,0 +1,29 @@
+# secrets & runtime state — never commit
+# internal context — not for a public repo
+docs/support/
+runs/
+
+.env
+*.env
+!*.env.example
+deploy/.env.*
+# ...but NOT the example, which is a source file, not a secret. `!*.env.example` above is
+# overridden by the line before this one — last match wins — so deploy/.env.example was
+# untracked: a clean clone had no configuration surface at all, and the release bundle tars
+# that file to satisfy the installer's very first command, `cp .env.example .env`.
+!deploy/.env.example
+hermes-data/
+**/data/
+zz-artifacts/
+credentials.json
+
+# python / os noise
+__pycache__/
+*.pyc
+.DS_Store
+*.pem
+*.key
+node_modules/
+dist/
+*.tsbuildinfo
+

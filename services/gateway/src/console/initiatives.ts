@@ -1,0 +1,218 @@
+/**
+ * Initiatives and the documents inside them.
+ *
+ * The list, one initiative's own state, and one document's content with its version history.
+ * A document is returned as the store holds it, envelope included, because the console's job
+ * here is to show what was approved rather than a rendering of it.
+ */
+import type { Express } from "express";
+
+import { platformDb } from "../db.js";
+import { flowShape, handler, stageOf, type DocRow } from "./shared.js";
+
+export function mountInitiatives(app: Express): void {
+  /** Every initiative on the platform, with where it got to.
+   *
+   * From zz.doc — see the header. One query for every document, grouped in
+   * memory, because the stage rule lives in `stageOf` and duplicating it in SQL
+   * is how the API and the front end start disagreeing about step 4. */
+  app.get("/api/console/initiatives", handler("initiatives", async (_req, res, scope) => {
+    const db = platformDb();
+    // DELETED, not guarded: `($1::text is null or team_slug = $1)` treated an absent
+    // `?team=` as "match every row" — a null used as a wildcard, which is how every team's
+    // initiatives were returned to a caller who simply forgot the query string. A team
+    // scope always names its own team_slug; only a platform scope may see every team's
+    // initiatives, which is what an unfiltered request actually returned before this.
+    //
+    // TWO COMPLETE STATEMENTS, not one assembled from `scope` at request time: `check:sql`
+    // PREPAREs every query in this file against a live schema before release — see
+    // packages/tools/src/testing/sql-check.ts for the 0.4.0 incident that check exists to
+    // catch — and it can only PREPARE a literal it can read whole. A predicate built from
+    // `scope.kind` is invisible to it, so BOTH branches below are spelled out in full.
+    const { rows } = scope.kind === "platform"
+      ? await db.query<DocRow & { team_slug: string; initiative: string; flow: string | null }>(
+      `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
+              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              length(coalesce(body,'')) as bytes, title
+         from zz.doc
+        where initiative <> '_knowledge'
+        order by team_slug, initiative, path`)
+      : await db.query<DocRow & { team_slug: string; initiative: string; flow: string | null }>(
+      `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
+              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              length(coalesce(body,'')) as bytes, title
+         from zz.doc
+        where initiative <> '_knowledge' and team_slug = $1
+        order by team_slug, initiative, path`, [scope.slug]);
+    const byInit = new Map<string, typeof rows>();
+    for (const r of rows) {
+      // "/" as the separator, because a team slug cannot contain one (TEAM_SLUG is
+      // [a-z0-9_-]), so the split below is unambiguous. This was a NUL byte: it worked,
+      // and it made the whole file unsearchable — grep classifies a file holding a
+      // control byte as binary and skips it without saying so.
+      const key = `${r.team_slug}/${r.initiative}`;
+      const got = byInit.get(key);
+      if (got) got.push(r); else byInit.set(key, [r]);
+    }
+    const initiatives = [...byInit.entries()].map(([key, docs]) => {
+      const cut = key.indexOf("/");
+      const teamSlug = key.slice(0, cut), slug = key.slice(cut + 1);
+      const live = docs.filter((d) => !d.path.startsWith("_versions/"));
+      return {
+        team: teamSlug, slug,
+        flow: docs.map((d) => d.flow).find(Boolean) ?? null,
+        // `approvals`, NOT `revisions`, which is what this was called while counting
+        // exactly this. A `_versions/` file is written when a document is APPROVED; a
+        // revision that was never approved leaves none. So the number was always the
+        // approval count, and under its old name it under-reported every revision that
+        // a later one replaced before anyone signed it.
+        documents: live.length, approvals: docs.length - live.length,
+        updated: docs.reduce((a, d) => (d.updated_at > a ? d.updated_at : a), ""),
+        // Whoever approved something is the person the work belongs to. There is
+        // no owner column, and inventing one from the first document's author
+        // would name whoever happened to type first rather than who signed.
+        stakeholder: docs.map((d) => d.approved_by).find(Boolean) ?? null,
+        ...stageOf(docs, docs.map((d) => d.flow).find(Boolean) ?? null),
+      };
+    }).sort((a, b) => b.updated.localeCompare(a.updated));
+    res.json({ initiatives });
+  }));
+
+  /** One initiative: every document, and the acceptance-criterion ledger.
+   *
+   * The ledger is `zz.decision` — one row per criterion with the verdict the
+   * selection step reached (native / achievable / workaround) and the qualifier
+   * that says how confident it is. It is the densest real content the platform
+   * holds and nothing has ever displayed it. */
+  app.get("/api/console/initiatives/:team/:slug", handler("the initiative", async (req, res, scope) => {
+    const db = platformDb();
+    const { team, slug } = req.params;
+    // Same not-found rather than a refusal as /teams/:slug, for the same reason: a 403 for
+    // a team scope naming someone else's team would confirm the initiative exists there.
+    if (scope.kind === "team" && team !== scope.slug) {
+      res.status(404).json({ error: `no initiative ${team}/${slug}` });
+      return;
+    }
+    const [docs, decisions] = await Promise.all([
+      db.query<DocRow & { flow: string | null }>(
+        // `flow` as well, because which documents are gated is the FLOW's
+        // declaration and there is no way to ask the manifest without it.
+        `select path, type, status, outcome, approved_by, title, flow, supports,
+                to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                length(coalesce(body,'')) as bytes
+           from zz.doc where team_slug = $1 and initiative = $2 order by path`, [team, slug]),
+      db.query(
+        `select path, role, key, verdict, qualifier, detail, checker, blocks
+           from zz.decision where team_slug = $1 and initiative = $2
+          order by path, key`, [team, slug]),
+    ]);
+    if (!docs.rows.length) { res.status(404).json({ error: `no initiative ${team}/${slug}` }); return; }
+    const shape = flowShape(docs.rows.map((d) => (d as { flow?: string }).flow).find(Boolean) ?? null);
+    res.json({
+      team, slug,
+      documents: docs.rows.map((d) => {
+        // A snapshot answers to the same rules as the document it froze.
+        const name = d.path.replace(/^_versions\//, "").replace(/\.v\d+\.md$/, ".md");
+        const rule = shape.get(name);
+        return {
+          ...d, bytes: +d.bytes,
+          // Null when the flow declares nothing about this file — a source, or a
+          // document some other flow owns. Null is "we do not know", which is a
+          // different answer from "no approval needed" and must not read as it.
+          gated: rule ? rule.gate : null,
+          closing: rule?.closing ?? false,
+          requiredForClose: rule?.requiredForClose ?? false,
+        };
+      }),
+      decisions: decisions.rows,
+      ...stageOf(docs.rows, docs.rows.map((d) => d.flow).find(Boolean) ?? null),
+    });
+  }));
+
+  /** ONE DOCUMENT, whole — its text, its envelope, and the claims it makes.
+   *
+   * The console could show that a spec existed, who approved it and how many
+   * bytes it was, and not a word of what it said. A reader looking at "plan.md,
+   * approved, 54,691 bytes" has been told everything except the thing they came
+   * for.
+   *
+   * The decisions come back WITH the document rather than beside it, because
+   * they are keyed by its path: an acceptance-criterion ledger is what one
+   * particular selection or spec claims, and floating it next to the initiative
+   * detached it from the document that has to answer for it.
+   *
+   * Reads zz.doc.body — the same text the index was built from, so what is shown
+   * and what is searchable cannot disagree. */
+  app.get("/api/console/document/:team/:initiative/*", handler("the document", async (req, res, scope) => {
+    const db = platformDb();
+    const path = (req.params as Record<string, string>)[0];
+    const { team, initiative } = req.params;
+    // Same not-found rather than a refusal as /teams/:slug: a team scope naming someone
+    // else's team gets the response it would get for a document that never existed.
+    if (scope.kind === "team" && team !== scope.slug) {
+      res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });
+      return;
+    }
+    // The live document is `spec.md`; its frozen predecessors are
+    // `_versions/spec.v1.md`, `spec.v2.md` and so on. Derived from the name
+    // rather than stored, because that IS the convention the store is written
+    // with and a second copy of it could drift from the files.
+    const base = path.replace(/^_versions\//, "").replace(/\.v\d+\.md$/, ".md");
+    const [doc, decisions, versions, sources] = await Promise.all([
+      db.query(
+        `select team_slug as team, initiative, path, flow, type, status, outcome,
+                approved_by, approved_at, closed_by, title, tags, evidence,
+                superseded_by, body,
+                to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                length(coalesce(body,'')) as bytes
+           from zz.doc where team_slug = $1 and initiative = $2 and path = $3`,
+        [team, initiative, path]),
+      db.query(
+        `select key, role, verdict, qualifier, detail, checker, blocks
+           from zz.decision
+          where team_slug = $1 and initiative = $2 and path = $3
+          order by key`, [team, initiative, path]),
+      // EVERY VERSION OF THIS DOCUMENT, oldest first — the frozen snapshots plus
+      // the live one. A reader asking "what changed" needs both sides, and the
+      // console had no way to reach either.
+      db.query(
+        `select path, body, status, approved_by,
+                to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                length(coalesce(body,'')) as bytes,
+                coalesce((regexp_match(path, '\\.v(\\d+)\\.md$'))[1]::int, 9999) as version
+           from zz.doc
+          where team_slug = $1 and initiative = $2
+            and (path = $3 or path = '_versions/' || replace($3, '.md', '') || '.v' || (regexp_match(path, '\\.v(\\d+)\\.md$'))[1] || '.md')
+          order by version`, [team, initiative, base]),
+      // WHY IT CHANGED. Every source declares the document it was attached to, and
+      // until now nothing indexed that — so the chain from "what we learned" to
+      // "what we changed" existed in the files and in no query.
+      db.query(
+        `select path, title, body, supports,
+                to_char(updated_at,'YYYY-MM-DD') as added,
+                length(coalesce(body,'')) as bytes
+           from zz.doc
+          where team_slug = $1 and initiative = $2 and supports = $3
+          order by updated_at, path`, [team, initiative, base]),
+    ]);
+    if (!doc.rows.length) {
+      res.status(404).json({ error: `no document ${team}/${initiative}/${path}` });
+      return;
+    }
+    // WHAT THE FLOW SAYS ABOUT THIS ONE, same as the initiative list computes
+    // for the table. Without it the reader's own status bar was left guessing
+    // from `status` alone and printed "draft" on a document nothing will ever
+    // approve — the exact grey area the table was fixed to remove, still live
+    // one click deeper.
+    const rule = flowShape(doc.rows[0].flow).get(base);
+    res.json({
+      ...doc.rows[0], bytes: +doc.rows[0].bytes,
+      gated: rule ? rule.gate : null,
+      closing: rule?.closing ?? false,
+      requiredForClose: rule?.requiredForClose ?? false,
+      decisions: decisions.rows,
+      versions: versions.rows.map((v) => ({ ...v, bytes: +v.bytes, version: +v.version })),
+      sources: sources.rows.map((x) => ({ ...x, bytes: +x.bytes })),
+    });
+  }));
+}

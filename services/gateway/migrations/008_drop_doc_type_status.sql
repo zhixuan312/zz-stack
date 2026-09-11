@@ -1,0 +1,19 @@
+-- Drop doc_type_status: superseded by doc_team_type, and unusable since the day that one
+-- was added.
+--
+-- 001 created it as (type, status). Migration 005 then observed that "doc_type_status does
+-- not cover the team scoping that always accompanies them, so every such query fell back to
+-- a scan", and added doc_team_type as (team_slug, type, status) — but left the original
+-- standing. Every query against zz.doc leads with team_slug = $1, so nothing can choose an
+-- index that does not have team_slug first. It has been written on every document write
+-- since, and read by nothing: 0 scans on the deployment against doc_team_type's 33.
+--
+-- Its siblings are NOT dropped, and the reason is worth writing down, because "0 scans"
+-- means two different things here. doc_tsv, doc_tags and doc_evidence also show 0, and that
+-- is the planner declining to use any index on a 145-row table — they are the indexes
+-- search_knowledge is built on and they start paying the moment the corpus grows.
+-- event_kind_ts has no reader in the code either, and stays too: filtering the event log by
+-- kind is how a person audits it, which is what the table is for.
+--
+-- This one is different. No query can use it at any size.
+drop index if exists zz.doc_type_status;

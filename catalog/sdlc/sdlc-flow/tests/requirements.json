@@ -1,0 +1,197 @@
+{
+  "note": [
+    "Three software-delivery requests, in the voice an engineering lead or PM would use,",
+    "for evaluating sdlc-flow's steps one at a time.",
+    "",
+    "WHAT THIS IS FOR. sdlc-flow has no scenarios.json and cannot have one — it declares",
+    "clients [\"claude-code\",\"codex\"], has no browser agent, and the smoke engine that drives",
+    "LibreChat cannot reach it. This corpus exists so a step still gets scored instances:",
+    "three briefs through sdlc-explore, or three grounded briefs through sdlc-spec, instead of",
+    "the flow getting zero.",
+    "",
+    "SDLC-FLOW IS NOT OPS-FLOW. ops-flow's corpus is thirty requirements built around whether a",
+    "connected building block can do the work — its `exercises.blocks` and `.gap` are facts",
+    "about a deployment's wiring. sdlc-flow has no building blocks and nothing it composes;",
+    "it is the general delivery method — ground an idea, agree what ships, order how it gets",
+    "built — so this corpus does not carry `blocks` or `gap` at all. What it needs to vary",
+    "instead is how FINISHED the idea already is when it arrives, because that is what",
+    "sdlc-explore and sdlc-spec are actually for: turning something half-formed into something",
+    "buildable, not composing a system out of parts that already exist.",
+    "",
+    "`exercises.shape` says why the item is in the set, not the expected answer: `clear` is",
+    "already well-formed and exists to check a step doesn't invent extra work where none is",
+    "needed; `vague` states a problem with no solution direction, exists to check sdlc-explore",
+    "actually surveys instead of guessing a direction on nothing; `hidden_constraint` reads as",
+    "simple and has a real constraint buried in it that only surfaces on investigation, exists",
+    "to check a step doesn't wave a hard requirement through because the brief made it sound",
+    "easy. `hidden_constraint` items carry an extra `surfaces_on_investigation` field naming the",
+    "constraint plainly, for the same reason ops-flow's `gap` is a fact rather than an opinion —",
+    "a grader needs to know what SHOULD have been found before it can check whether a step",
+    "found it.",
+    "",
+    "NONE OF THIS IS SHOWN TO THE AGENT. An agent that could read `exercises` or",
+    "`surfaces_on_investigation` would be sitting a different exam from the one being marked.",
+    "",
+    "`must_survive` IS THE GROUND TRUTH FOR FACT SURVIVAL, same rule as ops-flow's copy: every",
+    "concrete thing the brief states, checked for in what the step produced, on the theory that",
+    "the step's job is reorganisation and closure, not transcription — 'half an hour' and",
+    "'30 minutes' are the same fact. Each fact is a list of acceptable spellings and counts as",
+    "carried if any one of them appears. They were chosen for what actually gets dropped:",
+    "counts, thresholds, named systems, named statuses — nobody drops 'customers are angry',",
+    "people drop '600 requests a minute' and 'six months'."
+  ],
+  "requirements": {
+    "r01": {
+      "agency": "Platform Engineering",
+      "title": "Per-tenant rate limit on the public API gateway",
+      "brief": "Our public API gateway serves multiple external tenants off shared capacity. Last month one tenant's misbehaving script sent 40,000 requests in ten minutes and starved everyone else on the same node — 22 minutes of outage for tenants who did nothing wrong.\n\nI want a per-tenant limit of 600 requests per minute, with a burst allowance up to 900 for at most ten seconds. Over the limit, the gateway returns a 429 with a Retry-After header rather than dropping the connection. I also want a dashboard showing how often each tenant is hitting the ceiling, because right now we'd have no way to tell if the limit itself is wrong.\n\nRoll it out behind a feature flag, starting with our three largest tenants before it applies to everyone. Rollback has to be a single flag flip, not a redeploy, in case the limit turns out to be too aggressive for someone we didn't expect.",
+      "exercises": {
+        "shape": "clear",
+        "why": "already states the numbers, the failure mode, and the rollout plan; a step that pads this with invented open questions is doing unneeded work"
+      },
+      "must_survive": [
+        [
+          "40,000 requests",
+          "40000 requests"
+        ],
+        [
+          "ten minutes",
+          "10 minutes"
+        ],
+        [
+          "22 minutes",
+          "22-minute"
+        ],
+        [
+          "600 requests",
+          "600 per minute"
+        ],
+        [
+          "burst",
+          "900"
+        ],
+        [
+          "ten seconds",
+          "10 seconds"
+        ],
+        [
+          "429"
+        ],
+        [
+          "retry-after",
+          "Retry-After"
+        ],
+        [
+          "dashboard"
+        ],
+        [
+          "three largest tenants",
+          "3 largest tenants"
+        ],
+        [
+          "feature flag"
+        ],
+        [
+          "flag flip",
+          "single flag"
+        ],
+        [
+          "rollback"
+        ]
+      ]
+    },
+    "r02": {
+      "agency": "SRE",
+      "title": "On-call paging nobody trusts",
+      "brief": "Our on-call rotation keeps paging the wrong person, and engineers have started just fixing things in the team Slack channel instead of going through PagerDuty, which means we lose the incident record entirely.\n\nLast quarter we had four incidents where the page went to someone who was on vacation and nothing happened for over an hour before somebody noticed in Slack. I don't know if the fix is a better rotation tool, better escalation rules, or just retraining people on the process we already have. Figure out what's actually going wrong before anyone builds anything — I'd rather spend a week understanding it than ship a fix for the wrong problem again.",
+      "exercises": {
+        "shape": "vague",
+        "why": "states symptoms and a count but deliberately gives no solution direction, so grounding it is real work rather than a formality"
+      },
+      "must_survive": [
+        [
+          "PagerDuty"
+        ],
+        [
+          "wrong person"
+        ],
+        [
+          "Slack"
+        ],
+        [
+          "incident record"
+        ],
+        [
+          "four incidents",
+          "4 incidents"
+        ],
+        [
+          "vacation"
+        ],
+        [
+          "over an hour",
+          "an hour"
+        ],
+        [
+          "rotation"
+        ],
+        [
+          "escalation"
+        ]
+      ]
+    },
+    "r03": {
+      "agency": "Customer Support",
+      "title": "Let customers export their own data as CSV",
+      "brief": "Customers keep emailing support asking for a copy of their data — order history, saved addresses, and support ticket transcripts. I want a button on the account page that generates a CSV and emails it to them within a few minutes.\n\nThis should be simple: three tables, zip it up, done — ops thinks it's a half-day job. The only thing I'd add on top is that we need to log every export request for six months, in case a customer later disputes what we sent them.",
+      "exercises": {
+        "shape": "hidden_constraint",
+        "why": "reads as a half-day export job; the constraint below only surfaces if someone actually reads what's in a support ticket transcript rather than just its schema",
+        "surfaces_on_investigation": "support ticket transcripts can contain a second customer's personal data — a name, address or order number an agent pasted in while resolving a linked case — so a raw per-customer export risks handing one customer another customer's PII"
+      },
+      "must_survive": [
+        [
+          "order history"
+        ],
+        [
+          "saved addresses",
+          "addresses"
+        ],
+        [
+          "support ticket",
+          "tickets"
+        ],
+        [
+          "CSV"
+        ],
+        [
+          "account page"
+        ],
+        [
+          "few minutes",
+          "a few minutes"
+        ],
+        [
+          "three tables",
+          "3 tables"
+        ],
+        [
+          "half-day",
+          "half day"
+        ],
+        [
+          "log",
+          "logged"
+        ],
+        [
+          "six months",
+          "6 months"
+        ],
+        [
+          "dispute",
+          "disputes"
+        ]
+      ]
+    }
+  }
+}

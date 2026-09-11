@@ -1,0 +1,26 @@
+{
+  "step": "building-a-block",
+  "role": "authoring guide, published to other teams",
+  "produces_document": false,
+  "how_to_score": "This is read by people outside this platform, building against the contract. It cannot be scored from our event log — no block team's authoring session appears there. It is scored against the conformance results and defects of the blocks that were built with it: the guide's job is to prevent the failures we keep finding.",
+  "dimensions": [
+    {
+      "name": "Prevents the failures we actually see",
+      "evidence": "Recurring block defects, against what the guide warns about.",
+      "five": "Every failure this platform has met more than once is warned about here, in the terms a builder would recognise before they hit it — a write that returns an error and succeeds anyway, a filter accepted and ignored, a version that moves on restart.",
+      "one": "The guide restates the contract's requirements and warns about nothing. A team follows it exactly and still ships the defects we have already found in every other block, because the guide carries obligations and no experience."
+    },
+    {
+      "name": "Honest about what the battery cannot settle",
+      "evidence": "What it says about R1, R7, R12, R13, R14.",
+      "five": "It says plainly that a clean conformance run is not a complete one, names the requirements a tool surface cannot establish, and tells a team to have them exercised in a real initiative.",
+      "one": "It presents `conformance` as the finish line, so a team reads a green result as done and ships with the behavioural requirements untested."
+    },
+    {
+      "name": "Distinguishes what is theirs from what is ours",
+      "evidence": "Its guidance on usage skills and conduct.",
+      "five": "It tells a team what belongs in their skills — defects, ordering constraints, limits found by refusal — and what must not: conduct, which belongs to the flow running the work. It says when a skill should not exist at all because a live tool already returns better.",
+      "one": "It invites a team to ship their assistant's system prompt as a usage skill, which then imports another product's conduct rules into every flow that loads it."
+    }
+  ]
+}

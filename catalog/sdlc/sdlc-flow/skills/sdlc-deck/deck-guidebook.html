@@ -1,0 +1,2802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The House Book — Guidebook Reference</title>
+<!--
+  Composition reference split out of deck-template.html: the 53 reference slide
+  sections, in original order, and the housebook manifest script that describes
+  them. This document is not wired to the chassis's dock, pagination, or style
+  scripts (those live in deck-chassis.html) -- it exists so a person or a check can
+  read the slide markup and the manifest JSON directly.
+-->
+</head>
+<body>
+<section aria-label="Cover" class="slide active slide--cover" data-chapter="The House Book" data-choose="A generic title page." data-component="Cover" data-job="Orient" data-limits="One title, one lede, one metadata row." data-slide-id="cover" data-source-required="false" data-tags="cover guidebook system" data-use="Open the guidebook and state its promise." data-version="1.2.3">
+<div class="sheet sheet--poster">
+<div class="zone-stage">
+<div class="cover-layout">
+<div class="cover-copy reveal">
+<p class="kicker">The House Book · professional slide guide</p>
+<h1 class="display">Make the point.<br/><span>Show the proof.</span></h1>
+<p class="lede">A complete visual system, decision guide, component library, and copyable HTML template for people and agents.</p>
+<div class="cover-meta-row">
+<span>1440 × 810 · 16:9</span>
+<span>Single file · offline</span>
+<span>53 reference pages</span>
+</div>
+</div>
+<div aria-hidden="true" class="cover-index">
+<div class="cover-index__rail"><span>01</span><b></b><span>06</span></div>
+<div class="cover-index__cards">
+<div><small>01</small><strong>Frame</strong><span>Write the answer.</span></div>
+<div><small>02</small><strong>Choose</strong><span>Route by job.</span></div>
+<div class="is-focus"><small>03</small><strong>Build</strong><span>Use system pieces.</span></div>
+<div><small>04</small><strong>Prove</strong><span>Make evidence visible.</span></div>
+<div><small>05</small><strong>Finish</strong><span>Run the gates.</span></div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+<aside class="slide-notes" hidden=""><p>Open with the promise: this is not a gallery of components. It is an operating manual for turning material into a clear, professional decision deck.</p></aside>
+</section><section aria-label="The method" class="slide" data-chapter="Ch 0 · How to use this book" data-choose="A component catalogue." data-component="The method" data-job="Teach the workflow" data-limits="Five moves only." data-slide-id="the-method" data-source-required="false" data-tags="method workflow" data-use="Explain the five authoring moves." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 0 · How to use this book</p><h2>Five moves turn material into a decision.</h2></div>
+<p class="head-note">Use the method in order. The library pages are references, not a substitute for the method.</p>
+</header>
+<div class="zone-stage">
+<div class="method-row">
+<div class="card">
+<p class="method-no">1</p>
+<h3>Write the answer</h3>
+<p>Write the conclusion before choosing a layout. A content-slide title states what is true or what should happen.</p>
+</div>
+<div class="card">
+<p class="method-no">2</p>
+<h3>Name the job</h3>
+<p>Decide whether the slide must compare, explain, prove, sequence, decide, or ask.</p>
+</div>
+<div class="card">
+<p class="method-no">3</p>
+<h3>Choose one composition</h3>
+<p>Use the router. Build one visual argument in the stage, not a collection of unrelated blocks.</p>
+</div>
+<div class="card">
+<p class="method-no">4</p>
+<h3>Spend emphasis once</h3>
+<p>Give the strongest visual weight to the one idea the audience must notice first.</p>
+</div>
+<div class="card">
+<p class="method-no">5</p>
+<h3>Run the gates</h3>
+<p>Check hierarchy, evidence, accessibility, overflow, and source treatment before shipping.</p>
+</div>
+</div>
+<div class="callout"><p>Reference pages may use a component name as the title. <strong>Actual content slides use conclusion-led titles.</strong></p></div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+<aside class="slide-notes" hidden=""><p>Walk the five cards left to right. Move two is where most decks go wrong — people open a blank grid and start typing.</p></aside>
+</section><section aria-label="Deck architecture" class="slide" data-chapter="Ch 0 · How to use this book" data-choose="A topic outline." data-component="Deck architecture" data-job="Plan the story" data-limits="Five sections maximum." data-slide-id="deck-architecture" data-source-required="false" data-tags="story narrative arc" data-use="Sequence a decision deck from answer to action." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 0 · How to use this book</p><h2>A strong deck moves from answer to action.</h2></div>
+<p class="head-note">Slides are pages in an argument. The sequence matters as much as each individual page.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Planning the story before building individual slides, especially for decision, recommendation, or review decks.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A topic outline. Topics name subjects; a story arc names what the audience must understand, believe, decide, and do.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Start with the audience decision</li><li>Give each section one job</li><li>End with owner, action, and next date</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A deck that follows the source document’s order instead of the audience’s reasoning.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="story-arc">
+<div class="story-arc__step"><span>01</span><strong>Answer</strong><p>State the recommendation.</p></div>
+<i></i>
+<div class="story-arc__step"><span>02</span><strong>Context</strong><p>Show why now.</p></div>
+<i></i>
+<div class="story-arc__step is-focus"><span>03</span><strong>Proof</strong><p>Make the evidence visible.</p></div>
+<i></i>
+<div class="story-arc__step"><span>04</span><strong>Choice</strong><p>Resolve trade-offs.</p></div>
+<i></i>
+<div class="story-arc__step"><span>05</span><strong>Action</strong><p>Name owner and next date.</p></div>
+</div>
+<div class="callout"><p><strong>Section test:</strong> remove one section. If the decision still follows, that section did not have a job.</p></div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Slide anatomy" class="slide" data-chapter="Ch 0 · How to use this book" data-choose="Free-form positioning." data-component="Slide anatomy" data-job="Explain structure" data-limits="One composition in the stage." data-slide-id="slide-anatomy" data-source-required="false" data-tags="anatomy zones" data-use="Teach the fixed head, stage, and foot zones." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 0 · How to use this book</p><h2>Every slide has one reading path.</h2></div>
+<p class="head-note">Head states the answer, stage proves it, foot records context. The three rows cannot overlap.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block">
+<p class="rail-label">The contract</p>
+<ul>
+<li>HEAD — kicker, title, one-line purpose, closed by a 1px rule</li>
+<li>STAGE — exactly one composition, clipped to its row</li>
+<li>FOOT — chapter and plate number; the dock keeps a reserved inset</li>
+</ul>
+</div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Free-form positioning. Use the fixed zones unless a poster page intentionally removes the head.</p></div>
+<div class="rail-block">
+<p class="rail-label">Rules</p>
+<ul>
+<li>One composition per stage — never two</li>
+<li>The title carries the takeaway, the stage carries the proof</li>
+<li>Nothing enters the foot row, ever</li>
+</ul>
+</div>
+</aside>
+<div class="guide__sample">
+<div class="wire">
+<div class="wire__head">
+<div><p class="wire__tag">Head</p><h3>The takeaway, as a sentence</h3></div>
+<p class="wire__note">purpose · right aligned</p>
+</div>
+<div class="wire__stage">
+<p class="wire__tag">Stage</p>
+<p class="small">one composition — a guide, a diagram, a table, a statement</p>
+</div>
+<div class="wire__foot">
+<span>Ch n · chapter</span>
+<span>plate 07 · 42</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Canvas and travel" class="slide" data-chapter="Ch 1 · Foundations" data-choose="Responsive web layout." data-component="Canvas and travel" data-job="Set geometry" data-limits="1440 × 810 fixed." data-slide-id="canvas-and-travel" data-source-required="false" data-tags="canvas export geometry" data-use="Keep HTML, PDF, and rendered PPT imports stable." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 1 · Foundations</p><h2>Fixed geometry keeps every export stable.</h2></div>
+<p class="head-note">Author once at 1440 × 810. Print to PDF directly; import a rendered page into PPT when editable conversion is not required.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block">
+<p class="rail-label">The contract</p>
+<ul>
+<li>1440 × 810 · 16:9, fixed</li>
+<li>Sheet padding 44 top · 76 sides — the safe area</li>
+<li>Everything scales as one object</li>
+</ul>
+</div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Responsive web layout. Slides scale as one canvas; their internal geometry does not reflow.</p></div>
+<div class="rail-block">
+<p class="rail-label">Rules</p>
+<ul>
+<li>Author at 100%; present scaled</li>
+<li>Wide content scrolls inside its own container, never the page</li>
+<li>Registration marks are print-only; the screen canvas stays clean</li>
+</ul>
+</div>
+</aside>
+<div class="guide__sample">
+<div style="flex:1;display:grid;place-items:center;min-height:0">
+<div style="width:900px;height:506px;border:2px solid var(--ink);background:var(--white);position:relative;box-shadow:var(--shadow)">
+<i style="position:absolute;left:8px;top:8px;width:10px;height:10px;border-left:1px solid var(--ink-faint);border-top:1px solid var(--ink-faint)"></i>
+<i style="position:absolute;right:8px;top:8px;width:10px;height:10px;border-right:1px solid var(--ink-faint);border-top:1px solid var(--ink-faint)"></i>
+<i style="position:absolute;left:8px;bottom:8px;width:10px;height:10px;border-left:1px solid var(--ink-faint);border-bottom:1px solid var(--ink-faint)"></i>
+<i style="position:absolute;right:8px;bottom:8px;width:10px;height:10px;border-right:1px solid var(--ink-faint);border-bottom:1px solid var(--ink-faint)"></i>
+<div style="position:absolute;inset:30px 46px;border:1px dashed var(--ink-faint);display:grid;place-content:center"><p class="mono small" style="color:var(--ink-faint)">safe area · 1288 × 766</p></div>
+<p class="mono small" style="position:absolute;right:0;bottom:-30px;color:var(--ink-faint)">canvas · 1440 × 810</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Colour" class="slide" data-chapter="Ch 1 · Foundations" data-choose="A palette per slide." data-component="Colour" data-job="Define colour roles" data-limits="One signal colour per slide." data-slide-id="colour" data-source-required="false" data-tags="color palette tokens" data-use="Choose surface, ink, signal, status, and series colours." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 1 · Foundations</p><h2>Colour signals role before it signals style.</h2></div>
+<p class="head-note">Warm neutrals carry the page. One signal colour creates focus; semantic colours keep fixed meanings.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block">
+<p class="rail-label">Rules</p>
+<ul>
+<li>One accent per slide; a second only to genuinely contrast</li>
+<li>The status trio is reserved — never a chart series</li>
+<li>Soft fill + strong border is the house pattern</li>
+</ul>
+</div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A new palette per chapter. Re-accent the same system instead of inventing new colour logic.</p></div>
+<div class="rail-block rail-block--avoid">
+<p class="rail-label">Avoid</p>
+<p>A deck where every slide re-invents its palette.</p>
+</div>
+</aside>
+<div class="guide__sample">
+<div>
+<div class="swatch-row swatch-row--4">
+<div class="swatch" style="background:var(--paper)"><b>--paper</b><span>the slide</span></div>
+<div class="swatch" style="background:var(--paper-2)"><b>--paper-2</b><span>recessed panel</span></div>
+<div class="swatch" style="background:var(--white)"><b>--white</b><span>raised card</span></div>
+<div class="swatch" style="background:var(--desk)"><b>--desk</b><span>outside the stage</span></div>
+</div>
+<p class="swatch-caption">Surfaces</p>
+</div>
+<div>
+<div class="swatch-row swatch-row--4">
+<div class="swatch swatch--inkbg" style="background:var(--ink)"><b>--ink</b><span>headings · borders</span></div>
+<div class="swatch swatch--inkbg" style="background:var(--ink-soft)"><b>--ink-soft</b><span>secondary copy</span></div>
+<div class="swatch swatch--inkbg" style="background:var(--ink-faint)"><b>--ink-faint</b><span>axis · watermark</span></div>
+<div class="swatch" style="background:var(--white)"><b>--line</b><span>hairline rules</span></div>
+</div>
+<p class="swatch-caption">Ink ladder</p>
+</div>
+<div>
+<div class="swatch-row swatch-row--6">
+<div class="swatch" style="background:var(--signal-soft);border-color:var(--signal)"><b>--signal</b><span>default accent</span></div>
+<div class="swatch" style="background:var(--contrast-soft);border-color:var(--contrast)"><b>--contrast</b><span>the other side</span></div>
+<div class="swatch" style="background:var(--resolved-soft);border-color:var(--resolved)"><b>--resolved</b><span>settled · resolved</span></div>
+<div class="swatch" style="background:var(--good-soft);border-color:var(--good)"><b>--good</b><span>status · good</span></div>
+<div class="swatch" style="background:var(--warn-soft);border-color:var(--warn)"><b>--warn</b><span>status · warn</span></div>
+<div class="swatch" style="background:var(--stop-soft);border-color:var(--stop)"><b>--stop</b><span>status · stop</span></div>
+</div>
+<p class="swatch-caption">Accents (left three) · Status (right three, reserved)</p>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Type" class="slide" data-chapter="Ch 1 · Foundations" data-choose="Many arbitrary sizes." data-component="Type" data-job="Define type hierarchy" data-limits="Four weights; body floor 18.5px." data-slide-id="type" data-source-required="false" data-tags="typography hierarchy" data-use="Separate display, reading, and label registers." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 1 · Foundations</p><h2>Three type registers create hierarchy without noise.</h2></div>
+<p class="head-note">Display attracts, reading explains, labels annotate. Four weights are enough.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block">
+<p class="rail-label">Rules</p>
+<ul>
+<li>Poster · display 82 · hero 58 · title 40</li>
+<li>Reading · lede 26 · body 18.5 · small 15.5</li>
+<li>Label · mono uppercase · 11.5; source · 10.5</li>
+</ul>
+</div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Many sizes and bold everywhere. Use register, size, weight, and spacing as separate controls.</p></div>
+<div class="rail-block rail-block--avoid">
+<p class="rail-label">Avoid</p>
+<p>Never shrink type to fit — cut words instead.</p>
+</div>
+</aside>
+<div class="guide__sample">
+<div class="specimen">
+<div class="specimen__row">
+<p class="specimen__meta">display · 82 · poster</p>
+<div><span class="display" style="font-size:64px;font-weight:800;letter-spacing:-.045em">Decide.</span></div>
+</div>
+<div class="specimen__row">
+<p class="specimen__meta">title · 40 · poster</p>
+<div><span style="font-size:var(--fs-title);font-weight:700;letter-spacing:-.5px">The takeaway is a sentence</span></div>
+</div>
+<div class="specimen__row">
+<p class="specimen__meta">lede · 26 · reading</p>
+<div><span class="lede">A lede opens the argument.</span></div>
+</div>
+<div class="specimen__row">
+<p class="specimen__meta">body · 18.5 · reading</p>
+<div><span style="font-size:var(--fs-body)">Body copy carries the reasoning.</span></div>
+</div>
+<div class="specimen__row">
+<p class="specimen__meta">small · 15.5 · reading</p>
+<div><span class="small">Small is for captions and dense evidence.</span></div>
+</div>
+<div class="specimen__row">
+<p class="specimen__meta">label · 11.5 · mono</p>
+<div><span class="kicker">Kicker · mono · uppercase</span></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Space and structure" class="slide" data-chapter="Ch 1 · Foundations" data-choose="Boxing every idea." data-component="Space and structure" data-job="Define grouping" data-limits="Spacing tokens only." data-slide-id="space-and-structure" data-source-required="false" data-tags="spacing border shadow" data-use="Group and separate content with space and boundaries." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 1 · Foundations</p><h2>Whitespace groups ideas before borders do.</h2></div>
+<p class="head-note">Use spacing first, hairlines second, borders third, and shadows only for true elevation.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block">
+<p class="rail-label">Rules</p>
+<ul>
+<li>Gaps come from --s1 … --s10 only</li>
+<li>2px ink = object boundary · 1px line = interior rule</li>
+<li>Shadows are hard offsets, never blurs</li>
+</ul>
+</div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Boxing every idea. Use proximity to group; add a boundary only when the content has a real boundary.</p></div>
+<div class="rail-block rail-block--avoid">
+<p class="rail-label">Avoid</p>
+<p>Eyeballed margins. If it is not on the scale, it is not in the system.</p>
+</div>
+</aside>
+<div class="guide__sample">
+<div class="space-scale">
+<div><span>--s2 · 8px</span><i style="width:48px"></i></div>
+<div><span>--s4 · 16px</span><i style="width:96px"></i></div>
+<div><span>--s6 · 26px</span><i style="width:156px"></i></div>
+<div><span>--s8 · 46px</span><i style="width:276px"></i></div>
+<div><span>--s10 · 76px</span><i style="width:456px"></i></div>
+</div>
+<div class="structure-demos">
+<div class="card card--flat"><h3>Open</h3><p>no boundary; grouping by space</p></div>
+<div class="card"><h3>Hairline</h3><p>1px boundary for a real object</p></div>
+<div class="card card--soft"><h3>Soft</h3><p>quiet context on a tinted surface</p></div>
+<div class="card card--hard"><h3>Focus</h3><p>2px edge and restrained offset</p></div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Visual hierarchy" class="slide" data-chapter="Ch 1 · Foundations" data-choose="Bold everywhere." data-component="Visual hierarchy" data-job="Set reading order" data-limits="One dominant object." data-slide-id="visual-hierarchy" data-source-required="false" data-tags="hierarchy emphasis" data-use="Make conclusion, proof, and context visible in order." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 1 · Foundations</p><h2>Visual weight must match message weight.</h2></div>
+<p class="head-note">The first glance should reveal the conclusion, proof, and context in that order.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Deciding what should be seen first, second, and last on any content slide.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>Making everything bold. Hierarchy uses size, position, contrast, whitespace, and weight together.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>One dominant object</li><li>One supporting reading path</li><li>Metadata stays quiet but readable</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Equal emphasis on title, cards, labels, borders, and decorative shapes.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="hierarchy-board">
+<div class="hierarchy-board__claim"><p class="kicker">1 · conclusion</p><h3>Demand moved before capacity did.</h3></div>
+<div class="hierarchy-board__proof"><p class="kicker">2 · proof</p><svg style="--fscale:1.2980" class="cx" role="img" viewBox="0 0 480 300" aria-labelledby="p9prf-t p9prf-d"><title id="p9prf-t">Column chart of four periods</title><desc id="p9prf-d">Four periods rise from 34 to 91. The final period carries the signal colour because it carries the finding.</desc><line class="cx-axis" x1="30" y1="248" x2="480" y2="248"/><rect class="cx-bar" x="64" y="180" width="65.1" height="68"/><text class="cx-value" text-anchor="middle" x="96.5" y="170">34</text><text class="cx-cat" text-anchor="middle" x="96.5" y="272">P1</text><rect class="cx-bar" x="168.9" y="152" width="65.1" height="96"/><text class="cx-value" text-anchor="middle" x="201.5" y="142">48</text><text class="cx-cat" text-anchor="middle" x="201.5" y="272">P2</text><rect class="cx-bar" x="273.9" y="112" width="65.1" height="136"/><text class="cx-value" text-anchor="middle" x="306.5" y="102">68</text><text class="cx-cat" text-anchor="middle" x="306.5" y="272">P3</text><rect class="cx-bar--focus" x="378.9" y="66" width="65.1" height="182"/><text class="cx-value" text-anchor="middle" x="411.5" y="56">91</text><text class="cx-cat" text-anchor="middle" x="411.5" y="272">P4</text></svg><p class="small">The final period carries the signal colour because it carries the finding.</p></div>
+<div class="hierarchy-board__context"><p class="kicker">3 · context</p><p class="small">Units, source, assumptions, and caveats remain available without competing with the claim.</p></div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Layout router" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="Starting from a blank grid." data-component="Layout router" data-job="Choose layout" data-limits="One job per slide." data-slide-id="layout-router" data-source-required="false" data-tags="router layout" data-use="Route from audience question to composition." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>Choose the layout by the question the slide must answer.</h2></div>
+<p class="head-note">Start with the audience question. The visual form follows.</p>
+</header>
+<div class="zone-stage">
+<div class="router-grid">
+<button class="route-row" data-jump="Executive summary"><span>Answer the whole deck</span><b>Executive summary</b><small>Recommendation · proof · risk · ask</small></button>
+<button class="route-row" data-jump="Poster layouts"><span>Open, turn, or land</span><b>Poster</b><small>One idea at full scale</small></button>
+<button class="route-row" data-jump="Split"><span>Pair claim and anchor</span><b>Split</b><small>Unequal reasoning + landing</small></button>
+<button class="route-row" data-jump="Evidence stage"><span>Prove with one object</span><b>Evidence stage</b><small>Chart · artefact · result</small></button>
+<button class="route-row" data-jump="Annotated image"><span>Show observed interface evidence</span><b>Annotated image</b><small>Crop · three notes maximum</small></button>
+<button class="route-row" data-jump="Architecture row"><span>Show ownership and boundaries</span><b>Architecture</b><small>Three to five nodes</small></button>
+</div>
+<div class="callout"><p><strong>Routing rule:</strong> one slide can have several facts, but only one job and one dominant composition.</p></div></div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Executive summary" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="An agenda." data-component="Executive summary" data-job="Summarise a decision deck" data-limits="Three proof points." data-slide-id="executive-summary" data-source-required="false" data-tags="executive summary answer first" data-use="State recommendation, proof, risk, and ask on one page." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>The executive summary answers before it explains.</h2></div>
+<p class="head-note">One page should let a decision-maker understand the recommendation, proof, risk, and ask.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Opening a recommendation, steering, investment, business review, or decision deck.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>An agenda. An agenda says what is coming; an executive summary says what the audience should conclude.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>One answer sentence</li><li>Three proof points maximum</li><li>One explicit decision or ask</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A miniature version of every slide in the deck.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="exec-summary">
+<div class="exec-summary__answer"><p class="kicker">Recommendation</p><h3>Move the intake decision into one governed workflow this quarter.</h3></div>
+<div class="exec-summary__proofs">
+<div><span>01</span><strong>Demand is concentrated</strong><p>72% of requests follow three repeatable paths.</p></div>
+<div><span>02</span><strong>Delay is avoidable</strong><p>Handoffs create 9 of 12 median waiting days.</p></div>
+<div><span>03</span><strong>The control exists</strong><p>One approval boundary can cover all three paths.</p></div>
+</div>
+<div class="exec-summary__bottom">
+<div><p class="kicker">Primary risk</p><p>Unowned exceptions will recreate the old path.</p></div>
+<div class="is-focus"><p class="kicker">Decision required</p><p><strong>Approve one owner and a six-week pilot.</strong></p></div>
+</div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Poster layouts" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="A content page." data-component="Poster layouts" data-job="Pause or land" data-limits="Three lines of display type." data-slide-id="poster-layouts" data-source-required="false" data-tags="poster title divider statement" data-use="Open, divide, close, or state one memorable claim." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>Poster pages create a deliberate pause.</h2></div>
+<p class="head-note">Use one idea at poster scale. Nothing competes with it.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Opening or closing a deck, turning a section, or landing a single claim the room must remember.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A content page. Use poster scale when the pause or claim is more important than supporting detail.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>At most three lines of poster type</li><li>Kicker above, meta below — nothing else</li><li>A statement is a claim, not a category</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A statement plus bullets. If it needs bullets, it is a split.</p></div>
+</aside>
+<div class="guide__sample">
+<div style="display:flex;flex-direction:column;justify-content:center;gap:var(--s4);min-height:0"><p class="kicker">Section 03 · Delivery</p><h1 class="statement-title">Make the<br/>decision easy<br/>to repeat.</h1><p class="mono small" style="color:var(--ink-faint)">title · divider · statement share this scale</p></div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Split" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="Equal cards." data-component="Split" data-job="Pair reasoning and anchor" data-limits="One anchor on the narrow side." data-slide-id="split" data-source-required="false" data-tags="split compare decision" data-use="Place explanation beside one decisive anchor." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>A split pairs reasoning with one decisive anchor.</h2></div>
+<p class="head-note">Use unequal columns so the reader knows which side explains and which side lands.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Evidence needs a decisive partner — a decision beside its rationale, an argument beside its anchor.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A card grid. Use a split when the two sides have different roles, not equal status.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>7/5 asymmetry — never 50/50 twins</li><li>Left explains, right anchors</li><li>One card on the right, not a stack</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Two essays side by side.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="split" style="align-items:stretch;min-height:320px">
+<div class="stack">
+<h3>Explain the move</h3>
+<p class="lede">Lead with the decision, then show the evidence that makes it safe.</p>
+<p class="small">The stage splits 7/5. The reasoning column carries the argument in reading type; the anchor card holds the one thing the room must keep.</p>
+</div>
+<div class="card">
+<p class="card__label">Decision card</p>
+<h3>Start with the customer</h3>
+<p class="card__body">The right-hand card is an anchor, not a second essay.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Evidence stage" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="A dashboard." data-component="Evidence stage" data-job="Prove with one object" data-limits="One evidence object." data-slide-id="evidence-stage" data-source-required="false" data-tags="evidence chart artifact" data-use="Make one chart, artefact, or result dominate." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>When one object proves the point, let it dominate.</h2></div>
+<p class="head-note">A chart, screenshot, artefact, or result should own most of the stage.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>One chart, artefact, screenshot or result is the reason the slide exists.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A dashboard. Use one dominant object when a single exhibit is enough to prove the point.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>The object takes at least 60% of the stage</li><li>Readout — one card, one callout, one source</li><li>The source sits directly under the evidence</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A second evidence object. Split the slide instead.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="evidence-stage">
+<div class="evidence-stage__visual">
+<div style="width:100%">
+<div class="cx-card">
+<p class="kicker">Column · one series</p>
+<svg style="--fscale:1.5283" class="cx cx--wide" role="img" viewBox="0 0 960 560" aria-labelledby="p14evd-t p14evd-d"><title id="p14evd-t">Column chart of one series across five categories</title><desc id="p14evd-d">Five columns — A 42, B 68, C 55, D 82, E 71. D is the outlier and carries the signal colour.</desc><line class="cx-grid" x1="56" y1="362" x2="916" y2="362"/><text class="cx-cat" text-anchor="end" x="46" y="366">25</text><line class="cx-grid" x1="56" y1="257" x2="916" y2="257"/><text class="cx-cat" text-anchor="end" x="46" y="261">50</text><line class="cx-grid" x1="56" y1="152" x2="916" y2="152"/><text class="cx-cat" text-anchor="end" x="46" y="156">75</text><line class="cx-grid" x1="56" y1="47" x2="916" y2="47"/><text class="cx-cat" text-anchor="end" x="46" y="51">100</text><line class="cx-axis" x1="56" y1="467" x2="916" y2="467"/><line class="cx-axis" x1="56" y1="26.2" x2="56" y2="467"/><rect class="cx-bar" x="101.5" y="290.6" width="102.9" height="176.4"/><text class="cx-value" text-anchor="middle" x="153" y="280.6">42</text><text class="cx-cat" text-anchor="middle" x="153" y="501">A</text><rect class="cx-bar" x="267.5" y="181.4" width="102.9" height="285.6"/><text class="cx-value" text-anchor="middle" x="319" y="171.4">68</text><text class="cx-cat" text-anchor="middle" x="319" y="501">B</text><rect class="cx-bar" x="433.5" y="236" width="102.9" height="231"/><text class="cx-value" text-anchor="middle" x="485" y="226">55</text><text class="cx-cat" text-anchor="middle" x="485" y="501">C</text><rect class="cx-bar--focus" x="599.5" y="122.6" width="102.9" height="344.4"/><text class="cx-value" text-anchor="middle" x="651" y="112.6">82</text><text class="cx-cat" text-anchor="middle" x="651" y="501">D</text><rect class="cx-bar" x="765.5" y="168.8" width="102.9" height="298.2"/><text class="cx-value" text-anchor="middle" x="817" y="158.8">71</text><text class="cx-cat" text-anchor="middle" x="817" y="501">E</text><text class="cx-axis-title" x="56" y="529">INDEX · 0–100</text></svg>
+</div>
+<p class="source">Source · sits under the evidence</p>
+</div>
+</div>
+<div class="evidence-stage__readout">
+<div class="card card--hard"><p class="card__label">Readout</p><h3>D is the outlier</h3><p class="small">State the observation next to the object.</p></div>
+<div class="callout"><p>Say why it matters and what it changes. Never add a second object.</p></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+<aside class="slide-notes" hidden=""><p>Point at the readout while talking. The object carries the claim; the readout carries the words you say.</p></aside>
+</section><section aria-label="Annotated image" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="An abstract diagram." data-component="Annotated image" data-job="Explain an interface" data-limits="Three annotations." data-slide-id="annotated-image" data-source-required="false" data-tags="screenshot annotation product" data-use="Show observed UI behaviour or a visual defect." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>Use screenshots only when the interface is evidence.</h2></div>
+<p class="head-note">Crop tightly, annotate sparingly, and state the observation beside the image.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Showing a product behaviour, workflow, visual defect, prototype, or before-and-after state.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A diagram. Use a screenshot for observed interface evidence; use a diagram for an abstract system or proposed flow.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Crop to the relevant state</li><li>Three annotations maximum</li><li>Pair each number with one observation</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A full desktop screenshot with tiny text and decorative callout arrows.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="annotation-stage">
+<div class="mock-app">
+<div class="mock-app__bar"><i></i><i></i><i></i><span>Request review</span></div>
+<div class="mock-app__body">
+<aside><b>Queue</b><span>New · 18</span><span>Review · 7</span><span>Done · 42</span></aside>
+<main><p class="kicker">Request 0142</p><h3>Vendor access</h3><div class="mock-field"><span>Owner</span><b>Unassigned</b></div><div class="mock-field is-focus"><span>Decision</span><b>Approve with controls</b></div><button>Submit decision</button></main>
+</div>
+<b class="pin pin--1">1</b><b class="pin pin--2">2</b><b class="pin pin--3">3</b>
+</div>
+<div class="annotation-notes">
+<div><b>1</b><p>The queue shows state, but not priority.</p></div>
+<div><b>2</b><p>The decision is visible before the owner is assigned.</p></div>
+<div class="is-focus"><b>3</b><p>The action is available before the required control is complete.</p></div>
+</div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Architecture row" class="slide" data-chapter="Ch 2 · Layouts by job" data-choose="A process flow." data-component="Architecture row" data-job="Show ownership and boundary" data-limits="Three to five nodes." data-slide-id="architecture-row" data-source-required="false" data-tags="architecture system boundary" data-use="Explain a small system shape and governing boundary." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 2 · Layouts by job</p><h2>Architecture must reveal the governing boundary.</h2></div>
+<p class="head-note">Ownership and flow matter more than the number of boxes.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The audience needs the shape of a system — what owns what, and where the governing boundary sits.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A process flow. Architecture explains ownership and boundaries; flow explains causality.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Three to five nodes</li><li>Exactly one focus node — the governing boundary</li><li>Arrows only where flow is real</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A row of equally-weighted boxes. Architecture is not a list.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="architecture-map">
+<div class="architecture-node"><p class="card__label">Input</p><h3>Evidence</h3><p class="small">Observed or asserted</p></div>
+<i class="architecture-arrow"></i>
+<div class="architecture-node"><p class="card__label">Structure</p><h3>Context</h3><p class="small">Entities and relations</p></div>
+<i class="architecture-arrow"></i>
+<div class="architecture-node architecture-node--focus"><p class="card__label">Reasoning boundary</p><h3>Assessment</h3><p class="small">What can responsibly follow</p></div>
+<i class="architecture-arrow"></i>
+<div class="architecture-node"><p class="card__label">Output</p><h3>Decision</h3><p class="small">Owner and action</p></div>
+</div>
+<div class="callout"><p>Make the governing boundary visually dominant. Architecture is not a row of equally important boxes.</p></div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Cards and tiles" class="slide" data-chapter="Ch 3 · Components" data-choose="A table." data-component="Cards and tiles" data-job="Show true peers" data-limits="Four across." data-slide-id="cards-and-tiles" data-source-required="false" data-tags="cards metrics kpi" data-use="Compare a small set of options or metrics." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>Cards work only for true peers.</h2></div>
+<p class="head-note">A metric tile turns one number into the picture; a card groups one self-contained peer.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Options, peer metrics, matched scenarios — content that is genuinely parallel.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A table. Cards are for a small set of peers; tables are for scanning many records.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>At most four across; flat, default, soft, hard by weight</li><li>Tile — value 52px, label mono, unit in the note</li><li>The value may take the accent, once</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Title, explanation, conclusion and caveat as four equal cards.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="grid grid--4">
+<div class="card card--flat">
+<p class="card__label">Flat</p>
+<h3>Quiet</h3>
+</div>
+<div class="card">
+<p class="card__label">Default</p>
+<h3>Raised</h3>
+</div>
+<div class="card card--soft">
+<p class="card__label">Soft</p>
+<h3>Context</h3>
+</div>
+<div class="card card--hard">
+<p class="card__label">Hard</p>
+<h3>Priority</h3>
+</div>
+</div>
+<div class="grid grid--4">
+<div class="card stat">
+<b class="stat__value">84</b>
+<p class="stat__label">Approval rate</p>
+<p class="stat__note">per cent, stated in the note</p>
+</div>
+<div class="card stat">
+<b class="stat__value" style="color:var(--ink)">12</b>
+<p class="stat__label">Days saved</p>
+<p class="stat__note">from request to answer</p>
+</div>
+<div class="card stat">
+<b class="stat__value" style="color:var(--ink)">3.2</b>
+<p class="stat__label">Risk score</p>
+<p class="stat__note">on a five-point scale</p>
+</div>
+<div class="card card--compact">
+<span class="badge badge--good">Measured</span>
+<div class="stat-sm" style="color:var(--ink)">20,383 → 912</div>
+<p class="stat__label">Dense variant</p>
+<p class="stat__note">.stat-sm + badge for quarter-width evidence</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Lists and steps" class="slide" data-chapter="Ch 3 · Components" data-choose="A diagram." data-component="Lists and steps" data-job="Show peers or order" data-limits="One line per item." data-slide-id="lists-and-steps" data-source-required="false" data-tags="list steps agenda" data-use="Present items whose relationship is textual." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>Lists show peers; numbers show real order.</h2></div>
+<p class="head-note">The marker must explain the relationship between items.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Peers, acceptance checks, genuine sequences, agendas.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A flow diagram. Use text when geometry adds no new meaning.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Bullets = peers · checks = acceptance · steps = real order</li><li>Each item one line; sub-lists carry one-line descriptions</li><li>An agenda is a list with a destination</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Numbering things that have no order.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="grid grid--4">
+<div class="card">
+<h3>Bullets</h3>
+<ul>
+<li>Use for peers.</li>
+<li>Keep each short.</li>
+</ul>
+</div>
+<div class="card">
+<h3>Checks</h3>
+<ul class="list--check">
+<li>Decision stated</li>
+<li>Owner named</li>
+</ul>
+</div>
+<div class="card">
+<h3>Sequence</h3>
+<ol class="steps">
+<li>Frame</li>
+<li>Choose</li>
+</ol>
+</div>
+<div class="card">
+<h3>Sub-list</h3>
+<ul class="sub-list">
+<li><strong>Item</strong> — one-line description</li>
+<li><strong>Item</strong> — what to take from it</li>
+</ul>
+</div>
+</div>
+<div class="callout"><p>Peers never live in a comma-separated sentence. Each item is its own bullet — with a one-line description when the name alone doesn't carry the meaning.</p></div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Tables" class="slide" data-chapter="Ch 3 · Components" data-choose="Cards." data-component="Tables" data-job="Align records" data-limits="Use zebra after four rows." data-slide-id="tables" data-source-required="false" data-tags="table evidence records" data-use="Support lookup and comparison across rows and columns." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>Tables align evidence that the reader must compare.</h2></div>
+<p class="head-note">Use tables for records, not as a substitute for layout.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Rows of comparable records the reader will scan and compare.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Cards. Use a table when alignment across rows and columns is the evidence.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Numbers right-aligned, tabular</li><li>Status as a badge in a fit column</li><li>Zebra only past four rows</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A table used to position content.</p></div>
+</aside>
+<div class="guide__sample">
+<table class="table--compact">
+<thead>
+<tr>
+<th>Workstream</th>
+<th>Owner</th>
+<th>Decision</th>
+<th class="fit">Status</th>
+<th class="num">Days</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Intake</td>
+<td>Mina</td>
+<td>Approve</td>
+<td class="fit">
+<span class="badge badge--good">Good</span>
+</td>
+<td class="num">12</td>
+</tr>
+<tr>
+<td>Controls</td>
+<td>Ravi</td>
+<td>Review</td>
+<td class="fit">
+<span class="badge badge--warn">Warn</span>
+</td>
+<td class="num">18</td>
+</tr>
+<tr>
+<td>Data</td>
+<td>Lin</td>
+<td>Build</td>
+<td class="fit">
+<span class="badge badge--good">Good</span>
+</td>
+<td class="num">9</td>
+</tr>
+<tr>
+<td>Launch</td>
+<td>Inez</td>
+<td>Hold</td>
+<td class="fit">
+<span class="badge badge--stop">Stop</span>
+</td>
+<td class="num">24</td>
+</tr>
+<tr>
+<td>Measure</td>
+<td>Omar</td>
+<td>Track</td>
+<td class="fit">
+<span class="badge badge--good">Good</span>
+</td>
+<td class="num">30</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Callouts and voice" class="slide" data-chapter="Ch 3 · Components" data-choose="A second composition." data-component="Callouts and voice" data-job="Add one interpretive aside" data-limits="One callout per slide." data-slide-id="callouts-and-voice" data-source-required="false" data-tags="callout badge source" data-use="Surface a note, insight, warning, stop, quote, or source." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>One margin voice is enough.</h2></div>
+<p class="head-note">A callout changes interpretation or action. It is not decoration.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>One aside deserves the reader's eye — a note, an insight, a risk, a quote.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A second composition. Use one callout for interpretation, not to add another argument.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>One callout per slide</li><li>warn and stop only for real risk</li><li>Badges are metadata, kickers are eyebrows, sources sit under evidence</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Callout stacking. Three asides is a rewrite.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="grid grid--2">
+<div style="display:flex;flex-direction:column;gap:var(--s3)">
+<div class="callout">
+<b class="badge">Default</b>
+<p>A note earns its place by changing what the reader does next.</p>
+</div>
+<div class="callout callout--insight">
+<b class="badge">Insight</b>
+<p>An insight reframes the evidence above it.</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:var(--s3)">
+<div class="callout callout--warn">
+<b class="badge">Warn</b>
+<p>A warning names a real risk and its trigger.</p>
+</div>
+<div class="callout callout--stop">
+<b class="badge">Stop</b>
+<p>A stop is a blocker. It outranks everything else on the page.</p>
+</div>
+</div>
+</div>
+<p><span class="badge">Draft</span> <span class="badge badge--good">Measured</span> <span class="kicker" style="margin-left:var(--s5)">Kicker · eyebrow</span> <span class="source" style="margin-left:var(--s5)">Source · under evidence</span></p>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Option scorecard" class="slide" data-chapter="Ch 3 · Components" data-choose="A quadrant." data-component="Option scorecard" data-job="Compare options" data-limits="Three to six criteria." data-slide-id="option-scorecard" data-source-required="false" data-tags="scorecard options decision" data-use="Score two to four options on explicit criteria." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>Score options only on criteria that change the decision.</h2></div>
+<p class="head-note">Weights, evidence, and a recommendation must be visible together.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Comparing two to four options against a stable set of decision criteria.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A quadrant. Use a scorecard for explicit criteria and traceable scoring; use a quadrant for two broad judgements.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Three to six criteria</li><li>Weights sum to 100%</li><li>Explain decisive differences, not every cell</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>False precision: ten criteria, decimal scores, and no evidence behind them.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="scorecard">
+<div class="scorecard__head"><span>Criterion</span><span>Weight</span><span>Option A</span><span>Option B</span><span>Option C</span></div>
+<div><strong>Time to value</strong><span>30%</span><span class="score score--3">3</span><span class="score score--5">5</span><span class="score score--4">4</span></div>
+<div><strong>Control fit</strong><span>30%</span><span class="score score--5">5</span><span class="score score--3">3</span><span class="score score--4">4</span></div>
+<div><strong>Reversibility</strong><span>20%</span><span class="score score--4">4</span><span class="score score--2">2</span><span class="score score--5">5</span></div>
+<div><strong>Operating cost</strong><span>20%</span><span class="score score--3">3</span><span class="score score--5">5</span><span class="score score--3">3</span></div>
+<div class="scorecard__total"><strong>Weighted total</strong><span>100%</span><span>3.8</span><span>3.8</span><span class="is-focus">4.0</span></div>
+</div>
+<div class="callout"><p><strong>Recommendation · Option C.</strong> It wins because reversibility and control fit outweigh the small cost disadvantage.</p></div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Roadmap" class="slide" data-chapter="Ch 3 · Components" data-choose="A Gantt." data-component="Roadmap" data-job="Show capability over time" data-limits="Three to five horizons." data-slide-id="roadmap" data-source-required="false" data-tags="roadmap milestones outcomes" data-use="Present horizons, outcomes, owners, and gates." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>Roadmaps show outcomes, owners, and decision gates.</h2></div>
+<p class="head-note">A roadmap is not a longer Gantt. It explains how capability changes over time.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Showing phased outcomes, release intent, programme milestones, or a transformation path.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A Gantt. Use a roadmap for outcomes and gates; use Gantt when task duration and overlap must be managed.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Three to five horizons</li><li>Each horizon ends in an observable outcome</li><li>Mark decision gates separately from work</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A calendar filled with activities that never state what becomes true.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="roadmap">
+<div class="roadmap__axis"><span></span><span>Now</span><span>30 days</span><span>60 days</span><span>90 days</span><span>120 days</span></div>
+<div class="roadmap__row"><strong>Foundation</strong><div class="roadmap__bar" style="grid-column:2/4"><b>One intake contract</b><span>Owner · Platform</span></div></div>
+<div class="roadmap__row"><strong>Pilot</strong><div class="roadmap__bar is-focus" style="grid-column:3/5"><b>Three repeatable request paths</b><span>Owner · Operations</span></div><i class="roadmap__gate" style="grid-column:5">Gate 1</i></div>
+<div class="roadmap__row"><strong>Scale</strong><div class="roadmap__bar" style="grid-column:4/6"><b>Measured policy coverage</b><span>Owner · Risk</span></div><i class="roadmap__gate" style="grid-column:6">Gate 2</i></div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Ownership matrix" class="slide" data-chapter="Ch 3 · Components" data-choose="An org chart." data-component="Ownership matrix" data-job="Clarify accountability" data-limits="One accountable owner per row." data-slide-id="ownership-matrix" data-source-required="false" data-tags="raci ownership roles" data-use="Separate responsible, accountable, consulted, and informed roles." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>Ownership tables separate doing from deciding.</h2></div>
+<p class="head-note">Use role words only when each one changes accountability.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Clarifying responsibility across a small set of activities and teams.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>An org chart. Org charts show reporting lines; ownership matrices show who acts, approves, advises, and is informed.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Activities in rows, roles in columns</li><li>One accountable owner per row</li><li>Use words or accessible symbols, not colour alone</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Every cell marked “consulted,” which means no decision owner exists.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="ownership-matrix">
+<div class="ownership-matrix__head"><span>Activity</span><span>Business</span><span>Product</span><span>Risk</span><span>Engineering</span></div>
+<div><strong>Define outcome</strong><span><i class="role role--a">A</i></span><span>R</span><span>C</span><span>I</span></div>
+<div><strong>Approve controls</strong><span>C</span><span>R</span><span><i class="role role--a">A</i></span><span>I</span></div>
+<div><strong>Build workflow</strong><span>I</span><span><i class="role role--a">A</i></span><span>C</span><span>R</span></div>
+<div><strong>Accept launch</strong><span><i class="role role--a">A</i></span><span>R</span><span>R</span><span>C</span></div>
+</div>
+<p class="source">A · accountable   R · responsible   C · consulted   I · informed</p></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Risk and decision register" class="slide" data-chapter="Ch 3 · Components" data-choose="RAG labels alone." data-component="Risk and decision register" data-job="Make risk actionable" data-limits="Only material risks." data-slide-id="risk-and-decision-register" data-source-required="false" data-tags="risk decision register" data-use="Name event, consequence, trigger, action, and owner." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 3 · Components</p><h2>A risk is useful only when its trigger and action are named.</h2></div>
+<p class="head-note">Separate what may happen from what has already been decided.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Making a small set of material risks, mitigations, decisions, and owners visible.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A generic red-amber-green list. Use a register when the audience must act on triggers and owners.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Risk = event + consequence</li><li>Name trigger, mitigation, and owner</li><li>Record decisions separately with date and rationale</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Colour-coded risk labels with no threshold, action, or owner.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="risk-layout">
+<div class="risk-card risk-card--high"><div><span class="badge badge--stop">High</span><b>Exception path recreates manual approval</b></div><p><strong>Trigger</strong> · more than 10% of requests bypass the workflow</p><p><strong>Action</strong> · block launch until exception owner is named</p><p class="source">Owner · Operations</p></div>
+<div class="risk-card"><div><span class="badge badge--warn">Medium</span><b>Control review delays the pilot</b></div><p><strong>Trigger</strong> · decision not complete by week 3</p><p><strong>Action</strong> · reduce pilot scope to one request path</p><p class="source">Owner · Risk</p></div>
+<div class="decision-log"><p class="kicker">Decision log</p><div><span>14 Aug</span><strong>Use one approval boundary</strong><p>Reduces three handoffs to one auditable decision.</p></div><div><span>21 Aug</span><strong>Pilot before migration</strong><p>Keeps reversal possible while evidence is incomplete.</p></div></div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Diagram router" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Drawing boxes first." data-component="Diagram router" data-job="Choose diagram family" data-limits="Simple 3–6; networks 7–24." data-slide-id="diagram-router" data-source-required="false" data-tags="diagram router" data-use="Route by the relationship that carries meaning." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence</p><h2>Choose the diagram by the relationship.</h2></div>
+<p class="head-note">Ask what carries meaning: order, ownership, edges, containment, axes, overlap, or quantity.</p>
+</header>
+<div class="zone-stage">
+<div class="diagram-router">
+<button class="route-card" data-jump="Sequence"><span>Order + owner</span><strong>Lane family</strong><p>Sequence · swimlane</p></button>
+<button class="route-card" data-jump="State machine"><span>Edges carry meaning</span><strong>Graph family</strong><p>State · ER · data flow · integration · current state · loop · tree</p></button>
+<button class="route-card" data-jump="Layers"><span>Inside or above</span><strong>Band family</strong><p>Layers · medallion · pyramid · nested</p></button>
+<button class="route-card" data-jump="Quadrant"><span>Axes or coverage</span><strong>Matrix family</strong><p>Quadrant · coverage · Gantt</p></button>
+<button class="route-card" data-jump="Radar"><span>Measured space</span><strong>Plot family</strong><p>Radar · scatter · Venn</p></button>
+<button class="route-card" data-jump="Chart router"><span>Quantity comparison</span><strong>Chart family</strong><p>Bars · line · stacked · waterfall</p></button>
+</div>
+<div class="callout"><p><strong>Object limits:</strong> simple compositions use 3–6 objects. Network diagrams use 7–24 nodes. Above the limit, split the argument.</p></div></div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Flow and timeline" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Sequence or Gantt." data-component="Flow and timeline" data-job="Show causality or dates" data-limits="Four or five stops." data-slide-id="flow-and-timeline" data-source-required="false" data-tags="flow timeline" data-use="Explain a short causal chain or dated sequence." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · row family</p><h2>Use flow for causality and timeline for dates.</h2></div>
+<p class="head-note">The arrow must mean something specific; otherwise use spacing.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>A single ordered row tells the story — stages that cause the next, or dates that anchor them.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Sequence or Gantt. Use flow for causality, timeline for dates, Gantt for duration and overlap.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Four or five stops, never more</li><li>Flow arrows mean “causes” — timeline gaps mean time</li><li>Label stops with verbs for flow, dates for timeline</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A flow whose arrows secretly mean “and then we also did”.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="flow">
+<div class="flow__node">Frame</div>
+<i class="flow__arrow"></i>
+<div class="flow__node">Test</div>
+<i class="flow__arrow"></i>
+<div class="flow__node">Decide</div>
+<i class="flow__arrow"></i>
+<div class="flow__node">Measure</div>
+</div>
+<div class="timeline">
+<div class="timeline__node">
+<p class="timeline__date">AUG 10</p>
+<h3>Frame</h3>
+</div>
+<div class="timeline__node">
+<p class="timeline__date">AUG 17</p>
+<h3>Test</h3>
+</div>
+<div class="timeline__node">
+<p class="timeline__date">AUG 24</p>
+<h3>Decide</h3>
+</div>
+<div class="timeline__node">
+<p class="timeline__date">SEP 01</p>
+<h3>Measure</h3>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Sequence" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A flowchart." data-component="Sequence" data-job="Show message order" data-limits="Three to five participants." data-slide-id="sequence" data-source-required="false" data-tags="sequence messages ownership" data-use="Explain exact order across participants." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · lane family</p><h2>Sequence diagrams show order across owners.</h2></div>
+<p class="head-note">Time reads down. Ownership reads across. Message numbers carry the story.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Order and ownership both matter — a request crossing services, a handoff protocol, a race being resolved.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A flowchart. Use sequence when ownership and exact message order both matter.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Lifelines dashed, so messages carry the visual weight</li><li>Number every message</li><li>One focal edge — the step the design exists for</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Drawing a sequence as a flowchart. The order is the content.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="seq-t seq-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 396">
+<title id="seq-t">Request sequence across three participants</title>
+<desc id="seq-d">A client submits a task, the service reserves and then commits to the store, and the client receives an acknowledgement.</desc>
+<defs>
+<marker id="seq-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="seq-ahf" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-faint" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="seq-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker>
+</defs>
+<rect class="dgm-lane-head" height="56" rx="4" width="200" x="60" y="20"></rect>
+<rect class="dgm-lane-head" height="56" rx="4" width="200" x="400" y="20"></rect>
+<rect class="dgm-lane-head" height="56" rx="4" width="200" x="740" y="20"></rect>
+<text class="dgm-label" x="160" y="45">Client</text>
+<text class="dgm-label" x="500" y="45">Service</text>
+<text class="dgm-label" x="840" y="45">Store</text>
+<text class="dgm-sublabel" x="160" y="63">submits</text>
+<text class="dgm-sublabel" x="500" y="63">decides</text>
+<text class="dgm-sublabel" x="840" y="63">persists</text>
+<line class="dgm-lane-line" x1="160" x2="160" y1="76" y2="344"></line>
+<line class="dgm-lane-line" x1="500" x2="500" y1="76" y2="344"></line>
+<line class="dgm-lane-line" x1="840" x2="840" y1="76" y2="312"></line>
+<line class="dgm-edge" marker-end="url(#seq-ah)" x1="160" x2="494" y1="112" y2="112"></line>
+<text class="dgm-msg" x="330" y="102"><tspan class="dgm-seq">01 · </tspan>submit task</text>
+<line class="dgm-edge" marker-end="url(#seq-ah)" x1="500" x2="834" y1="152" y2="152"></line>
+<text class="dgm-msg" x="670" y="142"><tspan class="dgm-seq">02 · </tspan>reserve a slot</text>
+<line class="dgm-edge--return" marker-end="url(#seq-ahf)" x1="840" x2="506" y1="192" y2="192"></line>
+<text class="dgm-msg" x="670" y="182"><tspan class="dgm-seq">03 · </tspan>reservation held</text>
+<line class="dgm-edge dgm-edge--focus" marker-end="url(#seq-aha)" x1="500" x2="833" y1="232" y2="232"></line>
+<text class="dgm-msg dgm-msg--focus" x="670" y="222"><tspan class="dgm-seq">04 · </tspan>commit the result</text>
+<rect class="dgm-note" height="48" rx="4" width="304" x="528" y="252"></rect>
+<text class="dgm-note-text" x="680" y="282">the only writer in this diagram</text>
+<line class="dgm-edge--return" marker-end="url(#seq-ahf)" x1="500" x2="166" y1="328" y2="328"></line>
+<text class="dgm-msg" x="330" y="318"><tspan class="dgm-seq">05 · </tspan>acknowledge</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+<aside class="slide-notes" hidden=""><p>Read the message numbers aloud in order. The focal step 04 is the decision this page exists to defend.</p></aside>
+</section><section aria-label="Swimlane" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A sequence diagram." data-component="Swimlane" data-job="Show handoffs" data-limits="Four lanes maximum." data-slide-id="swimlane" data-source-required="false" data-tags="swimlane process ownership" data-use="Explain one process across owners." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · lane family</p><h2>Swimlanes make handoffs visible.</h2></div>
+<p class="head-note">Every crossing line is an ownership event.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>One process spans several owners and the handoffs are the point.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A sequence diagram. Swimlane shows process ownership; sequence shows message order.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>The lane is the owner — never a phase</li><li>Keep crossings few; each one costs attention</li><li>Focus the handoff that decides the outcome</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>More than four lanes. Split by sub-process instead.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="swim-t swim-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 424">
+<title id="swim-t">Review process across three lanes</title>
+<desc id="swim-d">Author drafts and revises, review assesses, and approval signs off. Two handoffs cross lanes.</desc>
+<defs><marker id="swim-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="swim-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker></defs>
+<rect class="dgm-lane-band" height="88" width="720" x="160" y="48"></rect>
+<rect class="dgm-lane-band" height="88" width="720" x="160" y="168"></rect>
+<rect class="dgm-lane-band" height="88" width="720" x="160" y="288"></rect>
+<text class="dgm-lane-name" x="140" y="96">Author</text>
+<text class="dgm-lane-name" x="140" y="216">Review</text>
+<text class="dgm-lane-name" x="140" y="336">Approval</text>
+<rect class="dgm-box" height="52" rx="4" width="160" x="200" y="66"></rect>
+<text class="dgm-label--sm dgm-label" x="280" y="96">Draft</text>
+<rect class="dgm-box" height="52" rx="4" width="160" x="440" y="186"></rect>
+<text class="dgm-label--sm dgm-label" x="520" y="216">Assess</text>
+<rect class="dgm-box" height="52" rx="4" width="160" x="440" y="66"></rect>
+<text class="dgm-label--sm dgm-label" x="520" y="96">Revise</text>
+<rect class="dgm-box--focus" height="52" rx="4" width="160" x="680" y="306"></rect>
+<text class="dgm-label--sm dgm-label" x="760" y="336">Sign off</text>
+<line class="dgm-edge" marker-end="url(#swim-ah)" x1="360" x2="434" y1="92" y2="188"></line>
+<line class="dgm-edge" marker-end="url(#swim-ah)" x1="520" x2="520" y1="186" y2="124"></line>
+<text class="dgm-edge-label" x="566" y="156">rework</text>
+<line class="dgm-edge dgm-edge--focus" marker-end="url(#swim-aha)" x1="600" x2="674" y1="212" y2="302"></line>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="State machine" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A flow." data-component="State machine" data-job="Define legal change" data-limits="Few legal states." data-slide-id="state-machine" data-source-required="false" data-tags="state machine transitions" data-use="Show persistent states and named transitions." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>State machines define legal change.</h2></div>
+<p class="head-note">A state persists; a transition happens.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>A thing has few legal states and the transitions between them are the contract.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A flow. Use states when legal conditions and transitions are the contract.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Rounded boxes are states, not steps</li><li>Name every edge — an unnamed transition is a bug</li><li>The accent edge resolves the race everyone asks about</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Drawing steps as states. A state persists; a step happens.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="st-t st-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 360">
+<title id="st-t">Execution state machine</title>
+<desc id="st-d">Pending moves to running, which resolves to complete, failed, or cancelled. The highlighted transition shows that cancellation wins the race.</desc>
+<defs><marker id="st-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="st-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker></defs>
+<rect class="dgm-box" height="60" rx="18" width="160" x="46" y="166"></rect>
+<text class="dgm-label" x="126" y="201">pending</text>
+<rect class="dgm-box--focus" height="68" rx="18" width="170" x="300" y="162"></rect>
+<text class="dgm-label" x="385" y="201">running</text>
+<rect class="dgm-box" height="60" rx="18" width="176" x="620" y="76"></rect>
+<text class="dgm-label" x="708" y="111">complete</text>
+<rect class="dgm-box" height="60" rx="18" width="160" x="620" y="264"></rect>
+<text class="dgm-label" x="700" y="299">failed</text>
+<rect class="dgm-box" height="60" rx="18" width="152" x="820" y="170"></rect>
+<text class="dgm-label" x="896" y="205">cancelled</text>
+<line class="dgm-edge" marker-end="url(#st-ah)" x1="206" x2="292" y1="196" y2="196"></line>
+<text class="dgm-edge-label" x="250" y="185">admit</text>
+<path class="dgm-edge" d="M470,184 C552,184 552,114 612,114" marker-end="url(#st-ah)"></path>
+<text class="dgm-edge-label" x="538" y="138">done</text>
+<path class="dgm-edge" d="M470,208 C546,210 554,294 612,294" marker-end="url(#st-ah)"></path>
+<text class="dgm-edge-label" x="530" y="274">error</text>
+<path class="dgm-edge dgm-edge--focus" d="M385,162 C385,96 428,60 520,60 L812,60 C874,60 896,100 896,162" marker-end="url(#st-aha)"></path>
+<line class="dgm-lane-line" x1="592" x2="592" y1="46" y2="58"></line>
+<rect class="dgm-note" height="42" rx="8" width="274" x="454" y="4"></rect>
+<text class="dgm-note-text" x="592" y="30">cancellation overrides completion</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Entity relationship" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A schema dump." data-component="Entity relationship" data-job="Show data ownership" data-limits="Show only relevant fields." data-slide-id="entity-relationship" data-source-required="false" data-tags="er data model" data-use="Explain keys, cardinality, and entity relations." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>Entity relationships show ownership through keys.</h2></div>
+<p class="head-note">Reduce the model to the keys and cardinalities that explain the claim.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The audience needs the shape of the data — what owns what, one-to-many where.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A data-flow diagram. ER shows ownership and cardinality; data flow shows movement.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>The dark band names the entity</li><li>Show keys, omit the rest</li><li>Cardinality at the line ends — 1 and N</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Every column. An ER diagram is not a schema dump.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="er-t er-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 320">
+<title id="er-t">Data model for tasks, executions and artifacts</title>
+<desc id="er-d">One task has many executions. One execution produces many artifacts.</desc>
+<defs><marker id="er-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker></defs>
+<rect class="dgm-box" height="152" rx="4" width="240" x="40" y="60"></rect>
+<rect class="dgm-entity-head" height="36" rx="4" width="240" x="40" y="60"></rect>
+<text class="dgm-entity-name" x="160" y="84">task</text>
+<text class="dgm-field" x="60" y="124">PK  task_id</text>
+<text class="dgm-field" x="60" y="150">    type</text>
+<text class="dgm-field" x="60" y="176">    created_at</text>
+<rect class="dgm-box--focus" height="178" rx="4" width="240" x="380" y="60"></rect>
+<rect class="dgm-entity-head" height="36" rx="4" width="240" x="380" y="60"></rect>
+<text class="dgm-entity-name" x="500" y="84">execution</text>
+<text class="dgm-field" x="400" y="124">PK  execution_id</text>
+<text class="dgm-field" x="400" y="150">FK  task_id</text>
+<text class="dgm-field" x="400" y="176">    state</text>
+<text class="dgm-field" x="400" y="202">    terminal_at</text>
+<rect class="dgm-box" height="152" rx="4" width="240" x="720" y="60"></rect>
+<rect class="dgm-entity-head" height="36" rx="4" width="240" x="720" y="60"></rect>
+<text class="dgm-entity-name" x="840" y="84">artifact</text>
+<text class="dgm-field" x="740" y="124">PK  artifact_id</text>
+<text class="dgm-field" x="740" y="150">FK  execution_id</text>
+<text class="dgm-field" x="740" y="176">    path</text>
+<line class="dgm-edge" marker-end="url(#er-ah)" x1="280" x2="374" y1="136" y2="136"></line>
+<text class="dgm-edge-label" x="296" y="126">1</text>
+<text class="dgm-edge-label" x="360" y="126">N</text>
+<line class="dgm-edge" marker-end="url(#er-ah)" x1="620" x2="714" y1="136" y2="136"></line>
+<text class="dgm-edge-label" x="636" y="126">1</text>
+<text class="dgm-edge-label" x="700" y="126">N</text>
+<text class="dgm-edge-label" x="500" y="278">the execution row is the one that changes — everything else is written once</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Data flow" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Architecture." data-component="Data flow" data-job="Show provenance" data-limits="Three shape roles." data-slide-id="data-flow" data-source-required="false" data-tags="data flow provenance" data-use="Explain sources, transformations, payloads, and stores." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>Data-flow diagrams make provenance explicit.</h2></div>
+<p class="head-note">Show source, transformation, payload, and destination.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The question is provenance — source, transformation, destination.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Architecture. Use data flow when payload and provenance are the point.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Three shapes only — external dashed, process rounded, store open-sided</li><li>Label edges with the payload, not the verb</li><li>One focal transform</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A fourth shape. It always means two diagrams.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="df-t df-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 360">
+<title id="df-t">Data flow from external source to served store</title>
+<desc id="df-d">An external source is validated, enriched, then written to the serving store.</desc>
+<defs><marker id="df-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="df-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker></defs>
+<rect class="dgm-ext" height="72" rx="4" width="180" x="40" y="88"></rect>
+<text class="dgm-label--sm dgm-label" x="130" y="122">Upstream API</text>
+<text class="dgm-sublabel" x="130" y="142">external</text>
+<rect class="dgm-box" height="72" rx="36" width="168" x="292" y="88"></rect>
+<text class="dgm-label--sm dgm-label" x="376" y="130">Validate</text>
+<rect class="dgm-box--focus" height="72" rx="36" width="168" x="532" y="88"></rect>
+<text class="dgm-label--sm dgm-label" x="616" y="130">Enrich</text>
+<rect class="dgm-store" height="72" width="188" x="772" y="88"></rect>
+<line class="dgm-edge" x1="772" x2="960" y1="112" y2="112"></line>
+<text class="dgm-label--sm dgm-label" x="866" y="142">Serving store</text>
+<line class="dgm-edge" marker-end="url(#df-ah)" x1="220" x2="286" y1="124" y2="124"></line>
+<line class="dgm-edge" marker-end="url(#df-ah)" x1="460" x2="526" y1="124" y2="124"></line>
+<text class="dgm-edge-label" x="493" y="106">clean rows</text>
+<line class="dgm-edge dgm-edge--focus" marker-end="url(#df-aha)" x1="700" x2="765" y1="124" y2="124"></line>
+<text class="dgm-edge-label" x="130" y="236">dashed box = outside our boundary</text>
+<text class="dgm-edge-label" x="838" y="236">open-sided box = a store</text>
+<text class="dgm-edge-label" x="500" y="316">three shapes, and nothing else — a fourth shape always means two diagrams</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Platform integration" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Point-to-point wiring." data-component="Platform integration" data-job="Show fan-in and fan-out" data-limits="One source of truth." data-slide-id="platform-integration" data-source-required="false" data-tags="integration platform" data-use="Explain multiple sources, one platform, and consumers." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>A platform should replace point-to-point wiring.</h2></div>
+<p class="head-note">Fan in, establish one truth, then fan out.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Several sources land in one platform and serve several consumers.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A current-state map. Integration shows intended fan-in/fan-out; current-state shows existing mess.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Fan in, one truth, fan out</li><li>The single source of truth is the only focal object</li><li>Externals stay dashed</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Point-to-point spaghetti drawn as if it were intended.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="dpi-t dpi-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 340">
+<title id="dpi-t">Integration between three source systems and the platform</title>
+<desc id="dpi-d">Three upstream systems land into ingest, which writes the lake, which serves two consumers.</desc>
+<defs><marker id="dpi-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="dpi-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker></defs>
+<text class="dgm-sublabel" text-anchor="start" x="120" y="32">source systems</text>
+<rect class="dgm-ext" height="60" rx="4" width="184" x="40" y="48"></rect><text class="dgm-label--sm dgm-label" x="132" y="84">CRM</text>
+<rect class="dgm-ext" height="60" rx="4" width="184" x="40" y="140"></rect><text class="dgm-label--sm dgm-label" x="132" y="176">Billing</text>
+<rect class="dgm-ext" height="60" rx="4" width="184" x="40" y="232"></rect><text class="dgm-label--sm dgm-label" x="132" y="268">Support</text>
+<rect class="dgm-box" height="60" rx="4" width="176" x="336" y="140"></rect><text class="dgm-label--sm dgm-label" x="424" y="176">Ingest</text>
+<rect class="dgm-box--focus" height="76" rx="4" width="224" x="576" y="132"></rect><text class="dgm-label--sm dgm-label" x="688" y="164">Lake</text><text class="dgm-sublabel" x="688" y="186">single source of truth</text>
+<rect class="dgm-box" height="56" rx="4" width="112" x="856" y="88"></rect><text class="dgm-label--sm dgm-label" x="912" y="122">BI</text>
+<rect class="dgm-box" height="56" rx="4" width="112" x="856" y="196"></rect><text class="dgm-label--sm dgm-label" x="912" y="230">API</text>
+<path class="dgm-edge" d="M224,78  C290,78  290,160 330,166" marker-end="url(#dpi-ah)"></path>
+<line class="dgm-edge" marker-end="url(#dpi-ah)" x1="224" x2="330" y1="170" y2="170"></line>
+<path class="dgm-edge" d="M224,262 C290,262 290,182 330,176" marker-end="url(#dpi-ah)"></path>
+<line class="dgm-edge dgm-edge--focus" marker-end="url(#dpi-aha)" x1="512" x2="570" y1="170" y2="170"></line>
+<path class="dgm-edge" d="M800,152 C826,152 826,116 850,116" marker-end="url(#dpi-ah)"></path>
+<path class="dgm-edge" d="M800,188 C826,188 826,224 850,224" marker-end="url(#dpi-ah)"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Current state" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Target architecture." data-component="Current state" data-job="Show present friction" data-limits="Zone first." data-slide-id="current-state" data-source-required="false" data-tags="current state as is" data-use="Map today’s estate before proposing change." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>Show today’s mess before proposing tomorrow.</h2></div>
+<p class="head-note">Zone the estate honestly and highlight the exact problem to remove.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>You must show today’s estate honestly before arguing for tomorrow’s.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A target architecture. Show the present estate first when the case for change depends on its friction.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Zone first, then draw</li><li>Existing links stay faint</li><li>The accent marks exactly what you intend to remove</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Prettifying the mess. If it looks fine, why change it?</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="its-t its-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 420">
+<title id="its-t">Current-state estate in three zones</title>
+<desc id="its-d">Edge, core and reporting zones, with a highlighted partner feed that bypasses the core entirely.</desc>
+<defs><marker id="its-ah" markerheight="7" markerunits="userSpaceOnUse" markerwidth="9" orient="auto" refx="9" refy="3.5"><path class="dgm-ah-faint" d="M0,0 L9,3.5 L0,7 Z"></path></marker>
+<marker id="its-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker></defs>
+<rect class="dgm-lane-band" height="244" rx="8" width="280" x="40" y="50"></rect>
+<rect class="dgm-lane-band" height="244" rx="8" width="280" x="360" y="50"></rect>
+<rect class="dgm-lane-band" height="244" rx="8" width="280" x="680" y="50"></rect>
+<text class="dgm-sublabel" x="180" y="36">edge</text>
+<text class="dgm-sublabel" x="500" y="36">core</text>
+<text class="dgm-sublabel" x="820" y="36">reporting</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="72" y="70"></rect><text class="dgm-label--sm dgm-label" x="180" y="101">Web front end</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="72" y="146"></rect><text class="dgm-label--sm dgm-label" x="180" y="177">Mobile</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="72" y="222"></rect><text class="dgm-label--sm dgm-label" x="180" y="253">Partner feed</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="392" y="70"></rect><text class="dgm-label--sm dgm-label" x="500" y="101">Order service</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="392" y="146"></rect><text class="dgm-label--sm dgm-label" x="500" y="177">Ledger</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="392" y="222"></rect><text class="dgm-label--sm dgm-label" x="500" y="253">Identity</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="712" y="108"></rect><text class="dgm-label--sm dgm-label" x="820" y="139">Warehouse</text>
+<rect class="dgm-box" height="52" rx="10" width="216" x="712" y="184"></rect><text class="dgm-label--sm dgm-label" x="820" y="215">Dashboards</text>
+<line class="dgm-edge--return" marker-end="url(#its-ah)" x1="288" x2="386" y1="96" y2="96"></line>
+<line class="dgm-edge--return" marker-end="url(#its-ah)" x1="288" x2="386" y1="172" y2="172"></line>
+<line class="dgm-edge--return" marker-end="url(#its-ah)" x1="608" x2="706" y1="172" y2="134"></line>
+<line class="dgm-edge--return" marker-end="url(#its-ah)" x1="928" x2="928" y1="160" y2="178"></line>
+<path class="dgm-edge dgm-edge--focus" d="M180,274 C180,312 196,340 236,340 L604,340 C644,340 660,318 660,278 L660,236 C660,216 674,210 704,210" marker-end="url(#its-aha)"></path>
+<line class="dgm-lane-line" x1="499" x2="499" y1="342" y2="352"></line>
+<rect class="dgm-note" height="42" rx="8" width="256" x="371" y="352"></rect>
+<text class="dgm-note-text" x="499" y="378">partner feed bypasses the core</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Loop" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A timeline." data-component="Loop" data-job="Show a recurring cycle" data-limits="Four or five stops." data-slide-id="loop" data-source-required="false" data-tags="loop feedback cycle" data-use="Make the return edge and feedback visible." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>The return edge is the message.</h2></div>
+<p class="head-note">Use a loop only when the cycle itself is the claim.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The cycle itself is the claim — improvement loops, feedback, rework.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A timeline. Use a loop when the process returns and the return creates the outcome.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Four or five stops</li><li>The accent edge is the one people skip</li><li>Arrows all run one way</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Loops of eight. Nobody follows the circle home.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:0.7204" aria-labelledby="lp-t lp-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 680 420">
+<title id="lp-t">Four-stage improvement loop</title>
+<desc id="lp-d">Observe leads to measure, then decide, then change, and back to observe.</desc>
+<defs><marker id="lp-ah" markerheight="8" markerunits="userSpaceOnUse" markerwidth="10" orient="auto" refx="10" refy="4"><path class="dgm-ah-ink" d="M0,0 L10,4 L0,8 Z"></path></marker>
+<marker id="lp-aha" markerheight="9" markerunits="userSpaceOnUse" markerwidth="11" orient="auto" refx="11" refy="4.5"><path class="dgm-ah-accent" d="M0,0 L11,4.5 L0,9 Z"></path></marker></defs>
+<rect class="dgm-box" height="56" rx="10" width="164" x="258" y="21"></rect><text class="dgm-label--sm dgm-label" x="340" y="55">Measure</text>
+<rect class="dgm-box" height="56" rx="10" width="164" x="473" y="182"></rect><text class="dgm-label--sm dgm-label" x="555" y="216">Decide</text>
+<rect class="dgm-box" height="56" rx="10" width="164" x="258" y="343"></rect><text class="dgm-label--sm dgm-label" x="340" y="377">Change</text>
+<rect class="dgm-box--focus" height="56" rx="10" width="164" x="43" y="182"></rect><text class="dgm-label--sm dgm-label" x="125" y="216">Observe</text>
+<path class="dgm-edge" d="M360.7,92.8 A119,119 0 0 1 457.2,189.3" marker-end="url(#lp-ah)"></path>
+<path class="dgm-edge" d="M457.2,230.7 A119,119 0 0 1 360.7,327.2" marker-end="url(#lp-ah)"></path>
+<path class="dgm-edge" d="M319.3,327.2 A119,119 0 0 1 222.8,230.7" marker-end="url(#lp-ah)"></path>
+<path class="dgm-edge dgm-edge--focus" d="M222.8,189.3 A119,119 0 0 1 319.3,92.8" marker-end="url(#lp-aha)"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Tree and org chart" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A flow." data-component="Tree and org chart" data-job="Show hierarchy" data-limits="Three levels." data-slide-id="tree-and-org-chart" data-source-required="false" data-tags="tree org hierarchy" data-use="Explain decomposition, containment, or reporting lines." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · graph family</p><h2>Trees explain hierarchy, not motion.</h2></div>
+<p class="head-note">One root, orthogonal branches, and no arrows.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Parent-child structure is the story — a system decomposed, a team reporting.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A flow. Trees show parent-child structure without direction of work.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Orthogonal connectors only</li><li>Three levels, then stop</li><li>Focus the branch under discussion</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Mixing containment with flow. A tree has no arrows.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:1.0592" aria-labelledby="tr-t tr-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 1000 300">
+<title id="tr-t">Three-level decomposition</title>
+<desc id="tr-d">One root with three children, and two grandchildren under the middle child.</desc>
+<rect class="dgm-box" height="56" rx="4" width="200" x="400" y="24"></rect><text class="dgm-label--sm dgm-label" x="500" y="48">Engine</text><text class="dgm-sublabel" x="500" y="66">root</text>
+<path class="dgm-edge" d="M500,80 V108 H180 V132"></path>
+<path class="dgm-edge" d="M500,80 V132"></path>
+<path class="dgm-edge" d="M500,80 V108 H820 V132"></path>
+<rect class="dgm-box" height="56" rx="4" width="200" x="80" y="132"></rect><text class="dgm-label--sm dgm-label" x="180" y="166">Transport</text>
+<rect class="dgm-box--focus" height="56" rx="4" width="200" x="400" y="132"></rect><text class="dgm-label--sm dgm-label" x="500" y="166">Application</text>
+<rect class="dgm-box" height="56" rx="4" width="200" x="720" y="132"></rect><text class="dgm-label--sm dgm-label" x="820" y="166">Providers</text>
+<path class="dgm-edge dgm-edge--focus" d="M500,188 V216 H380 V240"></path>
+<path class="dgm-edge dgm-edge--focus" d="M500,188 V216 H620 V240"></path>
+<rect class="dgm-box" height="52" rx="4" width="200" x="280" y="240"></rect><text class="dgm-label--sm dgm-label" x="380" y="272">Runtime</text>
+<rect class="dgm-box" height="52" rx="4" width="200" x="520" y="240"></rect><text class="dgm-label--sm dgm-label" x="620" y="272">Store</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Layers" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Nested boundaries." data-component="Layers" data-job="Show dependency order" data-limits="One focal layer." data-slide-id="layers" data-source-required="false" data-tags="layers architecture" data-use="Define who may call whom in a stack." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · band family</p><h2>Layers define who may call whom.</h2></div>
+<p class="head-note">A layer stack is a dependency rule, not a decorated list.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The architecture is a stack and the discipline is who may call whom.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Nested boundaries. Layers show permitted dependency order; nesting shows containment.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>A level references only the level directly below</li><li>One focal band, never two</li><li>Label column fixed, body column free</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Layers as decoration for a list. If any level may call any other, it is not a stack.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="band-stack">
+<div class="band"><p class="band__label">Transport</p><p class="band__body"><strong>HTTP · MCP</strong> — parses the wire, authenticates, and hands over a validated request. Knows nothing about tasks.</p></div>
+<div class="band band--focus"><p class="band__label">Application</p><p class="band__body"><strong>ExecutionRuntime</strong> — admission, cancellation, durable records, terminal mapping. The only layer that owns lifecycle.</p></div>
+<div class="band"><p class="band__label">Pipeline</p><p class="band__body"><strong>Two-phase</strong> — implementer, then refiner. Knows nothing about HTTP.</p></div>
+<div class="band"><p class="band__label">Providers</p><p class="band__body"><strong>Claude · Codex</strong> — one session interface, two runtimes behind it.</p></div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Medallion" class="slide" data-chapter="Ch 4 · Evidence" data-choose="System layers." data-component="Medallion" data-job="Show data refinement" data-limits="Exactly three tiers." data-slide-id="medallion" data-source-required="false" data-tags="medallion data" data-use="Explain bronze, silver, and gold maturity." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · band family</p><h2>Data earns trust through three refinement tiers.</h2></div>
+<p class="head-note">Bronze lands, silver conforms, gold serves.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Data maturity is the story — raw to conformed to served.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>System layers. Medallion describes data maturity, not software ownership.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Exactly bronze, silver, gold — fixed vocabulary</li><li>Gold is the only tier outsiders may query</li><li>Never architecture — this is data state, not systems</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Inventing a fourth tier. It means silver is not agreed.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="band-stack">
+<div class="band band--bronze"><p class="band__label">Bronze · raw</p><p class="band__body">Landed exactly as received. No schema enforced, nothing dropped, replayable from source.</p></div>
+<div class="band band--silver"><p class="band__label">Silver · conformed</p><p class="band__body">Typed, deduplicated, joined to reference data. One row means one thing.</p></div>
+<div class="band band--gold band--focus"><p class="band__label">Gold · served</p><p class="band__body"><strong>The only tier anyone outside the platform may query.</strong> Aggregates and contracts live here.</p></div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Pyramid" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A layer stack." data-component="Pyramid" data-job="Show narrowing" data-limits="Four tiers." data-slide-id="pyramid" data-source-required="false" data-tags="pyramid funnel" data-use="Visualise a quantity that materially decreases by tier." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · band family</p><h2>Width must carry a real quantity.</h2></div>
+<p class="head-note">Use a pyramid or funnel only when each tier materially narrows.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Progressive narrowing is the finding — proposals to shipped, leads to closed.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Layers. Use width only when it encodes a quantity or real narrowing.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Width carries the number — they must agree</li><li>Four tiers at most</li><li>Focus the tier being argued about</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A pyramid of equal quantities. That is a layer stack.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="pyramid">
+<div class="pyramid__tier pyramid__tier--1 pyramid__tier--focus"><h3>Shipped</h3><p>12</p></div>
+<div class="pyramid__tier pyramid__tier--2"><h3>In review</h3><p>20</p></div>
+<div class="pyramid__tier pyramid__tier--3"><h3>Specified</h3><p>34</p></div>
+<div class="pyramid__tier pyramid__tier--4"><h3>Proposed</h3><p>58</p></div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Nested" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Venn." data-component="Nested" data-job="Show total containment" data-limits="Three rings." data-slide-id="nested" data-source-required="false" data-tags="nested containment" data-use="Explain boundaries inside boundaries." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · band family</p><h2>Nesting shows total containment.</h2></div>
+<p class="head-note">Use rings for boundaries inside boundaries, not partial overlap.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Boundaries contain boundaries — sandboxes, processes, machines, tenants.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Venn. Nesting is total containment; Venn is partial overlap.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Three rings at most</li><li>The accent ring is the boundary under discussion</li><li>Label each ring at its top-left corner</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Nesting as a Venn. Containment is total, overlap is partial.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="nest">
+<p class="nest__label">Caller machine</p>
+<div class="nest__ring">
+<p class="nest__label">Engine process</p>
+<div class="nest__ring nest__ring--focus">
+<p class="nest__label">Worker sandbox · cwd-only</p>
+<div class="nest__core"><h3>Worker</h3></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Quadrant" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Scatter." data-component="Quadrant" data-job="Classify by two judgements" data-limits="Nine plotted items maximum." data-slide-id="quadrant" data-source-required="false" data-tags="quadrant matrix" data-use="Turn two independent axes into four actions." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · matrix family</p><h2>Two independent axes create four decisions.</h2></div>
+<p class="head-note">Name both axes and make each cell an action.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Two independent judgements sort the portfolio — value against effort, risk against reach.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A scatter plot. Quadrants classify by two judgements; scatter plots measured values.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Name both axes at the edges</li><li>Four verdict cells, one shaded</li><li>Verdicts are actions — do, schedule, batch, drop</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Plotting more than nine items. A crowded quadrant is a table.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="quadrant-frame">
+<p class="quadrant-axis quadrant-axis--y">Effort to change →</p>
+<div class="quadrant">
+<div class="quadrant__cell"><h3>Schedule</h3><p>High value, high effort. Needs a plan and a named owner.</p><span class="quadrant__item" style="left:10%;top:42%">Data migration</span><span class="quadrant__item" style="left:44%;top:66%">Regional rollout</span></div>
+<div class="quadrant__cell quadrant__cell--focus"><h3>Do now</h3><p>High value, low effort. Nothing should sit here for long.</p><span class="quadrant__item" style="left:12%;top:40%">Billing retry</span><span class="quadrant__item" style="left:50%;top:58%">SSO</span><span class="quadrant__item" style="left:22%;top:78%">Audit log</span></div>
+<div class="quadrant__cell"><h3>Drop</h3><p>Low value, high effort. Say so and close it.</p><span class="quadrant__item" style="left:10%;top:46%">Legacy import</span><span class="quadrant__item" style="left:46%;top:70%">Custom theming</span></div>
+<div class="quadrant__cell"><h3>Batch</h3><p>Low value, low effort. Fold into other work.</p><span class="quadrant__item" style="left:14%;top:44%">Email footer</span><span class="quadrant__item" style="left:48%;top:68%">Tooltip copy</span></div>
+</div>
+<span></span>
+<p class="quadrant-axis">← Value delivered →</p>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Coverage matrix" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A measured heatmap." data-component="Coverage matrix" data-job="Show coverage states" data-limits="Discrete states." data-slide-id="coverage-matrix" data-source-required="false" data-tags="coverage matrix heatmap" data-use="Compare controls against surfaces or features against platforms." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · matrix family</p><h2>Coverage matrices expose gaps.</h2></div>
+<p class="head-note">Rows are controls, columns are surfaces, and colour means status.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The question is coverage — controls against surfaces, features against platforms.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A heatmap. Coverage uses discrete states; heatmaps use measured intensity.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Rows are controls, columns are surfaces</li><li>Status colours mean status here, and only here</li><li>Focus the cells under discussion</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Status colours anywhere else in the deck as series fills.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="matrix" style="grid-template-columns:200px repeat(4,1fr)">
+<div class="matrix__cell matrix__cell--head">Control</div>
+<div class="matrix__cell matrix__cell--head">Transport</div>
+<div class="matrix__cell matrix__cell--head">Runtime</div>
+<div class="matrix__cell matrix__cell--head">Worker</div>
+<div class="matrix__cell matrix__cell--head">Store</div>
+<div class="matrix__cell matrix__cell--row">Authentication</div>
+<div class="matrix__cell matrix__cell--good">enforced</div>
+<div class="matrix__cell matrix__cell--good">inherited</div>
+<div class="matrix__cell matrix__cell--good">inherited</div>
+<div class="matrix__cell matrix__cell--good">inherited</div>
+<div class="matrix__cell matrix__cell--row">Write confinement</div>
+<div class="matrix__cell">n/a</div>
+<div class="matrix__cell matrix__cell--good">enforced</div>
+<div class="matrix__cell matrix__cell--focus">enforced · hook</div>
+<div class="matrix__cell matrix__cell--good">enforced</div>
+<div class="matrix__cell matrix__cell--row">Git denial</div>
+<div class="matrix__cell">n/a</div>
+<div class="matrix__cell matrix__cell--good">enforced</div>
+<div class="matrix__cell matrix__cell--focus">enforced · both runtimes</div>
+<div class="matrix__cell">n/a</div>
+<div class="matrix__cell matrix__cell--row">Secret redaction</div>
+<div class="matrix__cell matrix__cell--good">enforced</div>
+<div class="matrix__cell matrix__cell--good">enforced</div>
+<div class="matrix__cell matrix__cell--warn">best effort</div>
+<div class="matrix__cell matrix__cell--stop">absent</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Gantt" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Timeline." data-component="Gantt" data-job="Show duration and overlap" data-limits="One accent bar." data-slide-id="gantt" data-source-required="false" data-tags="gantt schedule" data-use="Manage time, overlap, and a critical path." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · matrix family</p><h2>Use Gantt only when duration and overlap matter.</h2></div>
+<p class="head-note">If order alone matters, a timeline is cheaper to read.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>When things happen and how they overlap both matter — a rollout with dependencies.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Timeline. Use Gantt only when bar length and overlap carry meaning.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>The header scale owns the weeks</li><li>One accent bar — the critical path</li><li>Labels live inside their bars</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A gantt for a plain sequence. Order without duration is a timeline.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="gantt" style="grid-template-columns:210px 1fr">
+<div class="gantt__head">Workstream</div>
+<div class="gantt__head gantt__scale"><span>W1</span><span>W2</span><span>W3</span><span>W4</span><span>W5</span><span>W6</span><span>W7</span><span>W8</span></div>
+<div class="gantt__label">Skin &amp; tokens</div>
+<div class="gantt__row"><div class="gantt__bar" style="grid-column:1/4">resolve one palette</div></div>
+<div class="gantt__label">Type references</div>
+<div class="gantt__row"><div class="gantt__bar" style="grid-column:3/7">27 types</div></div>
+<div class="gantt__label">Verifiers</div>
+<div class="gantt__row"><div class="gantt__bar gantt__bar--focus" style="grid-column:6/9">geometry · skin · a11y</div></div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Radar" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Grouped bars." data-component="Radar" data-job="Compare profiles" data-limits="Five or six spokes." data-slide-id="radar" data-source-required="false" data-tags="radar profile" data-use="Compare exactly two options over shared criteria." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · plot family</p><h2>Radar compares two profiles, never one.</h2></div>
+<p class="head-note">Five or six shared criteria are the practical limit.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Comparing two options across five or six shared, named criteria.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Grouped bars. Radar is useful only when the profile shape across shared criteria matters.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Five or six spokes, order stable across slides</li><li>Solid is the proposal, dashed the incumbent</li><li>Label every spoke</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>One-series radar. With nothing to compare, use a bar.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:0.6568" aria-labelledby="rd-t rd-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 620 376">
+<title id="rd-t">Two options compared across five criteria</title>
+<desc id="rd-d">The proposed option scores higher on speed and reversibility. The incumbent is stronger on cost and maturity.</desc>
+<polygon class="dgm-grid" points="310,48 454,151 399,320 221,320 166,151"></polygon>
+<polygon class="dgm-grid" points="310,93 411,165 372,284 248,284 209,165"></polygon>
+<polygon class="dgm-grid" points="310,138 368,180 346,249 274,249 252,180"></polygon>
+<line class="dgm-grid" x1="310" x2="310" y1="194" y2="48"></line>
+<line class="dgm-grid" x1="310" x2="454" y1="194" y2="151"></line>
+<line class="dgm-grid" x1="310" x2="399" y1="194" y2="320"></line>
+<line class="dgm-grid" x1="310" x2="221" y1="194" y2="320"></line>
+<line class="dgm-grid" x1="310" x2="166" y1="194" y2="151"></line>
+<polygon class="dgm-poly--alt" points="310,137 424,157 345,246 248,273 229,171"></polygon>
+<polygon class="dgm-poly" points="310,74 378,170 390,300 273,239 214,157"></polygon>
+<circle class="dgm-point--focus" cx="310" cy="74" r="5"></circle><circle class="dgm-point--focus" cx="378" cy="170" r="5"></circle><circle class="dgm-point--focus" cx="390" cy="300" r="5"></circle><circle class="dgm-point--focus" cx="273" cy="239" r="5"></circle><circle class="dgm-point--focus" cx="214" cy="157" r="5"></circle>
+<text class="dgm-tick" style="text-anchor:middle" x="310" y="28">Speed</text>
+<text class="dgm-tick" style="text-anchor:start" x="472" y="156">Cost</text>
+<text class="dgm-tick" style="text-anchor:middle" x="414" y="350">Reversibility</text>
+<text class="dgm-tick" style="text-anchor:middle" x="206" y="350">Maturity</text>
+<text class="dgm-tick" style="text-anchor:end" x="148" y="156">Support</text>
+</svg>
+</div>
+<p class="cx-legend"><span><i class="cx-key cx-key--solid"></i>proposal</span><span><i class="cx-key cx-key--dashed"></i>incumbent</span></p>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Scatter" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Quadrant." data-component="Scatter" data-job="Show a relationship" data-limits="One labelled outlier." data-slide-id="scatter" data-source-required="false" data-tags="scatter relationship" data-use="Plot two measured variables and highlight one outlier." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · plot family</p><h2>Show the relationship and one outlier.</h2></div>
+<p class="head-note">The population stays neutral; the claim gets the signal colour.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Two measured quantities and the claim lives in their relationship.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Quadrant. Scatter uses measured coordinates; quadrant uses decision thresholds.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>The population is one neutral series</li><li>Accent and label only the outlier</li><li>Axes carry the units</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Labelling every point. One label is a claim; twelve are noise.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:0.7204" aria-labelledby="sc-t sc-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 680 360">
+<title id="sc-t">Cost against latency for twelve routes</title>
+<desc id="sc-d">Cost rises with latency across eleven routes. One route is slow and expensive, well away from the trend.</desc>
+<line class="dgm-grid" x1="80" x2="640" y1="80" y2="80"></line>
+<line class="dgm-grid" x1="80" x2="640" y1="150" y2="150"></line>
+<line class="dgm-grid" x1="80" x2="640" y1="220" y2="220"></line>
+<line class="dgm-axis" x1="80" x2="80" y1="40" y2="290"></line>
+<line class="dgm-axis" x1="80" x2="640" y1="290" y2="290"></line>
+<circle class="dgm-point" cx="150" cy="262" r="7"></circle>
+<circle class="dgm-point" cx="190" cy="244" r="7"></circle>
+<circle class="dgm-point" cx="228" cy="252" r="7"></circle>
+<circle class="dgm-point" cx="266" cy="222" r="7"></circle>
+<circle class="dgm-point" cx="304" cy="208" r="7"></circle>
+<circle class="dgm-point" cx="342" cy="214" r="7"></circle>
+<circle class="dgm-point" cx="380" cy="186" r="7"></circle>
+<circle class="dgm-point" cx="418" cy="172" r="7"></circle>
+<circle class="dgm-point" cx="456" cy="178" r="7"></circle>
+<circle class="dgm-point" cx="494" cy="146" r="7"></circle>
+<circle class="dgm-point" cx="532" cy="138" r="7"></circle>
+<circle class="dgm-point--focus" cx="590" cy="62" r="11"></circle>
+<rect class="cx-plate" height="36" width="168" x="400" y="41"></rect>
+<text class="dgm-edge-label" style="text-anchor:end" x="542" y="62">explore · 3.1× the trend</text>
+<text class="dgm-tick" x="360" y="318">median latency →</text>
+<text class="dgm-tick" transform="rotate(-90 34 166)" x="34" y="166">cost per task →</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Venn" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Nested rings." data-component="Venn" data-job="Show overlap" data-limits="Three sets." data-slide-id="venn" data-source-required="false" data-tags="venn overlap" data-use="Explain the intersection of two or three true sets." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · plot family</p><h2>The overlap must be the finding.</h2></div>
+<p class="head-note">Use two or three true sets and name the intersection.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The claim is that two or three sets genuinely overlap, and what sits in the overlap.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>Nested rings. Venn means partial overlap, not containment.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Two or three sets, never four</li><li>Label the intersection, not only the sets</li><li>Series fills at low opacity, ink edges</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Venn as decoration for “we do many things”.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="dgm">
+<svg style="--fscale:0.6777" aria-labelledby="vn-t vn-d" preserveaspectratio="xMidYMid meet" role="img" viewbox="0 0 640 400">
+<title id="vn-t">Overlap between three capability sets</title>
+<desc id="vn-d">Renders anywhere, brand controlled and machine verifiable overlap in the centre.</desc>
+<circle class="dgm-venn dgm-venn--1" cx="246" cy="154" r="102"></circle>
+<circle class="dgm-venn dgm-venn--2" cx="394" cy="154" r="102"></circle>
+<circle class="dgm-venn dgm-venn--3" cx="320" cy="256" r="102"></circle>
+<text class="dgm-label--sm dgm-label" style="text-anchor:end" x="152" y="52">Renders anywhere</text>
+<text class="dgm-label--sm dgm-label" style="text-anchor:start" x="488" y="52">Brand controlled</text>
+<text class="dgm-label--sm dgm-label" style="text-anchor:middle" x="320" y="388">Machine verifiable</text>
+<rect class="dgm-note" height="34" rx="10" width="122" x="259" y="184"></rect>
+<text class="dgm-note-text" x="320" y="205">this deck</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Chart router" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Choosing by visual preference." data-component="Chart router" data-job="Choose chart type" data-limits="One comparison per chart." data-slide-id="chart-router" data-source-required="false" data-tags="chart router" data-use="Route from comparison question to chart." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence</p><h2>Choose the chart by the comparison.</h2></div>
+<p class="head-note">The question determines the chart. Style comes after structure.</p>
+</header>
+<div class="zone-stage">
+<div class="chart-router">
+<button class="route-card" data-jump="Charts · categorical"><span>Rank</span><strong>Sorted bar</strong><p>Which category is larger?</p></button>
+<button class="route-card" data-jump="Charts · categorical"><span>Part to whole</span><strong>Stacked or 100%</strong><p>What makes up the total?</p></button>
+<button class="route-card" data-jump="Charts · trend"><span>Change over time</span><strong>Line or area</strong><p>Where does the trend break?</p></button>
+<button class="route-card" data-jump="Waterfall and composition"><span>Bridge</span><strong>Waterfall</strong><p>What explains the movement?</p></button>
+<button class="route-card" data-jump="Scatter"><span>Relationship</span><strong>Scatter or bubble</strong><p>How do two measures move together?</p></button>
+<button class="route-card" data-jump="Coverage matrix"><span>Intensity or coverage</span><strong>Heatmap or matrix</strong><p>Where are the gaps or concentrations?</p></button>
+</div>
+<div class="callout"><p><strong>Chart rule:</strong> direct labels first, one highlighted series, units on the axes, source under the exhibit, and no decorative effects.</p></div></div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Charts · categorical" class="slide" data-chapter="Ch 4 · Evidence" data-choose="A table." data-component="Charts · categorical" data-job="Compare categories" data-limits="Three series maximum." data-slide-id="charts-categorical" data-source-required="false" data-tags="bar categorical chart" data-use="Rank or compare measured categories." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · chart family</p><h2>Sort categories and label them directly.</h2></div>
+<p class="head-note">Use the simplest chart that makes ranking or composition obvious.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Comparing measured quantities across named categories.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A table. Use a chart when shape and ranking matter more than exact lookup.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>Three categorical series maximum</li><li>Horizontal bars when labels are words</li><li>Label the ends, not the middles</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Decoration — 3D, gradients, a legend for one series.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="chart-grid">
+<div class="cx-card">
+<p class="kicker">Column · one series</p>
+<svg style="--fscale:1.1014" class="cx" role="img" viewBox="0 0 480 232" aria-labelledby="c1col-t c1col-d"><title id="c1col-t">Column chart of one series across five categories</title><desc id="c1col-d">Five columns — A 42, B 68, C 55, D 82, E 71. D is the tallest and carries the signal colour.</desc><line class="cx-axis" x1="30" y1="189" x2="480" y2="189"/><rect class="cx-bar" x="60" y="111.3" width="52.1" height="77.7"/><text class="cx-value" text-anchor="middle" x="86" y="101.3">42</text><text class="cx-cat" text-anchor="middle" x="86" y="213">A</text><rect class="cx-bar" x="144" y="63.2" width="52.1" height="125.8"/><text class="cx-value" text-anchor="middle" x="170" y="53.2">68</text><text class="cx-cat" text-anchor="middle" x="170" y="213">B</text><rect class="cx-bar" x="228" y="87.25" width="52.1" height="101.75"/><text class="cx-value" text-anchor="middle" x="254" y="77.25">55</text><text class="cx-cat" text-anchor="middle" x="254" y="213">C</text><rect class="cx-bar--focus" x="312" y="37.3" width="52.1" height="151.7"/><text class="cx-value" text-anchor="middle" x="338" y="27.3">82</text><text class="cx-cat" text-anchor="middle" x="338" y="213">D</text><rect class="cx-bar" x="396" y="57.65" width="52.1" height="131.35"/><text class="cx-value" text-anchor="middle" x="422" y="47.65">71</text><text class="cx-cat" text-anchor="middle" x="422" y="213">E</text></svg>
+</div>
+<div class="cx-card">
+<p class="kicker">Horizontal · default</p>
+<svg style="--fscale:1.1014" class="cx" role="img" viewBox="0 0 480 232" aria-labelledby="c2hbar-t c2hbar-d"><title id="c2hbar-t">Sorted horizontal bar chart of four regions</title><desc id="c2hbar-d">Four sorted bars — North 84, West 64, East 49, South 35. North leads and carries the signal colour.</desc><line class="cx-axis" x1="100" y1="12" x2="100" y2="198"/><rect class="cx-bar--focus" x="100" y="20" width="320" height="32"/><text class="cx-cat" x="8" y="40">North</text><text class="cx-value" x="432" y="41">84</text><rect class="cx-bar" x="100" y="66" width="243.8" height="32"/><text class="cx-cat" x="8" y="86">West</text><text class="cx-value" x="355.8" y="87">64</text><rect class="cx-bar" x="100" y="112" width="186.7" height="32"/><text class="cx-cat" x="8" y="132">East</text><text class="cx-value" x="298.7" y="133">49</text><rect class="cx-bar" x="100" y="158" width="133.3" height="32"/><text class="cx-cat" x="8" y="178">South</text><text class="cx-value" x="245.3" y="179">35</text><text class="cx-axis-title" x="8" y="216">REGION · INDEX</text></svg>
+<p class="small">Sorted bars let direct labels fit.</p>
+</div>
+<div class="cx-card">
+<p class="kicker">Single proportion</p>
+<svg style="--fscale:1.1014" class="cx" role="img" viewBox="0 0 480 232" aria-labelledby="c3prop-t c3prop-d"><title id="c3prop-t">Single proportion bar at seventy-two percent</title><desc id="c3prop-d">One horizontal bar of a hundred percent track, filled to 72 percent in the signal colour.</desc><text class="cx-big" x="40" y="50">72%</text><rect class="cx-track" x="40" y="72" width="400" height="72"/><rect class="cx-bar--focus" x="40" y="72" width="288" height="72"/><line class="cx-guide" x1="440" y1="64" x2="440" y2="152"/><text class="cx-cat" x="40" y="168">of requests follow three paths</text><text class="cx-axis-title" x="40" y="200">SHARE OF TOTAL · 0–100%</text></svg>
+</div>
+<div class="cx-card">
+<p class="kicker">Column · three series</p>
+<svg style="--fscale:1.1014" class="cx" role="img" viewBox="0 0 480 232" aria-labelledby="c4grp-t c4grp-d"><title id="c4grp-t">Grouped column chart of three series across four quarters</title><desc id="c4grp-d">Plan, Actual, and Forecast columns for Q1 to Q4. Actual carries the second series colour.</desc><line class="cx-axis" x1="30" y1="168" x2="470" y2="168"/><rect class="cx-bar" x="57.5" y="84.3" width="24" height="83.7"/><rect class="cx-bar--s2" x="84.5" y="47.1" width="24" height="120.9"/><rect class="cx-bar--s3" x="111.5" y="71.28" width="24" height="96.72"/><text class="cx-cat" text-anchor="middle" x="96.5" y="192">Q1</text><rect class="cx-bar" x="162.5" y="34.08" width="24" height="133.92"/><rect class="cx-bar--s2" x="189.5" y="78.72" width="24" height="89.28"/><rect class="cx-bar--s3" x="216.5" y="54.54" width="24" height="113.46"/><text class="cx-cat" text-anchor="middle" x="201.5" y="192">Q2</text><rect class="cx-bar" x="267.5" y="67.56" width="24" height="100.44"/><rect class="cx-bar--s2" x="294.5" y="15.48" width="24" height="152.52"/><rect class="cx-bar--s3" x="321.5" y="60.12" width="24" height="107.88"/><text class="cx-cat" text-anchor="middle" x="306.5" y="192">Q3</text><rect class="cx-bar" x="372.5" y="50.82" width="24" height="117.18"/><rect class="cx-bar--s2" x="399.5" y="35.94" width="24" height="132.06"/><rect class="cx-bar--s3" x="426.5" y="95.46" width="24" height="72.54"/><text class="cx-cat" text-anchor="middle" x="411.5" y="192">Q4</text><text class="cx-axis-title" x="30" y="212">QUARTER · INDEX</text></svg>
+<ul class="legend cx-legend">
+<li><i></i>Plan</li>
+<li><i></i>Actual</li>
+<li><i></i>Forecast</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Waterfall and composition" class="slide" data-chapter="Ch 4 · Evidence · chart family" data-choose="Grouped bars." data-component="Waterfall and composition" data-job="Explain a total" data-limits="Few segments or drivers." data-slide-id="waterfall-and-composition" data-source-required="false" data-tags="stacked waterfall composition" data-use="Show composition or bridge between totals." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · chart family</p><h2>Use stacked charts for composition and waterfalls for bridges.</h2></div>
+<p class="head-note">Both explain a total, but they answer different questions.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Showing how a total is composed, or which positive and negative drivers explain a change.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A grouped bar. Grouped bars compare peers; stacked charts show composition; waterfalls show a bridge between totals.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Label totals directly</li><li>Order segments or drivers deliberately</li><li>Highlight only the decisive segment or driver</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Too many tiny segments or a waterfall whose bars do not reconcile to the ending total.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="two-chart-stage">
+<div class="cx-card"><p class="kicker">100% stacked · composition</p><svg style="--fscale:1.1008" class="cx" role="img" viewBox="0 0 480 420" aria-labelledby="c5stk-t c5stk-d"><title id="c5stk-t">Hundred percent stacked composition for two years</title><desc id="c5stk-d">The 2026 plan splits Core 58, Growth 28, Other 14. The 2025 baseline splits Core 44, Growth 43, Other 13.</desc><text class="cx-cat" x="44" y="50">2026 plan</text><rect class="cx-bar" x="44" y="60" width="197.2" height="120"/><rect class="cx-bar--focus" x="241.2" y="60" width="95.2" height="120"/><rect class="cx-bar--quiet" x="336.4" y="60" width="47.6" height="120"/><text class="cx-seg cx-seg--dark" text-anchor="middle" x="142.6" y="124">Core 58</text><text class="cx-seg cx-seg--dark" text-anchor="middle" x="288.8" y="40">Growth 28</text><line class="cx-leader" x1="288.8" y1="48" x2="288.8" y2="60"/><line class="cx-leader" x1="386" y1="120" x2="396" y2="120"/><text class="cx-seg cx-seg--dark" x="402" y="124">Other 14</text><text class="cx-cat" x="44" y="220">2025 baseline</text><rect class="cx-bar" x="44" y="230" width="149.6" height="120"/><rect class="cx-bar--focus" x="193.6" y="230" width="146.2" height="120"/><rect class="cx-bar--quiet" x="339.8" y="230" width="44.2" height="120"/><text class="cx-seg cx-seg--dark" text-anchor="middle" x="118.8" y="294">Core 44</text><text class="cx-seg" text-anchor="middle" x="266.7" y="294">Growth 43</text><line class="cx-leader" x1="386" y1="290" x2="396" y2="290"/><text class="cx-seg cx-seg--dark" x="402" y="294">Other 13</text><line class="cx-guide" x1="44" y1="46" x2="44" y2="368"/><line class="cx-guide" x1="384" y1="46" x2="384" y2="368"/><text class="cx-axis-title" x="44" y="390">0%</text><text class="cx-axis-title" text-anchor="end" x="384" y="390">100%</text></svg><p class="source">2025 baseline → 2026 plan</p></div>
+<div class="cx-card"><p class="kicker">Waterfall · bridge</p><svg style="--fscale:1.1008" class="cx" role="img" viewBox="0 0 480 420" aria-labelledby="c6wf-t c6wf-d"><title id="c6wf-t">Waterfall bridge from one hundred to one hundred and thirty</title><desc id="c6wf-d">Start 100, Volume plus 22, Price minus 14, Mix plus 31, Cost minus 9, End 130. Mix is the decisive step.</desc><line class="cx-axis" x1="30" y1="350" x2="466" y2="350"/><rect class="cx-bar--total" x="57" y="130" width="56" height="220"/><text class="cx-value" text-anchor="middle" x="85" y="120">100</text><text class="cx-cat" text-anchor="middle" x="85" y="374">Start</text><line class="cx-guide" x1="113" y1="130" x2="127" y2="130"/><rect class="cx-bar--s3" x="127" y="81.6" width="56" height="48.4"/><text class="cx-value" text-anchor="middle" x="155" y="71.6">+22</text><text class="cx-cat" text-anchor="middle" x="155" y="374">Volume</text><line class="cx-guide" x1="183" y1="81.6" x2="197" y2="81.6"/><rect class="cx-bar" x="197" y="81.6" width="56" height="30.8"/><text class="cx-value" text-anchor="middle" x="225" y="71.6">−14</text><text class="cx-cat" text-anchor="middle" x="225" y="374">Price</text><line class="cx-guide" x1="253" y1="112.4" x2="267" y2="112.4"/><rect class="cx-bar--focus" x="267" y="44.2" width="56" height="68.2"/><text class="cx-value" text-anchor="middle" x="295" y="34.2">+31</text><text class="cx-cat" text-anchor="middle" x="295" y="374">Mix</text><line class="cx-guide" x1="323" y1="44.2" x2="337" y2="44.2"/><rect class="cx-bar" x="337" y="44.2" width="56" height="19.8"/><text class="cx-value" text-anchor="middle" x="365" y="34.2">−9</text><text class="cx-cat" text-anchor="middle" x="365" y="374">Cost</text><line class="cx-guide" x1="393" y1="64" x2="407" y2="64"/><rect class="cx-bar--total" x="407" y="64" width="56" height="286"/><text class="cx-value" text-anchor="middle" x="435" y="54">130</text><text class="cx-cat" text-anchor="middle" x="435" y="374">End</text><text class="cx-axis-title" x="30" y="394">DRIVER · INDEX</text></svg></div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Charts · trend" class="slide" data-chapter="Ch 4 · Evidence" data-choose="Categorical chart." data-component="Charts · trend" data-job="Show change through time" data-limits="One line per claim." data-slide-id="charts-trend" data-source-required="false" data-tags="line trend curve" data-use="Reveal a trend, break, inflection, or saturation." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 4 · Evidence · chart family</p><h2>Annotate the break, not every point.</h2></div>
+<p class="head-note">The title carries the conclusion; the mark shows where it becomes visible.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>The claim is a change — a break in trend, an inflection, a saturation.</p></div><div class="rail-block"><p class="rail-label">Choose this over</p><p>A categorical chart. Use a line only when the horizontal order is continuous or time-based.</p></div>
+<div class="rail-block"><p class="rail-label">Rules</p><ul><li>One line per claim; a second only when comparison is the claim</li><li>Annotate the break or inflection, nothing else</li><li>Axes carry units; the title carries the conclusion</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>A gridline forest. The annotation is the chart.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="curve-grid" style="grid-template-columns:1fr 1fr">
+<div class="cx-card">
+<p class="kicker">Line · change through time</p>
+<svg style="--fscale:1.1014" class="cx" role="img" viewBox="0 0 480 464" aria-labelledby="c7line-t c7line-d"><title id="c7line-t">Line chart with a break in trend</title><desc id="c7line-d">A slowly rising line steepens sharply at the marked period. The annotation names the break.</desc><line class="cx-axis" x1="44" y1="400" x2="464" y2="400"/><line class="cx-axis" x1="44" y1="30" x2="44" y2="400"/><line class="cx-guide" x1="252" y1="37" x2="252" y2="400"/><path class="cx-line" d="M 60 340.1 L 108 326 L 156 310.1 L 204 292.5 L 252 276.7 L 300 220.3 L 348 174.5 L 396 135.7 L 444 104"/><line class="cx-leader" x1="290" y1="87" x2="258" y2="267.9"/><rect class="cx-plate" x="269" y="47" width="136" height="40"/><text class="cx-annot" x="297" y="72">policy change</text><circle class="cx-point" cx="252" cy="276.7" r="6"/><text class="cx-axis-title" x="44" y="428">PERIOD →</text></svg>
+<p class="small">Use one line for the claim. Add a second only when comparison is the claim.</p>
+</div>
+<div class="cx-card">
+<p class="kicker">S-curve · adoption or saturation</p>
+<svg style="--fscale:1.1014" class="cx" role="img" viewBox="0 0 480 464" aria-labelledby="c8scurve-t c8scurve-d"><title id="c8scurve-t">S curve reaching saturation after an inflection</title><desc id="c8scurve-d">Adoption is flat, accelerates through the marked inflection, then flattens near saturation.</desc><line class="cx-axis" x1="44" y1="400" x2="464" y2="400"/><line class="cx-axis" x1="44" y1="30" x2="44" y2="400"/><line class="cx-guide" x1="252" y1="37" x2="252" y2="400"/><path class="cx-line" d="M 60 368.3 L 72 367.1 L 84 365.6 L 96 363.5 L 108 360.9 L 120 357.5 L 132 353.1 L 144 347.5 L 156 340.3 L 168 331.3 L 180 320.2 L 192 306.6 L 204 290.8 L 216 272.3 L 228 251.6 L 240 229.3 L 252 206.2 L 264 183.1 L 276 160.7 L 288 140.1 L 300 121.6 L 312 105.8 L 324 92.2 L 336 81.1 L 348 72.1 L 360 64.9 L 372 59.2 L 384 54.8 L 396 51.5 L 408 48.9 L 420 46.7 L 432 45.3 L 444 44.1"/><line class="cx-leader" x1="294" y1="255" x2="257" y2="212"/><rect class="cx-plate" x="274" y="255" width="140" height="40"/><text class="cx-annot" x="301" y="280">inflection point</text><circle class="cx-point" cx="252" cy="206.2" r="6"/><text class="cx-axis-title" x="44" y="428">PERIOD →</text></svg>
+<p class="small">Label the transition, threshold or saturation — not every point on the curve.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Worked recipe" class="slide" data-chapter="Ch 5 · Finishing" data-choose="Copying source headings." data-component="Worked recipe" data-job="Demonstrate the method" data-limits="One conclusion per slide." data-slide-id="worked-recipe" data-source-required="false" data-tags="recipe example" data-use="Turn one source document into a short argument." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 5 · Finishing</p><h2>One source document can become a five-slide argument.</h2></div>
+<p class="head-note">Turn each source section into a conclusion, then choose the job and layout.</p>
+</header>
+<div class="zone-stage">
+<table class="router">
+<thead>
+<tr>
+<th>Source section</th>
+<th>Takeaway you write</th>
+<th>Job</th>
+<th>Layout</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Problem statement</td>
+<td>"Worktrees cost more than they protect"</td>
+<td>State one claim</td>
+<td><span class="mono">Poster · statement</span></td>
+</tr>
+<tr>
+<td>Proposed design</td>
+<td>"The caller owns the branch; the engine owns the commit"</td>
+<td>Show a system's shape</td>
+<td><span class="mono">Architecture row</span></td>
+</tr>
+<tr>
+<td>Request lifecycle</td>
+<td>"Only the engine ever writes"</td>
+<td>Show the data</td>
+<td>Sequence</td>
+</tr>
+<tr>
+<td>Before &amp; after</td>
+<td>"One branch convention replaces three"</td>
+<td>Compare two things</td>
+<td><span class="mono">Split</span></td>
+</tr>
+<tr>
+<td>Rollout</td>
+<td>"Three workstreams, one critical path"</td>
+<td>Show the data</td>
+<td>Gantt</td>
+</tr>
+</tbody>
+</table>
+<div class="callout"><p>Five moves — takeaway → job → layout → accent once → gates.</p></div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Decision and next steps" class="slide" data-chapter="Ch 5 · Finishing" data-choose="A thank-you page." data-component="Decision and next steps" data-job="Close with action" data-limits="Three actions maximum." data-slide-id="decision-and-next-steps" data-source-required="false" data-tags="decision next steps close" data-use="End a decision deck with owner and date." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 5 · Finishing</p><h2>Close with a decision, owner, and next date.</h2></div>
+<p class="head-note">The last page should make the meeting outcome easy to repeat after the room leaves.</p>
+</header>
+<div class="zone-stage">
+<div class="guide">
+<aside class="guide__rail">
+<div class="rail-block"><p class="rail-label">Use when</p><p>Ending a decision, steering, proposal, project, or review deck.</p></div>
+<div class="rail-block"><p class="rail-label">Choose this over</p><p>A generic “thank you” page. Use a close when the deck exists to cause an action.</p></div>
+<div class="rail-block"><p class="rail-label">Build rules</p><ul><li>Restate the decision in one sentence</li><li>Name one owner per action</li><li>Give the next checkpoint a real date</li></ul></div>
+<div class="rail-block rail-block--avoid"><p class="rail-label">Avoid</p><p>Five equal next steps with no priority or accountable owner.</p></div>
+</aside>
+<div class="guide__sample">
+<div class="decision-close">
+<div class="decision-close__answer"><p class="kicker">Decision</p><h3>Approve a six-week pilot with one governed approval boundary.</h3></div>
+<div class="decision-close__actions">
+<div class="is-focus"><span>01</span><strong>Nominate the business owner</strong><p>Owner · Sponsor</p><b>18 Aug</b></div>
+<div><span>02</span><strong>Freeze the three pilot paths</strong><p>Owner · Product</p><b>21 Aug</b></div>
+<div><span>03</span><strong>Run the control review</strong><p>Owner · Risk</p><b>28 Aug</b></div>
+</div>
+<div class="decision-close__checkpoint"><p class="kicker">Next checkpoint</p><p><strong>3 September · pilot readiness review</strong></p></div>
+</div></div>
+</div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Acceptance gates" class="slide" data-chapter="Ch 5 · Finishing" data-choose="Visual inspection alone." data-component="Acceptance gates" data-job="Verify quality" data-limits="Every gate passes or is explicitly waived." data-slide-id="acceptance-gates" data-source-required="false" data-tags="qa acceptance checklist" data-use="Run checks before shipping." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 5 · Finishing</p><h2>A slide is finished only when the claim survives distance.</h2></div>
+<p class="head-note">Run the visual, evidence, accessibility, and implementation checks before shipping.</p>
+</header>
+<div class="zone-stage">
+<div class="grid grid--2">
+<div class="card">
+<h3>Every slide</h3>
+<ul class="list--check">
+<li>The title states a conclusion or, on a reference page, names the component</li>
+<li>One composition owns the stage</li>
+<li>Visual weight matches message weight</li>
+<li>No content enters the footer or overflows the safe area</li>
+<li>Body copy stays at or above the reading floor</li>
+</ul>
+</div>
+<div class="card">
+<h3>Every figure</h3>
+<ul class="list--check">
+<li>Every SVG has role, title, and description</li>
+<li>Simple compositions use 3–6 objects; network diagrams use 7–24 nodes</li>
+<li>Exactly one focal mark carries the signal colour</li>
+<li>Data units, dates, and source treatment are explicit</li>
+<li>Contrast and reading order work without colour alone</li>
+</ul>
+</div>
+</div>
+<p class="mono small" style="color:var(--ink-faint)">Open with ?qa to run deck checks, or use the QA tab in the Menu on the current page.</p>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><section aria-label="Version record" class="slide" data-chapter="Ch 5 · Finishing" data-choose="Version in filename only." data-component="Version record" data-job="Record system change" data-limits="One current version." data-slide-id="version-record" data-source-required="false" data-tags="version changelog" data-use="Track design-contract evolution." data-version="1.2.3">
+<div class="sheet">
+<header class="zone-head">
+<div><p class="kicker">Ch 5 · Finishing</p><h2>The system records its own evolution and refinement.</h2></div>
+<p class="head-note">Version the design contract inside the file so copied pages retain their provenance and refinement history.</p>
+</header>
+<div class="zone-stage">
+<div class="changelog"><div class="changelog__row"><p class="changelog__v">1.2.3</p><p class="changelog__what"><strong>Dead rules removed.</strong> Fifty rules whose selectors matched no element in the book and no string in its scripts: the pre-1.2.0 chart system, superseded when every chart moved to <code>cx-*</code>, and fifteen orphaned component variants. Nothing renders differently &mdash; a rule that matches nothing cannot.</p></div><div class="changelog__row"><p class="changelog__v">1.2.2</p><p class="changelog__what"><strong>Breathing room, and exhibits that obey their own rules.</strong> The guide rail starts at one inset book-wide instead of sixteen, and no label sits closer than 24 units to its plate. Chart cards fill their row. The quadrant plots items, the pyramid&rsquo;s widths carry its numbers, and data marks are filled only from data tokens.</p></div><div class="changelog__row"><p class="changelog__v">1.2.1</p><p class="changelog__what"><strong>Accent and status separated.</strong> The third accent and the third chart series moved off status-green to a deep teal, so the accent trio and the reserved status trio read as different families and &ldquo;never a chart series&rdquo; holds in the charts themselves.</p></div><div class="changelog__row"><p class="changelog__v">1.2.0</p><p class="changelog__what"><strong>Chart-system unification and reference accuracy.</strong> Every chart rebuilt as inline SVG on two fixed viewBoxes, so scale, stroke weight and type match across the book, on one palette with a neutral population and a single accent focal. Annotation collisions cleared, and reference pages corrected to name the tokens that actually exist.</p></div><div class="changelog__row"><p class="changelog__v">1.1.1</p><p class="changelog__what"><strong>Diagram and chart refinement pass.</strong> Tighter type hierarchy, calmer diagram styling, cleaner labels, improved callouts, and reworked graph-family exemplars.</p></div><div class="changelog__row"><p class="changelog__v">1.1.0</p><p class="changelog__what"><strong>The professional guidebook rebuild.</strong> One coherent style layer, offline system fonts, stronger hierarchy, searchable library, agent-readable manifest, full-slide copy, automated QA, direct page routing, and eleven new practical compositions.</p></div>
+<div class="changelog__row">
+<p class="changelog__v">1.0.0</p>
+<p class="changelog__what"><strong>The guidebook rebuild.</strong> Zone contract (head · stage · foot as grid rows), the guide rail on every teaching page, one isolated Menu holding method, notes, this page's code, present, and the version record, forty-two pages, and all twenty-seven diagram types in chapter four.</p>
+</div>
+<div class="changelog__row">
+<p class="changelog__v">prior</p>
+<p class="changelog__what"><strong>Prior art, not releases of this file.</strong> An earlier component library and a twenty-composition diagram set whose geometry contract is adapted from cathrynlavery/diagram-design (MIT). Both predate the guidebook shell and its zone contract.</p>
+</div>
+</div>
+<div class="callout callout--note"><p>Bump the minor version when a page or component is added. Bump the patch when only tokens, copy, or behaviour changes. Record the change before shipping.</p></div>
+</div>
+<footer class="zone-foot"></footer>
+</div>
+</section><script id="housebook-manifest" type="application/json">{
+  "name": "The House Book",
+  "version": "1.2.3",
+  "updated": "2026-08-15",
+  "canvas": {
+    "width": 1440,
+    "height": 810,
+    "ratio": "16:9"
+  },
+  "summary": "A complete visual system, decision guide, component library and copyable HTML template for building slides, in one offline file.",
+  "slides": [
+    {
+      "number": 1,
+      "id": "cover",
+      "component": "Cover",
+      "chapter": "The House Book",
+      "job": "Orient",
+      "use": "Open the guidebook and state its promise.",
+      "choose": "A generic title page.",
+      "limits": "One title, one lede, one metadata row.",
+      "tags": [
+        "cover",
+        "guidebook",
+        "system"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 2,
+      "id": "the-method",
+      "component": "The method",
+      "chapter": "Ch 0 · How to use this book",
+      "job": "Teach the workflow",
+      "use": "Explain the five authoring moves.",
+      "choose": "A component catalogue.",
+      "limits": "Five moves only.",
+      "tags": [
+        "method",
+        "workflow"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 3,
+      "id": "deck-architecture",
+      "component": "Deck architecture",
+      "chapter": "Ch 0 · How to use this book",
+      "job": "Plan the story",
+      "use": "Sequence a decision deck from answer to action.",
+      "choose": "A topic outline.",
+      "limits": "Five sections maximum.",
+      "tags": [
+        "story",
+        "narrative",
+        "arc"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 4,
+      "id": "slide-anatomy",
+      "component": "Slide anatomy",
+      "chapter": "Ch 0 · How to use this book",
+      "job": "Explain structure",
+      "use": "Teach the fixed head, stage, and foot zones.",
+      "choose": "Free-form positioning.",
+      "limits": "One composition in the stage.",
+      "tags": [
+        "anatomy",
+        "zones"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 5,
+      "id": "canvas-and-travel",
+      "component": "Canvas and travel",
+      "chapter": "Ch 1 · Foundations",
+      "job": "Set geometry",
+      "use": "Keep HTML, PDF, and rendered PPT imports stable.",
+      "choose": "Responsive web layout.",
+      "limits": "1440 × 810 fixed.",
+      "tags": [
+        "canvas",
+        "export",
+        "geometry"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 6,
+      "id": "colour",
+      "component": "Colour",
+      "chapter": "Ch 1 · Foundations",
+      "job": "Define colour roles",
+      "use": "Choose surface, ink, signal, status, and series colours.",
+      "choose": "A palette per slide.",
+      "limits": "One signal colour per slide.",
+      "tags": [
+        "color",
+        "palette",
+        "tokens"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 7,
+      "id": "type",
+      "component": "Type",
+      "chapter": "Ch 1 · Foundations",
+      "job": "Define type hierarchy",
+      "use": "Separate display, reading, and label registers.",
+      "choose": "Many arbitrary sizes.",
+      "limits": "Four weights; body floor 18.5px.",
+      "tags": [
+        "typography",
+        "hierarchy"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 8,
+      "id": "space-and-structure",
+      "component": "Space and structure",
+      "chapter": "Ch 1 · Foundations",
+      "job": "Define grouping",
+      "use": "Group and separate content with space and boundaries.",
+      "choose": "Boxing every idea.",
+      "limits": "Spacing tokens only.",
+      "tags": [
+        "spacing",
+        "border",
+        "shadow"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 9,
+      "id": "visual-hierarchy",
+      "component": "Visual hierarchy",
+      "chapter": "Ch 1 · Foundations",
+      "job": "Set reading order",
+      "use": "Make conclusion, proof, and context visible in order.",
+      "choose": "Bold everywhere.",
+      "limits": "One dominant object.",
+      "tags": [
+        "hierarchy",
+        "emphasis"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 10,
+      "id": "layout-router",
+      "component": "Layout router",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Choose layout",
+      "use": "Route from audience question to composition.",
+      "choose": "Starting from a blank grid.",
+      "limits": "One job per slide.",
+      "tags": [
+        "router",
+        "layout"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 11,
+      "id": "executive-summary",
+      "component": "Executive summary",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Summarise a decision deck",
+      "use": "State recommendation, proof, risk, and ask on one page.",
+      "choose": "An agenda.",
+      "limits": "Three proof points.",
+      "tags": [
+        "executive",
+        "summary",
+        "answer",
+        "first"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 12,
+      "id": "poster-layouts",
+      "component": "Poster layouts",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Pause or land",
+      "use": "Open, divide, close, or state one memorable claim.",
+      "choose": "A content page.",
+      "limits": "Three lines of display type.",
+      "tags": [
+        "poster",
+        "title",
+        "divider",
+        "statement"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 13,
+      "id": "split",
+      "component": "Split",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Pair reasoning and anchor",
+      "use": "Place explanation beside one decisive anchor.",
+      "choose": "Equal cards.",
+      "limits": "One anchor on the narrow side.",
+      "tags": [
+        "split",
+        "compare",
+        "decision"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 14,
+      "id": "evidence-stage",
+      "component": "Evidence stage",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Prove with one object",
+      "use": "Make one chart, artefact, or result dominate.",
+      "choose": "A dashboard.",
+      "limits": "One evidence object.",
+      "tags": [
+        "evidence",
+        "chart",
+        "artifact"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 15,
+      "id": "annotated-image",
+      "component": "Annotated image",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Explain an interface",
+      "use": "Show observed UI behaviour or a visual defect.",
+      "choose": "An abstract diagram.",
+      "limits": "Three annotations.",
+      "tags": [
+        "screenshot",
+        "annotation",
+        "product"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 16,
+      "id": "architecture-row",
+      "component": "Architecture row",
+      "chapter": "Ch 2 · Layouts by job",
+      "job": "Show ownership and boundary",
+      "use": "Explain a small system shape and governing boundary.",
+      "choose": "A process flow.",
+      "limits": "Three to five nodes.",
+      "tags": [
+        "architecture",
+        "system",
+        "boundary"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 17,
+      "id": "cards-and-tiles",
+      "component": "Cards and tiles",
+      "chapter": "Ch 3 · Components",
+      "job": "Show true peers",
+      "use": "Compare a small set of options or metrics.",
+      "choose": "A table.",
+      "limits": "Four across.",
+      "tags": [
+        "cards",
+        "metrics",
+        "kpi"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 18,
+      "id": "lists-and-steps",
+      "component": "Lists and steps",
+      "chapter": "Ch 3 · Components",
+      "job": "Show peers or order",
+      "use": "Present items whose relationship is textual.",
+      "choose": "A diagram.",
+      "limits": "One line per item.",
+      "tags": [
+        "list",
+        "steps",
+        "agenda"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 19,
+      "id": "tables",
+      "component": "Tables",
+      "chapter": "Ch 3 · Components",
+      "job": "Align records",
+      "use": "Support lookup and comparison across rows and columns.",
+      "choose": "Cards.",
+      "limits": "Use zebra after four rows.",
+      "tags": [
+        "table",
+        "evidence",
+        "records"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 20,
+      "id": "callouts-and-voice",
+      "component": "Callouts and voice",
+      "chapter": "Ch 3 · Components",
+      "job": "Add one interpretive aside",
+      "use": "Surface a note, insight, warning, stop, quote, or source.",
+      "choose": "A second composition.",
+      "limits": "One callout per slide.",
+      "tags": [
+        "callout",
+        "badge",
+        "source"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 21,
+      "id": "option-scorecard",
+      "component": "Option scorecard",
+      "chapter": "Ch 3 · Components",
+      "job": "Compare options",
+      "use": "Score two to four options on explicit criteria.",
+      "choose": "A quadrant.",
+      "limits": "Three to six criteria.",
+      "tags": [
+        "scorecard",
+        "options",
+        "decision"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 22,
+      "id": "roadmap",
+      "component": "Roadmap",
+      "chapter": "Ch 3 · Components",
+      "job": "Show capability over time",
+      "use": "Present horizons, outcomes, owners, and gates.",
+      "choose": "A Gantt.",
+      "limits": "Three to five horizons.",
+      "tags": [
+        "roadmap",
+        "milestones",
+        "outcomes"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 23,
+      "id": "ownership-matrix",
+      "component": "Ownership matrix",
+      "chapter": "Ch 3 · Components",
+      "job": "Clarify accountability",
+      "use": "Separate responsible, accountable, consulted, and informed roles.",
+      "choose": "An org chart.",
+      "limits": "One accountable owner per row.",
+      "tags": [
+        "raci",
+        "ownership",
+        "roles"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 24,
+      "id": "risk-and-decision-register",
+      "component": "Risk and decision register",
+      "chapter": "Ch 3 · Components",
+      "job": "Make risk actionable",
+      "use": "Name event, consequence, trigger, action, and owner.",
+      "choose": "RAG labels alone.",
+      "limits": "Only material risks.",
+      "tags": [
+        "risk",
+        "decision",
+        "register"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 25,
+      "id": "diagram-router",
+      "component": "Diagram router",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Choose diagram family",
+      "use": "Route by the relationship that carries meaning.",
+      "choose": "Drawing boxes first.",
+      "limits": "Simple 3–6; networks 7–24.",
+      "tags": [
+        "diagram",
+        "router"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 26,
+      "id": "flow-and-timeline",
+      "component": "Flow and timeline",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show causality or dates",
+      "use": "Explain a short causal chain or dated sequence.",
+      "choose": "Sequence or Gantt.",
+      "limits": "Four or five stops.",
+      "tags": [
+        "flow",
+        "timeline"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 27,
+      "id": "sequence",
+      "component": "Sequence",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show message order",
+      "use": "Explain exact order across participants.",
+      "choose": "A flowchart.",
+      "limits": "Three to five participants.",
+      "tags": [
+        "sequence",
+        "messages",
+        "ownership"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 28,
+      "id": "swimlane",
+      "component": "Swimlane",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show handoffs",
+      "use": "Explain one process across owners.",
+      "choose": "A sequence diagram.",
+      "limits": "Four lanes maximum.",
+      "tags": [
+        "swimlane",
+        "process",
+        "ownership"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 29,
+      "id": "state-machine",
+      "component": "State machine",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Define legal change",
+      "use": "Show persistent states and named transitions.",
+      "choose": "A flow.",
+      "limits": "Few legal states.",
+      "tags": [
+        "state",
+        "machine",
+        "transitions"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 30,
+      "id": "entity-relationship",
+      "component": "Entity relationship",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show data ownership",
+      "use": "Explain keys, cardinality, and entity relations.",
+      "choose": "A schema dump.",
+      "limits": "Show only relevant fields.",
+      "tags": [
+        "er",
+        "data",
+        "model"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 31,
+      "id": "data-flow",
+      "component": "Data flow",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show provenance",
+      "use": "Explain sources, transformations, payloads, and stores.",
+      "choose": "Architecture.",
+      "limits": "Three shape roles.",
+      "tags": [
+        "data",
+        "flow",
+        "provenance"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 32,
+      "id": "platform-integration",
+      "component": "Platform integration",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show fan-in and fan-out",
+      "use": "Explain multiple sources, one platform, and consumers.",
+      "choose": "Point-to-point wiring.",
+      "limits": "One source of truth.",
+      "tags": [
+        "integration",
+        "platform"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 33,
+      "id": "current-state",
+      "component": "Current state",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show present friction",
+      "use": "Map today’s estate before proposing change.",
+      "choose": "Target architecture.",
+      "limits": "Zone first.",
+      "tags": [
+        "current",
+        "state",
+        "as",
+        "is"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 34,
+      "id": "loop",
+      "component": "Loop",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show a recurring cycle",
+      "use": "Make the return edge and feedback visible.",
+      "choose": "A timeline.",
+      "limits": "Four or five stops.",
+      "tags": [
+        "loop",
+        "feedback",
+        "cycle"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 35,
+      "id": "tree-and-org-chart",
+      "component": "Tree and org chart",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show hierarchy",
+      "use": "Explain decomposition, containment, or reporting lines.",
+      "choose": "A flow.",
+      "limits": "Three levels.",
+      "tags": [
+        "tree",
+        "org",
+        "hierarchy"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 36,
+      "id": "layers",
+      "component": "Layers",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show dependency order",
+      "use": "Define who may call whom in a stack.",
+      "choose": "Nested boundaries.",
+      "limits": "One focal layer.",
+      "tags": [
+        "layers",
+        "architecture"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 37,
+      "id": "medallion",
+      "component": "Medallion",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show data refinement",
+      "use": "Explain bronze, silver, and gold maturity.",
+      "choose": "System layers.",
+      "limits": "Exactly three tiers.",
+      "tags": [
+        "medallion",
+        "data"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 38,
+      "id": "pyramid",
+      "component": "Pyramid",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show narrowing",
+      "use": "Visualise a quantity that materially decreases by tier.",
+      "choose": "A layer stack.",
+      "limits": "Four tiers.",
+      "tags": [
+        "pyramid",
+        "funnel"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 39,
+      "id": "nested",
+      "component": "Nested",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show total containment",
+      "use": "Explain boundaries inside boundaries.",
+      "choose": "Venn.",
+      "limits": "Three rings.",
+      "tags": [
+        "nested",
+        "containment"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 40,
+      "id": "quadrant",
+      "component": "Quadrant",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Classify by two judgements",
+      "use": "Turn two independent axes into four actions.",
+      "choose": "Scatter.",
+      "limits": "Nine plotted items maximum.",
+      "tags": [
+        "quadrant",
+        "matrix"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 41,
+      "id": "coverage-matrix",
+      "component": "Coverage matrix",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show coverage states",
+      "use": "Compare controls against surfaces or features against platforms.",
+      "choose": "A measured heatmap.",
+      "limits": "Discrete states.",
+      "tags": [
+        "coverage",
+        "matrix",
+        "heatmap"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 42,
+      "id": "gantt",
+      "component": "Gantt",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show duration and overlap",
+      "use": "Manage time, overlap, and a critical path.",
+      "choose": "Timeline.",
+      "limits": "One accent bar.",
+      "tags": [
+        "gantt",
+        "schedule"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 43,
+      "id": "radar",
+      "component": "Radar",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Compare profiles",
+      "use": "Compare exactly two options over shared criteria.",
+      "choose": "Grouped bars.",
+      "limits": "Five or six spokes.",
+      "tags": [
+        "radar",
+        "profile"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 44,
+      "id": "scatter",
+      "component": "Scatter",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show a relationship",
+      "use": "Plot two measured variables and highlight one outlier.",
+      "choose": "Quadrant.",
+      "limits": "One labelled outlier.",
+      "tags": [
+        "scatter",
+        "relationship"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 45,
+      "id": "venn",
+      "component": "Venn",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show overlap",
+      "use": "Explain the intersection of two or three true sets.",
+      "choose": "Nested rings.",
+      "limits": "Three sets.",
+      "tags": [
+        "venn",
+        "overlap"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 46,
+      "id": "chart-router",
+      "component": "Chart router",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Choose chart type",
+      "use": "Route from comparison question to chart.",
+      "choose": "Choosing by visual preference.",
+      "limits": "One comparison per chart.",
+      "tags": [
+        "chart",
+        "router"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 47,
+      "id": "charts-categorical",
+      "component": "Charts · categorical",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Compare categories",
+      "use": "Rank or compare measured categories.",
+      "choose": "A table.",
+      "limits": "Three series maximum.",
+      "tags": [
+        "bar",
+        "categorical",
+        "chart"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 48,
+      "id": "waterfall-and-composition",
+      "component": "Waterfall and composition",
+      "chapter": "Ch 4 · Evidence · chart family",
+      "job": "Explain a total",
+      "use": "Show composition or bridge between totals.",
+      "choose": "Grouped bars.",
+      "limits": "Few segments or drivers.",
+      "tags": [
+        "stacked",
+        "waterfall",
+        "composition"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 49,
+      "id": "charts-trend",
+      "component": "Charts · trend",
+      "chapter": "Ch 4 · Evidence",
+      "job": "Show change through time",
+      "use": "Reveal a trend, break, inflection, or saturation.",
+      "choose": "Categorical chart.",
+      "limits": "One line per claim.",
+      "tags": [
+        "line",
+        "trend",
+        "curve"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 50,
+      "id": "worked-recipe",
+      "component": "Worked recipe",
+      "chapter": "Ch 5 · Finishing",
+      "job": "Demonstrate the method",
+      "use": "Turn one source document into a short argument.",
+      "choose": "Copying source headings.",
+      "limits": "One conclusion per slide.",
+      "tags": [
+        "recipe",
+        "example"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 51,
+      "id": "decision-and-next-steps",
+      "component": "Decision and next steps",
+      "chapter": "Ch 5 · Finishing",
+      "job": "Close with action",
+      "use": "End a decision deck with owner and date.",
+      "choose": "A thank-you page.",
+      "limits": "Three actions maximum.",
+      "tags": [
+        "decision",
+        "next",
+        "steps",
+        "close"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 52,
+      "id": "acceptance-gates",
+      "component": "Acceptance gates",
+      "chapter": "Ch 5 · Finishing",
+      "job": "Verify quality",
+      "use": "Run checks before shipping.",
+      "choose": "Visual inspection alone.",
+      "limits": "Every gate passes or is explicitly waived.",
+      "tags": [
+        "qa",
+        "acceptance",
+        "checklist"
+      ],
+      "sourceRequired": false
+    },
+    {
+      "number": 53,
+      "id": "version-record",
+      "component": "Version record",
+      "chapter": "Ch 5 · Finishing",
+      "job": "Record system change",
+      "use": "Track design-contract evolution.",
+      "choose": "Version in filename only.",
+      "limits": "One current version.",
+      "tags": [
+        "version",
+        "changelog"
+      ],
+      "sourceRequired": false
+    }
+  ]
+}</script>
+</body>
+</html>

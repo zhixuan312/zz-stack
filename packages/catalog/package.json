@@ -1,0 +1,14 @@
+{
+  "name": "@zz/catalog",
+  "private": true,
+  "version": "0.27.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@zz/contracts": "*"
+  }
+}

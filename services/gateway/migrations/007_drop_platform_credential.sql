@@ -1,0 +1,16 @@
+-- Drop platform_credential: created by 001, never written, never read, zero rows.
+--
+-- It was worse than unused. A table called `platform_credential` with a column called
+-- `secret_enc` tells anyone reading the schema that building-block keys are encrypted at
+-- rest in Postgres. They are not. They live in /data/credentials.json on the cred-data
+-- volume, in plaintext, written through one serialised atomic path in the gateway — which
+-- is a deliberate design with real properties, and none of them are the ones this table
+-- implied. A schema that describes a system that does not exist is a security claim nobody
+-- made and nobody can check.
+--
+-- Moving the store into a row remains a genuine option, and server.ts says where it would
+-- matter: the promise chain that serialises writes is only sufficient because one container
+-- owns the file, so a replicated gateway would need a row or a real lock. Whoever does that
+-- writes the migration then, against the shape it actually needs — including how the key is
+-- managed, which is the part this table quietly assumed away.
+drop table if exists zz.platform_credential;

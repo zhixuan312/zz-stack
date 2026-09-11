@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZZ Knowledge</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#f7f8f6; --card:#ffffff; --ink:#20262b; --muted:#5c6670;
+    --line:#dde2e0; --accent:#23558c; --soft:#e7eef6; --good:#1a7f37; --warn:#9a6700;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181c; --card:#1b2127; --ink:#d9dee2; --muted:#939ca6;
+            --line:#2c343c; --accent:#7fa8d9; --soft:#1f2c3b; --good:#4ac26b; --warn:#d4a72c; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.6 -apple-system,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:1rem; padding:.8rem 1.2rem;
+           border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; }
+  header h1 { font-size:1rem; margin:0; } header .who { color:var(--muted); font-size:.8rem; margin-left:auto; }
+  input,button,textarea { font:inherit; color:inherit; background:var(--card);
+           border:1px solid var(--line); border-radius:6px; padding:.4rem .7rem; }
+  button { cursor:pointer; } button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { display:grid; grid-template-columns: 300px 1fr 320px; gap:0; min-height:calc(100vh - 54px); }
+  .col { padding:1rem; overflow-y:auto; }
+  .col.mid { border-left:1px solid var(--line); border-right:1px solid var(--line); background:var(--card); }
+  .init { padding:.5rem .6rem; border-radius:6px; cursor:pointer; }
+  .init:hover { background:var(--soft); } .init.sel { background:var(--soft); font-weight:600; }
+  .init small { color:var(--muted); display:block; }
+  .badge { font-size:.72rem; border:1px solid currentColor; border-radius:99px; padding:.03rem .5rem; }
+  .badge.ok { color:var(--good); } .badge.wip { color:var(--warn); }
+  .docs { display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0 1rem; }
+  .docs button.sel { background:var(--soft); border-color:var(--accent); }
+  .meta { font-size:.78rem; color:var(--muted); border:1px solid var(--line); border-radius:6px;
+          padding:.5rem .8rem; margin-bottom:1rem; display:flex; flex-wrap:wrap; gap:.3rem 1.2rem; }
+  article h1 { font-size:1.4rem; } article h2 { font-size:1.1rem; border-bottom:1px solid var(--line); padding-bottom:.2rem; }
+  article pre { background:var(--soft); padding:.7rem; border-radius:6px; overflow-x:auto; }
+  article table { border-collapse:collapse; font-size:.88rem; } article td, article th { border:1px solid var(--line); padding:.3rem .6rem; }
+  article { overflow-wrap:break-word; }
+  .cmt { border:1px solid var(--line); border-radius:8px; padding:.6rem .8rem; margin:.6rem 0; background:var(--card); }
+  .cmt .a { font-size:.78rem; color:var(--muted); }
+  .login { max-width:26rem; margin:14vh auto; background:var(--card); border:1px solid var(--line);
+           border-radius:10px; padding:2rem; }
+  .login input { width:100%; margin:.6rem 0 1rem; }
+  .muted { color:var(--muted); font-size:.85rem; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+const state = { pat: localStorage.getItem("zz_pat") || "", me: null, team: null,
+                initiatives: [], sel: null, doc: null, sources: [] };
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: {
+    "Authorization": "Bearer " + state.pat,
+    "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (r.status === 401) { localStorage.removeItem("zz_pat"); state.pat = ""; render(); throw new Error("401"); }
+  // A failure has to LOOK like one. This returned r.json() whatever the status, so a 403
+  // ("not a member of that team") or a 503 ("platform database unavailable") arrived as an
+  // object with no `initiatives` key — and the page rendered "no initiatives yet", which is
+  // the same sentence it shows a team that genuinely has none.
+  let body = null;
+  try { body = await r.json(); } catch (_) { /* not JSON — the status still tells us */ }
+  if (!r.ok) throw new Error((body && body.error) || ("HTTP " + r.status));
+  return body || {};
+}
+
+/** Say what went wrong, where the content would have been. */
+function showError(e) {
+  if (e && e.message === "401") return;          // already back at the login screen
+  const el = $("#mid") || $("#root");
+  if (el) el.innerHTML = `<p class="muted">Could not load this: ${esc(e && e.message || e)}</p>`;
+}
+
+// Quotes too. This escaped & and < only, and several of these values land INSIDE an
+// attribute — the source box's placeholder is built from the document's own filename, and
+// `onclick='pick(...)'` wraps a JSON string in single quotes. A name carrying " or ' broke
+// out of the attribute, in a page that keeps the reader's platform token in localStorage.
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+                  .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+// For a value going into an inline handler as a JS string literal: JSON, then attribute
+// escaping, so neither the quote that ends the attribute nor the one that ends the string
+// can come from the data.
+function jsArg(v) { return esc(JSON.stringify(v)); }
+
+function render() {
+  if (!state.pat) {
+    $("#root").innerHTML = `<div class="login">
+      <h2>ZZ Knowledge</h2>
+      <!-- ZZ Access, not issue_pat. This named the ADMIN tool, which is registered only for
+           a caller whose role can run it — so the first screen a person meets sent most of
+           them to a tool that is not in their list at all. Every other surface says the same
+           one thing: the door
+           index ("pick the ZZ Access agent, ask it for a token"), the client setup ("Ask the
+           ZZ Access agent"), and zz-access's own skill. This is now that sentence too. -->
+      <p class="muted">Paste your personal access token. Ask the <strong>ZZ Access</strong>
+      agent for one — it is shown once, and that agent is also where you revoke it.</p>
+      <input id="pat" type="password" placeholder="zzp_…">
+      <button class="primary" onclick="login()">Enter</button></div>`;
+    return;
+  }
+  const who = state.me ? `${state.me.email} · ${state.team ?? ""}` : "";
+  $("#root").innerHTML = `
+  <header><h1>ZZ Knowledge</h1>
+    <input id="q" placeholder="search…" style="width:220px" onkeydown="if(event.key==='Enter')doSearch()">
+    <span class="who">${esc(who)} <button onclick="logout()" style="margin-left:.6rem">exit</button></span></header>
+  <main>
+    <div class="col" id="left"></div>
+    <div class="col mid" id="mid"><p class="muted">Pick an initiative.</p></div>
+    <div class="col" id="right"></div>
+  </main>`;
+  renderLeft();
+  if (state.sel) { renderMid(); }
+}
+
+function renderLeft() {
+  $("#left").innerHTML = state.initiatives.map(i => `
+    <div class="init ${state.sel && state.sel.name===i.name ? "sel":""}" onclick="pick(${jsArg(i.name)})">
+      ${esc(i.name)} ${i.outcome ? `<span class="badge ok">${esc(i.outcome)}</span>` : `<span class="badge wip">open</span>`}
+      <small>${i.docs.length} documents</small></div>`).join("") || "<p class='muted'>no initiatives yet</p>";
+}
+
+// `want` is the document to open; without one, the first this FLOW declares. The server
+// returns them in the manifest's order, so the browser no longer needs to know any flow's
+// filenames — it used to name spec.md.
+//
+// The fallback object is not defensive padding. Search returns hits from `_knowledge`, and
+// the sidebar deliberately excludes `_`-prefixed directories, so `find()` came back
+// undefined and the next line threw on `.docs` — the top hit for "rehearsal" on this store
+// is a journal node, and clicking it did nothing at all, silently, in the page whose one
+// job is finding things.
+function selectInitiative(name, want) {
+  state.sel = state.initiatives.find(i => i.name === name) || { name, docs: want ? [want] : [] };
+  state.doc = null;
+  render();
+  const first = want || state.sel.docs[0];
+  if (first) openDoc(first);
+}
+async function pick(name) { selectInitiative(name); }
+// A search result opens WHAT WAS FOUND. It used to open the initiative's first document, so
+// a hit on plan.md put you on intent.md and the thing you searched for was gone again.
+async function openHit(name, path) { selectInitiative(name, path); }
+
+async function openDoc(path) {
+  try {
+  const d = await api(`/api/kb/doc?initiative=${encodeURIComponent(state.sel.name)}&path=${encodeURIComponent(path)}`);
+  state.doc = { path, ...d };
+  const c = await api(`/api/kb/sources?initiative=${encodeURIComponent(state.sel.name)}&path=${encodeURIComponent(path)}`);
+  state.sources = c.sources || [];
+  renderMid();
+  } catch (e) { showError(e); }
+}
+
+function renderMid() {
+  const s = state.sel;
+  const docBtns = s.docs.map(d =>
+    `<button class="${state.doc && state.doc.path===d ? "sel":""}" onclick="openDoc(${jsArg(d)})">${esc(d)}</button>`).join("");
+  const meta = state.doc ? Object.entries(state.doc.meta).map(([k,v]) =>
+    `<span><b>${esc(k)}</b> ${esc(v)}</span>`).join("") : "";
+  $("#mid").innerHTML = `<h2 style="margin-top:0">${esc(s.name)}</h2>
+    <div class="docs">${docBtns}</div>
+    ${meta ? `<div class="meta">${meta}</div>` : ""}
+    <article>${state.doc ? state.doc.html : ""}</article>`;
+  renderRight();
+}
+
+function renderRight() {
+  const list = state.sources.map(c => `
+    <div class="cmt">
+      <div class="a">${esc(c.title)}${c.author ? " · " + esc(c.author) : ""}${c.added_at ? " · " + esc(c.added_at) : ""}</div>
+      <div>${esc(c.body)}</div>
+    </div>`).join("");
+  $("#right").innerHTML = `<h3 style="margin-top:0">Sources</h3>${list || "<p class='muted'>none yet</p>"}
+    ${state.doc ? `<textarea id="nc" rows="3" style="width:100%" placeholder="What bears on ${esc(state.doc.path)}\u2026"></textarea>
+    <button class="primary" onclick="addSource()" style="margin-top:.4rem">Attach as source</button>
+    <p class="muted">What you write becomes a source on this initiative, attached to this document. An agent reads it, revises the document and cites it \u2014 the new version is how it gets addressed.</p>` : ""}`;
+}
+
+async function addSource() {
+  const body = $("#nc").value.trim();
+  if (!body) return;
+  try {
+    await api("/api/kb/sources", { method: "POST", body: JSON.stringify({
+      initiative: state.sel.name, path: state.doc.path, body }) });
+  } catch (e) { showError(e); return; }
+  openDoc(state.doc.path);
+}
+
+async function doSearch() {
+  const q = $("#q").value.trim();
+  let r;
+  try { r = await api(`/api/kb/search?q=${encodeURIComponent(q)}`); }
+  catch (e) { showError(e); return; }
+  $("#mid").innerHTML = `<h2 style="margin-top:0">Search: ${esc(q)}</h2>` +
+    (r.results||[]).map(x => `<div class="init" onclick="openHit(${jsArg(x.initiative)}, ${jsArg(x.path)})">
+      ${esc(x.initiative)}/${esc(x.path)} <small>${esc(x.type)} · ${esc(x.status)} ${x.outcome? "· "+esc(x.outcome):""}${
+        // A frozen approval snapshot under _versions/ is indexed like any other document, so a
+        // search for a term in a spec returns the live one and every version ever approved.
+        // They are worth opening — that is what was approved — and they must not look current.
+        x.superseded_by ? ` · <span class="badge wip">superseded by ${esc(x.superseded_by)}</span>` : ""
+      }</small></div>`).join("")
+    || "<p class='muted'>no hits</p>";
+}
+
+async function login() {
+  state.pat = $("#pat").value.trim();
+  localStorage.setItem("zz_pat", state.pat);
+  await boot();
+}
+function logout() { localStorage.removeItem("zz_pat"); state.pat = ""; render(); }
+
+async function boot() {
+  try {
+    state.me = await api("/api/kb/me");
+    // activeTeam, not teams[0]. The header names the team whose documents are on screen, and
+    // the server picks those with the platform's one rule — a bound token wins, else the team
+    // the person chose, else admin-role then alphabetical. Taking the first membership row is
+    // a different rule, so for anybody in two teams this label could name one team while the
+    // page showed the other's work. That first-row shortcut was removed from the gateway and
+    // from list_catalog; this was the third site and the one a person actually reads.
+    state.team = state.me.activeTeam ?? null;
+    const d = await api("/api/kb/initiatives");
+    state.initiatives = d.initiatives || [];
+    state.sel = null; state.doc = null;
+    render();
+  } catch (e) { showError(e); }
+}
+render();
+if (state.pat) boot();
+</script>
+</body>
+</html>

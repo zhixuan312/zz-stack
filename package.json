@@ -1,0 +1,52 @@
+{
+  "name": "zz-stack",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "gate": "node scripts/gate.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "set-version": "node scripts/set-version.mjs",
+    "release": "node scripts/release.mjs",
+    "rollback": "node scripts/release.mjs --rollback",
+    "check:mcp-client": "node packages/tools/dist/testing/mcp-client-check.js",
+    "chain-check": "node packages/tools/dist/testing/chain-check.js",
+    "audit": "node packages/tools/dist/testing/manifest-audit.js",
+    "conformance": "node packages/tools/dist/testing/block-conformance.js",
+    "tool-report": "node packages/tools/dist/testing/tool-report.js",
+    "flow-compare": "node packages/tools/dist/testing/flow-compare.js",
+    "evolve-report": "node packages/tools/dist/testing/evolve-report.js",
+    "eval-grade": "node packages/tools/dist/testing/eval-grade.js",
+    "watch-results": "node packages/tools/dist/ops/watch-results.js",
+    "loop-eval": "node packages/tools/dist/ops/loop-eval.js",
+    "rubric-load": "node packages/tools/dist/ops/rubric-load.js",
+    "eval-record": "node packages/tools/dist/ops/eval-record.js",
+    "probe-block": "node packages/tools/dist/ops/probe-block.js",
+    "set-credential": "node packages/tools/dist/ops/set-credential.js",
+    "call": "node packages/tools/dist/ops/call.js",
+    "check:markdown": "node services/gateway/dist/markdown-check.js",
+    "check:sql": "node packages/tools/dist/testing/sql-check.js",
+    "check:identity": "node services/gateway/dist/identity-check.js",
+    "check:scope": "node services/gateway/dist/scope-check.js",
+    "check:redaction": "node services/gateway/dist/redact-check.js",
+    "eval-judge": "node packages/tools/dist/testing/eval-judge.js",
+    "eval-store": "node packages/tools/dist/testing/eval-store.js",
+    "refresh-block-tools": "node packages/tools/dist/ops/refresh-block-tools.js",
+    "register-skills": "node packages/tools/dist/ops/register-skills.js",
+    "step-score": "node packages/tools/dist/testing/step-score.js",
+    "skill-reflect": "node packages/tools/dist/testing/skill-reflect.js",
+    "eval-decide": "node packages/tools/dist/ops/eval-decide.js"
+  },
+  "devDependencies": {
+    "@zz/contracts": "*",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.7.0"
+  },
+  "version": "0.27.0",
+  "license": "MIT",
+  "private": true
+}

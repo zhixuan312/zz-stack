@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>zz-stack — Platform Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Palette inherited from catalog/sdlc/sdlc-flow/skills/sdlc-deck/deck-chassis.html
+   so this reads as one family with the decks. Deliberately single-theme: a
+   printed-report ground, painted explicitly so it holds on any host surface.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  color-scheme: light;
+  --paper:#f7f5ef; --paper-2:#fbfaf7; --white:#ffffff; --desk:#d9ddd9;
+  --ink:#111820; --ink-soft:#46525f; --ink-faint:#5a6774;
+  --line:#d4d9dc; --line-strong:#aeb8bf;
+  --signal:#c84b24; --signal-text:#ae3f1d; --signal-soft:#f7e7df;
+  --contrast:#4056a1; --contrast-soft:#e9edfb;
+  --resolved:#2f6d72; --resolved-soft:#e0edee;
+  --good:#2f6b4f; --good-soft:#e5f0e9;
+  --warn:#a65d0a; --warn-soft:#fbefd9;
+
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Geist","Aptos","Inter","Helvetica Neue",Arial,sans-serif;
+  --mono:"Geist Mono","SFMono-Regular","Cascadia Code",Consolas,monospace;
+
+  /* Every spacing step divisible by 4 — the diagram-design constraint, applied
+     to the page as well as the drawings, because that is what keeps a layout
+     from reading as generated. */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px; --s8:64px;
+  --edge:1px solid var(--line);
+  --edge-strong:1px solid var(--line-strong);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.58;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1264px;margin:0 auto;padding:0 var(--s5)}
+
+/* ── masthead ─────────────────────────────────────────────────────────── */
+.masthead{border-bottom:var(--edge-strong);background:var(--paper)}
+.masthead .wrap{display:flex;align-items:baseline;gap:var(--s4);padding-top:var(--s5);padding-bottom:var(--s3);flex-wrap:wrap}
+.wordmark{font-family:var(--mono);font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase}
+.masthead .sub{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+.masthead .spacer{flex:1 1 auto}
+
+/* ── tabs ─────────────────────────────────────────────────────────────── */
+.tabs{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:var(--edge-strong)}
+.tabs .wrap{display:flex;gap:0;overflow-x:auto;scrollbar-width:thin;max-width:none;padding:0 var(--s5)}
+.tab{
+  appearance:none;background:none;border:0;border-bottom:2px solid transparent;
+  font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-faint);padding:var(--s4) var(--s3);cursor:pointer;white-space:nowrap;
+}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--signal-text);border-bottom-color:var(--signal)}
+.tab:focus-visible{outline:2px solid var(--contrast);outline-offset:-2px}
+.tab .idx{color:var(--line-strong);margin-right:var(--s2)}
+.tab[aria-selected="true"] .idx{color:var(--signal)}
+
+/* ── panels ───────────────────────────────────────────────────────────── */
+.panel{padding:var(--s7) 0 var(--s8)}
+.panel[hidden]{display:none}
+.zone-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,420px);align-items:end;gap:var(--s7);padding-bottom:var(--s4);border-bottom:var(--edge-strong);margin-bottom:var(--s6)}
+.kicker{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--signal-text);margin:0 0 var(--s2)}
+h1,h2,h3{font-family:var(--serif);font-weight:400;letter-spacing:-.01em;margin:0}
+h1{font-size:clamp(38px,5.2vw,60px);line-height:1.02}
+h2{font-size:clamp(28px,3.6vw,40px);line-height:1.06}
+h3{font-size:20px;line-height:1.2}
+.lede{font-size:17px;line-height:1.5;color:var(--ink-soft);font-weight:400;margin:0}
+p{margin:0 0 var(--s4)}
+.small{font-size:13px;color:var(--ink-soft)}
+
+/* ── the one-liner block on Overview ──────────────────────────────────── */
+.oneliner{
+  display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:var(--s7);
+  align-items:start;padding-bottom:var(--s6);margin-bottom:var(--s6);border-bottom:var(--edge)
+}
+.oneliner .say{font-family:var(--serif);font-size:clamp(26px,3.4vw,38px);line-height:1.18;letter-spacing:-.012em;margin:0}
+.oneliner .say em{font-style:italic;color:var(--signal-text)}
+.blocks{display:grid;gap:var(--s5)}
+.block .lab{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:var(--s2)}
+.block p{margin:0;font-size:15px;line-height:1.6}
+
+/* ── diagram frame ────────────────────────────────────────────────────── */
+figure.dgm{margin:0 0 var(--s6);border:var(--edge);background:var(--white)}
+figure.dgm figcaption{
+  display:flex;gap:var(--s4);align-items:baseline;justify-content:space-between;
+  padding:var(--s3) var(--s4);border-bottom:var(--edge);background:var(--paper-2);
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)
+}
+figure.dgm figcaption b{color:var(--ink);font-weight:600}
+figure.dgm .canvas{padding:var(--s6) var(--s5);overflow-x:auto}
+figure.dgm svg{display:block;margin:0 auto;max-width:100%;height:auto}
+/* diagram primitives — 1px hairlines, no shadows, no generic rounding */
+.n-box{fill:var(--white);stroke:var(--line-strong);stroke-width:1}
+.n-box-q{fill:var(--paper-2);stroke:var(--line);stroke-width:1}
+.n-box-a{fill:var(--signal-soft);stroke:var(--signal);stroke-width:1}
+.n-band{fill:var(--paper-2);stroke:var(--line);stroke-width:1}
+.n-t{font-family:var(--sans);font-size:13px;font-weight:600;fill:var(--ink)}
+.n-s{font-family:var(--mono);font-size:10px;letter-spacing:.06em;fill:var(--ink-faint)}
+.n-lab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:var(--ink-faint)}
+.n-lab-a{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;fill:var(--signal-text)}
+.ln{stroke:var(--line-strong);stroke-width:1;fill:none}
+.ln-a{stroke:var(--signal);stroke-width:1.5;fill:none}
+.ln-d{stroke:var(--line-strong);stroke-width:1;fill:none;stroke-dasharray:4 4}
+
+/* ── callout ──────────────────────────────────────────────────────────── */
+.callout{
+  border-left:2px solid var(--signal);background:var(--signal-soft);
+  padding:var(--s5) var(--s5);margin:0 0 var(--s6)
+}
+.callout p{font-family:var(--serif);font-style:italic;font-size:21px;line-height:1.34;color:var(--ink);margin:0}
+
+/* ── capability cards + drill-down ────────────────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(292px,1fr));gap:var(--s4);margin-bottom:var(--s5)}
+.card{
+  appearance:none;text-align:left;background:var(--white);border:var(--edge);
+  padding:var(--s4);cursor:pointer;font:inherit;color:inherit;display:flex;flex-direction:column;gap:var(--s2)
+}
+.card:hover{border-color:var(--line-strong)}
+.card[aria-expanded="true"]{border-color:var(--signal);background:var(--paper-2)}
+.card:focus-visible{outline:2px solid var(--contrast);outline-offset:2px}
+.card .num{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--ink-faint)}
+.card[aria-expanded="true"] .num{color:var(--signal-text)}
+.card .nm{font-family:var(--sans);font-size:15px;font-weight:600;line-height:1.3}
+.card .is{font-size:13px;line-height:1.5;color:var(--ink-soft)}
+.card .more{margin-top:auto;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+.card[aria-expanded="true"] .more{color:var(--signal-text)}
+
+.drill{border:var(--edge-strong);background:var(--white);padding:var(--s6);margin-bottom:var(--s6)}
+.drill[hidden]{display:none}
+.drill .dh{display:flex;gap:var(--s4);align-items:baseline;flex-wrap:wrap;padding-bottom:var(--s4);margin-bottom:var(--s5);border-bottom:var(--edge)}
+.drill .dh .num{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.12em;color:var(--signal-text)}
+.drill .dh h3{font-size:24px}
+.drill .rows{display:grid;grid-template-columns:176px minmax(0,1fr);gap:var(--s4) var(--s5)}
+.drill .k{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding-top:3px}
+.drill .v{font-size:15px;line-height:1.6;margin:0}
+.drill .v code,code{font-family:var(--mono);font-size:.88em;background:var(--paper-2);border:var(--edge);padding:1px 5px}
+.drill .v strong{font-weight:600}
+.drill .k.better{color:var(--signal-text)}
+
+/* ── tables & specimens ───────────────────────────────────────────────── */
+.scroller{overflow-x:auto;border:var(--edge);background:var(--white);margin:0 0 var(--s6)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:var(--s3) var(--s4);border-bottom:var(--edge);vertical-align:top}
+th{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);background:var(--paper-2);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.mono,.mono{font-family:var(--mono);font-size:13px}
+td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+
+.specimen{border:var(--edge);background:var(--white);margin:0 0 var(--s6)}
+.specimen .sp-h{padding:var(--s3) var(--s4);border-bottom:var(--edge);background:var(--paper-2);
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);
+  display:flex;justify-content:space-between;gap:var(--s4);flex-wrap:wrap}
+.specimen .sp-h b{color:var(--signal-text);font-weight:600}
+.specimen .sp-b{padding:var(--s5)}
+.specimen pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;white-space:pre;overflow-x:auto;color:var(--ink-soft)}
+.specimen pre b{color:var(--ink);font-weight:600}
+.specimen pre i{color:var(--signal-text);font-style:normal}
+.specimen .sp-f{padding:var(--s3) var(--s4);border-top:var(--edge);background:var(--paper-2);font-size:13px;color:var(--ink-soft)}
+.steps-num{display:grid;gap:var(--s3);margin:0 0 var(--s6);counter-reset:sn}
+.steps-num li{list-style:none;display:grid;grid-template-columns:32px minmax(0,1fr);gap:var(--s4);
+  padding-bottom:var(--s3);border-bottom:1px solid var(--line)}
+.steps-num li:last-child{border-bottom:0}
+.steps-num li::before{counter-increment:sn;content:counter(sn,decimal-leading-zero);
+  font-family:var(--mono);font-size:11px;font-weight:600;color:var(--signal-text);padding-top:3px}
+ /* Three children, two columns: ::before takes column 1, <b> takes column 2, and <span> wrapped
+    into column 1 of the next implicit row — a 32px-wide text column, one word per line, and a
+    page seventeen thousand pixels tall. Both text children are pinned to column 2. */
+.steps-num b{grid-column:2;display:block;font-size:15px;margin-bottom:2px}
+.steps-num span{grid-column:2;font-size:14px;color:var(--ink-soft)}
+.src{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--ink-faint);margin:0 0 var(--s6)}
+.src a{color:var(--contrast);text-decoration:none;border-bottom:1px solid var(--line-strong)}
+.src a:hover{border-bottom-color:var(--contrast)}
+.scorecard{border:var(--edge);background:var(--white);margin:0 0 var(--s6)}
+.scorecard .sc-h{padding:var(--s3) var(--s4);border-bottom:var(--edge);background:var(--paper-2);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);display:flex;justify-content:space-between;gap:var(--s4);flex-wrap:wrap}
+.scorecard .sc-h b{color:var(--ink);font-weight:600}
+.sc-row{display:grid;grid-template-columns:minmax(0,1.9fr) 68px 1fr;gap:var(--s4);align-items:center;padding:var(--s3) var(--s4);border-bottom:var(--edge)}
+.sc-row:last-child{border-bottom:0}
+.sc-row .d{font-size:14px}
+.sc-row .val{font-family:var(--mono);font-size:14px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.sc-bar{position:relative;height:8px;background:var(--desk)}
+.sc-bar i{position:absolute;inset:0 auto 0 0;background:var(--resolved);display:block}
+.sc-row.low .sc-bar i{background:var(--signal)}
+.sc-row.low .val{color:var(--signal-text)}
+.sc-foot{padding:var(--s3) var(--s4);border-top:var(--edge);font-size:13px;color:var(--ink-soft);background:var(--paper-2)}
+
+.map{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);border:var(--edge);background:var(--white);margin:0 0 var(--s6)}
+.map .mh{grid-column:1/-1;padding:var(--s3) var(--s4);border-bottom:var(--edge);background:var(--paper-2);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
+.map .l,.map .r{padding:var(--s4);border-bottom:var(--edge)}
+.map .l{border-right:var(--edge);font-weight:600;font-size:14px}
+.map .r{font-size:14px;color:var(--ink-soft)}
+.map .l:last-of-type,.map .r:last-of-type{border-bottom:0}
+
+.doors{display:grid;grid-template-columns:repeat(auto-fit,minmax(184px,1fr));border:var(--edge);background:var(--white);margin:0 0 var(--s6)}
+.door{padding:var(--s4);border-right:var(--edge)}
+.door:last-child{border-right:0}
+.door .dl{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--signal-text);margin-bottom:var(--s2)}
+.door .dt{font-size:14px;line-height:1.5;color:var(--ink-soft)}
+
+footer.foot{border-top:var(--edge-strong);margin-top:var(--s8)}
+footer.foot .wrap{padding:var(--s5) var(--s5) var(--s8);font-size:13px;color:var(--ink-faint)}
+
+@media (max-width:900px){
+  .oneliner{grid-template-columns:1fr;gap:var(--s5)}
+  .zone-head{grid-template-columns:1fr;gap:var(--s4)}
+  .map{grid-template-columns:1fr}
+  .map .l{border-right:0;border-bottom:0;padding-bottom:0}
+  .drill .rows{grid-template-columns:1fr;gap:var(--s2) 0}
+  .drill .k{padding-top:var(--s3)}
+}
+@media print{
+  .tabs{display:none}
+  .panel[hidden]{display:block !important}
+  .drill{display:block !important}
+  /* A tab nobody opened has an empty drill panel; printing it puts seven bordered
+     rectangles into the PDF, each containing nothing. */
+  .drill:empty{display:none !important}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <span class="wordmark">zz-stack</span>
+    <span class="sub">Platform architecture</span>
+    <span class="spacer"></span>
+    <span class="sub">A solution development life cycle, running</span>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Sections">
+  <div class="wrap" role="tablist">
+    <button class="tab" role="tab" aria-selected="true"  aria-controls="t1" id="tb1"><span class="idx">01</span>Overview</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t2" id="tb2"><span class="idx">02</span>How work moves</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t3" id="tb3"><span class="idx">03</span>Learning &amp; Evaluation</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t4" id="tb4"><span class="idx">04</span>Knowledge</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t5" id="tb5"><span class="idx">05</span>Governance</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t6" id="tb6"><span class="idx">06</span>Building blocks</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t7" id="tb7"><span class="idx">07</span>Identity &amp; Access</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="t8" id="tb8"><span class="idx">08</span>Operations</button>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ═══════════════════════════ 01 · OVERVIEW ═══════════════════════════ -->
+<section class="panel" id="t1" role="tabpanel" aria-labelledby="tb1">
+
+  <div class="oneliner">
+    <p class="say">A solution development life cycle that <em>actually runs</em> — agents do the work, people make the decisions, and every step leaves the evidence that makes the next one better.</p>
+    <div class="blocks">
+      <div class="block">
+        <div class="lab">What it is</div>
+        <p>A platform that a delivery method runs <em>on</em>, rather than a document describing one. It stitches the parts together — the method, the third-party systems, the people, the records — into something that executes, refuses, and remembers.</p>
+      </div>
+      <div class="block">
+        <div class="lab">What it is for</div>
+        <p>Delivering software reliably enough to be defensible: every decision has a name against it, every claim has evidence behind it, and the way we work improves because using it produces the data that shows where it does not.</p>
+      </div>
+    </div>
+  </div>
+
+  <figure class="dgm">
+    <figcaption><b>The whole system</b><span>Six layers · who owns each · and the one that measures the rest</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 0 1160 480" width="1160" height="480" role="img" aria-label="Six layers of the platform stacked, each labelled with who owns it and which section of this document covers it, with learning and evaluation bracketing all six.">
+        <text class="n-lab" x="192" y="32">People, through any client — a chat window, a terminal, a browser</text>
+        <path class="ln-d" d="M192 44 H888"/>
+
+        <text class="n-lab" x="32"  y="76">Who owns it</text>
+        <text class="n-lab" x="192" y="76">The layer</text>
+
+        <rect class="n-box-q" x="32" y="88" width="144" height="56"/>
+        <text class="n-s" x="48" y="122">ours</text>
+        <rect class="n-box" x="192" y="88" width="696" height="56"/>
+        <text class="n-lab-a" x="208" y="112">02</text>
+        <text class="n-t" x="248" y="112">Method</text>
+        <text class="n-s" x="248" y="132">the stages a team walks, and where it may not continue</text>
+
+        <rect class="n-box-q" x="32" y="152" width="144" height="56"/>
+        <text class="n-s" x="48" y="186">ours</text>
+        <rect class="n-box" x="192" y="152" width="696" height="56"/>
+        <text class="n-lab-a" x="208" y="176">05</text>
+        <text class="n-t" x="248" y="176">Governance</text>
+        <text class="n-s" x="248" y="196">the envelope, the gate, and the signature that makes it evidence</text>
+
+        <rect class="n-box-q" x="32" y="216" width="144" height="56"/>
+        <text class="n-s" x="48" y="244">the team's</text>
+        <text class="n-s" x="48" y="260">— they keep it</text>
+        <rect class="n-box" x="192" y="216" width="696" height="56"/>
+        <text class="n-lab-a" x="208" y="240">04</text>
+        <text class="n-t" x="248" y="240">Knowledge</text>
+        <text class="n-s" x="248" y="260">what a delivery produced, and the lesson drawn out of it</text>
+
+        <rect class="n-box-q" x="32" y="280" width="144" height="56"/>
+        <text class="n-s" x="48" y="314">ours</text>
+        <rect class="n-box" x="192" y="280" width="696" height="56"/>
+        <text class="n-lab-a" x="208" y="304">07</text>
+        <text class="n-t" x="248" y="304">Identity &amp; access</text>
+        <text class="n-s" x="248" y="324">who is acting, answered on every single call</text>
+
+        <rect class="n-box-q" x="32" y="344" width="144" height="56"/>
+        <text class="n-s" x="48" y="372">a vendor's</text>
+        <text class="n-s" x="48" y="388">— not ours to fix</text>
+        <rect class="n-box" x="192" y="344" width="696" height="56"/>
+        <text class="n-lab-a" x="208" y="368">06</text>
+        <text class="n-t" x="248" y="368">Building blocks</text>
+        <text class="n-s" x="248" y="388">the third-party systems that do the specialised work</text>
+
+        <rect class="n-box-q" x="32" y="408" width="144" height="56"/>
+        <text class="n-s" x="48" y="442">ours</text>
+        <rect class="n-box" x="192" y="408" width="696" height="56"/>
+        <text class="n-lab-a" x="208" y="432">08</text>
+        <text class="n-t" x="248" y="432">Operations</text>
+        <text class="n-s" x="248" y="452">where it runs, and what each capability is bound to there</text>
+
+        <path class="ln-a" d="M912 88 H928 V464 H912"/>
+        <rect class="n-box-a" x="936" y="204" width="192" height="152"/>
+        <text class="n-lab-a" x="952" y="232">03</text>
+        <text class="n-t"    x="952" y="260">Learning &amp;</text>
+        <text class="n-t"    x="952" y="280">Evaluation</text>
+        <text class="n-s"    x="952" y="304">measures every layer</text>
+        <text class="n-s"    x="952" y="320">above, and changes</text>
+        <text class="n-s"    x="952" y="336">them one at a time</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>The bracket on the right is the whole argument. Work produces evidence as a by-product of being done — not as a reporting exercise — and that evidence is what tells us which layer to change next, and whether the change helped.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s4)">Who reaches this, and through what</h3>
+  <div class="doors">
+    <div class="door"><div class="dl">The method</div><div class="dt">Skills, the team's store, documents and their gates, and where each initiative stands.</div></div>
+    <div class="door"><div class="dl">Your own keys</div><div class="dt">A person's own credentials for each third-party system, and their platform token.</div></div>
+    <div class="door"><div class="dl">Administration</div><div class="dt">People, teams, tokens, which method a team installed. Every tool authorises per call.</div></div>
+    <div class="door"><div class="dl">Building blocks</div><div class="dt">A third-party system, reached through one door so the call is recorded and scoped.</div></div>
+  </div>
+  <p class="small" style="margin-bottom:var(--s6)">Many clients, one method. A chat interface, a terminal, a browser — each receives the same method projected into its own shape, so the way work is done does not change with the tool used to do it.</p>
+
+  <h3 style="margin-bottom:var(--s4)">What the rest of this covers</h3>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Section</th><th>The question it answers</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">02 · How work moves</td><td>What actually happens between “someone wants something” and “it is delivered and signed off”.</td></tr>
+        <tr><td class="mono">03 · Learning &amp; Evaluation</td><td>How the method gets better, and how we tell a real improvement from a lucky run.</td></tr>
+        <tr><td class="mono">04 · Knowledge</td><td>What the platform remembers, and how one delivery's lesson reaches the next.</td></tr>
+        <tr><td class="mono">05 · Governance</td><td>Why a document produced here can be trusted by someone who was not in the room.</td></tr>
+        <tr><td class="mono">06 · Building blocks</td><td>How third-party capability plugs in without the platform growing a service per vendor.</td></tr>
+        <tr><td class="mono">07 · Identity &amp; Access</td><td>Who is acting, and how that stays true at the boundary with someone else's system.</td></tr>
+        <tr><td class="mono">08 · Operations</td><td>Where it runs, what it costs to move, and what we watch.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 02 · HOW WORK MOVES ═══════════════════════ -->
+<section class="panel" id="t2" role="tabpanel" aria-labelledby="tb2" hidden>
+  <div class="zone-head">
+    <div>
+      <p class="kicker">The spine</p>
+      <h2>How work moves</h2>
+    </div>
+    <p class="lede">The platform does not impose one way of working. It imposes a <em>shape</em> — and a method fills that shape in with its own stages, its own documents, and its own decision points.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">First, the shape</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">Everything below is true of every method that runs here. None of it says how many stages there are or what they are called.</p>
+
+  <figure class="dgm">
+    <figcaption><b>What a lifecycle is</b><span>The part the platform owns</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 24 1160 232" width="1160" height="232" role="img" aria-label="One initiative contains a sequence of stages, each owing a document, with gates at points the method chooses, ending in a recorded outcome.">
+        <text class="n-lab" x="32" y="44">One initiative</text>
+        <rect class="n-box-q" x="32" y="56" width="744" height="144" stroke-dasharray="4 4"/>
+
+        <rect class="n-box" x="48" y="80" width="184" height="88"/>
+        <text class="n-t" x="64" y="112">A stage</text>
+        <text class="n-s" x="64" y="134">owes one document</text>
+        <text class="n-s" x="64" y="152">and nothing else</text>
+
+        <path class="ln" d="M232 124 H252"/>
+        <path class="ln-a" d="M260 84 V164 M272 84 V164"/>
+        <text class="n-lab-a" x="248" y="72">Gate</text>
+        <path class="ln" d="M280 124 H296"/>
+
+        <rect class="n-box" x="296" y="80" width="184" height="88"/>
+        <text class="n-t" x="312" y="112">A stage</text>
+        <text class="n-s" x="312" y="134">may need no gate</text>
+        <text class="n-s" x="312" y="152">before the next</text>
+
+        <path class="ln" d="M480 124 H544"/>
+
+        <rect class="n-box" x="544" y="80" width="184" height="88"/>
+        <text class="n-t" x="560" y="112">A stage</text>
+        <text class="n-s" x="560" y="134">…as many as the</text>
+        <text class="n-s" x="560" y="152">method declares</text>
+
+        <path class="ln" d="M776 124 H840"/><path d="M848 124 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box" x="848" y="80" width="280" height="88"/>
+        <text class="n-lab" x="864" y="108">Outcome</text>
+        <text class="n-s" x="864" y="134">accepted · delivered · open</text>
+        <text class="n-s" x="864" y="152">recorded, with who closed it</text>
+
+        <rect x="32" y="216" width="712" height="32" fill="var(--signal-soft)" stroke="var(--signal)" stroke-width="1"/>
+        <text class="n-lab-a" x="44" y="236">How many stages, and which are gated, is the method's choice</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>A lifecycle written in a document is a wish — it works only while everyone chooses to follow it. A platform that will not close an initiative whose approval carries no name is a mechanism.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">Then one method, worked through</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">This is <span class="mono">ops-flow</span>, the method used to deliver on third-party building blocks. It fills in the shape above with six stages and three gates. Another method fills it in differently, and the platform does not care which.</p>
+
+  <figure class="dgm">
+    <figcaption><b>ops-flow, version 1.0</b><span>Six stages, three gates</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 0 1160 288" width="1160" height="288" role="img" aria-label="The ops-flow method: intent, agreement, selection, plan, build and verification, with gates after intent, agreement and plan.">
+        <text class="n-lab" x="200" y="32">Gate</text>
+        <text class="n-lab" x="384" y="32">Gate</text>
+        <text class="n-lab-a" x="748" y="32">Gate</text>
+
+        <path class="ln" d="M206 88 V184 M218 88 V184"/>
+        <path class="ln" d="M390 88 V184 M402 88 V184"/>
+        <path class="ln-a" d="M758 88 V184 M770 88 V184"/>
+
+        <rect class="n-box" x="48"  y="88" width="144" height="96"/>
+        <text class="n-t" x="64" y="120">Intent</text>
+        <text class="n-s" x="64" y="140">what they need,</text>
+        <text class="n-s" x="64" y="156">not what to build</text>
+
+        <rect class="n-box" x="232" y="88" width="144" height="96"/>
+        <text class="n-t" x="248" y="120">Agreement</text>
+        <text class="n-s" x="248" y="140">what will be built</text>
+        <text class="n-s" x="248" y="156">in their language</text>
+
+        <rect class="n-box" x="416" y="88" width="144" height="96"/>
+        <text class="n-t" x="432" y="120">Selection</text>
+        <text class="n-s" x="432" y="140">which systems —</text>
+        <text class="n-s" x="432" y="156">and their limits</text>
+
+        <rect class="n-box" x="600" y="88" width="144" height="96"/>
+        <text class="n-t" x="616" y="120">Plan</text>
+        <text class="n-s" x="616" y="140">ground truth, and</text>
+        <text class="n-s" x="616" y="156">how it is verified</text>
+
+        <rect class="n-box" x="784" y="88" width="144" height="96"/>
+        <text class="n-t" x="800" y="120">Build</text>
+        <text class="n-s" x="800" y="140">the working system</text>
+        <text class="n-s" x="800" y="156">not a document</text>
+
+        <rect class="n-box" x="968" y="88" width="144" height="96"/>
+        <text class="n-t" x="984" y="120">Verification</text>
+        <text class="n-s" x="984" y="140">each criterion</text>
+        <text class="n-s" x="984" y="156">proved, not said</text>
+
+        <path class="ln" d="M192 136 H206 M218 136 H232"/>
+        <path class="ln" d="M376 136 H390 M402 136 H416"/>
+        <path class="ln" d="M560 136 H600"/>
+        <path class="ln" d="M744 136 H758 M770 136 H784"/>
+        <path class="ln" d="M928 136 H968"/>
+
+        <text class="n-lab" x="48"  y="224">owes an intent</text>
+        <text class="n-lab" x="232" y="224">owes the agreement</text>
+        <text class="n-lab" x="416" y="224">owes a fit ledger</text>
+        <text class="n-lab" x="600" y="224">owes a plan</text>
+        <text class="n-lab" x="784" y="224">owes the system</text>
+        <text class="n-lab" x="968" y="224">owes a guide</text>
+
+        <rect x="600" y="248" width="392" height="28" fill="var(--signal-soft)" stroke="var(--signal)" stroke-width="1"/>
+        <text class="n-lab-a" x="612" y="266">A gate refuses. It does not warn.</text>
+      </svg>
+    </div>
+  </figure>
+
+  <h3 style="margin-bottom:var(--s4)">Two methods, one shape</h3>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>&nbsp;</th><th>ops-flow</th><th>sdlc-flow</th></tr></thead>
+      <tbody>
+        <tr><td>Used for</td><td>delivering on third-party building blocks</td><td>building and changing software directly</td></tr>
+        <tr><td>Stages</td><td class="mono">6</td><td class="mono">8</td></tr>
+        <tr><td>Named</td><td class="mono">intent · spec · select · plan · build · verify</td><td class="mono">explore · spec · spec-audit · plan · plan-audit · execute · review · record</td></tr>
+        <tr><td>Documents it owes</td><td class="mono">intent · agreement · selection · plan · verification</td><td class="mono">ground · agreement · plan</td></tr>
+        <tr><td>Gated</td><td class="mono">3 of 5 documents</td><td class="mono">2 of 3 documents</td></tr>
+        <tr><td>Notice</td><td colspan="2">Different stages, different documents, different places to stop. <strong>The same envelope, the same gate mechanism, the same record of who signed.</strong> That is what makes two methods comparable at all — and why adding a third costs a declaration rather than a service.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="cards" id="cards-2"></div>
+  <div class="drill" id="drill-2" hidden></div>
+</section>
+
+<!-- ═════════════════ 03 · LEARNING & EVALUATION ═════════════════ -->
+<section class="panel" id="t3" role="tabpanel" aria-labelledby="tb3" hidden>
+  <div class="zone-head">
+    <div>
+      <p class="kicker">How it gets better</p>
+      <h2>Learning &amp; Evaluation</h2>
+    </div>
+    <p class="lede">Three published mechanisms, each solving a different part of the problem — and the measurement discipline none of them specifies, which is the part we had to build ourselves.</p>
+  </div>
+
+  <p style="max-width:76ch;font-size:16px">
+    Improving a system whose components are <em>written instructions</em> is a young field with real prior art.
+    We did not invent a loop; we assembled one — and the three below are not three versions of the same idea.
+    Two of them are <strong>method</strong>: Warp gives the shape of the loop and who signs off; GEPA gives the way to
+    reflect and what “better” is allowed to mean. The third is <strong>engineering</strong>:
+    <em>Hermes is where we look to see how any of this survives contact with running code</em> — how a proposed change
+    physically lands in a file, what a skill looks like on disk once it has grown beyond prose, and how the thing keeps
+    evolving with nobody watching it. Theory says a change should be made; Hermes shows what making it costs.
+  </p>
+
+  <div class="scroller">
+    <table>
+      <thead><tr><th>&nbsp;</th><th>Warp</th><th>GEPA</th><th>Hermes</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Its evidence</strong></td>
+            <td>human feedback, captured where the work happens — a reviewer saying <em>why</em> something was not good</td>
+            <td>full execution traces: errors, reasoning logs, whatever the run emitted</td>
+            <td>the agent's own finished turns</td></tr>
+        <tr><td><strong>Who reflects</strong></td>
+            <td>a second “improver” skill, separate from the one doing the work</td>
+            <td>a model reading the traces to diagnose <em>why</em> it failed — the authors call the result the text analogue of a gradient</td>
+            <td>a background review that runs after a turn</td></tr>
+        <tr><td><strong>What changes</strong></td>
+            <td>the base skill, as a plain file</td>
+            <td>the system's textual parameters</td>
+            <td><code>SKILL.md</code>, and beside it <code>scripts/</code>, <code>references/</code>, <code>assets/</code></td></tr>
+        <tr><td><strong>How a change is accepted</strong></td>
+            <td><strong>a human reviews and merges it</strong>, through ordinary code review</td>
+            <td>kept if it improves; candidates that win on <em>different</em> cases are all kept rather than one winner</td>
+            <td>autonomously — or staged for human approval when configured to</td></tr>
+        <tr><td><strong>What it gives us</strong></td>
+            <td><strong>the shape</strong> — two skills, one doing the work and one improving it, and a change that a person signs off</td>
+            <td><strong>the method</strong> — reflection in sentences rather than a score, results kept per case, one change at a time</td>
+            <td><strong>the engineering</strong> — how a change actually lands: <em>patch</em> in preference to rewrite, writes <em>staged</em> for approval rather than applied, and a skill as a directory (<code>scripts/</code>, <code>references/</code>, <code>assets/</code>) rather than a page of prose</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="src">Sources ·
+    <a href="https://claude.com/blog/how-warp-builds-self-improving-agents-on-claude">claude.com/blog/how-warp-builds-self-improving-agents-on-claude</a> ·
+    <a href="https://github.com/gepa-ai/gepa">github.com/gepa-ai/gepa</a> ·
+    <a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/skills">hermes-agent.nousresearch.com/docs/user-guide/features/skills</a>
+  </p>
+
+  <figure class="dgm">
+    <figcaption><b>The loop</b><span>Which mechanism informs which step</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 24 1160 288" width="1160" height="288" role="img" aria-label="Five steps in a cycle — real work, evidence, comparison against a blind expectation, one change, re-measurement against a noise floor — annotated with which published mechanism informs each step.">
+        <rect class="n-box" x="32"  y="48" width="184" height="120"/>
+        <text class="n-lab" x="48" y="76">01</text>
+        <text class="n-t"   x="48" y="104">Real work</text>
+        <text class="n-s"   x="48" y="124">people delivering,</text>
+        <text class="n-s"   x="48" y="140">not a test suite</text>
+
+        <rect class="n-box" x="260" y="48" width="184" height="120"/>
+        <text class="n-lab" x="276" y="76">02</text>
+        <text class="n-t"   x="276" y="104">Evidence</text>
+        <text class="n-s"   x="276" y="124">what was produced,</text>
+        <text class="n-s"   x="276" y="140">and what each call did</text>
+
+        <rect class="n-box" x="488" y="48" width="184" height="120"/>
+        <text class="n-lab" x="504" y="76">03</text>
+        <text class="n-t"   x="504" y="104">Compared</text>
+        <text class="n-s"   x="504" y="124">against an expectation</text>
+        <text class="n-s"   x="504" y="140">written before, blind</text>
+
+        <rect class="n-box" x="716" y="48" width="184" height="120"/>
+        <text class="n-lab" x="732" y="76">04</text>
+        <text class="n-t"   x="732" y="104">One change</text>
+        <text class="n-s"   x="732" y="124">only for a fault that</text>
+        <text class="n-s"   x="732" y="140">recurs across work</text>
+        <text class="n-s"   x="732" y="156">sharing nothing</text>
+
+        <rect class="n-box-a" x="944" y="48" width="184" height="120"/>
+        <text class="n-lab-a" x="960" y="76">05</text>
+        <text class="n-t"    x="960" y="104">Re-measured</text>
+        <text class="n-s"    x="960" y="124">against a measured floor</text>
+        <text class="n-s"    x="960" y="140">— or it is untested</text>
+
+        <path class="ln" d="M216 108 H252"/><path d="M260 108 l-8 -4 v8 z" fill="var(--line-strong)"/>
+        <path class="ln" d="M444 108 H480"/><path d="M488 108 l-8 -4 v8 z" fill="var(--line-strong)"/>
+        <path class="ln" d="M672 108 H708"/><path d="M716 108 l-8 -4 v8 z" fill="var(--line-strong)"/>
+        <path class="ln" d="M900 108 H936"/><path d="M944 108 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <text class="n-lab" x="32"  y="196">Hermes · runs unattended</text>
+        <text class="n-lab" x="260" y="196">Warp · GEPA</text>
+        <text class="n-lab" x="488" y="196">GEPA · in sentences</text>
+        <text class="n-lab" x="716" y="196">Warp · Hermes · how it lands</text>
+        <text class="n-lab-a" x="944" y="196">ours</text>
+
+        <path class="ln-a" d="M1036 168 V264 H124 V168"/>
+        <path d="M124 168 l-5 10 h10 z" fill="var(--signal)"/>
+        <rect x="408" y="248" width="344" height="32" fill="var(--white)"/>
+        <text class="n-lab-a" x="420" y="268">A kept change becomes the next baseline</text>
+      </svg>
+    </div>
+  </figure>
+
+  <h3 style="margin-bottom:var(--s4)">What none of the three specifies</h3>
+  <div class="map">
+    <div class="mh">The measurement discipline — the part we had to build</div>
+    <div class="l">A control that tests the judge</div>
+    <div class="r">Every score is produced twice: once against the real requirement, once against a <em>neighbour's</em>. If the second scores as highly as the first, the reviewer is rewarding confident writing rather than reading, and that day's numbers are discarded rather than explained.</div>
+    <div class="l">A measured floor, and a third verdict</div>
+    <div class="r">How much a score moves between two runs when <em>nothing changed</em>, measured by repeating identical work. A claimed gain smaller than that spread is reported <strong>untested</strong> — not “slightly better”.</div>
+    <div class="l">Generic before it earns an edit</div>
+    <div class="r">Strip out every noun belonging to the subject matter. If the fault still describes something, it is the method's habit; if it disappears, it belonged to that one delivery. Only the first kind may change a skill, because a rule written for a one-off is read on every run forever.</div>
+    <div class="l">A definition of good that we did not write</div>
+    <div class="r">The rubric is derived from the step's own output. Writing it ourselves would be setting the exam we are sitting.</div>
+    <div class="l">The expectation comes first</div>
+    <div class="r">What a good answer would contain is written from the requirement alone, by a reader who never sees the produced document. That blindness is the only reason the comparison means anything.</div>
+  </div>
+
+  <div class="callout">
+    <p>A document can carry every fact, hold every required section, and still be the wrong answer — so form and quality are measured with different instruments, and the two are never added together.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">One measurement, end to end</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">This is a real run against the first stage of <span class="mono">ops-flow</span>, the step that turns a stakeholder's brain dump into a stated need. Thirty pieces of work, twenty-seven different agencies.</p>
+
+  <ol class="steps-num">
+    <li><b>Collect</b><span>Thirty deliveries, each a different team's real request. Nothing authored as a test — the corpus is work the method was asked to do.</span></li>
+    <li><b>Define good, without writing it ourselves</b><span>A model reads the step's own instructions and three of its real documents, and states what separates a strong one from a weak one. Five dimensions come back. Every one needs a reader; anything a script could check is rejected.</span></li>
+    <li><b>Score, with the evidence attached</b><span>Each document is marked against those five dimensions, and every score must quote the document. <strong>3.42 of 5</strong> overall.</span></li>
+    <li><b>Test the judge, not the work</b><span>All thirty are scored again against a <em>neighbour's</em> requirement. The result collapses to <strong>1.00</strong>, and 104 of 104 are caught as answering a different problem. The control is a real document, not a scrambled one — a harder test to pass. The reviewer is reading.</span></li>
+    <li><b>Find what recurs</b><span>An expectation written blind from each request is compared to what was produced. One fault appears in <strong>13 of 30</strong> — in agencies sharing no vocabulary: an ambiguity in the request is quietly settled and written down as though it had been stated.</span></li>
+    <li><b>Propose exactly one change</b><span>A passage is drafted for the step's instructions, quoting the fault that earned it. <em>The step already contained a rule against this.</em> The defect was not a missing rule but one pitched too abstractly to survive a real brain dump.</span></li>
+    <li><b>Measure it, and refuse to claim it</b><span>Run on eight deliveries the change was <em>not</em> derived from. The floor is <strong>0.436</strong>, so at that sample nothing under <strong>0.31</strong> can be distinguished from noise. Measured delta: <strong>0.000</strong>. Verdict: <strong>untested</strong> — and the change was reverted.</span></li>
+  </ol>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · what the lens outputs for that step</span><b>weakest dimension names the next change</b></div>
+    <div class="sp-b">
+<pre><b>sm-intent · 30 deliveries · 27 agencies · rubric of 5 dimensions</b>
+
+  Outcome stated as a state, not a solution              4.50   ████████████████████·····
+  Fidelity — nothing invented, nothing quietly settled    3.86   ██████████████████·······
+  Open questions are genuine forks, not filler            3.73   █████████████████········
+  The need reads as one argument                          2.77   ████████████·············
+  <i>Constraints limited to what was actually said          2.27   ██████████···············</i>
+
+  overall            3.42        control  1.00        gap  2.42
+  caught as off-topic in the control    104 of 104
+  noise floor  0.436     threshold at n=30  0.16     at n=8  0.31</pre>
+    </div>
+    <div class="sp-f">The weakest dimension is the entire point of the exercise: it says where the next change belongs, and nowhere else. <strong>Ending on a reverted change is not a failure of the loop — it is the loop working.</strong> A mechanism that never returns “untested” is one that will report noise as progress.</div>
+  </div>
+
+  <div class="cards" id="cards-3"></div>
+  <div class="drill" id="drill-3" hidden></div>
+</section>
+
+<!-- ═══════════════════════════ 04 · KNOWLEDGE ═══════════════════════════ -->
+<section class="panel" id="t4" role="tabpanel" aria-labelledby="tb4" hidden>
+  <div class="zone-head">
+    <div><p class="kicker">What it remembers</p><h2>Knowledge</h2></div>
+    <p class="lede">Two different things are worth keeping: the record of what happened, and the lesson drawn from it. They have different owners and different lifetimes.</p>
+  </div>
+
+  <figure class="dgm">
+    <figcaption><b>Record to lesson</b><span>Many deliveries, few lessons, one thread back</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 0 1160 312" width="1160" height="312" role="img" aria-label="Many delivery records are distilled into a few lessons, with a provenance thread leading back from each lesson to the records it came from.">
+        <text class="n-lab" x="32" y="32">Records · one per delivery</text>
+        <rect class="n-box" x="32" y="48"  width="232" height="32"/><text class="n-s" x="48" y="68">intent · agreement · plan</text>
+        <rect class="n-box" x="32" y="88"  width="232" height="32"/><text class="n-s" x="48" y="108">what was decided, and by whom</text>
+        <rect class="n-box" x="32" y="128" width="232" height="32"/><text class="n-s" x="48" y="148">what the stakeholder said</text>
+        <rect class="n-box" x="32" y="168" width="232" height="32"/><text class="n-s" x="48" y="188">what was verified, and how</text>
+        <rect class="n-box-q" x="32" y="208" width="232" height="32"/><text class="n-s" x="48" y="228">…every delivery adds more</text>
+
+        <path class="ln" d="M264 136 H424"/><path d="M432 136 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box" x="432" y="96" width="216" height="80"/>
+        <text class="n-lab" x="448" y="124">Distil</text>
+        <text class="n-s"   x="448" y="146">what generalises,</text>
+        <text class="n-s"   x="448" y="162">stated once</text>
+
+        <path class="ln" d="M648 136 H784"/>
+        <path class="ln" d="M784 108 V164"/>
+        <path class="ln" d="M784 108 H808"/><path d="M816 108 l-8 -4 v8 z" fill="var(--line-strong)"/>
+        <path class="ln" d="M784 164 H808"/><path d="M816 164 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <text class="n-lab" x="816" y="32">Lessons · few, and reusable</text>
+        <rect class="n-box" x="816" y="88"  width="312" height="40"/>
+        <text class="n-t" x="832" y="114">What we learned about a system</text>
+        <rect class="n-box" x="816" y="144" width="312" height="40"/>
+        <text class="n-t" x="832" y="170">What we are trying to achieve</text>
+
+        <!-- The return runs BELOW the whole stack and stops short of it. An earlier version came
+             up at the same x as the records and drove its arrowhead through the last box, which
+             read as an arrow aimed at one row rather than at the record set. -->
+        <path class="ln-a" d="M972 184 V272 H148 V252"/>
+        <path d="M148 248 l-5 10 h10 z" fill="var(--signal)"/>
+        <rect x="404" y="256" width="320" height="32" fill="var(--white)"/>
+        <text class="n-lab-a" x="416" y="276">Provenance · a lesson names its evidence</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>The lesson belongs to the team, not to the delivery that produced it. A record is closed when the work is; a lesson keeps working long after.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">What a team's knowledge base actually looks like</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">This is our own team's store, on disk, today. Every team gets the same shape — including us, which is the point: the platform team is a tenant of its own platform, with no separate mechanism.</p>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · one team's store</span><b>on disk today, except where marked</b></div>
+    <div class="sp-b">
+<pre>teams/&lt;team&gt;/
+├── <b>2026-08-27-decision-record/</b>          one initiative — one piece of work
+│   ├── intent.md   spec.md   plan.md      the documents it owed, each with an envelope
+│   ├── <b>sources/</b>                        what people actually said, attached as evidence
+│   ├── <b>_versions/</b>                       frozen copies, taken at each approval
+│   └── activity.jsonl                     <i>system-written</i>
+│
+├── <b>_knowledge/</b>
+│   ├── index.md                           id · date · type · status · title
+│   ├── <b>nodes/</b>0007-a-rule-stated-in-…    one lesson per file, numbered
+│   ├── okrs/&lt;period&gt;.md                   <i>shape declared, not yet exercised</i> — objective in
+│   │                                      words, key results graded from the ledger below
+│   └── log.md                             <i>system-written</i> — every journal action
+│
+└── _ledger.md                             <i>system-written</i> — closed · outcome · hours · writes</pre>
+    </div>
+    <div class="sp-f"><strong>Three of these files the platform writes and a model is refused if it tries.</strong> The ledger is one of them, and the reason is exact: key results are graded <em>from</em> that table, so anything able to rewrite it could grade its own work.</div>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">And one lesson, whole</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">Node 0007, exactly as it sits in the store. Note what the shape forces: evidence naming the initiative it came from, an explicit <span class="mono">Why</span>, an explicit <span class="mono">How to apply</span>, and a link to the neighbouring lesson.</p>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · _knowledge/nodes/0007-…md</span><b>a lesson, not a note</b></div>
+    <div class="sp-b">
+<pre>---
+id: "0007"
+title: "<b>A rule stated in prose is enforced by whoever remembers it</b>"
+type: process          status: adopted          date: 2026-08-27
+author: &lt;a platform engineer&gt;
+<i>evidence: [27-08-2026-decision-record]</i>
+tags: [flow-method, detection]
+supersededBy: null
+---
+
+One method names eight required components. Another heads its list "EXACTLY these
+sections". A third specifies a heading and adds, in those words, "so a reader and a
+check can both find it". Grepping the whole repository for any of those names returned
+nothing: no code knew they existed, and the audit meant to catch a missing one was
+another model reading the same document.
+
+A heading list is the cheapest kind of fact — present or absent, no judgement. Whenever
+a method states a rule of that kind, the platform should be the one holding it, with the
+method declaring WHICH in its own manifest. The rule stays the method's; only the
+enforcement moves.
+
+<b>Why:</b> a check a model performs is the tier this platform agreed to use last, not
+first, and it is the tier that fails silently.
+<b>How to apply:</b> when a skill says "must contain", ask what would grep for it. If
+nothing does, that instruction is advisory no matter how it is worded.
+See [[an-instruction-that-produces-no-artifact-will-be-skipped]].</pre>
+    </div>
+    <div class="sp-f">A lesson that cannot be traced to the work that produced it is folklore. <strong>Evidence is a required field</strong>, and the <span class="mono">How to apply</span> line is what makes it reusable rather than merely true.</div>
+  </div>
+
+  <div class="cards" id="cards-4"></div>
+  <div class="drill" id="drill-4" hidden></div>
+</section>
+
+<!-- ═══════════════════════════ 05 · GOVERNANCE ═══════════════════════════ -->
+<section class="panel" id="t5" role="tabpanel" aria-labelledby="tb5" hidden>
+  <div class="zone-head">
+    <div><p class="kicker">Why it can be trusted</p><h2>Governance</h2></div>
+    <p class="lede">A document produced here should be defensible to someone who was not in the room — which means the machine, not the author, decides what counts as approved.</p>
+  </div>
+
+  <figure class="dgm">
+    <figcaption><b>What a gate reads</b><span>The document says what it is; the platform says whether it passed</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 24 1160 248" width="1160" height="248" role="img" aria-label="A document carries an envelope of typed fields; a gate reads the approval fields and either lets work continue or refuses it.">
+        <rect class="n-box" x="32" y="48" width="368" height="200"/>
+        <text class="n-lab" x="48" y="76">The document</text>
+        <rect class="n-box-q" x="48" y="88" width="336" height="112"/>
+        <text class="n-lab" x="64" y="112">Envelope · written by the platform</text>
+        <text class="n-s" x="64" y="136">which method, which stage</text>
+        <text class="n-s" x="64" y="154">what state it is in</text>
+        <text class="n-s" x="64" y="172">who approved it, and when</text>
+        <text class="n-s" x="64" y="190">what it superseded</text>
+        <text class="n-s" x="48" y="228">…and below it, the author's own words</text>
+
+        <path class="ln" d="M400 148 H520"/><path d="M528 148 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box-a" x="528" y="88" width="216" height="120"/>
+        <text class="n-lab-a" x="544" y="116">The gate</text>
+        <text class="n-t"    x="544" y="146">Is it signed?</text>
+        <text class="n-s"    x="544" y="168">by a name, not a flag</text>
+        <text class="n-s"    x="544" y="186">and stamped, not typed</text>
+
+        <path class="ln" d="M744 124 H872"/><path d="M880 124 l-8 -4 v8 z" fill="var(--line-strong)"/>
+        <rect class="n-box" x="880" y="96" width="248" height="56"/>
+        <text class="n-t" x="896" y="128">Work continues</text>
+
+        <path class="ln-a" d="M744 172 H872"/><path d="M880 172 l-8 -4 v8 z" fill="var(--signal)"/>
+        <rect class="n-box" x="880" y="164" width="248" height="72"/>
+        <text class="n-t" x="896" y="192">Refused, with the reason</text>
+        <text class="n-s" x="896" y="214">which the next attempt can act on</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>Approving should be an action taken, not a sentence written. The moment a signature is something an author can type, it stops being evidence and becomes a formatting convention.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">One real document's envelope</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">The top of a specification from a live delivery. Everything here is written by the platform — the author writes the prose below it and cannot type any of this.</p>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · the envelope of one agreement</span><b>note the version number</b></div>
+    <div class="sp-b">
+<pre>---
+flow: ops-flow
+type: agreement
+title: Specification — Nature Walk Bookings
+<b>version: 4</b>
+status: <b>approved</b>
+<i>sources: sources/…-stakeholder-decision-drop-amend-use-cancel-and-rebook-wording.md,
+         sources/…-stakeholder-decision-accept-booking-count-backstop-manual-wa.md</i>
+revision_note: Same root cause as the capacity backstop: catching a same-email duplicate
+  booking needs the identical counting n8n cannot do, and the booking system has no native
+  dedupe tool either. AC-1.4's "refused" promise …
+intent: intent.md
+approved_by: &lt;the stakeholder&gt;        approved_at: 2026-08-30
+outcome: accepted                      closed_by: &lt;the stakeholder&gt;
+---</pre>
+    </div>
+    <div class="sp-f"><strong>This document is on its fourth version, and each revision says why.</strong> The three earlier ones are still there, frozen under <span class="mono">_versions/</span> at the moment each was approved — the folder visible in the store on the Knowledge tab. Two stakeholder decisions are attached as sources — not summarised, attached — and the chain back to the intent it answers is a field, not a convention. A reader who was not in the room can reconstruct the whole argument from this header alone.</div>
+  </div>
+
+  <div class="cards" id="cards-5"></div>
+  <div class="drill" id="drill-5" hidden></div>
+</section>
+
+<!-- ═══════════════════════ 06 · BUILDING BLOCKS ═══════════════════════ -->
+<section class="panel" id="t6" role="tabpanel" aria-labelledby="tb6" hidden>
+  <div class="zone-head">
+    <div><p class="kicker">Somebody else's capability</p><h2>Building blocks</h2></div>
+    <p class="lede">Third-party systems do the specialised work. The platform's job is to make them reachable, scoped, recorded and comparable — without growing a service for each one.</p>
+  </div>
+
+  <figure class="dgm">
+    <figcaption><b>One shape for every block</b><span>Declared once, shortlisted for the client, recorded on the way through</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 24 1160 280" width="1160" height="280" role="img" aria-label="A registry declares each block; the platform narrows a large tool surface to the useful subset and records every call; three blocks sit behind it.">
+        <rect class="n-box" x="32" y="72" width="232" height="120"/>
+        <text class="n-lab" x="48" y="100">Declared once</text>
+        <text class="n-t"   x="48" y="128">Where it lives</text>
+        <text class="n-t"   x="48" y="152">What we may call</text>
+        <text class="n-t"   x="48" y="176">How it is authenticated</text>
+
+        <path class="ln" d="M264 132 H392"/><path d="M400 132 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box-a" x="400" y="48" width="264" height="168"/>
+        <text class="n-lab-a" x="416" y="76">The shortlist</text>
+        <text class="n-t"    x="416" y="106">A vendor may publish</text>
+        <text class="n-t"    x="416" y="126">178 tools</text>
+        <text class="n-s"    x="416" y="148">— a caller cannot choose well</text>
+        <text class="n-s"    x="416" y="164">from that many, and the</text>
+        <text class="n-s"    x="416" y="180">descriptions alone can fill</text>
+        <text class="n-s"    x="416" y="196">most of a working memory</text>
+        <text class="n-s"    x="416" y="214">— applied when a client is set up</text>
+
+        <path class="ln" d="M664 132 H792"/><path d="M800 132 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box" x="800" y="48" width="328" height="48"/>
+        <text class="n-t" x="816" y="78">Case management</text>
+        <rect class="n-box" x="800" y="108" width="328" height="48"/>
+        <text class="n-t" x="816" y="138">Booking &amp; scheduling</text>
+        <rect class="n-box" x="800" y="168" width="328" height="48"/>
+        <text class="n-t" x="816" y="198">Workflow automation</text>
+
+        <path class="ln-d" d="M964 216 V264 H532 V216"/>
+        <rect x="584" y="248" width="328" height="32" fill="var(--white)"/>
+        <text class="n-lab" x="596" y="268">Every call recorded: cost and outcome</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>A call that <em>succeeds</em> can still cost two hundred thousand words of working memory. Counting failures cannot see that, so cost is measured as its own signal.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">One block, measured</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">The case-management system we integrate with. Every number here is read from the platform's own record of calls it has already made — nothing was instrumented to produce them.</p>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · what we know about one third-party system</span><b>all measured, none remembered</b></div>
+    <div class="sp-b">
+<pre><b>Its surface</b>
+  tools the block publishes                        <b>178</b>
+  tools a provisioned agent actually carries        <b>71</b>
+  <i>— the shortlist is applied when a client is set up, not at the door:
+     which tools exist is the block's answer to give, and only the thing
+     provisioning a client knows what that client calls them</i>
+
+<b>What its calls cost us</b>
+  read_api_spec        803,840 bytes average   peak 1,229,671   over 32 calls
+  read_user_guide      436,790 bytes <i>every single time</i>      over 23 calls
+  <i>— neither is a failure. Both SUCCEED, so no error is ever recorded, and
+     the only symptom is a caller whose working memory is gone</i>
+
+<b>What it says when it refuses</b>
+  27 refusals across a day of real work, of the form:
+      "Request failed with status code 422"
+  <i>— no field, no value, no reason. A caller cannot learn from that, and
+     neither can any guidance we write beside it</i>
+
+<b>What that means for us</b>
+  Normal advice — "read the spec before guessing at arguments" — costs about
+  200,000 words of context here. So the guidance we wrote says the opposite:
+  use the tool descriptions already in front of you, and never call that tool.</pre>
+    </div>
+    <div class="sp-f"><strong>This is why cost is measured as its own signal.</strong> Counting refusals gave this block a clean score while it was consuming entire contexts — and the one genuinely useful instruction we could write for it is the reverse of what we would write for a well-behaved system.</div>
+  </div>
+
+  <div class="cards" id="cards-6"></div>
+  <div class="drill" id="drill-6" hidden></div>
+</section>
+
+<!-- ═══════════════════════ 07 · IDENTITY & ACCESS ═══════════════════════ -->
+<section class="panel" id="t7" role="tabpanel" aria-labelledby="tb7" hidden>
+  <div class="zone-head">
+    <div><p class="kicker">Who is acting</p><h2>Identity &amp; Access</h2></div>
+    <p class="lede">Authorisation is answered on every call, never cached into a client. And the answer has to stay true at the boundary with someone else's system.</p>
+  </div>
+
+  <figure class="dgm">
+    <figcaption><b>The chain of who</b><span>One login, then the person's own access at each system</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 24 1160 192" width="1160" height="192" role="img" aria-label="A person signs in once; the platform resolves them and attaches their own credential per system, so the third-party system records the person rather than the platform.">
+        <rect class="n-box" x="32" y="72" width="224" height="96"/>
+        <text class="n-lab" x="48" y="100">The person</text>
+        <text class="n-t"   x="48" y="128">Signs in once</text>
+        <text class="n-s"   x="48" y="150">with their work identity</text>
+
+        <path class="ln" d="M256 120 H376"/><path d="M384 120 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box" x="384" y="48" width="264" height="144"/>
+        <text class="n-lab" x="400" y="76">The platform</text>
+        <text class="n-t"   x="400" y="106">Resolves who they are</text>
+        <text class="n-t"   x="400" y="134">Checks what they may do</text>
+        <text class="n-s"   x="400" y="156">on this call, not at login</text>
+        <text class="n-t"   x="400" y="180">Attaches their own key</text>
+
+        <path class="ln-a" d="M648 120 H768"/><path d="M776 120 l-8 -4 v8 z" fill="var(--signal)"/>
+
+        <rect class="n-box-a" x="776" y="48" width="352" height="144"/>
+        <text class="n-lab-a" x="792" y="76">The third-party system</text>
+        <text class="n-t"    x="792" y="106">Records the person</text>
+        <text class="n-s"    x="792" y="128">not "the platform did it"</text>
+        <text class="n-t"    x="792" y="156">Applies their own limits</text>
+        <text class="n-s"    x="792" y="178">so nobody inherits more than they have</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>Delegated access is not a better credential. It changes <em>who is acting</em> — which is the only way an external audit log can name the person instead of naming us.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">One person, one call, traced through</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">What actually happens when an person asks an agent to look at a case — and what the third-party system records at the far end of it.</p>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · a single call, end to end</span><b>the credential is theirs, not ours</b></div>
+    <div class="sp-b">
+<pre><b>1 · they are identified</b>
+    the platform resolves the person to one record — email is the key, and it is
+    case-insensitive at every hop, so a login that capitalises differently still
+    finds the same person
+
+<b>2 · their own key is attached</b>
+    the credential store is keyed by person, then by system:
+
+        { "&lt;person@team&gt;": { "casebox": "…", "n8n": "…", "bookit": "…" } }
+
+    <i>three systems, three separate credentials, all belonging to that one person.
+    Nobody inherits anybody else's.</i>
+
+<b>3 · the block sees a principal, and applies its limits</b>
+        role   : api_key
+        name   : &lt;the person's key&gt;
+        apps   : [ one app ]         quota: 20 users
+        <i>get_apps → 403</i>   — listing every app is above what this principal may do,
+                          and the block is right to refuse it
+
+<b>4 · the call is recorded</b>
+    which person, which method, which step, which system, whether it worked,
+    and the reason if it did not</pre>
+    </div>
+    <div class="sp-f"><strong>Step 3 is the part worth dwelling on.</strong> That <span class="mono">403</span> is not a bug to be worked around — it is the third-party system correctly enforcing a boundary on a credential that belongs to one person with access to one app. If the platform used a single shared key instead, that boundary would silently disappear and every person would inherit whatever the shared key could reach.</div>
+  </div>
+
+  <div class="cards" id="cards-7"></div>
+  <div class="drill" id="drill-7" hidden></div>
+</section>
+
+<!-- ═══════════════════════════ 08 · OPERATIONS ═══════════════════════════ -->
+<section class="panel" id="t8" role="tabpanel" aria-labelledby="tb8" hidden>
+  <div class="zone-head">
+    <div><p class="kicker">Where it runs</p><h2>Operations &amp; Portability</h2></div>
+    <p class="lede">The same platform has to run in places with different rules about what may be used. That is a design constraint, not a deployment detail.</p>
+  </div>
+
+  <figure class="dgm">
+    <figcaption><b>Ports and bindings</b><span>The same method, two environments, different suppliers underneath</span></figcaption>
+    <div class="canvas">
+      <svg viewBox="0 16 1160 288" width="1160" height="288" role="img" aria-label="One unchanged method on the left; two environments on the right binding the same four capabilities to different suppliers.">
+        <!-- The invariant is the point, so the invariant carries the accent. A table could list
+             the bindings; only a drawing shows that the thing on the left is the same thing. -->
+        <rect class="n-box-a" x="32" y="48" width="264" height="208"/>
+        <text class="n-lab-a" x="48" y="76">One method</text>
+        <text class="n-t"    x="48" y="112">The same stages,</text>
+        <text class="n-t"    x="48" y="134">the same gates,</text>
+        <text class="n-t"    x="48" y="156">the same records</text>
+        <text class="n-s"    x="48" y="188">Nothing here changes</text>
+        <text class="n-s"    x="48" y="206">when anything to the</text>
+        <text class="n-s"    x="48" y="224">right of it does</text>
+
+        <path class="ln" d="M296 108 H384"/><path d="M392 108 l-8 -4 v8 z" fill="var(--line-strong)"/>
+        <path class="ln" d="M296 196 H384"/><path d="M392 196 l-8 -4 v8 z" fill="var(--line-strong)"/>
+
+        <rect class="n-box" x="392" y="40" width="736" height="112"/>
+        <text class="n-lab" x="408" y="68">Somewhere the rules are permissive</text>
+        <text class="n-s" x="408"  y="96">documents · a managed store</text>
+        <text class="n-s" x="408"  y="116">history · a hosted service</text>
+        <text class="n-s" x="408"  y="136">the model · a commercial API</text>
+        <text class="n-s" x="776"  y="96">secrets · the platform's own vault</text>
+        <text class="n-s" x="776"  y="116">where it runs · shared infrastructure</text>
+
+        <rect class="n-box-q" x="392" y="168" width="736" height="112"/>
+        <text class="n-lab" x="408" y="196">Somewhere they are not</text>
+        <text class="n-s" x="408"  y="224">documents · a repository we host</text>
+        <text class="n-s" x="408"  y="244">history · the same repository</text>
+        <text class="n-s" x="408"  y="264">the model · one running in-country</text>
+        <text class="n-s" x="776"  y="224">secrets · an approved key manager</text>
+        <text class="n-s" x="776"  y="244">where it runs · an isolated network</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <p>Changing a supplier should be a configuration change, not a migration. That only holds if the capability was named before the supplier was chosen.</p>
+  </div>
+
+  <h3 style="margin-bottom:var(--s2)">The same platform, two environments</h3>
+  <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">What is actually different between where this runs today and where a stricter deployment would run it — and, more importantly, what is not.</p>
+
+  <div class="specimen">
+    <div class="sp-h"><span>Specimen · what a binding actually is</span><b>the left column never changes</b></div>
+    <div class="sp-b">
+<pre><b>Named once, in the method</b>                <b>Bound per environment</b>
+
+  where a team's documents live        a directory tree, one per team
+  where their history is kept          a git repository per team — every write a
+                                       commit authored by the person who made it
+  which model does the work            one setting, read by every service that
+                                       needs it, with no second default anywhere
+  where credentials are held           a store the gateway reads, never the model
+  where the record of calls lives      one database, append-only
+
+<b>What moving it costs</b>
+  the method                           <i>nothing — the stages, the gates, the
+                                       envelope and the records are identical</i>
+  each binding                         a line of configuration
+  proving the swap                     the same test suite the old one passed
+
+<b>What it would cost without ports</b>
+  every capability wired straight to one supplier, so changing any of them is a
+  migration with its own project plan rather than a value in a file</pre>
+    </div>
+    <div class="sp-f">A team's history being a <strong>git repository they own</strong> is the sharpest case: it means a team leaving takes their documents <em>and</em> the authorship of every change, readable with nothing of ours installed. Portability stops being a promise in a document and becomes a property of where the data already sits.</div>
+  </div>
+
+  <div class="cards" id="cards-8"></div>
+  <div class="drill" id="drill-8" hidden></div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    zz-stack · platform architecture. Every capability here is described by what it is, how we look at it, and what better looks like — deliberately not by what is finished.
+  </div>
+</footer>
+
+<script>
+/* Every capability answers the same three questions — what it is, how we look at it, and what
+   better looks like. Never a status. A deck that reports progress ages the moment it is shown;
+   one that describes the lens stays true. */
+const CAPS = {
+ 2:[
+  {n:"Initiative", is:"One piece of work, from the first conversation to a signed close.",
+   see:"Whether it can be picked up again days later by someone else and still make sense — the state is on the work, not in somebody's head.",
+   better:"The moment work pauses, what happens next should be readable from the record alone."},
+  {n:"A method is a declaration", is:"Which stages exist, what each owes, and where the gates sit — written down once, as a file, rather than built into the platform.",
+   see:"Whether adding a method costs a declaration or costs code. Two run here today with different stage counts, different documents and different gate placement.",
+   better:"A team should be able to propose a change to how they work without anyone touching the platform."},
+  {n:"Stages, and what each owes", is:"Each stage produces exactly one thing and hands it on.",
+   see:"Whether each stage stayed in its lane — an understanding that quietly designs, or a plan that re-opens the agreement, is the failure worth catching.",
+   better:"A stage should be hard to do wrong because the next one refuses malformed input, not because people remember the rule."},
+  {n:"Gates", is:"A point the work cannot pass without a named approval.",
+   see:"Whether a gate ever gets bypassed under pressure. If it can be, it is not a gate.",
+   better:"Refusals should say what would unblock them, so the gate teaches rather than merely stops."},
+  {n:"Outcome", is:"How the work ended — accepted, delivered, still open — recorded as a fact rather than an impression.",
+   see:"Whether open work is counted separately from finished work. Folding the two together is how a delivery rate flatters itself.",
+   better:"Every close carries the reason, so a pattern of abandonment is visible before it becomes a habit."},
+  {n:"Interruption and resumption", is:"Work stops for approvals, for other people, for outages. The lifecycle assumes this.",
+   see:"How much context is lost across a pause — measured by how much has to be re-established when it resumes.",
+   better:"A resumed piece of work should cost no more to restart than it did to leave."}
+ ],
+ 3:[
+  {n:"Two instruments", is:"Form and quality are checked separately. One asks whether the artefact is well made; the other asks whether it is right.",
+   see:"Form is checked mechanically — cheap, repeatable, and blind to whether the answer is any good. Quality needs a reader.",
+   better:"Neither number should ever absorb the other. A well-formed wrong answer and a rough right one must remain distinguishable."},
+  {n:"The rubric", is:"A written statement of what separates strong work from weak, for one step, with both ends described.",
+   see:"It is derived from real output rather than written by whoever built the step — otherwise it is an exam set by the candidate.",
+   better:"Every dimension should be one that needs a reader. Anything a script could check belongs to the other instrument."},
+  {n:"The control", is:"The same work, marked against a different requirement, to test the marker rather than the work.",
+   see:"Scores on the control must collapse. A reviewer that rates confident writing highly regardless of whether it answers anything is not a measurement.",
+   better:"No quality figure should ever be quoted without its control alongside it."},
+  {n:"The floor", is:"How much a score moves between two runs when nothing has changed at all.",
+   see:"It is measured, not assumed — by repeating identical work and watching the spread.",
+   better:"Any claimed gain smaller than that spread is reported as untested, which is a real verdict and the honest one."},
+  {n:"One delivery's problem, or the method's", is:"A fault is only worth changing the method over if it recurs across work that shares nothing.",
+   see:"Strip the subject matter out of the description. If the fault still describes something, it belongs to the method.",
+   better:"Rules written for a fault seen once are read on every run forever and fire on almost none of them."},
+  {n:"Closing the loop", is:"A change is recorded against the fault it answers, so the next round can ask whether it worked.",
+   see:"Rejections matter as much as adoptions — an unrecorded rejection gets re-proposed every round.",
+   better:"The question “did that change help” should be answerable from the record, not from memory."}
+ ],
+ 4:[
+  {n:"Records", is:"What a delivery produced, kept whole: the documents, the decisions, and what the stakeholder actually said.",
+   see:"Whether a claim made months later can be traced back to the sentence it came from.",
+   better:"A team leaving should be able to take everything they produced, intact and readable without us."},
+  {n:"Lessons", is:"What generalises beyond one delivery, stated once instead of rediscovered.",
+   see:"Whether a lesson is ever actually used — a knowledge base nobody reads is a filing cabinet.",
+   better:"The next delivery should meet the relevant lesson without anyone remembering to look for it."},
+  {n:"Provenance", is:"Every lesson names the work it came from.",
+   see:"Whether a lesson can be re-derived. If not, it is folklore.",
+   better:"Superseding a lesson should keep the old one visible and say why it changed."},
+  {n:"Finding it again", is:"Search across a team's own records and lessons.",
+   see:"Whether the thing you needed was findable by the words you would naturally use.",
+   better:"Retrieval should surface what contradicts you, not only what agrees."},
+  {n:"Records the platform writes, not the author", is:"The ledger, the activity log and the journal log are written by the platform and refused to anyone else.",
+   see:"Whether a record that grades work can be edited by the thing being graded.",
+   better:"Anything used as evidence should be written by something with no stake in what it says."},
+  {n:"Across teams", is:"A lesson one team learned reaching another team that has not yet hit it.",
+   see:"Whether the same mistake is being made twice in different places.",
+   better:"This is the advantage over many separate wikis, and it is only real when it is exercised."}
+ ],
+ 5:[
+  {n:"The envelope", is:"A small set of typed fields on every document: which method, which stage, what state, who signed.",
+   see:"Whether those fields are written by the platform rather than typed by the author.",
+   better:"One vocabulary across every method — which is what makes methods comparable at all."},
+  {n:"Signed approval", is:"An approval carries a name and a timestamp the platform stamped.",
+   see:"Whether an approval can be fabricated by writing the right words in a document.",
+   better:"Approving should be an action taken, not a sentence written."},
+  {n:"The audit trail", is:"Every step recorded as it happens — who, what, whether it worked, and the reason if it did not.",
+   see:"Whether the trail is complete enough to reconstruct a delivery without asking anyone.",
+   better:"Append-only, and readable by someone with none of our tools installed."},
+  {n:"Prediction against reality", is:"What a plan claimed a system would do, set beside what it actually did.",
+   see:"Two records that cannot be compared can never disagree — and never disagreeing is not the same as being right. The gap between them is the most useful thing the platform knows about its own advice.",
+   better:"Both halves must use the same names for the same things, or the comparison silently matches nothing."},
+  {n:"Refusal as a service", is:"When the platform stops work, it says which rule was broken.",
+   see:"Whether the sentence is specific enough to act on.",
+   better:"A refusal that teaches is worth more than a check that passes quietly."}
+ ],
+ 6:[
+  {n:"Declared once", is:"Each third-party system is described in one place: where it is, what we may call, how it authenticates.",
+   see:"Whether adding a system requires new code or only a new declaration.",
+   better:"The number of services should not grow with the number of systems integrated."},
+  {n:"Narrowing the surface", is:"A vendor may publish many times more capability than any delivery needs.",
+   see:"How much of a caller's working memory is spent on descriptions of things it will never use.",
+   better:"The caller should meet a shortlist chosen for the task, not a catalogue."},
+  {n:"What we learned by calling it", is:"Guidance written beside a system we do not control, carrying the traps we hit.",
+   see:"Whether the guidance is earned from real refusals rather than written from the vendor's documentation.",
+   better:"When a fault is about completeness over a known set, a tool should make it impossible rather than a sentence discouraging it."},
+  {n:"Cost as a first-class signal", is:"What a call costs us — in time and in working memory — recorded alongside whether it worked.",
+   see:"Failures are easy to count. A successful call that consumes an entire context is invisible unless cost is measured on its own.",
+   better:"The expensive calls should be known before a delivery meets them."},
+  {n:"Comparability", is:"The same measures across every system we integrate.",
+   see:"Whether we can say which integration is costing us the most, and why.",
+   better:"A vendor conversation should open with our own evidence, not our impressions."}
+ ],
+ 7:[
+  {n:"People and teams", is:"One record per person; membership decides what they may reach.",
+   see:"Whether authority is answered from one place rather than assumed by each tool.",
+   better:"Team membership outlives any particular way of logging in."},
+  {n:"Answered on every call", is:"Authorisation is decided per request, not cached into a client at sign-in.",
+   see:"Whether revoking someone takes effect immediately or at their next login.",
+   better:"No client should hold a decision the platform is entitled to change."},
+  {n:"Their own credentials", is:"Each person's own access to each third-party system, held for them and attached at call time.",
+   see:"Whether two people using the platform reach exactly what they are each entitled to — no more.",
+   better:"Onboarding should not require anyone to share a credential."},
+  {n:"Acting as the person", is:"Where a system supports it, the platform acts under the person's own delegated authority.",
+   see:"Whether that system's own audit log names the person, or names us.",
+   better:"Unattended work and person-initiated work should use different mechanisms, because only one of them has a person to delegate from."}
+ ],
+ 8:[
+  {n:"Capabilities named as ports", is:"Where documents live, where history is kept, which model does the work — each named before a supplier is chosen.",
+   see:"Whether swapping a supplier is a configuration change or a project.",
+   better:"A new supplier should be provable against the same test suite as the old one."},
+  {n:"Profiles", is:"A named set of bindings for one environment, where the rules about what may be used differ.",
+   see:"Whether the same delivery method runs unchanged in each.",
+   better:"An environment with stricter rules should cost configuration, not a fork."},
+  {n:"What we watch", is:"The platform's own health, and the shape of the work moving through it.",
+   see:"Whether bad news arrives, or waits to be found.",
+   better:"The signals that matter should be the ones already produced by working, not added for reporting."},
+  {n:"Moving it", is:"What it takes to stand this up somewhere else.",
+   see:"Measured by what has to be rewritten rather than reconfigured.",
+   better:"Portability is a property to be tested, not asserted."}
+ ]
+};
+
+const esc = (t)=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+for (const [tab, caps] of Object.entries(CAPS)) {
+  const host = document.getElementById("cards-"+tab);
+  const drill = document.getElementById("drill-"+tab);
+  if (!host || !drill) continue;
+  caps.forEach((c,i)=>{
+    const b=document.createElement("button");
+    b.className="card"; b.type="button"; b.setAttribute("aria-expanded","false");
+    b.setAttribute("aria-controls","drill-"+tab);
+    b.innerHTML='<span class="num">'+String(tab).padStart(2,"0")+"."+String(i+1).padStart(2,"0")+'</span>'
+      +'<span class="nm">'+esc(c.n)+'</span>'
+      +'<span class="is">'+esc(c.is)+'</span>'
+      +'<span class="more">Read the lens &rarr;</span>';
+    b.addEventListener("click",()=>{
+      const open = b.getAttribute("aria-expanded")==="true";
+      host.querySelectorAll(".card").forEach(x=>x.setAttribute("aria-expanded","false"));
+      if (open) { drill.hidden=true; return; }
+      b.setAttribute("aria-expanded","true");
+      drill.innerHTML =
+        '<div class="dh"><span class="num">'+String(tab).padStart(2,"0")+"."+String(i+1).padStart(2,"0")+'</span><h3>'+esc(c.n)+'</h3></div>'
+        +'<div class="rows">'
+        +'<div class="k">What it is</div><p class="v">'+esc(c.is)+'</p>'
+        +'<div class="k">How we see it</div><p class="v">'+esc(c.see)+'</p>'
+        +'<div class="k better">What better looks like</div><p class="v">'+esc(c.better)+'</p>'
+        +'</div>';
+      drill.hidden=false;
+      drill.scrollIntoView({block:"nearest",behavior:"smooth"});
+    });
+    host.appendChild(b);
+  });
+}
+
+const tabs=[...document.querySelectorAll('[role="tab"]')];
+function show(t){
+  tabs.forEach(x=>{
+    const on = x===t;
+    x.setAttribute("aria-selected", on?"true":"false");
+    document.getElementById(x.getAttribute("aria-controls")).hidden = !on;
+  });
+  window.scrollTo({top:0,behavior:"instant"});
+}
+tabs.forEach(t=>t.addEventListener("click",()=>show(t)));
+// Arrow keys move between tabs, which is what a tablist owes a keyboard.
+document.querySelector('[role="tablist"]').addEventListener("keydown",e=>{
+  const i=tabs.indexOf(document.activeElement); if(i<0) return;
+  const d = e.key==="ArrowRight"?1 : e.key==="ArrowLeft"?-1 : 0;
+  if(!d) return;
+  e.preventDefault();
+  const n=tabs[(i+d+tabs.length)%tabs.length];
+  n.focus(); show(n);
+});
+</script>
+</body>
+</html>

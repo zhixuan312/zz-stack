@@ -1,0 +1,348 @@
+/**
+ * Walk a flow's document chain with direct MCP calls — no model in the loop.
+ *
+ *   ZZ_GATEWAY=<gateway> ZZ_PAT=<a person's token> npm run chain-check -- [initiative]
+ *
+ * Without an initiative it opens a fresh one each run, because every check here assumes an
+ * initiative that does not exist yet.
+ *
+ * WHY THIS EXISTS BESIDE smoke-engine. The smoke suite proves an AGENT can drive a flow,
+ * which is the thing users actually do — and it needs a model provider for every one of its
+ * hundreds of turns. When that provider rate-limits (this deployment's account did,
+ * mid-round, twice), the suite cannot say whether the PLATFORM still works, because it never
+ * got a turn.
+ *
+ * This asks the narrower question the platform is actually responsible for: are the gates
+ * enforced, is the chain ordered, and does closing record itself? Those are promises zz-core
+ * keeps on its own, so nothing about a model's availability should stop us checking them. It
+ * runs in seconds and costs no model tokens.
+ *
+ * It is deliberately not part of scripts/gate.mjs: the gate is offline and proves things
+ * about the source, while this needs a running deployment and a real token.
+ */
+import { randomUUID } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { manifestAt } from "@zz/catalog";
+import { Mcp } from "@zz/mcp-client";
+
+import { die, envRequired, parseArgs } from "../lib/cli.js";
+
+const GW = envRequired("ZZ_GATEWAY", "the gateway to walk the chain against").replace(/\/+$/, "");
+const PAT = envRequired("ZZ_PAT", "a person's platform token");
+/**
+ * A FRESH initiative each run, unless one is named.
+ *
+ * This defaulted to the fixed slug `chain-check`, and every check below assumes an initiative
+ * that does not exist yet: the first write opens it, the approvals are the first, the close is
+ * the first. Run twice against one store, the second run writes over an approved gated
+ * document — which the platform refuses, correctly — and reports the platform broken. The
+ * ledger assertion at the end is explicit about it: `!before.includes(INIT)` can only be true
+ * the first time.
+ *
+ * So the tool that exists to say "the platform still works when the model provider is down"
+ * worked once per store and failed every time after, for a reason none of its output names.
+ * Passing an initiative explicitly still re-enters one deliberately.
+ */
+function freshInitiative(): string {
+  const d = new Date();
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `chain-check-${p(d.getDate())}${p(d.getMonth() + 1)}-${randomUUID().slice(0, 4)}`;
+}
+const INIT = parseArgs(process.argv.slice(2)).positional[0] || freshInitiative();
+
+// WHICH flow this document belongs to. A team running one flow needs no such line — the
+// platform infers it. A team running two cannot: nothing else says which gates apply, and
+// the write is refused, so a check that omitted this passed on a single-flow host and failed
+// on a real one.
+//
+// The default was `ops-flow`, a flow this catalog no longer has — so the unconfigured run
+// declared a flow the platform would refuse by name, and the check failed for a reason that
+// had nothing to do with what it tests.
+const FLOW = (process.env.CHAIN_FLOW || "sdlc-flow").trim();
+
+/**
+ * The flow's FIRST document, from the flow's own manifest.
+ *
+ * This opened on a hardcoded `intent.md`. ops-flow declares one and sdlc-flow does not — it
+ * opens on explore.md — so CHAIN_FLOW=sdlc-flow wrote a document that flow has never heard
+ * of, which no gate governs, and then walked a chain it had already stepped outside of. The
+ * whole point of CHAIN_FLOW is that this deployment runs both.
+ *
+ * Read from the checkout, the way manifest-audit reads it: nothing on the tool surface names
+ * a flow's documents before the initiative exists, and the manifest is the same file the
+ * platform resolves the chain from.
+ */
+function firstDocument(): string {
+  const catalog = join(dirname(fileURLToPath(import.meta.url)), "../../../../catalog");
+  if (existsSync(catalog)) {
+    for (const owner of readdirSync(catalog)) {
+      const manifest = join(catalog, owner, FLOW, "flow.json");
+      if (!existsSync(manifest)) continue;
+      // Through @zz/catalog's reader, like every other manifest read. A cast here would accept
+      // a manifest the platform itself refuses, and this probe would then walk a chain the
+      // deployment does not enforce and report the difference as a platform fault. A throw
+      // would be no better: this walks every owner looking for one flow, so one unreadable
+      // manifest anywhere in the catalog ended the probe before it reached the right one.
+      const read = manifestAt(manifest);
+      if (!read.manifest) {
+        console.error(`  (${owner}/${FLOW}/flow.json ${read.why} — looking elsewhere)`);
+        continue;
+      }
+      const docs = read.manifest.documents ?? [];
+      if (docs[0]?.name) return docs[0].name;
+    }
+  }
+  return die(`no catalog manifest for flow '${FLOW}' — set CHAIN_FLOW to a flow this checkout declares`);
+}
+const OPENS_ON = firstDocument();
+
+const core = new Mcp(`${GW}/core/mcp`, { pat: PAT, client: "chain-check" });
+
+/** A tool's text, refusals included — a refusal is what most checks here assert on. */
+const call = (tool: string, args: unknown): Promise<string> => core.call(tool, args);
+
+const RESULTS: { ok: boolean; name: string; got: string }[] = [];
+
+function record(ok: boolean, name: string, got: string): void {
+  RESULTS.push({ ok, name, got: got.trim().slice(0, 200) });
+  console.log((ok ? "  ok   " : "  FAIL ") + name);
+}
+
+/**
+ * `because` is what stops a check passing on the wrong refusal.
+ *
+ * "the call errored" and "the rule fired" are different claims, and this file already knows
+ * it — the journal probe fills in every other argument precisely so a schema rejection cannot
+ * be mistaken for the subject rule. The hand-written-approval probe did not have that, and it
+ * patched `status: draft` on a document approved forty lines earlier: patch_file answered
+ * "`find` occurs 0 times" long before any guard ran, and the check printed ok having never
+ * reached ownershipCheck at all.
+ */
+function check(name: string, got: string, wantError: boolean, because?: RegExp): void {
+  const body = got.trim();
+  const err = body.toUpperCase().startsWith("ERROR");
+  let ok = err === wantError;
+  if (ok && err && because && !because.test(body)) {
+    ok = false;
+    console.log(`        refused, but not by the rule this names — wanted /${because.source}/`);
+  }
+  record(ok, name, got);
+  if (!ok && err !== wantError) {
+    console.log(`        wanted ${wantError ? "an ERROR" : "success"}, got: ${body.slice(0, 200)}`);
+  }
+}
+
+/**
+ * A probe document: THE BODY, and nothing else.
+ *
+ * `flow` is a caller ARGUMENT — it says which flow governs the initiative, and the platform
+ * stamps every other envelope field from it. This docblock has said so since write_file gained
+ * that argument; the line below went on emitting `---\nflow: …\n---`, so the comment described
+ * the design and the code did the thing the design replaced.
+ *
+ * write_file refuses content that opens with frontmatter, in as many words — "takes the
+ * document's BODY — the frontmatter is written by the platform, not by hand". So EVERY write
+ * in this probe was refused, and the probe that exists to say "the platform still works when
+ * the model provider is down" could not complete one. It needs a live deployment, which is
+ * why nothing caught it.
+ */
+function doc(body: string): string {
+  return `# chain check\n\n${body}\n`;
+}
+
+/** A write, with the flow declared where the platform takes it: as an argument. */
+const writeDoc = (path: string, body: string): Promise<string> =>
+  call("write_file", { path, content: doc(body), flow: FLOW });
+
+async function main(): Promise<number> {
+  console.log(`walking ${INIT}/ through ${GW}`);
+
+  // A gate is passed BY A PERSON, ON A DAY, and the platform is what knows both. This used
+  // to write `status: approved` by hand and assert on the ATTRIBUTION guard — an approval
+  // naming nobody, or carrying no date, was refused. That guard still stands, but a
+  // hand-written approval no longer reaches it: ownershipCheck refuses the field itself, one
+  // layer earlier. Asserting the old way would still have printed `ok` while testing a
+  // different rule, which is the quietest way for a suite to stop measuring what it says it
+  // measures.
+  check("a draft needs no approver", await writeDoc(`${INIT}/${OPENS_ON}`, "intent"), false);
+
+  // The platform authored `status` on that write. Nothing else could have: the document went
+  // in without the field.
+  const opened = await call("read_file", { path: `${INIT}/${OPENS_ON}` });
+  record(opened.includes("status: draft"), "a new document opens as a draft, stamped by the platform", opened);
+
+  // ON A DRAFT, while `status: draft` is still in the file. Run after the approve loop below
+  // this found nothing to replace and passed on patch_file's arity error instead of on the
+  // rule — the quietest way for a suite to stop measuring what it says it measures, which is
+  // the thing this file's own comments keep warning about.
+  check("an approval written by hand is refused",
+    await call("patch_file", { path: `${INIT}/${OPENS_ON}`, find: "status: draft", replace: "status: approved" }),
+    true, /patch_file edits the document's BODY/);
+
+  check("approve() records a verdict on a document that exists",
+    await call("approve", { path: `${INIT}/${OPENS_ON}`, on_behalf_of: "Chain Check" }), false);
+  check("approve() refuses a document that does not",
+    await call("approve", { path: `${INIT}/nothing-here.md` }), true,
+    /does not exist|not a document this flow declares/);
+
+  // BOTH halves, from the session rather than from the model. Read back, because the tool
+  // reporting success is the tool's own account of itself.
+  const signed = await call("read_file", { path: `${INIT}/${OPENS_ON}` });
+  const both = signed.includes("approved_by: Chain Check") && /approved_at: \d{4}-\d{2}-\d{2}/.test(signed);
+  record(both, "approve() stamps an approver AND a day", signed);
+
+  const status = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
+    documents: { name: string; status?: string | null; gate?: boolean }[];
+    next_move?: { action?: string; document?: string };
+  };
+  const docs = status.documents.map((d) => d.name);
+  // What is ALREADY approved, from the platform's own answer. The write loop below walked
+  // every document including the one approved above it — and write_file on an approved gated
+  // document is refused by design, so the loop's first iteration failed against a platform
+  // that was working exactly as documented. Skipping it is not avoiding the case: that
+  // refusal is asserted directly further down.
+  const settled = new Set(status.documents
+    .filter((d) => d.gate && d.status === "approved").map((d) => d.name));
+  // The team, from the platform rather than an environment variable — the team-rejection
+  // check below is only meaningful if it passes the REAL team name.
+  let team = "";
+  try {
+    team = ((JSON.parse(await call("get_my_info", {})) as { team?: string }).team ?? "").trim();
+  } catch {
+    // No identity to read: the team-name check below simply asserts nothing about a team.
+  }
+
+  // Order is enforced: a document cannot be written before what it requires.
+  if (docs.length > 2) {
+    check("the chain cannot be skipped",
+      await writeDoc(`${INIT}/${docs[docs.length - 1]}`, "early"),
+      true, /the flow writes it first|approval gate has not been recorded/);
+  }
+
+  // Write each document as a DRAFT and approve it as a separate act, which is the only route
+  // there is now. The opening document is written and approved above and is skipped here —
+  // approving twice is not an error, because the guard tests the CHANGE and not the presence,
+  // but WRITING over an approved gated document is refused, and that refusal is asserted
+  // directly below rather than tripped over in the middle of a loop.
+  for (const name of docs) {
+    if (settled.has(name)) continue;
+    check(`write ${name}`, await writeDoc(`${INIT}/${name}`, name), false);
+    check(`approve ${name}`, await call("approve", { path: `${INIT}/${name}`, on_behalf_of: "Chain Check" }), false);
+  }
+
+  // And the refusal the skip above relies on, asserted rather than assumed: an approved gated
+  // document does not change through write_file.
+  check("an approved document does not change through write_file",
+    await writeDoc(`${INIT}/${OPENS_ON}`, "rewritten"),
+    true, /revise_document/);
+
+  // WHICH document closes is not in initiative_status's document list — only `next_move`
+  // names it. So ask for it rather than assume: the closing document is NOT necessarily the
+  // last one. In ops-flow the verdict goes on the agreement (spec.md, `closing: true`) while
+  // the guide only has to exist (`requiredForClose`). A probe that assumed "last document"
+  // wrote a perfectly valid guide.md, saw no ledger row, and looked like a platform bug. It
+  // was not.
+  const nxt = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
+    next_move?: { action?: string; document?: string };
+  };
+  const closing = nxt.next_move?.action === "close" ? nxt.next_move.document! : docs[docs.length - 1];
+  console.log(`  (the flow closes on ${closing})`);
+  const before = await call("read_file", { path: "_ledger.md" });
+
+  // The close is an ACT. Writing `outcome` into frontmatter by hand is refused, because a
+  // derived fact cannot be forged by choosing the cheaper word — which is what a
+  // hand-written outcome always could do.
+  check("an outcome written by hand is refused",
+    await call("patch_file", {
+      path: `${INIT}/${closing}`,
+      find: "approved_by: Chain Check",
+      replace: "approved_by: Chain Check\noutcome: accepted\naccepted_by: Chain Check",
+    }), true, /patch_file edits the document's BODY/);
+
+  // Finished with nobody named is a legitimate route and costs a sentence. Refusing it
+  // outright would leave the honest agent with only the dishonest option.
+  check("finished with nobody named needs a reason",
+    await call("close", { initiative: INIT, disposition: "finished" }), true, /no_signoff_reason/);
+
+  // SKIPPED, not inverted, when the team name is unknown. With no team to send, this asserted
+  // that closing accepted-by "a-team" SUCCEEDS — so a run that could not read its identity
+  // closed the initiative here under a made-up acceptor, and the real close two lines below
+  // then failed as a second close. A check whose name says one thing and whose assertion says
+  // the opposite is worse than an absent one.
+  if (team) {
+    check("a close cannot be accepted by a team",
+      await call("close", { initiative: INIT, disposition: "finished", accepted_by: team }),
+      true, /names your team, not a person/);
+  } else {
+    console.log("  skip  a close cannot be accepted by a team — get_my_info named no team");
+  }
+
+  check("a close accepted by a person is recorded",
+    await call("close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }), false);
+
+  // An initiative closes ONCE. A second close used to overwrite the document's outcome while
+  // ledgerOnClose skipped the second row, so the document said one word and the team's ledger
+  // — which is what the OKR grading and the cross-flow comparison count — said another.
+  check("an initiative cannot be closed twice",
+    await call("close", { initiative: INIT, disposition: "abandoned" }), true, /already closed as/);
+
+  // AND THE WAY ROUND THAT GUARD. close() and ledgerOnClose both refuse a second close by
+  // reading `outcome` off the document, so anything able to REMOVE that field reopens the
+  // initiative and lets the close run again — a second ledger row for the same work, in the
+  // file the OKR grading and the cross-flow comparison count. revise_document cleared it, as
+  // one of the governance fields it puts back to draft, while leaving `closed_by` standing.
+  // The check above cannot see that: it asks whether close() refuses, and after a revision
+  // close() has nothing to refuse.
+  check("a document that records a close cannot be revised",
+    await call("revise_document", { path: `${INIT}/${closing}`, content: doc("reopened") }),
+    true, /closes once/);
+
+  // And the document says what the close recorded, not merely that the call was accepted.
+  // "not refused" is a claim about the call; this is a claim about the record.
+  const closed = await call("read_file", { path: `${INIT}/${closing}` });
+  record(/outcome:\s*accepted/.test(closed), "the closing document carries the outcome", closed.slice(0, 200));
+  record(/closed_by:\s*\S+/.test(closed), "the closing document names who closed it", closed.slice(0, 200));
+
+  // reconcile joins what a stage PREDICTED about a block against what the platform later
+  // recorded happening to it. zz.decision had been written on every index and read by
+  // nothing since it was added — a table nobody queries is a table nobody notices going
+  // wrong.
+  const rec = await call("reconcile", { initiative: INIT });
+  record(!rec.trim().toUpperCase().startsWith("ERROR"), "reconcile answers for an initiative", rec);
+
+  // A subject tag says WHAT KIND of thing a piece of knowledge is about, and the kinds are a
+  // closed set. Open, it becomes a free-text field that agrees with nothing.
+  //
+  // Every OTHER argument is filled in, and there is a positive control below. Without both,
+  // a call missing a required argument is refused by the schema, the assertion sees an ERROR
+  // and prints `ok` — a check that passes without ever reaching the rule it names.
+  // Evidence names the INITIATIVE FOLDER, not a document inside it — knowledge_add checks the
+  // shape (one plain segment) and then that a folder by that name exists in a store this
+  // caller belongs to. `${INIT}/${docs[0]}` fails both, so the positive control below could
+  // never have passed, and the negative control above passed for a reason that was not the
+  // one it names: subjectTagError runs before the evidence loop, so the unknown kind was
+  // refused first and the fixture's own invalidity never showed.
+  const node = {
+    title: "chain-check subject probe",
+    type: "knowledge",
+    body: "written by chain-check; safe to supersede.",
+    evidence: [INIT],
+  };
+  check("a knowledge subject must be a kind the platform knows",
+    await call("knowledge_add", { ...node, tags: ["nonesuch:casebox"] }), true, /is not a kind/);
+  check("a known kind is accepted", await call("knowledge_add", { ...node, tags: ["block:casebox"] }), false);
+
+  const after = await call("read_file", { path: "_ledger.md" });
+  record(after.includes(INIT) && !before.includes(INIT),
+    "closing appends a ledger row the model cannot write", after.slice(-160));
+
+  const bad = RESULTS.filter((r) => !r.ok);
+  console.log(`\n${RESULTS.length - bad.length}/${RESULTS.length} platform checks passed`);
+  for (const r of bad) console.log(`  FAILED: ${r.name}\n          ${r.got}`);
+  return bad.length ? 1 : 0;
+}
+
+process.exit(await main());

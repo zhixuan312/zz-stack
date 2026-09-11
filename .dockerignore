@@ -1,0 +1,44 @@
+# What must NOT enter the build context.
+#
+# The image is built with `COPY packages ./packages` and `COPY services ./services`, and
+# `npm run build` is `tsc -b` — which is INCREMENTAL. Without this file, a build run on a
+# machine that has ever built locally copies that machine's dist/ and .tsbuildinfo into the
+# context, and tsc can then decide there is nothing to recompile. The image ships whatever
+# the developer's tree happened to hold, with no error and no way to tell from the outside.
+#
+# Everything below is either regenerated inside the build or has no business in an image.
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+.git
+.gitignore
+.github
+
+# Working material, never part of a release.
+runs
+docs
+# …except one file. architecture.html is SERVED by the gateway at /architecture, so it is part
+# of the release even though everything else under docs/ is not. Excluding the directory and
+# re-including the one file keeps a single copy in the repository — the alternative was a second
+# copy under services/, which is how two versions of one document come to disagree.
+!docs/architecture.html
+.claude
+testing
+scripts
+
+# Fixtures. `COPY catalog /catalog` takes the whole tree, and the `runs` line above matches
+# the context ROOT only — so catalog/ops/ops-flow/tests (192 files, 2.3MB of requirements,
+# steps and expectations) was shipping in every image. Nothing at runtime reads it: eval-judge
+# and eval-grade read it from the repository, at test time. See docs/repository-architecture.md.
+catalog/**/tests
+
+# Local environment and build output.
+deploy/.env
+deploy/.env.*
+dist/release
+*.tgz
+.DS_Store

@@ -57,7 +57,7 @@ import { blockHandshake, blockOf, blockVersion, callerKey, currentStep, flowFor,
  * accumulates past this.
  *
  * Past it we keep the HEAD and classify from that rather than dropping the line. A real tool
- * answer reached 1.2 MB — casebox's read_api_spec returns the whole spec — and dropping it
+ * answer reached 1.2 MB — the block's read_api_spec returns the whole spec — and dropping it
  * recorded a call that had plainly worked as `unreadable`, which is the one verdict this
  * table must not hand out when it can tell. The head is enough: a refusal is `ERROR:` at the
  * START of the text, so the first 64 KB decides it however long the answer runs. */

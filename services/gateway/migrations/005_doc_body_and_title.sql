@@ -6,7 +6,7 @@
 -- updated_at desc`, which is recency, not relevance: the best answer to a question sorted
 -- below an unrelated document edited yesterday.
 --
--- These columns are what the MMA journal engine's ranking needs, translated to Postgres.
+-- These columns are what a journal engine's ranking needs, translated to Postgres.
 --
 --   body          the indexed text itself. ts_headline cannot cut an excerpt and ts_rank_cd
 --                 cannot score without the source text; storing only the tsvector made both
@@ -16,7 +16,7 @@
 --                 body, which is how a node about a topic outranks one that mentions it.
 --   tags          tag overlap with the query's tokens is an independent ranking signal. The
 --                 old schema had no way to see it.
---   evidence      the initiatives a journal node came from. This is the graph edge: MMA's
+--   evidence      the initiatives a journal node came from. This is the graph edge: the prior system's
 --                 engine expands from top hits to their typed-edge neighbours, and evidence
 --                 is the edge this store actually has.
 --   superseded_by the id of the node that replaced this one. A superseded decision is the

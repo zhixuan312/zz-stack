@@ -1,8 +1,13 @@
 # blocks/
 
-One directory per building block we integrate with, and everything we build **on top of** that
-block lives in it: the usage skill that says how to use it well, and the tests that check we
-still can.
+One directory per building block, and everything we build **on top of** that block lives in it:
+the usage skill that says how to use it well, and the tests that check we still can.
+
+> **`casebox`, `bookit` and `RuleMill` are invented names**, here and everywhere else in this
+> repository. The platform was developed against systems belonging to other people; those
+> systems are not named, and the measurements taken from them are not published. What the
+> capability sheet beside this file describes is three blocks made up for the purpose — which
+> is all the judge it feeds needs them to be.
 
 **There is no such directory today, and that is the mechanism working rather than an omission.**
 casebox, bookit and RuleMill each had one; all three moved to their own repository, and everything

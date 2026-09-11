@@ -238,7 +238,7 @@ export const blockOf = (surface: string): string | undefined =>
  *
  * Observed on the handshake and remembered per block, then stamped on every call to it, since
  * the handshake and the calls are separate requests. What the three connected blocks answer
- * today: RuleMill `3.4.7`, bookit `3.4.7`, casebox `2026-08-30T14:42:01+08:00` — the last one a
+ * today: RuleMill `3.4.7`, bookit `3.4.7`, casebox `<a build timestamp>` — the last one a
  * build timestamp rather than a version, which is a real answer and a poor one, and now
  * visible as such rather than absent.
  */

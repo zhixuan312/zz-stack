@@ -21,7 +21,7 @@
  *   NOT CONSULTED   Its block was called, repeatedly, and the skill was never loaded in any
  *                   of those runs. This is the finding that motivated the tool. On 2026-09-04
  *                   an agent made eight casebox calls while choosing casebox for a case-management
- *                   requirement and loaded none of casebox's four published skills — including
+ *                   requirement and loaded none of the block's four published skills — including
  *                   `using-casebox`, whose own when_to_use says to read it FIRST in
  *                   any session that touches the block. Nothing refused, nothing scored
  *                   badly, and the document came out at 4.67. The skill was simply never in

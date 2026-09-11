@@ -26,7 +26,7 @@ you are a member of is exactly what the platform is for.
 
 From the block registry. `origin` decides whether this evaluation may run at all:
 
-    team        a real team's platform. casebox is the only one today.  EVALUATE
+    team        a block another team owns and operates.                 EVALUATE
     platform    ourselves. We are an MCP surface like any other, and ours is
                 the one whose defects we can actually fix.            EVALUATE
     stand_in    a mock we wrote — RuleMill, bookit.                    REFUSE

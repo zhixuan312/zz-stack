@@ -5,8 +5,8 @@
 #
 # WHY THIS IS NOT `exercises.blocks`. That field was authored by hand alongside the corpus, as a
 # note on why each requirement earned its place in the set. Pressed into service as an answer key
-# it reported eleven over-selections, and the first one checked was wrong: NParks' brief asks for
-# "a reminder to go out the day before", BookIt cannot send one, and the selection that added
+# it reported eleven over-selections, and the first one checked was wrong: one brief asked for
+# "a reminder the day before", BookIt cannot send one, and the selection that added
 # RuleMill for it named the exact schedule that would do it. The hand-written hint said BookIt
 # alone. The skill was right and the answer key was wrong.
 #

@@ -111,7 +111,7 @@ app.use(express.json({ limit: "20mb" }));
 // the body.
 //
 // It survived every test I wrote because I tested with JSON, which no OAuth client sends. The
-// browser flow reached CaseBox's consent screen, came back with a code, and died on
+// browser flow reached the block's consent screen, came back with a code, and died on
 // the last hop of five.
 //
 // Body parsers are content-type gated, so this only ever runs on a form-encoded request and

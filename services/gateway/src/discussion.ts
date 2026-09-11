@@ -10,7 +10,7 @@
  * never called, in either direction.
  *
  * GET and POST both resolve through `handler()` (console.ts), the same scope and the same
- * organisation-wide-AD-or-superadmin gate as every other console route. Both refuse a `platform` scope:
+ * directory-or-superadmin gate as every other console route. Both refuse a `platform` scope:
  * a thread is always one team's conversation about one document, and there is no
  * fleet-wide reading of it for `?scope=platform` to mean — the same refusal
  * console-write.ts's `approve` gives for the same reason. `resolveScope` refusing a caller

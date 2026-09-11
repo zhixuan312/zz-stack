@@ -42,7 +42,7 @@ const JUDGE_BASE = process.env.ZZ_JUDGE_MODEL || "glm-5.3";
  * clear trade.
  *
  * Then the control judged the change, and THE CONCLUSION DRAWN FROM IT WAS WRONG. It read:
- * under the fast judge using-casebox's gap fell from 1.67 to 1.00 and
+ * under the fast judge using-the block's gap fell from 1.67 to 1.00 and
  * writing-case-queries went to minus 0.33, therefore the fast judge is broken.
  *
  * Both of those rounds have `subject: body`, and no body round has EVER cleared the collapse

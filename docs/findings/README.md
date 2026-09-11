@@ -13,13 +13,17 @@ reporting success.**
 | H10 | the noise floor, measured at 0.436 points — the median requirement moves a full point between runs of a skill that did not change |
 | H11 | a day of measurement lived in a temp directory; the scores are now in tables that a tenant's deletion cannot reach |
 
-Six more are recorded in the commit history rather than as files, because each was found and
-fixed inside one change: block state never reset between rounds, so nine rounds opened onto the
-previous round's finished work; a bare `422` counted as 35 rows because a string has a length; a
-`400` returned as a successful delete, so 52 things were reported removed and 9 were; 33 bookings
-re-cancelled every run because the status arrives as a number and the word is in another field;
-an EXIT trap forging a non-zero status on every clean round; and a greedy content match that
-attributed one requirement's document to another and scored it 2/9 when it was 9/9.
+Six more were found and fixed inside a single change each, so they never became files. Three
+were ours and are worth stating: block state never reset between rounds, so nine rounds opened
+onto the previous round's finished work; an EXIT trap forged a non-zero status on every clean
+round; and a greedy content match attributed one requirement's document to another and scored
+it 2/9 when it was 9/9. The other three were the harness mishandling responses from systems
+this repository does not contain, and the detail belonged to those systems rather than here.
+
+**The numbering has gaps, and that is not an accident of this file.** H2 through H5 were
+findings about somebody else's production system. They are not here, they are not recoverable
+from this repository's history, and the gap is the honest record of a deliberate removal
+rather than of something lost.
 
 ## Why this group is kept, and kept first
 

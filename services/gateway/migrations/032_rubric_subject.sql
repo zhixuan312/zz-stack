@@ -7,7 +7,7 @@
 -- most needs to judge.
 --
 -- using-casebox is the case. Its ruler asks whether a VENDORED FILE earns its place
--- beside the block's own tools: does it say anything casebox's documentation tools do not, is it
+-- beside the block's own tools: does it say anything the block's documentation tools do not, is it
 -- fit for the flows we serve it into, is it honest about its own staleness. Not one of those
 -- can be answered from a run trace — and run traces are all the judge could see, because the
 -- skill writes no documents. So the one question worth asking about it was unaskable, and a

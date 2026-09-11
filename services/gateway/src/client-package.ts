@@ -210,7 +210,7 @@ export interface ClientPackage {
  * The shelf used to hold a single plugin called `zz` carrying everything a person's team
  * had access to. That made selection impossible: install it and you got every block your
  * team was granted, wired into your runtime, whether your work touched them or not. A
- * person writing code got a case-management platform's MCP server because a colleague's
+ * person writing code got another team's MCP server because a colleague's
  * flow needed it.
  *
  * Now the marketplace lists many plugins and the runtime's own `plugin install` is the

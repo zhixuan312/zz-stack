@@ -381,9 +381,9 @@ check("no tool teaches a date format the platform does not use", () => {
 });
 
 check("a tool a block's own skill tells an agent to call is a tool the agent has", () => {
-  // FOUND BY A RUN THAT DID EVERYTHING RIGHT. casebox's usage skill names
+  // FOUND BY A RUN THAT DID EVERYTHING RIGHT. the block's usage skill names
   // `generate_and_add_instant_workflow` as the route to take when `add_workflow` is refused
-  // by the interface. It was not on casebox's allowlist in blocks.ts, so no agent has ever been
+  // by the interface. It was not on the block's allowlist in blocks.ts, so no agent has ever been
   // able to call it — and round 4 of the 09-09 smoke said so in as many words: "route 2
   // absent from this session's surface". The skill said take it; the platform had never
   // handed it over. Four rounds parked the same leg UNVERIFIED for want of one list entry.

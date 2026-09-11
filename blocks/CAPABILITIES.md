@@ -11,21 +11,20 @@ brief that needed none.
 
 ## casebox — case management
 
-Work that arrives, gets owned by somebody, moves through states, and closes. Cases with types,
-statuses, sources, tags and assignees; customers; the email thread attached to a case; comments
-and audit history; per-app users and roles; reports over case counts and durations. Workflows
-here fire *on a case* — a status change, a schedule — and act within casebox.
+Work that arrives, is owned by somebody, moves through states and closes. Cases carry a type, a
+status, an owner and free-form tags; a case has a correspondence thread and a comment history;
+reports count cases and measure how long they sat in each state.
 
-casebox RUNS ITS OWN AUTOMATION, and missing this is the most expensive mistake a reader of this sheet
-can make. It has a workflow engine, instant and scheduled, that fires on a case event or a clock,
-evaluates criteria, updates cases, moves statuses, assigns people and SENDS EMAIL — all without
-anything else involved. "There is automation in this requirement" is therefore NOT a reason to
-add RuleMill. A blind reading of these briefs did exactly that and marked two correct single-block
-selections as missing a block.
+casebox RUNS ITS OWN AUTOMATION, and missing that is the most expensive mistake a reader of this
+sheet can make: it fires on a case event or on a clock, checks conditions, updates the case,
+reassigns it and sends mail — with nothing else involved. A selection that reaches for a
+workflow engine to do what casebox already does has chosen two systems where one would serve,
+and the judge should say so.
 
-Good fit: complaints, applications, objections, inspections, escalations, anything with a queue
-and an owner — including the routing, deadlines, reminders and notifications AROUND that queue.
-Poor fit: booking a room, or orchestration that has to reach a system casebox cannot see.
+Good fit: anything with a queue and an owner, where the unit of work has a lifecycle and someone
+is accountable for it. Poor fit: booking a room; and orchestration that has to reach a system
+casebox cannot see, which is the boundary where reaching for RuleMill becomes correct rather
+than redundant.
 
 ## bookit — bookable services and slots
 

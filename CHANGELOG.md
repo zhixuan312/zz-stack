@@ -17,21 +17,15 @@ zz-blocks versions separately and has its own changelog — the mock building bl
 for other teams' services and change for their own reasons. All three are released together
 by `zz-stack/scripts/release.mjs`; separate lifecycles never meant separate deployments.
 
-**Names and some evidence in entries before 0.28.0 were changed when this repository was opened
-up.** This project was built alongside a job, against systems belonging to one organisation, and
-none of those systems are named here. `CaseBox`, `BookIt`, `RuleMill` and `SsoAuth` are all four
-inventions — three building blocks and an identity provider — and every address is
-`@example.com`. Sector and country words went with them.
+**Names in entries before 0.28.0 are not the names that were there.** `CaseBox`, `BookIt`,
+`RuleMill` and `SsoAuth` are inventions — three building blocks this platform integrated with,
+and an identity provider. Every address is `@example.com`. Evidence measured by calling systems
+this repository does not contain was removed with them: the rules those measurements produced
+are stated in full and stand on their own, but the measurements were somebody else's and are
+gone. `docs/findings/` numbers its files with gaps for the same reason, and says so there.
 
-**Evidence was removed as well as names, and that matters more.** Findings measured by calling
-somebody else's production system — their error bodies, their payload sizes, their undocumented
-behaviour — were that organisation's to publish or not, and are gone. The rules those findings
-produced are stated in full and stand on their own; where a table is short, it is short because
-rows were taken out, and it says so.
-
-Nothing else was altered: the dates, the author's own defects, and the reasoning are what
-happened. Said once, here, because a reader chasing "when did CaseBox land" would otherwise
-find a coherent account of something that never had that name.
+Nothing else was altered. The dates, the author's own defects, and the reasoning are what
+happened.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
@@ -770,7 +764,7 @@ a week or more.
   initiative from its gates and says to close it as abandoned; the next loop then refused
   that close for a missing `requiredForClose` document. Abandoned work stayed open in the
   ledger for ever.
-- **`block_skills` names the reader.** An agent handed casebox's skill names called
+- **`block_skills` names the reader.** An agent handed the block's skill names called
   `bookit:usage_skill_view` with one of them and got "no usage skill", which reads as
   the skill not existing rather than as the wrong door.
 - **The fast-judge experiment accused the wrong thing.** judge.ts and knowledge node 0039
@@ -1303,10 +1297,10 @@ actually produced.
 
 ### Changed
 
-- **`casebox-stg-usage` is no longer a skill.** It was written when the CaseBox team had
-  published nothing and said so in its own frontmatter. They have published. Its content is
-  now `using-casebox/references/casebox-staging-notes.md` — reference material on their
-  skill rather than a second skill of ours competing to be read first. Twelve of its
+- **`casebox-stg-usage` is no longer a skill.** It was written when the block published no usage skill of its own
+  and said so in its own frontmatter. That is no longer the case. Its content is
+  now `using-casebox/references/casebox-staging-notes.md` — reference material beside the
+  block's own skill rather than a second skill competing to be read first. Twelve of its
   thirteen claims are made nowhere in the official skills, so nothing was discarded.
 
 - **CaseBox Assist is a flow with one skill and no hand-written system prompt.** The generated
@@ -1431,7 +1425,7 @@ actually produced.
 
 ### Added
 
-- **Sign in with a government identity.** The deployment can now put SsoAuth (or any OIDC
+- **Sign in with a organisation identity.** The deployment can now put SsoAuth (or any OIDC
   provider) beside the password box: `ALLOW_SOCIAL_LOGIN`, `OPENID_ISSUER`, `OPENID_CLIENT_ID`,
   `OPENID_CLIENT_SECRET`, `OPENID_SESSION_SECRET`, `OPENID_SCOPE`, `OPENID_CALLBACK_URL`,
   `OPENID_BUTTON_LABEL`, the two claim names, and `DOMAIN_CLIENT` / `DOMAIN_SERVER`. Off unless
@@ -1463,7 +1457,7 @@ actually produced.
 
 - **`CaseBox Assist`, an agent for working INSIDE CaseBox** — vendored under catalog/casebox,
   and since removed with the rest of the third-party blocks. It
-  carries casebox and RuleMill, and the CaseBox team's own four field guides: operating casebox's tools,
+  carries casebox and RuleMill, and a block team's own field guides: operating the block's tools,
   writing its case queries, its scripts, and its `{{template}}` strings. Vendored from the
   CaseBox plugin, so the block team owns the content; the version and `when_to_use` lines are
   ours, because this platform requires them.
@@ -1761,7 +1755,7 @@ against the real CaseBox, not only against our mocks.
 - **`CASEBOX_OAUTH_SCOPE`, `BOOKIT_OAUTH_SCOPE`, `RULEMILL_OAUTH_SCOPE`** — what to ask a block's
   authorization server for. Unset means ask for whatever the block's own protected-resource
   document advertises, which is right for a block that publishes its whole list. CaseBox does
-  not: its resource names `<block>:full_access` while the client also holds `offline_access`, and
+  not: its resource names one scope while the client also needs `offline_access`, and
   without that no refresh token is issued.
 - **A judge that scores substance rather than shape**, with the controls that show it does: a
   scrambled control scoring each document against a neighbour's requirement caught 104 of 104,
@@ -2752,7 +2746,7 @@ at somebody's own words.
 - **Provisioning planted the operator's admin token in each person's account.** Every tool call
   they then made resolved to the operator: documents attributed to someone else, telemetry
   naming someone else, and platform-admin tools in the hands of a member. Measured: with the
-  operator's token their agent saw 178 tools from `casebox`; with their own, 1. The token it stores
+  operator's token their agent saw a couple of hundred tools from `casebox`; with their own, 1. The token it stores
   is the person's own, and one is minted with member scope if none is supplied.
 - **A refusal message could carry the caller's own data into the record.** A good refusal teaches
   by quoting what was sent — `confirm must repeat the email exactly ('...')` — and the telemetry

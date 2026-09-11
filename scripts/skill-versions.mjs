@@ -40,8 +40,8 @@
  * `verified_against` records the block version the claims were last checked against.
  *
  * NOT CONCATENATED INTO ONE STRING, which is the tempting shape — "block 3.4.7 plus our 1.2"
- * — and it breaks on contact with a real block: casebox reports its version as
- * `2026-08-30T14:42:01+08:00`. There is no sane concatenation of that with a revision number,
+ * — and it breaks on contact with a block that answers a build
+ * timestamp rather than a version. There is no sane concatenation of that with a revision number,
  * and none of it would order or compare. Two fields stay readable whatever a block answers.
  *
  * It also makes the drift DETECTABLE rather than remembered: the platform already records the

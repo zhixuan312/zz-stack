@@ -31,7 +31,7 @@ drop index if exists zz.event_team_ts;
 create index if not exists event_run   on zz.event (run_id) where run_id is not null;
 create index if not exists event_block on zz.event (block_version_id) where block_version_id is not null;
 create index if not exists event_team_ts on zz.event (team_id, ts desc);
--- Response size is how the expensive tools were found (casebox:read_api_spec, 803,840 bytes average).
+-- Response size is how the expensive tools were found (casebox:read_api_spec, a very large payload bytes average).
 -- Indexed so that stays a cheap question rather than a full scan.
 create index if not exists event_bytes on zz.event (((detail->>'bytes')::bigint) desc)
   where detail ? 'bytes';

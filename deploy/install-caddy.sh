@@ -15,7 +15,7 @@
 #   · how Caddy reaches the gateway — production proxies to a Tailscale address because the
 #     gateway binds to the tailnet there; UAT reaches it on loopback.
 #
-# Usage:  ./deploy/install-caddy.sh <host>          # host is an ssh target: zz, sm
+# Usage:  ./deploy/install-caddy.sh <host>          # host is an ssh target
 set -euo pipefail
 
 HOST="${1:?usage: install-caddy.sh <ssh-host>}"

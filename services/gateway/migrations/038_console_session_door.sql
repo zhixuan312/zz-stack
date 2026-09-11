@@ -3,7 +3,7 @@
 --
 -- A session minted by SsoAuth and a session minted by a future password check are the same
 -- credential shape (zz.console_session already treats every session identically) but not
--- the same assurance: one means "this person is in the government directory right now", the
+-- the same assurance: one means "this person is in the corporate directory right now", the
 -- other means "this person typed a secret we store a hash of". `mayReadConsole` in
 -- console.ts has only ever needed the first fact, and it gets it from `Identity.via ===
 -- "session"` — a value this migration does not touch and identity.ts's `via` union does not

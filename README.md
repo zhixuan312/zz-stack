@@ -196,9 +196,9 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             set-credential, probe-block, register-skills (what we OFFER, from
             the catalog into zz.skill — a file cannot be joined against five
             thousand events), refresh-block-tools (what somebody else's tools
-            actually COST us, derived from the bytes already recorded: casebox's two
-            documentation tools return 803KB and 437KB and neither is a refusal,
-            so nothing else can see them), eval-decide (what we decided about an
+            actually COST us, derived from the bytes already recorded — a call
+            that SUCCEEDS can still spend a caller's whole working memory, and
+            no error is recorded when it does), eval-decide (what we decided about an
             evaluation finding, and whether a run's work landed — the only writer
             of zz.eval_finding.decision and zz.run.outcome, and a finding nobody
             records a decision about gets re-proposed forever),

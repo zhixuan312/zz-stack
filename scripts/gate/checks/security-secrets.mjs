@@ -317,7 +317,7 @@ check("a block key resolves to the person, and to nobody else", () => {
   // ONE LEVEL. There used to be two — the person's own key, else their team's shared one —
   // and the team level is gone rather than merely unused.
   //
-  // What it bought was a block call the block could not attribute: CaseBox's audit
+  // What it bought was a block call the block could not attribute: the block's audit
   // log recorded the platform, not the person, for anyone who had never signed in. And it
   // made connection state unanswerable from the inside, because somebody holding no
   // credential at all looked connected while a colleague's key carried them. The day-one

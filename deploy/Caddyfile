@@ -11,8 +11,8 @@
 # Copying this file onto a host by hand skips both guards.
 #
 # THE ADDRESS ABOVE IS ZZ-STACK'S OWN, and that is not a detail. It used to read
-# `159-65-7-218.nip.io`, which was true when this platform had a production host and a UAT
-# host — and both of those addresses now belong to another deployment, a different product. Nothing
+# `203-0-113-10.nip.io`, which was true of an address this platform no longer uses. The
+# literal went stale and the site block went on serving it. Nothing
 # here broke, because install-caddy.sh substitutes them; what broke was every reader who
 # took the literal for a fact, including the header paragraphs that used to sit here
 # describing a two-deployment topology this platform no longer has. An address is a fact

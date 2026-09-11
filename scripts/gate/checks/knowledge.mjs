@@ -103,7 +103,7 @@ check("every flow ends with the platform's handover", () => {
 
 check("the platform's own knowledge has a home, and it is reserved", () => {
   // The platform learns things every day that belong to no tenant: that a block returns a
-  // bare 422 and still has not been fixed, that 173 of 178 tools describe themselves by
+  // bare 422 and still has not been fixed, that 173 of a couple of hundred tools describe themselves by
   // restating their own name, that a rule we wrote was strict enough for six of six real
   // documents to break it. That knowledge is about REGISTRY ENTRIES — a block, a flow, a
   // provider, an interface — and it had no home, so it lived in a hand-written appendix, in

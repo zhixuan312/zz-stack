@@ -2,7 +2,7 @@
 --
 -- register-skills only ever inserted and updated, so a skill renamed or absorbed into another
 -- stayed in zz.skill looking exactly like one still being served. casebox-stg-usage sat there for a
--- week after its content moved into using-casebox's references.
+-- week after its content moved into using-the block's references.
 --
 -- DELETING IT IS WRONG, and the database said so before anyone did: zz.run references its
 -- skill_version, and `doc.produced_by_run_id -> run.skill_version_id` is the chain that answers

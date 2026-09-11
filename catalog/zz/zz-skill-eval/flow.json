@@ -70,5 +70,6 @@
       "stage": "zz-skill-report"
     }
   ],
-  "install": "auto"
+  "install": "auto",
+  "license": "MIT"
 }

@@ -3,22 +3,22 @@
  *
  * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
  *
- * Every call the platform makes to casebox today carries one shared API key. casebox's audit log therefore
+ * Every call the platform makes to a block today carries one shared API key. That block's audit log therefore
  * records the same principal for every action by every person of every team, everybody inherits
  * that key's full powers regardless of their own role, and one revocation stops all of them. The
  * platform is multi-tenant; at the block boundary that tenancy disappears.
  *
  * OAuth does not fix that by being a better credential. It fixes it by changing WHO IS ACTING.
- * In CaseBox's own words it "allows a third-party app to access a user's data ... or to perform
- * action ... on behalf of a user". The person signs in with their own government identity,
- * consents to what we may do, and every call we then make is theirs — attributable, bounded by
- * their roles, revocable by them alone.
+ * That is what delegated OAuth is for: a third-party app acts on a user's data with that user's
+ * consent rather than with a shared key. The person signs in with their own organisation
+ * identity, consents to what we may do, and every call we then make is theirs — attributable,
+ * bounded by their roles, revocable by them alone.
  *
  * ── WHAT IT IS NOT FOR ──────────────────────────────────────────────────────
  *
- * Unattended work. CaseBox's refresh tokens expire 30 days after issue no matter how often they
- * are used, so a delegated token cannot carry anything that must keep running while nobody is
- * present. Scheduled sweeps and the evaluation harness keep the API key, and that split — API key
+ * Unattended work. A delegated grant has an absolute lifetime — the refresh chain ends whether
+ * or not it is being used — so it cannot carry anything that must keep running while nobody is
+ * present. How long that is belongs to the block, and the platform must not assume it. Scheduled sweeps and the evaluation harness keep the API key, and that split — API key
  * for the platform's own work, delegation for anything a named person asked for — is the design,
  * not a temporary state.
  *
@@ -90,10 +90,10 @@ async function endpointsFor(mcpUrl: string): Promise<Endpoints | null> {
       if (meta.authorization_servers?.[0]) {
         issuer = meta.authorization_servers[0];
         // RFC 9728 puts the resource's scopes HERE, not in the authorization server's own
-        // metadata, and this read discarded them. CaseBox advertises exactly one —
-        // `<block>:full_access` — declares none in its AS document, and answers `invalid_scope`
-        // to a request that omits the parameter. So the field we were dropping was the field
-        // that made the request valid.
+        // metadata, and this read discarded them. A server may advertise its scopes only in the
+        // resource document and declare none in the AS document, and may then refuse a request
+        // that omits the scope parameter — so the field we were dropping was the field that made
+        // the request valid. Read both locations and prefer the resource's.
         scopes = meta.scopes_supported ?? [];
         break;
       }
@@ -215,10 +215,10 @@ export async function beginAuthorization(
   // it has, else nothing — a block advertising no scopes lets its own consent screen offer the
   // person the choice, which is the better arrangement and the one our mocks are built for.
   //
-  // The override exists because discovery cannot see the whole answer. CaseBox's resource
-  // advertises `<block>:full_access` alone, while the CLIENT also carries `offline_access` — and
-  // without that there is no refresh token, so every person would re-consent every twelve
-  // hours and the entire refresh path below would be dead code that still compiled.
+  // The override exists because discovery cannot see the whole answer. A resource document
+  // advertises what the RESOURCE needs; the CLIENT may also need `offline_access`, and without
+  // that there is no refresh token — so every person would re-consent as soon as the access
+  // token expired and the entire refresh path below would be dead code that still compiled.
   //
   // It is a config value rather than a constant so that narrowing to per-permission scopes,
   // which is where this should end up, is an edit to one line of .env and not a release.
@@ -389,8 +389,9 @@ export async function delegatedToken(email: string, block: string, mcpUrl: strin
     { access_token?: string; refresh_token?: string; expires_in?: number } : null;
   if (!payload?.access_token) {
     console.warn(`[oauth] ${block}: refresh failed for ${email} (http ${res ? res.status : "none"}) — sign-in required`);
-    // The refresh chain has ended — CaseBox's absolute limit is 30 days from issue, and no amount
-    // of refreshing extends it. The person has to sign in again, and saying so beats retrying.
+    // The refresh chain has ended. A grant may carry an absolute lifetime that no amount of
+    // refreshing extends, and this is what that looks like from here: the person has to sign in
+    // again, and saying so beats retrying.
     await platformDb().query(
       "delete from block_token using principal p where principal_id = p.id and p.email=$1 and block=$2",
       [email, block]);

@@ -70,7 +70,7 @@ A key belongs to one person. There is no team-wide key and no tool to store one,
 is deliberate rather than missing.
 
 A shared key spent the team's quota under everyone's name, so the block could not attribute
-the call: CaseBox's audit log recorded the platform rather than the person for
+the call: the block's audit log recorded the platform rather than the person for
 anyone who had never signed in. It also made "am I connected?" unanswerable — somebody with
 no credential of their own looked connected because a colleague's key was carrying them.
 

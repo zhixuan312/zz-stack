@@ -220,14 +220,14 @@ without telling them what to do about it.
                                     recommendation from outside all three is as
                                     likely to point the wrong way as the right one.
 
-**The worked example, and it is a real one.** casebox reports its version as an ISO timestamp, and
-eleven distinct ones have been recorded — it changes on restart. That is not a comment on
-their release process; it is the interface failing to do the job the contract gives it.
+**The worked example.** Suppose a block reports its version as an ISO timestamp, and several
+distinct ones are recorded across a week — it changes on restart. That is not a comment on
+anybody's release process; it is the interface failing to do the job the contract gives it.
 A version exists so a reader can tell whether the thing in front of them has changed, and a
 value that moves on restart cannot. So the recommendation is direct and belongs in the report:
 
 > **Publish a real version number — `5.3`, `0.1.0`, anything that changes when the software
-> changes and not when it restarts.** Today a defect we record against casebox cannot be tied to a
+> changes and not when it restarts.** A defect recorded against such a block cannot be tied to a
 > version, so nothing we know about the block can be retired when a fix ships. We re-test
 > everything, every round.
 

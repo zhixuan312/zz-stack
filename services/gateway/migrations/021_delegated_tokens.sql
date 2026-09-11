@@ -1,20 +1,20 @@
 -- A person's OWN access to a building block, obtained by them and held for them.
 --
 -- WHAT THIS CHANGES ABOUT WHO IS ACTING. Today every call the platform makes to casebox carries one
--- shared API key, so casebox's audit log records `Zhixuan-STG` for every action by every person of
+-- shared API key, so the block's audit log records `Zhixuan-STG` for every action by every person of
 -- every team. The platform is multi-tenant and that tenancy stops at the block boundary: casebox
 -- cannot tell two organisations apart, everybody inherits the key's full powers whatever their own
 -- role allows, and one revocation stops everyone.
 --
--- OAuth fixes that by changing the ACTOR rather than the credential. CaseBox's own words: it
+-- OAuth fixes that by changing the ACTOR rather than the credential. the block's own words: it
 -- "allows a third-party app to access a user's data ... or to perform action ... on behalf of a
--- user". The person signs in with their government identity, consents to what we may do, and
--- the token we hold acts as THEM -- bounded by their roles, attributable in casebox's audit log, and
+-- user". The person signs in with their organisation identity, consents to what we may do, and
+-- the token we hold acts as THEM -- bounded by their roles, attributable in the block's audit log, and
 -- revocable by them without touching anybody else.
 --
 -- WHAT IT DOES NOT REPLACE. Unattended work has no user to delegate from: scheduled sweeps, the
 -- evaluation harness, anything running while nobody is present. Those keep the API key, and
--- deliberately so -- CaseBox's refresh tokens die after 30 days absolute, so a delegated token is
+-- deliberately so -- a block's refresh chain may have an absolute limit, so a delegated token is
 -- structurally unsuited to work that must not need a human.
 
 create table if not exists zz.block_token (

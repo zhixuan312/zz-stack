@@ -14,13 +14,10 @@
 #             them back is what keeps editing a skill instant. Both are true, in
 #             different files, and which one applies is a flag rather than a guess.
 #
-# Requires the sibling zz-blocks checkout for the block images:
+# Builds the platform's own two services from this checkout. Blocks are somebody else's MCP
+# servers and are not built here — there is nothing to clone alongside.
 #
-#   zz-parent/
-#   ├── zz-stack/     (here)
-#   └── zz-blocks/
-#
-# An installer needs neither, which is the whole point of the split.
+# An installer needs none of this, which is the whole point of the split.
 services:
   zz-core:
     build:

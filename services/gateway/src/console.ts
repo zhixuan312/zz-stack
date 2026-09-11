@@ -10,7 +10,7 @@
  * "every team". `handler()` resolves the scope once, before any handler's SQL runs, so
  * that shape cannot reappear one query at a time.
  *
- * The authority to be IN the console at all is still *being in the government directory*
+ * The authority to be IN the console at all is still *being in the corporate directory*
  * — SsoAuth is the fence, and this door trusts it. A superadmin PAT is also accepted so
  * the API can be exercised with curl before any browser exists, and so a scripted check
  * never needs a session cookie.

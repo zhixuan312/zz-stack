@@ -39,7 +39,7 @@ type SkillKind = (typeof SKILL_KINDS)[number];
 /** What a skill version can carry besides its own words.
  *  script     — makes a guarantee the prose can only request.
  *  reference  — a block's real quirks, quoted from refusals we actually met.
- *  tool_index — the answer to a block advertising 178 tools and 268KB of schema in every prompt. */
+ *  tool_index — the answer to a block advertising a couple of hundred tools and 268KB of schema in every prompt. */
 const ASSET_KINDS = ["script", "reference", "tool_index"] as const;
 type AssetKind = (typeof ASSET_KINDS)[number];
 

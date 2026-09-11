@@ -225,14 +225,13 @@ usage skills, none of it hard-coded in the agent.
 
 ## Appendix — evidence log from real delivery runs (why we will ask you for these)
 
-| Date | Block (mock) | Gap | Requirement |
-
 > **Rows about a third party's own deployment are not in this table.** Several of the sharpest
 > findings came from calling a real system belonging to another organisation, and its defects are
 > that organisation's to publish or not. What is left is measured against blocks written here. The
 > rules the missing rows produced — R3, R6, R9, R13 — are stated in full above and stand on their
 > own; it is only the evidence that is somebody else's.
 
+| Date | Block (mock) | Gap | Requirement |
 |---|---|---|---|
 | 2026-08-20 | all three | no usage skills shipped initially — selection relied on tool-surface guesswork | R4 |
 | 2026-08-20 | case mgmt | smoke tests can move live counters with no restore guidance | R13 |

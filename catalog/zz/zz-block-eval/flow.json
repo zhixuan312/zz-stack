@@ -3,7 +3,7 @@
   "name": "zz-block-eval",
   "agentName": "ZZ Block Evaluation",
   "version": "0.1.0",
-  "description": "Measure an MCP surface: what it offers, what it honours of the standard, and what it does that its documentation does not describe. Points at any registered block \u2014 including 'platform', which is this platform's own surface.",
+  "description": "Measure an MCP surface: what it offers, what it honours of the standard, and what it does that its documentation does not describe. Points at any registered block — including 'platform', which is this platform's own surface.",
   "shelved": true,
   "clients": [
     "claude-code",
@@ -52,5 +52,6 @@
       "stage": "zz-block-report"
     }
   ],
-  "install": "auto"
+  "install": "auto",
+  "license": "MIT"
 }

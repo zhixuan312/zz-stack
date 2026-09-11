@@ -1,23 +1,24 @@
 {
- "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
- "name": "zz-access",
- "version": "2.0.0",
- "shelved": true,
- "description": "Access, yours and everybody's: your platform token, your keys for the building blocks, and the setup for whichever client you work in — plus, if your role carries them, the people, teams, flow installs and block grants behind them. One door; the tools you are offered are the ones your role can execute.",
- "entry": "zz-access",
- "servers": [
-  {
-   "name": "zz-access",
-   "path": "/manage/mcp"
-  }
- ],
- "stages": [
-  {
-   "name": "zz-access"
-  }
- ],
- "standalone": [
-  "zz-admin"
- ],
- "agentName": "ZZ Access"
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "zz-access",
+  "version": "2.0.0",
+  "shelved": true,
+  "description": "Access, yours and everybody's: your platform token, your keys for the building blocks, and the setup for whichever client you work in — plus, if your role carries them, the people, teams, flow installs and block grants behind them. One door; the tools you are offered are the ones your role can execute.",
+  "entry": "zz-access",
+  "servers": [
+    {
+      "name": "zz-access",
+      "path": "/manage/mcp"
+    }
+  ],
+  "stages": [
+    {
+      "name": "zz-access"
+    }
+  ],
+  "standalone": [
+    "zz-admin"
+  ],
+  "agentName": "ZZ Access",
+  "license": "MIT"
 }

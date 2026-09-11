@@ -37,7 +37,7 @@ that needs to be understood before it can be used has failed before R1.
 - **Validate what you document.** A filter argument you accept and ignore is worse than one
   you reject: the caller gets a plausible wrong answer and builds on it.
 - **Count the cost of your surface.** Every tool's schema is in the prompt of every
-  conversation that can reach your block. A block advertising 178 tools spends that budget on
+  conversation that can reach your block. A block advertising a couple of hundred tools spends that budget on
   every turn, including the turns that never call you.
 
 ## Your usage skills

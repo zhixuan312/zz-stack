@@ -5,9 +5,9 @@
  *   zz-tool refresh-block-tools
  *   zz-tool refresh-block-tools --psql '<command>' --dry-run
  *
- * WHY THIS IS DERIVED AND NOT WRITTEN BY HAND. casebox's two DOCUMENTATION tools -- the ones a caller
- * naturally reaches for to learn how to use casebox properly -- return 803,840 bytes on average
- * (read_api_spec, peak 1,229,671) and 436,790 bytes invariably (read_user_guide). Roughly 200,000
+ * WHY THIS IS DERIVED AND NOT WRITTEN BY HAND. the block's two DOCUMENTATION tools -- the ones a caller
+ * naturally reaches for to learn how to use casebox properly -- return a very large payload bytes on average
+ * (read_api_spec, peak larger still) and a very large payload bytes invariably (read_user_guide). Roughly 200,000
  * tokens to answer "how do I call this correctly".
  *
  * NEITHER IS A REFUSAL. Both SUCCEED. Nothing is logged as an error, the refusal-based score for
@@ -33,7 +33,7 @@ type Verdict = (typeof VERDICTS)[number];
 
 /** WHERE THE LINES SIT, and why they sit there rather than at round numbers.
  *
- *  `avoid` at 100KB: casebox:read_api_spec (803,840 average) and casebox:read_user_guide (436,790) are the
+ *  `avoid` at 100KB: casebox:read_api_spec (a very large payload average) and casebox:read_user_guide (a very large payload) are the
  *  only two calls in the corpus above it, and both are catastrophic rather than merely large.
  *  `use_with_care` at 20KB: bookit:list_webhooks (44,716) and core:initiative_status (7,623)
  *  sit either side, and that is the right split -- one is worth thinking about before calling in

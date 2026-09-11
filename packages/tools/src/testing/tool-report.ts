@@ -156,7 +156,7 @@ interface ToolStat {
   /** How large this tool's answers are. The gateway has recorded it on every call since the
    * telemetry was written and nothing read it — so "which tool floods a context window" was
    * a question the record could answer and nobody could ask. It is not idle: one block
-   * publishes 178 tools whose schemas alone cost 91K of a 115K window, and one of its
+   * publishes a couple of hundred tools whose schemas alone cost 91K of a 115K window, and one of its
    * answers measured 1.2 MB. */
   p95_bytes: number;
 }

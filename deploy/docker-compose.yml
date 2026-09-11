@@ -124,7 +124,7 @@ services:
       # keeps using a stored key — nobody's access breaks by leaving these blank.
       # What to ASK a block's authorization server for. Unset means ask for what the block's
       # own protected-resource document advertises — right for a block that publishes its
-      # whole list, and wrong for CaseBox, whose resource names <block>:full_access while the
+      # whole list, and wrong for a block whose resource names one scope while the
       # client also holds offline_access. Without offline_access there is no refresh token.
       # The admin console's passkey sign-in. This one value IS the relying party: its
       # hostname becomes the RP ID and its origin the expected origin, so the two can never

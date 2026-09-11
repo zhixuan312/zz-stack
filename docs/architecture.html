@@ -883,7 +883,7 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
         <rect class="n-box-a" x="400" y="48" width="264" height="168"/>
         <text class="n-lab-a" x="416" y="76">The shortlist</text>
         <text class="n-t"    x="416" y="106">A vendor may publish</text>
-        <text class="n-t"    x="416" y="126">178 tools</text>
+        <text class="n-t"    x="416" y="126">a couple of hundred tools</text>
         <text class="n-s"    x="416" y="148">— a caller cannot choose well</text>
         <text class="n-s"    x="416" y="164">from that many, and the</text>
         <text class="n-s"    x="416" y="180">descriptions alone can fill</text>
@@ -924,13 +924,13 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
      provisioning a client knows what that client calls them</i>
 
 <b>What its calls cost us</b>
-  read_api_spec        803,840 bytes average   peak 1,229,671   over 32 calls
-  read_user_guide      436,790 bytes <i>every single time</i>      over 23 calls
+  read_api_spec        large enough to fill a caller's context   on every call
+  read_user_guide      a very large payload bytes <i>every single time</i>      over 23 calls
   <i>— neither is a failure. Both SUCCEED, so no error is ever recorded, and
      the only symptom is a caller whose working memory is gone</i>
 
 <b>What it says when it refuses</b>
-  27 refusals across a day of work, of the form:
+  refusals across a day of work, of the form:
       "Request failed with status code 422"
   <i>— no field, no value, no reason. A caller cannot learn from that, and
      neither can any guidance we write beside it</i>

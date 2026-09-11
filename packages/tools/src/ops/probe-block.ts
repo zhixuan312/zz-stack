@@ -82,7 +82,7 @@ async function main(argv: string[]): Promise<number> {
   // blocks.ts names the subset of a block's tools an agent should carry — a context budget,
   // not an authorisation boundary. A name in that list the block does not serve is dropped in
   // silence: the agent never receives the tool, and no error is raised anywhere, because a
-  // wish list and the thing it wishes about are held by different parties. casebox's list carried
+  // wish list and the thing it wishes about are held by different parties. the block's list carried
   // `save_transition_blacklist` for a tool the block calls
   // `save_case_status_transition_blacklist`, so no delivery agent could restrict a status
   // transition — one wrong name in seventy-one, found by asking the block.

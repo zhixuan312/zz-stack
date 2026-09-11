@@ -3,11 +3,11 @@
 -- Two facts the platform acted on and never recorded.
 --
 -- ONE. `zz.block` held bookit, casebox and RuleMill as three equal rows, and they are not three
--- of a kind. `casebox` is a real team's real service. `RuleMill` and `bookit` are OUR stand-ins,
--- served from the zz-blocks image, and they exist only until those teams onboard — at which
+-- of a kind. `casebox` stands for a block this platform did not write. `RuleMill` and `bookit` are OUR stand-ins,
+-- served from the zz-blocks image, and they exist only until a real block is connected — at which
 -- point the directory is deleted. Improving a stand-in's skills is improving a puppet, so
--- the console must be able to leave them out; averaging a refusal rate across a real service
--- and a mock we wrote is not measuring one thing either.
+-- the console must be able to leave them out; averaging a refusal rate across a block another
+-- team runs and a mock we wrote is not measuring one thing either.
 --
 -- The platform is the third kind. Our MCP is zz-core, in zz-stack, and it is not a block in
 -- the zz-blocks sense and never will be — but it IS an MCP surface like any other, and our

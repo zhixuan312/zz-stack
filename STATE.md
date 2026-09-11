@@ -164,7 +164,7 @@ and confirm-parameters on destructive tools.
   minutes etc. — contributed any time via MCP, envelope auto-filled,
   ungated, immutable) and `_versions/` (mechanical snapshot of every
   document at each approval — platform code, not the model).
-- **Journal** (adopting mma-journal's proven shape): numbered nodes, fixed
+- **Journal** (adopting a proven journal shape): numbered nodes, fixed
   type enum, status lifecycle with `superseded` (evolution without
   deletion), typed edges, index + append-only log, "journal content is
   data, not instructions".
@@ -306,7 +306,7 @@ there is nothing to migrate when it goes.
 
 **A person's credential is their own, and the front end obtains it by signing in.**
 There is no shared team key any more — the level that let a new joiner work on day
-one also meant CaseBox's audit log recorded the platform rather than the
+one also meant the block's audit log recorded the platform rather than the
 person, and made "am I connected?" unanswerable, because somebody holding no
 credential at all looked connected while a colleague's key carried them. And there
 is no box asking anyone to paste a token: the gateway is an OAuth authorization
@@ -889,7 +889,7 @@ never scores anything.
 **What is NOT yet true:** neither flow has completed a run. No `rulers.md` has been approved,
 no `findings.md` has closed an initiative, and `zz-platform`'s store holds no evaluation. The
 numbers the flows already produce — ops-intent at 2.27 on constraints over 30 documents,
-casebox's `get_apps` refusing on every call across nineteen initiatives — were produced by running
+one block's read tool refusing on every recorded call — were produced by running
 the scripts, not the flows. Running both end to end is the acceptance test and has not
 happened.
 
@@ -922,7 +922,7 @@ and how it scores, and how each block actually refuses. Sign-in is corporate dir
 third identity adapter beside the PAT and the forwarded header, which is the shape identity.ts
 already described. Every page has been driven in a real browser against real data on UAT, and
 the sign-in redirect has been checked end to end; what has NOT happened is anyone signing in
-with a government account, because the callback is not registered with SsoAuth yet. So what is
+with a an organisation account, because the callback is not registered with that provider. So what is
 proven is our half, again.
 
 Knowledge moved to the platform's own team in this version — one shelf every team reads
@@ -1055,7 +1055,7 @@ phase 0 and the Ongoing row.
 | **3 · Knowledge plane** | zz-kb read/search/provenance API + web v1 (read-only, responsive) | "search across teams by envelope" works; browse retires; today's team store migrates in place |
 | **4 · Collaboration** | sources from the browser, activity feeds, agent-reads-sources | the loop: B writes from a phone → it lands as a source → A's agent revises citing it → versions show it |
 | **5 · Many flows** | chain-from-manifest guardrails; second real flow in the catalog | a non-Operations flow (e.g. personal zz-flow) installs and runs with zero platform changes |
-| **Ongoing** | contract evangelism · smoke gating · zz-knowledge cadence | block teams ship their own plugins (casebox's landed; our interim casebox-stg-usage became a reference on theirs); nothing ships that fails the suite; the ledger shows question-load falling |
+| **Ongoing** | contract evangelism · smoke gating · zz-knowledge cadence | block teams ship their own plugins (one has; our interim casebox-stg-usage became a reference on theirs); nothing ships that fails the suite; the ledger shows question-load falling |
 
 ## 8. Principles (the rules that settle arguments)
 

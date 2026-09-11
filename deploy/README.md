@@ -249,7 +249,7 @@ a person then gets is a client package.
 **Claude Code**, **Codex** and **Hermes** each install a package built for them:
 
 ```bash
-curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" <gateway>/pkg/claude-code.tgz | tar xz -C ~/.zz
+mkdir -p ~/.zz && curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" <gateway>/pkg/claude-code.tgz | tar xz -C ~/.zz
 claude plugin marketplace add ~/.zz/zz-platform
 claude plugin install zz@zz-platform      # the baseline; then take what you want
 ```

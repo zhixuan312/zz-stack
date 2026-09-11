@@ -54,7 +54,7 @@ export type CredentialStore = z.infer<typeof CredentialStore>;
  * request, which is a real problem and was the wrong solution to it.
  *
  * What it actually bought was a block call that the block itself could not attribute. CaseBox
- * CaseBox's audit log recorded the platform, not the person, for anyone who had never signed
+ * the block's audit log recorded the platform, not the person, for anyone who had never signed
  * in — and "who did this?" is exactly the question that gets asked once something has already
  * gone wrong. It also made the connection state unanswerable from the inside: a person with no
  * credential of their own looked connected, because somebody else's key was carrying them.
@@ -345,8 +345,8 @@ export const Envelope = z.object({
    * `block` names that server; `verified_against` is the block version the skill's claims
    * were last checked against. They are NOT the skill's version, which stays MAJOR.MINOR and
    * means what it means everywhere else. Two fields rather than one concatenated string,
-   * because a real block answers `2026-08-30T14:42:01+08:00` when asked its version, and
-   * there is no version number that survives being glued to that.
+   * because a block may answer a build timestamp rather than a version when
+   * asked, and there is no version number that survives being glued to that.
    *
    * Declared here so the published schema shows them and RESERVED_ENVELOPE defends the names:
    * a flow that claimed `block` for something of its own would land in the drift report. */

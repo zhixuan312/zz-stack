@@ -36,7 +36,7 @@ It also reports the observed schema cost, from real calls rather than from readi
 Every tool's schema sits in the prompt of every conversation that can reach this block,
 including the turns that never call it.
 
-**`eval_block_usage` — the unit is the tool, not the block.** A block with 178 tools cannot be
+**`eval_block_usage` — the unit is the tool, not the block.** A block with a couple of hundred tools cannot be
 usefully judged as one thing; a team can fix a tool and nobody can fix a block. It reports
 per tool: calls, refusals, the classes and how far each spread, and the episodes where the
 same call was repeated with nothing changed between tries — which is what a refusal that did
@@ -50,9 +50,9 @@ team acts on and one they argue with:
     5xx       theirs
     validation errors   the arguments we sent, refused by the MCP wrapper
 
-casebox's `get_apps` fails on every call across nineteen initiatives. Read naively that is a
-completely broken tool. It is a 403 — one credential without the scope — and telling the
-block team otherwise would be wrong and would cost their afternoon.
+suppose one tool fails on every call you have a record of. Read naively that is a completely
+broken tool. It may be a 403 — one credential without the scope — and telling the block team
+otherwise would be wrong and would cost their afternoon.
 
 **`zz-tool conformance` — the contract is the ruler, not the subject.** It measures R1-R14
 from the tool surface and says which it cannot settle. Whether a requirement is a good

@@ -11,7 +11,7 @@
 -- outside the MCP tools, a restored backup, or a wiped database left the index silently
 -- wrong with no way to notice and no way to repair.
 --
--- MMA's journal engine treats its SQLite cache as disposable and rebuilds from the files
+-- That engine treats its SQLite cache as disposable and rebuilds from the files
 -- whenever they are newer. This column is what makes the same thing cheap here: a rebuild
 -- walks every file, hashes it, and skips the ones the index already has at that hash. So a
 -- reindex over an unchanged corpus costs one read per file and zero writes, and the index

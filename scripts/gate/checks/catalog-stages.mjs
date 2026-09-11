@@ -183,7 +183,7 @@ check("a stage's blocks are ones its flow carries", () => {
 });
 
 check("every flow that declares stages ships scenarios, or says why not", () => {
-  // MMA lost two scenarios from a full sweep and they still passed under a filter; the fix was
+  // a prior system lost two scenarios from a full sweep and they still passed under a filter; the fix was
   // a guard that aborts by NAME. A count cannot do this: it reads the same whether the hole is
   // old or new. Exemptions carry a reason, and a reason that has expired fails.
   // TWO INDEPENDENT PROPERTIES, because one flag got one of them wrong. `mayBeMissing` says a

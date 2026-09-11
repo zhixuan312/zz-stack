@@ -17,7 +17,7 @@
  * reason: that field is for a verdict that is someone else's, and the console caller is
  * always approving as themselves.
  *
- * Authorised through console.ts's own `handler()`, not a copy of it — the same organisation-wide-AD-or-
+ * Authorised through console.ts's own `handler()`, not a copy of it — the same directory-or-
  * superadmin gate and the same `resolveScope` that decides which team a read sees. A write
  * needs a settled answer to "which team", not the platform-wide reading of it: `approve`
  * stamps one document belonging to one team, and there is no fleet-wide version of that

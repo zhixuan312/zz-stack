@@ -113,7 +113,7 @@ async function measure(gateway: string, block: string, pat: string): Promise<Rep
 
   // A requirement names ONE verb, and a block that does the same job under another name has
   // not met the standard as written — but "absent" would be a false picture. §6 of the
-  // contract already says this about R9 and CaseBox's `generate_app_url`: either the
+  // contract already says this about R9 and a `generate_*` verb where the standard asks for `get_*`: either the
   // requirement names the wrong verb or three implementations are wrong, and that is a
   // decision for the next revision. Reporting what was found instead is what lets anyone
   // make it.
@@ -127,7 +127,7 @@ async function measure(gateway: string, block: string, pat: string): Promise<Rep
   const vague = [...names].filter((n) => VAGUE.test(n)).sort();
   // A description that only restates the name teaches an agent nothing about WHEN to reach
   // for the tool, which is the decision it is actually making. Measured on the real block
-  // this matters: 178 tools, not one of them undescribed, and the median description is
+  // this matters: a couple of hundred tools, not one of them undescribed, and the median description is
   // eighteen characters — `read_user_guide` described as "Read user guide". A length floor
   // called twenty-six of those a gap and let the rest through; an echo test names the whole
   // class.

@@ -50,6 +50,7 @@ import { PLATFORMS } from "./blocks.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
 import { browserSession, requestBase, sha256 } from "./identity.js";
+import { escapeHtml } from "./markdown.js";
 
 const PUBLIC = (process.env.GATEWAY_PUBLIC_URL ?? "").replace(/\/+$/, "");
 
@@ -85,22 +86,31 @@ const AUTHORIZE_ON = ((process.env.CONSOLE_PUBLIC_URL ?? "").replace(/\/+$/, "")
  * server on the same machine as the browser that was redirected; an attacker who could receive
  * it there could read the token from the client's own storage anyway.
  *
- * ANY OTHER ORIGIN must be named in OAUTH_REDIRECT_ORIGINS, comma-separated. That is for a
- * browser front end, and this deployment has none — so the list is normally empty and the
- * loopback rule is the whole policy. It was `LIBRECHAT_PUBLIC_URL` until 2026-09-10, a single
- * origin for a front end that has since gone; left as it was, every client would now be
- * refused, because the one origin allowed was the one nothing serves.
+ * ANY OTHER ORIGIN must be named in OAUTH_REDIRECT_ORIGINS, comma-separated — a hosted
+ * client whose servers receive the code, which on this deployment means ChatGPT
+ * (`https://chatgpt.com`; it redirects to more than one path there, so the rule is by origin).
+ * It was `LIBRECHAT_PUBLIC_URL` until 2026-09-10, a single origin for a front end that has
+ * since gone.
+ *
+ * A HOSTED CLIENT IS ALSO WHY THERE IS A CONSENT PAGE. Anyone may register a client with
+ * chatgpt.com as its redirect and point their OWN connector at a door here; a signed-in person
+ * who opens that client's authorize link would then hand a platform token to the stranger's
+ * connector without seeing anything. So every non-loopback authorization stops and asks.
  */
 const EXTRA_ORIGINS = (process.env.OAUTH_REDIRECT_ORIGINS ?? "")
   .split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
 
+/** Loopback by ADDRESS, never by name: `localhost` can be made to resolve elsewhere, and a
+ * redirect that leaves the machine is the thing being prevented. */
+function isLoopback(u: URL): boolean {
+  const local = u.hostname === "127.0.0.1" || u.hostname === "[::1]" || u.hostname === "::1";
+  return local && (u.protocol === "http:" || u.protocol === "https:");
+}
+
 function redirectAllowed(uri: string): { ok: true } | { ok: false; why: string } {
   let u: URL;
   try { u = new URL(uri); } catch { return { ok: false, why: `'${uri}' is not a URL` }; }
-  // Loopback by ADDRESS, never by name: `localhost` can be made to resolve elsewhere, and a
-  // redirect that leaves the machine is the thing being prevented.
-  const loopback = u.hostname === "127.0.0.1" || u.hostname === "[::1]" || u.hostname === "::1";
-  if (loopback && (u.protocol === "http:" || u.protocol === "https:")) return { ok: true };
+  if (isLoopback(u)) return { ok: true };
   if (u.hostname === "localhost") {
     return { ok: false, why: `redirect_uri '${uri}' uses the name 'localhost'. Use 127.0.0.1 — a ` +
       "name can be pointed at another machine, and an address cannot." };
@@ -160,6 +170,41 @@ function say(res: Response, status: number, title: string, detail: string): void
     `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
     `<body style="font:16px/1.6 system-ui;margin:3rem auto;max-width:34rem;padding:0 1rem">` +
     `<h1 style="font-size:1.3rem">${title}</h1><p>${detail}</p></body>`);
+}
+
+/** The fields an authorization arrives with — carried through the consent form unchanged. */
+const AUTHZ_FIELDS = ["client_id", "redirect_uri", "response_type", "code_challenge",
+                      "code_challenge_method", "resource", "state"] as const;
+
+/** The question a hosted client's authorization stops on.
+ *
+ * THE CLIENT NAMES ITSELF, SO ITS NAME PROVES NOTHING. Anyone registering may call themselves
+ * "ChatGPT"; what they cannot forge is where the code goes, so that is the line in bold. The
+ * page refuses to be framed, because a consent page under someone else's overlay is a click
+ * they did not mean. */
+function consentPage(res: Response, f: Record<string, string>, who: { email: string; admin: boolean },
+                     clientName: string, door: string): void {
+  const dest = new URL(f.redirect_uri).origin;
+  const hidden = AUTHZ_FIELDS.map((k) =>
+    `<input type="hidden" name="${k}" value="${escapeHtml(f[k] ?? "")}">`).join("");
+  const reach = who.admin
+    ? "everything you can reach, <b>including platform administration</b> — you are a superadmin"
+    : "your teams' documents and knowledge, with the same access you have in the console";
+  const btn = "font:inherit;padding:.5rem 1.2rem;margin-right:.6rem;border-radius:6px;cursor:pointer";
+  res.set({ "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'",
+            "Cache-Control": "no-store" });
+  res.status(200).type("text/html").send(
+    `<!doctype html><meta charset="utf-8"><title>Connect to ZZ?</title>` +
+    `<body style="font:16px/1.6 system-ui;margin:3rem auto;max-width:34rem;padding:0 1rem">` +
+    `<h1 style="font-size:1.3rem">Connect ${escapeHtml(clientName || dest)} to ZZ?</h1>` +
+    `<p>It is asking to use <code>${escapeHtml(door)}</code> as <b>${escapeHtml(who.email)}</b>, ` +
+    `and will be able to read and change ${reach}.</p>` +
+    `<p>The connection is handed to <b>${escapeHtml(dest)}</b>. If you did not just press ` +
+    `Connect there yourself, choose Deny.</p>` +
+    `<form method="post" action="/oauth/authorize">${hidden}` +
+    `<button name="decision" value="allow" style="${btn};background:#111;color:#fff;border:0">Allow</button>` +
+    `<button name="decision" value="deny" style="${btn};background:none;border:1px solid #999">Deny</button>` +
+    `</form></body>`);
 }
 
 export function mountMcpOauth(app: Express): void {
@@ -244,22 +289,28 @@ export function mountMcpOauth(app: Express): void {
   });
 
   // ── authorize ─────────────────────────────────────────────────────────────
-  app.get("/oauth/authorize", (req: Request, res: Response) => {
+  //
+  // One authorization, reached two ways: GET is the client sending the person here, POST is
+  // the person answering the consent page. The POST re-validates everything, because its
+  // fields came back through a browser and are exactly as trustworthy as the query was.
+  const authorize = (req: Request, res: Response, input: Record<string, unknown>,
+                     decision: "allow" | "deny" | null): void => {
     void (async () => {
       if (!platformDbReady()) { say(res, 503, "Not right now", "The platform database is unavailable. This is usually brief — try again in a moment."); return; }
-      const q = req.query as Record<string, string | undefined>;
-      const clientId = q.client_id ?? "";
-      const redirectUri = q.redirect_uri ?? "";
-      const challenge = q.code_challenge ?? "";
-      const method = q.code_challenge_method ?? "";
-      const resource = q.resource ?? "";
-      const state = q.state ?? "";
+      const q: Record<string, string> = Object.fromEntries(AUTHZ_FIELDS.map((k) =>
+        [k, typeof input[k] === "string" ? input[k] as string : ""]));
+      const clientId = q.client_id;
+      const redirectUri = q.redirect_uri;
+      const challenge = q.code_challenge;
+      const method = q.code_challenge_method;
+      const resource = q.resource;
+      const state = q.state;
 
       // EVERY REFUSAL BEFORE THE REDIRECT IS VALIDATED GOES TO THE PERSON, NOT TO THE CLIENT.
       // Bouncing an error to a redirect_uri we have not yet verified is how an authorization
       // server becomes an open redirect on its error path instead of its success path.
-      const { rows } = await platformDb().query<{ redirect_uris: string[] }>(
-        "select redirect_uris from zz.mcp_oauth_client where client_id = $1", [clientId]);
+      const { rows } = await platformDb().query<{ redirect_uris: string[]; name: string }>(
+        "select redirect_uris, name from zz.mcp_oauth_client where client_id = $1", [clientId]);
       const client = rows[0];
       if (!client) { say(res, 400, "Unknown application", "This sign-in link came from an application this platform does not know. Ask it to register again."); return; }
       if (!client.redirect_uris.includes(redirectUri)) {
@@ -285,6 +336,9 @@ export function mountMcpOauth(app: Express): void {
       // here with everything they arrived with.
       const me = await browserSession(req);
       if (!me) {
+        // A POST has no query to come back to, and a person answering the consent page was
+        // signed in a moment ago — so the session ended in between, and the client restarts.
+        if (decision) { say(res, 401, "Your sign-in has ended", "Nothing has been shared. Go back to the application and connect again."); return; }
         // requestBase, not a constant: this endpoint is reached on the console's origin and
         // the sign-in screen is a page of that same app. Sending them anywhere else is what
         // produced the 404. `/login` rather than `/auth/…` because the passkey ceremony is
@@ -292,10 +346,28 @@ export function mountMcpOauth(app: Express): void {
         res.redirect(`${requestBase(req)}/login?next=${encodeURIComponent(req.originalUrl)}`);
         return;
       }
-      const pr = await platformDb().query<{ id: string }>(
-        "select id::text as id from principal where email = $1", [me.email]);
+      const pr = await platformDb().query<{ id: string; role: string }>(
+        "select id::text as id, role from principal where email = $1", [me.email]);
       const principalId = pr.rows[0]?.id;
       if (!principalId) { say(res, 403, "No account", `${me.email} is not a principal on this platform.`); return; }
+
+      // A HOSTED CLIENT WAITS FOR THE PERSON; a loopback one does not. See the header of
+      // `redirectAllowed` for why. Deny is answered to the client, which is safe now that the
+      // redirect has been checked against what it registered.
+      if (!isLoopback(new URL(redirectUri))) {
+        if (decision === null) {
+          consentPage(res, q, { email: me.email, admin: pr.rows[0]?.role === "superadmin" },
+                      client.name, door);
+          return;
+        }
+        if (decision === "deny") {
+          const back = new URL(redirectUri);
+          back.searchParams.set("error", "access_denied");
+          if (state) back.searchParams.set("state", state);
+          res.redirect(303, back.toString());
+          return;
+        }
+      }
 
       // A BLOCK DOOR NEEDS TWO CREDENTIALS, AND CONNECT IS ONE GESTURE.
       //
@@ -366,18 +438,33 @@ export function mountMcpOauth(app: Express): void {
           "update zz.mcp_oauth_authz set principal_id = $1 where id = $2", [principalId, code]);
       }
 
-      // NO CONSENT SCREEN, and that is a decision. Consent asks a person to approve one party
-      // reaching another on their behalf; here both parties are this platform — its own front
-      // end reaching its own door, on an origin nothing else may register. A screen that only
-      // ever has one honest answer teaches people to click through screens.
+      // A loopback client gets its code without a screen: the code can only reach a program on
+      // the person's own machine, and a screen that only ever has one honest answer teaches
+      // people to click through screens. A hosted client got here through Allow above.
       const back = new URL(redirectUri);
       back.searchParams.set("code", code);
       if (state) back.searchParams.set("state", state);
-      res.redirect(back.toString());
+      res.redirect(303, back.toString());
     })().catch((err: unknown) => {
       console.error("oauth authorize failed:", err);
       if (!res.headersSent) say(res, 500, "Something went wrong", "The sign-in could not be completed. Nothing has been shared.");
     });
+  };
+
+  app.get("/oauth/authorize", (req: Request, res: Response) => {
+    authorize(req, res, req.query as Record<string, unknown>, null);
+  });
+
+  // THE ANSWER MUST COME FROM THE CONSENT PAGE ITSELF. The session cookie is SameSite=Lax, so
+  // a cross-site form already arrives without it; checking Origin as well means that stays
+  // true even if the cookie's attributes ever change.
+  app.post("/oauth/authorize", (req: Request, res: Response) => {
+    if (req.headers.origin !== requestBase(req)) {
+      say(res, 403, "Not from this page", "An answer to a connection request can only come from the page that asked it. Nothing has been shared.");
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    authorize(req, res, body, body.decision === "allow" ? "allow" : "deny");
   });
 
   // ── token ─────────────────────────────────────────────────────────────────

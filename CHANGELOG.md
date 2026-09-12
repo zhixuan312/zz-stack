@@ -33,6 +33,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.28.0] — 2026-09-12
+
+**zz-stack 0.28.0 · zz-stack-dashboard 0.4.0**
+
+**This is the release that makes both repositories publishable.** Almost all of it is
+subtraction: two browser surfaces the platform served, a directory of working material that
+was never the package, and — running through every file — measurements and names that were
+records of work done on somebody else's systems rather than facts about this software.
+
+The platform's own surface is unchanged where it matters: no MCP tool was renamed, no
+argument changed shape, no environment key was added or made required, and there is no
+migration. What a terminal client does with this platform it does exactly as before.
+
+### Removed
+- **`/app`, the knowledge-base browser, and the API behind it** (`kb.ts`). It was a second
+  front end with its own PAT login and its own read API over the same data the console
+  already serves. One front end, one set of APIs: the console.
+- **`/architecture`**, the unauthenticated page describing the platform. It was served from
+  `docs/architecture.html`, read at module load — so the gateway could not start without a
+  file that is no longer part of the package.
+- **`docs/` is no longer published.** Findings, walkthroughs and release records are working
+  material; they stay on disk and out of the repository. What was genuine package
+  documentation — where the boundaries are and why — is `ARCHITECTURE.md` at the root, which
+  is where the gate and `console/catalog.ts` now point.
+
+### Changed
+- **Sign-out is `POST /auth/logout`**, answering 303. It revokes a session row, and anything
+  that can make a browser issue a GET could issue that one — an image in a document body, a
+  link in a mail. The console submits a form; nothing can make a browser POST cross-origin
+  without the person acting.
+- **The console applies a URL policy to document markdown.** A link is navigation a reader
+  chooses, so an external one is fine and only the dangerous schemes are refused. An image is
+  a fetch nobody agreed to: only a same-origin path survives, and a dropped image renders as
+  its own alt text. `![](https://someone-else/p.png)` in a document body used to hand that
+  document's author the IP address and reading time of every person who opened it.
+- **`deploy/Caddyfile` carries a documentation address as its template default.** It is a
+  substitution source — `install-caddy.sh` replaces it with the target host's own address and
+  refuses the install if the literal survived — so a template shipping a real hostname was a
+  default nobody should inherit. Nothing on a running host changes.
+
+### Fixed
+- **Two gate checks that named a flow they were not about.** A scripted rename ran over
+  sentences describing the flow being renamed, so a comment could quote a one-element array
+  naming the new flow and then list that same flow as one the loop had missed. Where two
+  flows are genuinely contrasted both names stay; elsewhere the sentence names a shape.
+- **`RuleMill` stood where `rulemill` belongs** in a copy-pasteable command, a compose service
+  name, a URL, two directory paths, a version list and a map key — and in the console's Block
+  field hint, which told a person to type an id the registry does not hold. The check that
+  guards this class matched one casing, so the defect was invisible to it in the casing it
+  actually appears in.
+
+### Upgrade notes
+- **Anything linking to `GET /auth/logout` must POST instead.** A link will now 404.
+- **Anything pointing at `/app` or `/architecture` will 404.** The console serves what `/app`
+  served; `/architecture` has no replacement and is not coming back.
+- No migration, no new environment key. `docker compose pull && docker compose up -d` is the
+  whole upgrade.
+
 ## [0.27.0] — 2026-09-11
 
 **zz-stack 0.27.0 · zz-stack-dashboard 0.3.5 (unchanged)**

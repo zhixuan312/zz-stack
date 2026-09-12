@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.27.0 (2026-09-11). What we believe, and what we have. The world as it stands at this
+Status: 0.28.0 (2026-09-12). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -450,6 +450,27 @@ hold zero rows, the smoke engine is not in the tree, and the CLI half of that tr
 SQL past the MCP door. §6c has said "the evaluation track exists, and has not been run" since
 0.11.0; it is still true, and the earlier §6 claimed a five-scenario standing suite on top of
 it.
+
+## 6p. In 0.28.0: one front end, one set of APIs, and nothing that is not the package
+
+The platform served three browser surfaces and now serves none: `/app` was a knowledge-base
+browser with its own PAT login and its own read API over data the console already serves, and
+`/architecture` was an unauthenticated page about the platform. Both are gone, with `kb.ts`
+and the API behind `/app`. The console is the front end and `/api/console/*` is the API.
+
+`docs/` is no longer part of the package. What was under it was working material — findings,
+walkthroughs, a release record — and the one file that was genuine package documentation is
+`ARCHITECTURE.md` at the root, which the gate and `console/catalog.ts` now name.
+
+**The rule the repository is now written to, because it is publishable:** a count that is a
+property of THIS repository is exact; a measurement of anything else is written as a shape.
+Two gate checks hold the line — one refuses an address, a routable host or a credential
+anywhere in the tree, the other refuses a stand-in block written about as a real deployment.
+Both were proven by break-test before being trusted, which is the only reason to believe a
+check that is green on a tree somebody just cleaned by hand.
+
+Sign-out is a POST. The console applies a URL policy to document markdown: a link is
+navigation a reader chooses, an image is a fetch nobody agreed to.
 
 ## 6o. In 0.27.0: the doctor, and the difference between "wrong" and "could not look"
 

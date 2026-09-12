@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.23
+version: 3.24
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -81,7 +81,7 @@ what delegated access is for.
 - The store is on the PLATFORM, not on any machine you can reach. The
   artifact tools are the only way in: `list_files`, `read_file`,
   `write_file`, `patch_file`. Paths are relative to your team's store, e.g.
-  `2026-08-19-enquiries/spec.md`. This skill is loaded in the browser and in
+  `2026-08-19-sample-intake/spec.md`. This skill is loaded in the browser and in
   Claude Code, Codex and Hermes alike — where you do have a shell, it reaches
   your own disk and never the team's store, so the rule is the same one.
 - The store is shared with your whole team — you will see teammates'

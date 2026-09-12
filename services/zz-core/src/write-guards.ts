@@ -419,7 +419,7 @@ export function stampEnvelope(chain: Chain, relPath: string, content: string): s
   // a confidently wrong one.
   //
   // Measured: on 2026-08-28 a run stamped every document in an initiative `26-08-2026` and
-  // named the folder `26-08-2026-room-booking`, two days early, while its own title
+  // named the folder `26-08-2026-sample-booking`, two days early, while its own title
   // carried the correct `pilot-2808`. Nothing caught it. revise_document had already decided
   // this was the platform's job and set the field itself; the shared writer never learned,
   // so the two paths disagreed on the VALUE and on the FORMAT — the same asymmetry that let

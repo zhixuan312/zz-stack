@@ -141,8 +141,8 @@ export function parseEnvelope(content: string): Record<string, string> {
  * ONE list, because there were two and they disagreed. The gateway redacted at write time
  * (privacy) and the report redacted again at read time (grouping), with the same patterns in
  * a DIFFERENT ORDER — and order decides the answer. Measured on four real refusals, three
- * came out differently: `24-08-2026-enquiries` collapsed to `<initiative>` in one and to
- * `<date>-enquiries` in the other, so every initiative made its own class, which is the exact
+ * came out differently: `24-08-2026-sample-intake` collapsed to `<initiative>` in one and to
+ * `<date>-sample-intake` in the other, so every initiative made its own class, which is the exact
  * failure the redaction exists to prevent.
  *
  * The initiative pattern MUST run before the date pattern: an initiative folder begins with a

@@ -284,7 +284,7 @@ check("nothing under a store root that begins with a dot is reachable", () => {
   const want = [
     [".git/hooks/pre-commit", true], [".git/config", true], ["/.git/config", true],
     ["a/.git/objects/ab/cdef", true], [".zz/i/spec.md", true], ["~/i/spec.md", true],
-    ["2026-08-30-enquiries/spec.md", false], ["i/sources/2026-08-30-note.md", false],
+    ["2026-08-30-sample-intake/spec.md", false], ["i/sources/2026-08-30-note.md", false],
     ["_knowledge/nodes/0001-x.md", false], ["i/_versions/spec.v1.md", false],
   ];
   for (const [p, shouldRefuse] of want) {

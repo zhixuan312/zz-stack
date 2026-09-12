@@ -34,7 +34,7 @@ export function registerArtifactTools(server: McpServer): void {
       description:
         "Create or overwrite a file in your team's artifact store (specs, plans, " +
         "logs, records). The store is shared with your whole team if you belong to " +
-        "one. Paths are relative, e.g. '2026-08-20-enquiries/spec.md'. " +
+        "one. Paths are relative, e.g. '2026-08-20-sample-intake/spec.md'. " +
         "SEND THE BODY, starting at its first heading: the frontmatter is written by the " +
         "platform from what it already knows, and anything else the document needs — " +
         "`flow` on the first document, `stakeholder`, `tags`, `title` — is an argument here.",

@@ -349,7 +349,7 @@ check("no tool teaches a date format the platform does not use", () => {
   // forms disagreed: one initiative held `updated_at: 2026-08-29` inside a folder called
   // `29-08-2026-…`. The platform stamps ISO and sorts on it.
   //
-  // Four tool descriptions went on offering `23-08-2026-enquiries` as the example. That is
+  // Four tool descriptions went on offering `23-08-2026-sample-intake` as the example. That is
   // prompt text a model reads and copies, so the platform was enforcing one convention and
   // demonstrating the other — and a folder is chosen before any document exists, so no later
   // stamp repairs it. Three of the four were on tools added after the change, by copying the

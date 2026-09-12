@@ -52,7 +52,7 @@ const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
 /** AN INITIATIVE IS NAMED <YYYY-MM-DD>-<slug>, and until now nothing said so but prose.
  *
  * Every flow's own text states the shape and none of it was enforced, so an agent wrote
- * `27-08-2026-public-enquiries-2` on 27 August and the platform took it. Forty initiatives on
+ * `27-08-2026-sample-intake-2` on 27 August and the platform took it. Forty initiatives on
  * this deployment do not match. The cost is not tidiness: the date IS the sort key everywhere
  * work is listed, so a day-first name sorts under "2" and files itself between two September
  * entries in the console, in initiative_status, and in every report built by ordering on it.

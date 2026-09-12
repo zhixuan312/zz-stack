@@ -28,9 +28,9 @@ const refuses = (name, got) => { const ok = typeof got === "string" && got.lengt
 const allows = (name, got) => is(name, got, null);
 
 /* ── initiativeNameShape — the path a name becomes ────────────────────────── */
-allows("a dated slug is a name",              R.initiativeNameShape("2026-09-11-enquiries"));
+allows("a dated slug is a name",              R.initiativeNameShape("2026-09-11-sample-intake"));
 refuses("a traversal is refused",             R.initiativeNameShape("../../etc"));
-refuses("a slash is refused",                 R.initiativeNameShape("2026-09-11/enquiries"));
+refuses("a slash is refused",                 R.initiativeNameShape("2026-09-11/sample-intake"));
 refuses("an absolute path is refused",        R.initiativeNameShape("/etc/passwd"));
 refuses("an empty name is refused",           R.initiativeNameShape(""));
 

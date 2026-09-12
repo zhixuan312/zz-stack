@@ -125,8 +125,8 @@ check("a refusal is classified in one place", () => {
   // The gateway redacted a refusal at WRITE time (to keep an address out of the table) and
   // the report redacted it again at READ time (to group a hundred classes of one), with the
   // same patterns in a different ORDER. Order decides the answer: measured on four real
-  // refusals, three came out differently, and `24-08-2026-enquiries` collapsed to
-  // `<initiative>` in one and `<date>-enquiries` in the other — so in the report every
+  // refusals, three came out differently, and `24-08-2026-sample-intake` collapsed to
+  // `<initiative>` in one and `<date>-sample-intake` in the other — so in the report every
   // initiative made its own class, which is the exact failure the redaction exists to
   // prevent.
   //

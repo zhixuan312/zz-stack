@@ -2324,8 +2324,8 @@ read this as one release and note that the breaking changes take the minor.
   the varying nouns out of a refusal at WRITE time, to keep an address out of the table; the
   report redacted them again at READ time, to group a hundred classes of one. Same patterns,
   different order — and order decides the answer. Measured on four real refusals, three came
-  out differently, and `24-08-2026-enquiries` collapsed to `<initiative>` in the gateway and
-  `<date>-enquiries` in the report, because an initiative folder starts with a date and the
+  out differently, and `24-08-2026-sample-intake` collapsed to `<initiative>` in the gateway and
+  `<date>-sample-intake` in the report, because an initiative folder starts with a date and the
   date pattern ran first. So in the report every initiative produced its own refusal class,
   which is precisely what the redaction exists to prevent, and the `--ledger` comparison it
   feeds could not see a class close. One function in `@zz/contracts` now, with the initiative

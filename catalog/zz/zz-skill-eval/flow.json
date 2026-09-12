@@ -10,7 +10,7 @@
   "servers": [
     {
       "name": "zz-core",
-      "path": "/mcp"
+      "path": "/core/mcp"
     },
     {
       "name": "cred-manage",

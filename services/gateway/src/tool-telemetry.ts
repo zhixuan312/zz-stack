@@ -57,7 +57,7 @@ import { blockHandshake, blockOf, blockVersion, callerKey, currentStep, flowFor,
  * accumulates past this.
  *
  * Past it we keep the HEAD and classify from that rather than dropping the line. A real tool
- * answer reached 1.2 MB — the block's read_api_spec returns the whole spec — and dropping it
+ * answer ran to megabytes — a documentation tool returning a whole spec — and dropping it
  * recorded a call that had plainly worked as `unreadable`, which is the one verdict this
  * table must not hand out when it can tell. The head is enough: a refusal is `ERROR:` at the
  * START of the text, so the first 64 KB decides it however long the answer runs. */
@@ -219,7 +219,7 @@ function identifiers(args: Record<string, unknown>): Record<string, string> | un
 /** The SHAPE of each argument — type and size, never content.
  *
  * Argument names alone answered "was the call even shaped right", and on a real run that
- * turned out to be one question short. casebox:add_app_variable was refused seven times and then
+ * turned out to be one question short. one block's write tool was refused repeatedly and then
  * succeeded twice, and every one of those nine calls carried the same three argument
  * NAMES. Whatever the agent changed to get through, the record could not show it, so the
  * usage skill could not be told and the next run makes the same seven calls.

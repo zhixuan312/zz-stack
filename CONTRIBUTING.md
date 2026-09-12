@@ -43,7 +43,7 @@ repository, no toolchain and no build — it runs published images from a releas
 
 ## Where things live
 
-`docs/repository-architecture.md` is the answer, and it is kept current because a gate
+`ARCHITECTURE.md` is the answer, and it is kept current because a gate
 check reads it. The short version: `packages/` is shared code, `services/` is the two
 processes, `catalog/` is what a team installs, `skills/` is what everyone gets,
 `scripts/` is this repository's own lifecycle.

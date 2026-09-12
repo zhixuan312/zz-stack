@@ -8,109 +8,112 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { COMMENTS, between, firstOf, gateOwnSource, gatewaySource, root, scan, sourceFiles, splitTopLevel, toolsIn, unbuilt, withoutComments } from "../read.mjs";
+import { COMMENTS, between, firstOf, gateOwnSource, gatewaySource, root, scan, sourceFiles, splitTopLevel, toolsIn, trackedFiles, unbuilt, withoutComments } from "../read.mjs";
 import { check } from "../run.mjs";
 
-/* THE CHECK server.ts SAYS EXISTS.
+/* WHAT THIS REPOSITORY DISCLOSES BY BEING PUBLIC.
  *
- * `PUBLIC_PATHS` exempts `/architecture` from authentication and justifies it in a comment:
- * "it describes the shape of the platform and contains nothing from inside it — no tenant
- * document, no name, no key. IT IS CHECKED FOR THAT BEFORE IT SHIPS."
+ * There used to be one unauthenticated HTML page here, `/architecture`, and this was the
+ * check that read it — because `server.ts` claimed in a comment that it "is checked for that
+ * before it ships" and nothing checked it. The page is gone and so is the route; what the
+ * page taught is not gone, and it generalises to every file in a published repository.
  *
- * Nothing checked it. A comment asserting a safety property IS a claim somebody relies on:
- * either the check exists or the sentence should not. This is the check, and it is written
- * against what an unauthenticated page can actually give away rather than against secrets
- * alone — an address, a measurement, somebody else's error text, or a subresource that
- * reports every reader to whoever serves it.
- *
- * A NOTE ON WHAT THIS COMMENT NO LONGER SAYS. It used to narrate the incident that prompted
- * it, in detail, naming what had been served and to whom. That is the same mistake one level
- * up: a public file describing exactly what leaked is an inventory for anyone who reads it.
- * The check is the durable artefact; the story belonged in the review, not in the repository.
+ * The rules are the ones that page actually broke, in the order it broke them: an address
+ * somebody can write to, an address somebody can reach, and a string shaped like a key.
+ * Each is mechanical, and none of them needs a list of things to look for — which is the
+ * whole reason this check survives its subject. A marker list only ever finds what its
+ * author already knew; a shape finds what nobody thought to write down.
  */
-check("the unauthenticated architecture page discloses nothing from inside", () => {
-  const rel = "docs/architecture.html";
-  if (!existsSync(join(root, rel))) {
-    return `${rel} does not exist, and server.ts still serves /architecture from it`;
-  }
-  const src = readFileSync(join(root, rel), "utf8");
+check("nothing in this repository discloses an address, a host or a credential", () => {
   const bad = [];
-  // An address that is not an example address. RFC 2606 and RFC 5737 exist for this.
-  for (const m of src.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/g)) {
-    if (!/@(example\.(com|org|net)|[a-z0-9.-]*\.example)$/i.test(m[0])) {
-      bad.push(`serves the address ${m[0]}`);
-    }
+  for (const rel of trackedFiles() ?? []) {
+    if (!/\.(ts|tsx|mjs|js|sql|sh|md|json|yml|yaml|html|example)$/.test(rel)) continue;
+    // TRACKED IS NOT PRESENT. A file deleted in the working tree is still tracked until the
+    // deletion is staged, and readFileSync on it throws — which reports a check that could
+    // not RUN as a check that FAILED, the one confusion this gate is most careful about.
+    if (!existsSync(join(root, rel))) continue;
+    readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
+      const at = `${rel}:${i + 1}`;
+      // An address that is not a documentation address. RFC 2606 reserves .example and the
+      // example.* domains for exactly this, and a SUBDOMAIN of one is still one —
+      // `a@x.example.com` is as reserved as `a@example.com`.
+      for (const m of ln.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/g)) {
+        if (!/@(?:[a-z0-9.-]+\.)?(?:example\.(?:com|org|net)|example|invalid|test|localhost)$/i.test(m[0])) {
+          bad.push(`${at} carries the address ${m[0]}`);
+        }
+      }
+      // A routable IPv4 address. RFC 5737's TEST-NET blocks and the private ranges are what
+      // a document is supposed to use; anything else names a machine that exists.
+      for (const m of ln.matchAll(/\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g)) {
+        const [a, b, c, d] = m.slice(1, 5).map(Number);
+        if (a > 255 || b > 255 || c > 255 || d > 255) continue;   // a version, not an address
+        const documentation =
+          (a === 192 && b === 0) || (a === 198 && (b === 51 || b === 18 || b === 19)) ||
+          (a === 203 && b === 0) || a === 10 || a === 127 || a === 0 ||
+          (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+        if (!documentation) bad.push(`${at} names the host ${m[0]}`);
+      }
+      // Anything shaped like a key. The lengths are the real ones: a provider key is long,
+      // and a short `sk-` literal is a test fixture the redaction engine has to be fed.
+      for (const re of [/zzp_[A-Za-z0-9]{16}/, /zze_[A-Za-z0-9]{16}/, /BEGIN [A-Z ]*PRIVATE KEY/,
+                        /AKIA[0-9A-Z]{16}/, /sk-[A-Za-z0-9]{32}/]) {
+        if (re.test(ln)) bad.push(`${at} carries something shaped like a credential (${re.source})`);
+      }
+    });
   }
-  // A routable IP. TEST-NET-1/2/3 and the private ranges are documentation addresses.
-  for (const m of src.matchAll(/\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}\b/g)) {
-    const [a, b] = [Number(m[1]), Number(m[2])];
-    const doc = (a === 192 && b === 0) || (a === 198 && (b === 51 || b === 18 || b === 19)) ||
-                (a === 203 && b === 0) || a === 10 || a === 127 ||
-                (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-    if (!doc) bad.push(`serves the address ${m[0]}`);
-  }
-  // Anything credential-shaped.
-  for (const re of [/zzp_[A-Za-z0-9]{16}/, /zze_[A-Za-z0-9]{16}/, /BEGIN [A-Z ]*PRIVATE KEY/,
-                    /AKIA[0-9A-Z]{16}/, /sk-[A-Za-z0-9]{20}/]) {
-    if (re.test(src)) bad.push(`serves something shaped like a credential (${re.source})`);
-  }
-  // AND THE THING THIS CHECK WAS WRITTEN FOR AND DID NOT TEST.
-  //
-  // Its comment above says the live page was "serving measured telemetry about a third party's
-  // production system to anonymous callers". It then tested for addresses, IPs, credentials and
-  // outbound fetches — none of which is telemetry. That is the same defect as the server.ts
-  // comment this check exists to make good on: a stated property, and code that checks a
-  // different one. An audit found the panel still there, three rounds later.
-  //
-  // Three signals, each mechanical:
-  //
-  // 1. A MEASUREMENT. A comma-grouped number of six digits or more on a page about
-  //    architecture is a byte count or a call count, not a version or a year.
-  //    Six digits or more, so `1,229` stays and `803,840` does not. The first version of this
-  //    required TWO comma groups and therefore missed exactly the number that prompted it.
-  for (const m of src.matchAll(/\b\d{1,3}(?:,\d{3})+\b/g)) {
-    if (m[0].replace(/,/g, "").length >= 6) bad.push(`serves the measurement ${m[0]}`);
-  }
-  // 2. A QUOTED ERROR BODY. Somebody else's refusal text, reproduced.
-  for (const re of [/"[^"]*status code \d{3}[^"]*"/i, /"Request failed[^"]*"/i]) {
-    const m = re.exec(src);
-    if (m) bad.push(`serves a verbatim error body: ${m[0].slice(0, 60)}`);
-  }
-  // 3. THE DE-ANONYMISATION THAT ACTUALLY HAPPENED, and the reason this rule is worth more
-  //    than the other two. The page called its subject "a case-management system of the kind
-  //    this platform integrates with" — and then named two of its tools. Elsewhere in the
-  //    repository those same identifiers appear as `<block>:<tool>`, which says whose they
-  //    are. An anonymous description plus a named identifier is not anonymous.
-  const elsewhere = sourceFiles(["services", "packages", "scripts", "catalog", "blocks"], [".ts", ".mjs", ".sql", ".md"])
-    .filter((f) => f !== rel)
-    .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
-  //    An MCP tool name is snake_case and a command namespace is not, so requiring an
-  //    underscore separates `casebox:read_api_spec` from `/sdlc:deck` without a list of
-  //    namespaces to keep in step.
-  const qualified = new Set([...elsewhere.matchAll(/\b([a-z][a-z0-9_-]{2,}):([a-z][a-z0-9]*_[a-z0-9_]+)\b/g)]
-    .map((m) => m[2]));
-  for (const tool of qualified) {
-    if (new RegExp(`\\b${tool}\\b`).test(src)) {
-      bad.push(`names \`${tool}\`, which elsewhere in this repository is written as ` +
-               `\`<block>:${tool}\` — the page describes its subject anonymously and then ` +
-               `identifies it by a tool name`);
-    }
-  }
+  return bad.length ? bad.slice(0, 12).join("; ") : null;
+});
 
-  // AND WHAT IT ASKS A READER'S BROWSER TO FETCH ON LOAD. A page that discloses nothing in
-  // its own bytes still discloses every reader to whoever it fetches a font or a script
-  // from — this page handed each anonymous visitor's IP to a font host until 2026-09-11.
-  //
-  // `src=` and `<link>` only. An `<a href>` to an external site is a link a reader may
-  // choose to follow, and treating the two the same makes the check fire on every citation
-  // — which is how a check gets a reputation for crying wolf and stops being read.
-  for (const m of src.matchAll(/<(?:script|img|iframe|source|video|audio)\b[^>]*\bsrc\s*=\s*["'](?:https?:)?\/\/([^"'/]+)/gi)) {
-    bad.push(`fetches from ${m[1]} on load`);
+/* AND THE ONE THAT MATTERS MORE THAN ANY SHAPE.
+ *
+ * The blocks named in this repository are stand-ins. A pseudonym protects nothing the moment
+ * prose says it stands for something real — the word "real" put in front of the name, or the
+ * name set beside a named environment. Either sentence tells a reader there IS a subject,
+ * that this platform ran against it, and roughly what happened when it did, which is the
+ * disclosure whatever the name has been changed to.
+ *
+ * Four audit rounds read these files and none of them caught this class, because every one of
+ * the sentences was true and well written. What makes them findings is not falsehood, it is
+ * the pairing: a pseudonym plus a claim about a deployment somebody could go and look for.
+ *
+ * THIS COMMENT DELIBERATELY QUOTES NONE OF THEM. The first draft did, and the check found its
+ * own examples — the third time in this gate that a check could not tell a fault from a
+ * sentence describing one. Where the shape can be described instead of shown, describe it.
+ *
+ * Derived from `034_block_title.sql`, which is where a block's id and its display name
+ * actually live. A hand-typed list here would stop covering the next block the day it
+ * is added, which is the failure this check exists to prevent arriving through the check.
+ */
+check("no stand-in block is written about as a real deployment", () => {
+  const titles = readFileSync(join(root, "services/gateway/migrations/034_block_title.sql"), "utf8");
+  const blocks = [...titles.matchAll(/set title = '([^']+)',\s*kind = '[^']*'\s*where name = '([a-z0-9_-]+)'/g)]
+    .flatMap((m) => [m[1], m[2]])
+    .filter((w) => w !== "platform" && w !== "zz-core");
+  if (blocks.length < 4) {
+    return "034_block_title.sql no longer names the blocks and their titles — this check reads nothing";
   }
-  for (const m of src.matchAll(/<link\b[^>]*\bhref\s*=\s*["'](?:https?:)?\/\/([^"'/]+)/gi)) {
-    bad.push(`fetches from ${m[1]} on load`);
+  const names = blocks.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  // Two shapes, both narrow on purpose. `real` next to the name, and the name in the same
+  // sentence as an environment. Bare `real` and bare `actually` are NOT signals — "the real
+  // predicate" and "a block a person could actually configure" are correct prose, and a
+  // check that calls correct prose a defect is a check people switch off.
+  const claims = [
+    new RegExp(`\\breal\\s+(?:${names})\\b`, "i"),
+    new RegExp(`\\b(?:${names})\\b[^.]{0,90}?\\b(?:in|on)\\s+(?:production|staging|UAT)\\b`, "i"),
+    new RegExp(`\\b(?:in|on)\\s+(?:production|staging|UAT)\\b[^.]{0,90}?\\b(?:${names})\\b`, "i"),
+  ];
+  const bad = [];
+  for (const rel of trackedFiles() ?? []) {
+    if (!/\.(ts|tsx|mjs|sql|sh|md|json|yml|yaml|html)$/.test(rel)) continue;
+    if (!existsSync(join(root, rel))) continue;
+    readFileSync(join(root, rel), "utf8").split("\n").forEach((ln, i) => {
+      if (claims.some((re) => re.test(ln))) {
+        bad.push(`${rel}:${i + 1} writes about a stand-in block as a real deployment: ` +
+                 `"${ln.trim().slice(0, 90)}"`);
+      }
+    });
   }
-  return bad.length ? [...new Set(bad)].join("; ") : null;
+  return bad.length ? bad.slice(0, 12).join("; ") : null;
 });
 
 check("the credential store is only mutated through withCredentials", () => {
@@ -217,7 +220,7 @@ check("no proxy forwards the caller's credentials upstream", () => {
 
 check("a block is told nothing about who is calling it", () => {
   // The gateway stamps x-zz-* headers on every request so its own services know who is
-  // calling. A block is a THIRD PARTY — the real CaseBox staging among them — and it
+  // calling. A block is a THIRD PARTY — it is not this platform, whoever wrote it — and it
   // gets exactly one thing, its own key. Who the person is, how they authenticated and which
   // team their token is bound to are none of its business.
   //

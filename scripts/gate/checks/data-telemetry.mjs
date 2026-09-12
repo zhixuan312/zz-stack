@@ -381,7 +381,7 @@ check("a count of what is on this deployment says when it was counted", () => {
   // deployment, three carry a sentence of prose where a folder belongs" and "eight of the
   // eleven nodes on this deployment cannot be". Production has fourteen. Both sentences exist
   // to justify a rule and the reasoning is sound; what rots is the tense. This repository
-  // already draws that line for STATE.md and docs/release — a fact and a status are different
+  // already draws that line for STATE.md — a fact and a status are different
   // things — and nothing drew it for a skill a tenant reads.
   //
   // WHITESPACE IS NORMALISED, and that is the whole reason this is a check rather than a grep.

@@ -26,9 +26,6 @@ route this gateway serves has a caller"*, *"redaction lets no secret through, on
 real predicate"*. Reading its output is the fastest way to learn what the platform
 believes about itself.
 
-`docs/findings/` is the companion to that: a catalogue of defects found in the
-measuring instrument itself — every one of which had been reporting success.
-
 To install it on a server, read **`deploy/README.md`**. That path needs no repository,
 no toolchain and no build: it runs published images from a release bundle.
 To work on it, read **`CONTRIBUTING.md`**.
@@ -127,7 +124,7 @@ testing/    the shell around the engines: reset-store.sh, oauth-delegation.mjs
             measurement), block-oracle.sh (which blocks a requirement needs,
             decided from the brief alone and blind to what was chosen),
             reset-store.sh (archives a corpus's initiatives so the next version
-            answers instead of resuming the last one — see findings/H9). The
+            answers instead of resuming the last one). The
             engines themselves
             are TypeScript, in
             packages/tools/src/testing/: eval-grade (the mechanical sanity floor for what ONE step produced
@@ -234,7 +231,7 @@ Building blocks are NOT in this repo. A block is somebody else's MCP server, rea
 through the credential gateway; nothing here builds one. What the platform owns is its
 side of that relationship — the per-block door, the credential proxy, and the usage
 skills written about a block that are true only against the version they were checked
-on. The requirements a block team must meet are `docs/release/building-block-contract.md`,
-here and only here: a standard that exists twice is one nobody can trust.
+on. The requirements a block team must meet are
+`blocks/_standard/skills/building-a-block/references/contract.md`, here and only here: a standard that exists twice is one nobody can trust.
 
 Start here: `deploy/README.md` (server install and day-2 operations).

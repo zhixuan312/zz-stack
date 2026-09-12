@@ -1,6 +1,6 @@
 ---
 name: zz-block-report
-version: 0.8
+version: 0.9
 description: Stage 3 of block evaluation, and the only document it writes. The numbers, then the defects, then what we ask for — one report, gated, and it is what the block team receives. Writes findings.md.
 when_to_use: "The three measurements are done. This is the whole output of a block evaluation."
 ---
@@ -44,7 +44,7 @@ answer in that time, then the evidence for as long as they want it.
 **The asks come before the evidence.** They are the only part that needs a decision, and a
 report that hides them under four sections of measurement gets read as a complaint.
 
-**A defect line is one sentence a stranger understands.** "`get_app_users` ignores the roles
+**A defect line is one sentence a stranger understands.** "`list_members` ignores the roles
 filter and returns everybody" — not "the roles query parameter exhibits non-conformant
 filtering behaviour on the App Admin surface".
 
@@ -169,7 +169,7 @@ after the call, not what the call said.
 **This is the rule this stage exists for.** Every defect is re-run against the live block
 before it goes in the document.
 
-On 2026-09-04, four knowledge nodes across five initiatives recorded `add_workflow` as
+On 2026-09-04, four knowledge nodes across five initiatives recorded `create_rule` as
 broken — "not transient across six payload shapes". Every later run read those nodes and
 took the fallback instead of retrying, so a misdiagnosis compounded for a week. One call with
 a corrected payload disproved it. What was actually there was narrow and real: an email block
@@ -204,7 +204,7 @@ The order is fixed and the last step is conditional.
 many versions the handshake reported. A number is a fact; "16% is high" is a judgement about
 somebody else's system made from outside their roadmap.
 
-**Then justification and explanation** — what the facts mean for the work we did. "`add_workflow`
+**Then justification and explanation** — what the facts mean for the work we did. "`create_rule`
 refused 44 of 66 calls, 35 of them 422; a corrected payload succeeded, so the shape was ours
 and the message did not say which field" is explanation. It tells their team what we found
 without telling them what to do about it.

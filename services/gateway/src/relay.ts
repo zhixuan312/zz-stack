@@ -27,9 +27,9 @@ export const HOP_HEADERS = new Set([
 /** Headers that must NEVER leave this gateway, whatever the destination.
  *
  * `authorization` carries the caller's zz PAT. The /core proxy dropped it by naming it
- * inline; the BLOCK proxy did not, so every third-party platform — including the real
- * CaseBox staging — received a token that authenticates as that person against this
- * platform: their documents, their team's knowledge, their whole access. Verified by
+ * inline; the BLOCK proxy did not, so every third-party platform a block points at
+ * received a token that authenticates as that person against this platform: their
+ * documents, their team's knowledge, their whole access. Verified by
  * pointing a block at an echo server, which received both its own X-API-Key and the PAT.
  *
  * A block is given exactly one credential: its own, injected below. Nothing about how the
@@ -329,8 +329,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   // breaker opens after three of those and then blocks every further attempt. Each blocked
   // attempt counts as another failure, so an agent retrying holds its own breaker open.
   //
-  // Measured on production 2026-09-09: one transient upstream blip on casebox became a hard outage
-  // for one person, and their agent — seeing a block that offers only `credential_required` —
+  // One transient upstream blip on a block becomes a hard outage for the person behind it, and their agent — seeing a block that offers only `credential_required` —
   // told them their OAuth sign-in had not landed and to go and do it again. It had landed
   // four minutes earlier and was valid for another twelve hours. That is the real cost: not
   // the blip, but a diagnosis that sends a person to redo the one thing that was fine.

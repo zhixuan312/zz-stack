@@ -611,7 +611,7 @@ async function main(argv: string[]): Promise<number> {
   const system = judgeSystem(rubric, capabilities);
 
   // FOUR AT A TIME. Each judgement is one long read by a capable model and takes minutes; a
-  // thirty-requirement corpus done strictly one after another takes hours, and an evaluation
+  // full corpus done strictly one after another takes hours, and an evaluation
   // nobody will wait for is one that stops being run. Four is bounded on purpose — the judge is
   // the same account the flow itself runs under, and saturating it makes every OTHER measurement
   // on this machine slower and blames the slowness on whatever ran next.

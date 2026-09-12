@@ -287,56 +287,6 @@ check("every console write route records the door it came through", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the knowledge page injects only what the renderer sanitised", () => {
-  const rel = join("services", "gateway", "app", "index.html");
-  const src = readFileSync(join(root, rel), "utf8");
-  const lines = src.split("\n");
-  // A reference to data that came from the server. The page's own locals are built from
-  // esc'd parts and are covered by the interpolations that build them.
-  const DATA = /\b(state|c|x|i|s|r|d|e)\s*[.[]/;
-  const SAFE = [
-    /\besc\(/, /\bjsArg\(/,                 // escaped, or JSON-quoted for a handler
-    /\?\s*"[^"]*"\s*:\s*"[^"]*"\s*$/,        // a ternary yielding a literal either way
-    /\.length\b/,                            // a number
-    /\bencodeURIComponent\(/,                 // a query parameter, not markup
-    /^state\.doc \? state\.doc\.html : ""$/,  // THE exception: server-rendered, corpus-proven
-  ];
-  // EVERY template literal in the file, not only the ones that begin at an `innerHTML =`.
-  // The lists — sources, initiatives, search hits — are built into a local first and injected
-  // a line later, which is where nearly all the interpolation is: tracking from the
-  // assignment inspected the outer shell and none of the contents. Found by removing an
-  // esc() from a source's body and watching the check pass.
-  // Only templates that ARE MARKUP. `const who = \`${state.me.email} · ${state.team}\`` builds
-  // a plain string that is escaped one line later at the point it is injected — flagging it
-  // is crying wolf on the page's own correct output, which this gate has learned twice is how
-  // a check gets silenced. A template with a tag in it is the one going into innerHTML.
-  const bad = [];
-  const templates = [];
-  for (let i = 0; i < src.length; i++) {
-    if (src[i] !== "`" || src[i - 1] === "\\") continue;
-    const end = (() => {
-      for (let j = i + 1; j < src.length; j++) if (src[j] === "`" && src[j - 1] !== "\\") return j;
-      return -1;
-    })();
-    if (end < 0) break;
-    templates.push({ text: src.slice(i, end + 1), at: i });
-    i = end;
-  }
-  for (const t of templates) {
-    if (!/<[a-z/]/i.test(t.text)) continue;                  // not markup
-    const lineNo = src.slice(0, t.at).split("\n").length;
-    for (const m of t.text.matchAll(/\$\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g)) {
-      const expr = m[1].trim();
-      if (!DATA.test(expr)) continue;
-      if (SAFE.some((re) => re.test(expr))) continue;
-      bad.push(`${rel}:${lineNo} injects \`${expr.slice(0, 60)}\` without esc() — the page holds ` +
-               "the reader's token, and only the renderer's own output may go in raw");
-    }
-  }
-  if (!/function esc\(/.test(src)) bad.push(`${rel} no longer defines esc()`);
-  return bad.join("\n");
-});
-
 check("the console's version and its compose literal move together", () => {
   // The same claim the check above makes for the blocks, for the third component. The
   // console is a separate repository with its own compose file, and that file goes to the

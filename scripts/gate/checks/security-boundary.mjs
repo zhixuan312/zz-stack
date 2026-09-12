@@ -205,10 +205,10 @@ check("the gateway is authenticated by default, and the exceptions are the inten
   const bad = [];
   // What must be reachable with no token, and what must never be.
   for (const [p, want] of [
-    ["/", true], ["/health", true], ["/app", true],
+    ["/", true], ["/health", true],
     ["/schemas/envelope.json", true], ["/schemas/manifest.json", true],
     ["/core/mcp", false], ["/manage/mcp", false],
-    ["/api/kb/sources", false], ["/api/kb/doc", false], ["/pkg/claude-code.tgz", false],
+    ["/pkg/claude-code.tgz", false],
     ["/p/casebox/mcp", false],
   ]) {
     if (isPublic(p) !== want) {
@@ -398,7 +398,7 @@ check("both services authenticate their own network the same way", () => {
 });
 
 check("the paths documented as public are the ones the gateway exempts", () => {
-  // "Everything but `/`, `/health` and `/app` requires a token" is what STATE.md said, and
+  // "Everything but `/`, `/health` and `/architecture` requires a token" is what STATE.md said, and
   // `/schemas/*` had been public since the release that added it — served deliberately
   // without a token, because a rulebook that answers 401 is one people copy by hand. The
   // list in the document and the list in the code are the same list, and only one of them

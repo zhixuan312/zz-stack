@@ -97,7 +97,7 @@ export function mountCatalog(app: Express): void {
     // Guessing is wrong even when it guesses right, because the day it guesses wrong there is
     // nothing to point at. The gate now refuses a manifest that declares `entry` without
     // `stages`, so a flow cannot reach this line undeclared — see
-    // docs/repository-architecture.md.
+    // ARCHITECTURE.md.
     const flows = catalogEntries()
       .filter((e) => (e.manifest.stages ?? []).length > 0)
       .map((e) => {
@@ -224,7 +224,7 @@ export function mountCatalog(app: Express): void {
 
 /** ONE SKILL A FLOW RUNS — the same shape as a block's, because it is the same thing.
  *
- * The flow page could say ops-intent scored 3.42 and never show a line of what ops-intent
+ * The flow page could say ops-intent scored what it scored and never show a line of what ops-intent
  * SAYS. Reading the skill is most of judging it: a score without the text is a number
  * about something the reader cannot see.
  *

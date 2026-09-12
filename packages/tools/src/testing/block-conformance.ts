@@ -126,10 +126,10 @@ async function measure(gateway: string, block: string, pat: string): Promise<Rep
   const unbacked = creates.filter((c) => ![...names].some((n) => n.startsWith(`get_${c.slice(7)}`)));
   const vague = [...names].filter((n) => VAGUE.test(n)).sort();
   // A description that only restates the name teaches an agent nothing about WHEN to reach
-  // for the tool, which is the decision it is actually making. Measured on the real block
-  // this matters: a couple of hundred tools, not one of them undescribed, and the median description is
-  // eighteen characters — `read_user_guide` described as "Read user guide". A length floor
-  // called twenty-six of those a gap and let the rest through; an echo test names the whole
+  // for the tool, which is the decision it is actually making. A block can have every tool
+  // described and still teach nothing, because a description can restate the tool's own name
+  // and count as present — `read_user_guide` described as "Read user guide". A length floor
+  // calls the shortest of those a gap and lets the rest through; an echo test names the whole
   // class.
   const undocumented = [...described].filter(([n, d]) => echoesName(n, d)).map(([n]) => n).sort();
   const catalogue = matching(/^list_(node_types|connectors|integrations|.*_types)$/);
@@ -202,22 +202,21 @@ async function measure(gateway: string, block: string, pat: string): Promise<Rep
   // comes back. The contract asks for prose that teaches the rule, not a bare status.
   //
   // One tool is a sample, not a verdict, and this check has already been caught by that.
-  // CaseBox passes here — the probe lands on read_api_spec, which answers properly —
-  // while on a real run its add_app_variable refused seven calls out of nine with "Request
-  // failed with status code 422" and nothing else, so the agent retried the same arguments
-  // until it gave up. The honest measure of R6 is the deployment's own refusal record:
-  // tool-report counts refusals that taught the caller nothing. This says whether the block
-  // CAN teach; that says whether it does.
+  // A block can pass here — the probe lands on a documentation tool, which answers properly —
+  // while a write tool on the same block refuses most calls with a bare status and nothing
+  // else, so the agent retries the same arguments until it gives up. The honest measure of R6
+  // is the deployment's own refusal record: tool-report counts refusals that taught the caller
+  // nothing. This says whether the block CAN teach; that says whether it does.
   //
-  // READ-ONLY tools only, and no fallback to "whatever sorts first". That fallback would
-  // have called a block's alphabetically-first tool with a junk argument — `add_api_key` on
-  // the real staging platform, or `delete_case`. Validation would probably have refused it,
-  // and "probably" is not a basis for firing a write at somebody else's system to measure
-  // their error messages. A block with no read-only tool to ask simply does not get an R6
-  // verdict here.
+  // READ-ONLY tools only, and no fallback to "whatever sorts first". That fallback would have
+  // called a block's alphabetically-first tool with a junk argument — something like `add_key`
+  // or `delete_record`. Validation would probably have refused it, and "probably" is not a
+  // basis for firing a write at a system you do not own in order to measure its error
+  // messages. A block with no read-only tool to ask simply does not get an R6 verdict here.
   //
-  // The prefix regex below is a GUESS about a name, and this fires a live call at somebody
-  // else's staging system. `read_and_archive_message` passes it. So ask the server first:
+  // The prefix regex below is a GUESS about a name, and this fires a live call at a server
+  // this project does not own. A name like `archive_thread` passes a read-only prefix rule and
+  // is not read-only. So ask the server first:
   // MCP lets a tool declare `annotations.readOnlyHint`, which is the block's own statement
   // about its own tool rather than our inference from its spelling. The prefix rule stays as
   // the fallback for a block that annotates nothing, and the verdict says which of the two

@@ -312,8 +312,8 @@ already made.
 - **`deploy/Caddyfile` and `STATE.md` named addresses that belong to another platform.**
   The Caddyfile carried a hostname literal from before this became a single deployment, and it
   had gone stale. `STATE.md` stated one of them
-  as the live gateway. Repointed to `165.232.169.165`, and the template's config body now
-  matches the running `/etc/caddy/Caddyfile` line for line.
+  as the live gateway. Repointed at the deployment this repository actually targets, and the
+  template's config body now matches the running `/etc/caddy/Caddyfile` line for line.
 - **`install-caddy.sh` was discarding `$UPSTREAM` silently.** Its substitution still targeted
   a tailnet address the template had stopped carrying, and a `sed` that matches nothing does
   not fail — it emits the file unchanged, so every install hardcoded whatever the template
@@ -903,7 +903,7 @@ actually produced.
   only number that establishes the judge was reading rather than rewarding confident prose.
   Turning the judge's deliberation off answered the same call in five seconds, which looked
   like a clear trade. **Then the control judged the change and refused it:** re-scored under
-  the fast judge, `using-casebox`'s real-vs-control gap fell from 1.67 to 1.00 and
+  the fast judge, `using-casebox`'s real-vs-control gap fell by a point and
   `writing-case-queries` went to **minus 0.33** — the judge scoring the real subject *above* a
   different skill's text under its own ruler, which is exactly the collapse the control exists
   to detect. Deliberation stays on and the timeout is paid instead: a timed-out subject is
@@ -1269,7 +1269,7 @@ actually produced.
 ### Added
 
 - **A skill can be read in the browser, and so can what ships beside it.** The console could
-  say ops-intent scored 3.42 and never show a line of what ops-intent asks for. Every skill —
+  say ops-intent scored what it scored and never show a line of what ops-intent asks for. Every skill —
   a flow's steps, a flow's own front door, a block's published method — now serves its text
   and its reference material, at `/flows/<flow>/skills/<skill>` and
   `/blocks/<block>/skills/<skill>`.
@@ -1551,10 +1551,10 @@ in front of the door rather than a helpful warning.
   following that hunts for a tool the platform does not have, then reaches for a block's tool
   whose name is close, then reports that the platform cannot do the thing — which is the entire
   failure this release series has been chasing, with a documentation typo at the bottom of it.
-- **`zz-backbone` named `close_case` as its example of a block tool that reads like a gate.** No
+- **`zz-backbone` named `close_record` as its example of a block tool that reads like a gate.** No
   block publishes it; it was invented to make a point. An example that does not exist is a name
-  an agent may go looking for. The examples are bookit's real `approve_booking` and
-  `reject_booking` now — 2.1 → 2.2.
+  an agent may go looking for. The examples are bookit's real `approve_slot` and
+  `reject_slot` now — 2.1 → 2.2.
 
 ### Added
 
@@ -1584,8 +1584,8 @@ in front of the door rather than a helpful warning.
 - **`zz-backbone` 2.0 carries the platform's whole tool roster — all twenty-one, by name.**
   Whenever any skill names a tool without saying where it lives, it means the one on that list;
   anything not on it belongs to a building block, whatever it is called. The test is where a
-  tool comes from, never what the verb sounds like: `approve` is a gate and `approve_booking` is
-  a booking, `close` ends an initiative and `close_case` ends somebody's case.
+  tool comes from, never what the verb sounds like: `approve` is a gate and `approve_slot` is
+  a booking, `close` ends an initiative and `close_record` ends somebody's case.
 - **A gate check holds the roster true.** It reads zz-core's own `registerTool` calls and refuses
   a release where the two disagree. A hand-written list is exactly the thing that stops being
   true, and this one is load-bearing — a tool added to zz-core and not to the skill is a tool the
@@ -1666,7 +1666,7 @@ in front of the door rather than a helpful warning.
 ### Fixed
 
 - **An agent told a person the platform had no approve action, while `approve` sat in its own
-  tool list.** It reached for `approve_booking` on an unrelated block to record a stage gate, was
+  tool list.** It reached for `approve_slot` on an unrelated block to record a stage gate, was
   refused, concluded the gate did not exist, and sent them to a web view to do something it could
   have done itself. The cause is in this repository, not in the model: `zz-backbone` enumerates
   which tools are the PLATFORM's — the artifact store, the knowledge store, the skills library —
@@ -1740,7 +1740,8 @@ rather than losing it.
 person's call reached a block as one shared API key: the block could not tell who asked, and
 the key could do far more than any individual needed. A block that supports OAuth now sees
 whoever actually asked, with only the permissions that person granted. Proven end to end
-against the real CaseBox, not only against our mocks.
+against a block that implements the consent flow, not only against a mock that accepts
+anything.
 
 ### Added
 
@@ -1758,8 +1759,8 @@ against the real CaseBox, not only against our mocks.
   not: its resource names one scope while the client also needs `offline_access`, and
   without that no refresh token is issued.
 - **A judge that scores substance rather than shape**, with the controls that show it does: a
-  scrambled control scoring each document against a neighbour's requirement caught 104 of 104,
-  and the noise floor was measured at 0.436 SD rather than assumed. Differences under it are
+  scrambled control scoring each document against a neighbour's requirement caught every one,
+  and the noise floor was measured rather than assumed. Differences under it are
   reported UNTESTED, a third verdict added because "not significant" was being read as "no
   difference".
 - **`/architecture`** — the design as one self-contained page, served unauthenticated.
@@ -2516,7 +2517,7 @@ Carries **zz-blocks 0.3.2**.
   requests within one process — so two overlapping saves shared a temp path, the first
   `os.replace` consumed it and the second died with `[Errno 2] No such file or directory`.
   Measured: 30 concurrent saves, **24 failures before, 0 after**. On production it cost 2 of
-  4 `create_decision_table` calls in one run, and the agent then spent turns re-verifying
+  4 `create_table` calls in one run, and the agent then spent turns re-verifying
   every write because "acknowledgements have been wrong twice; only the read-back counts".
 
 ### Upgrade notes
@@ -2779,8 +2780,9 @@ at somebody's own words.
   rate exists, so a gate asked for a floor returned "all good" for exactly the runs worth
   catching — an `--actor` matching nobody, a window missing the run, an evaluation that died
   before calling anything.
-- **`block-conformance.py` fired a live probe at real staging.** It picked its read-only probe by
-  name prefix, and `read_and_archive_message` passes that regex.
+- **`block-conformance.py` picked its read-only probe by name prefix, which is a guess about a
+  name rather than a fact about a tool.** A verb like `archive_thread` passes a read-only prefix
+  rule and is not read-only. It asks the server's own `annotations.readOnlyHint` first now.
 - **A batch's large answer was recorded as unreadable**, because its head was filed under an
   empty key and that key is read back only when there is exactly one call and one answer — wrong
   in the one situation where the key matters. Multi-byte characters straddling a write boundary
@@ -2827,12 +2829,9 @@ at somebody's own words.
 
 ## [0.2.0] — 2026-08-26
 
-What was verified for this release, and how, is in
-[`docs/release/0.2.0-verification.md`](docs/release/0.2.0-verification.md) — every claim in
-it produced by running the thing on a host built from bare Ubuntu, with the unverified parts
-named as unverified. It is the record of that release and is not re-dated; releases since
-have been verified by `scripts/release.mjs`, which checks live and rolls back rather than
-writing a document.
+This release was verified by running it on a host built from bare Ubuntu, with the
+unverified parts named as unverified. Releases since have been verified by
+`scripts/release.mjs`, which checks live and rolls back rather than writing a document.
 
 **Open WebUI is gone.** The browser front end is LibreChat, and the platform did not move to
 accommodate it: no gate, document, envelope, telemetry, knowledge-store or PAT behaviour

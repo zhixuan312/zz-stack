@@ -89,10 +89,6 @@ COPY catalog /catalog
 COPY skills /skills
 # Everything written ON TOP of a building block: its usage skill and its tests.
 COPY blocks /blocks
-# Written for people rather than for the machine, and served by the gateway at /architecture.
-# Read at runtime for the same reason as the three above: it changes on its own cadence and it
-# is not code.
-COPY docs /docs
 
 ENV SERVICE=
 EXPOSE 8000

@@ -373,7 +373,7 @@ governed flow without hiring an engineer.
 |---|---|---|---|
 | **Flow team** | the method: stages, questions, documents, what "done" means — markdown only, zero code | guardrails, deployment, blocks, telemetry, engines | whether the flow describes how they actually work |
 | **ZZ team** | everything under the method: both services, the store, the registry, the projections, the engines, deployment, backups | what the team's method should be | that the platform records the truth, and keeps doing so |
-| **Block teams** | their platform and its MCP surface | anything about flows or identity | meeting `docs/release/building-block-contract.md` R1–R14 |
+| **Block teams** | their platform and its MCP surface | anything about flows or identity | meeting `blocks/_standard/skills/building-a-block/references/contract.md` R1–R14 |
 
 Platform roles (authority, re-derived from the database on every call):
 
@@ -420,8 +420,9 @@ had become the one place describing a platform that was dismantled.
 The rounds it narrated are not deleted; they moved to where a transaction log belongs. This file
 is the balance, and the balance is:
 
-- **One deployment.** `165.232.169.165` — gateway at `api.165-232-169-165.nip.io`, console on
-  the bare host. Four containers: zz-core, cred-proxy, postgres, and the console.
+- **One deployment**, whose address is read off the machine rather than written here — gateway
+  on the `api.` subdomain of the host's own name, console on the bare host.
+  `ssh <host> 'curl -s ifconfig.me'` is the one answer that cannot go stale. Four containers: zz-core, cred-proxy, postgres, and the console.
 - **Four flows in the catalog**, all installable: `sdlc-flow` (7 stages, 17 skills),
   `zz-access`, `zz-block-eval`, `zz-skill-eval`. `zz.skill` holds 32 rows, `zz.skill_version`
   35.
@@ -843,7 +844,7 @@ packages declare both, which is why one field could not carry them). `zz-access`
 stage; `zz-admin` stays a surface and carries its own prompt, because the generated router
 assumes a flow and told it to `skill_view` an entry it does not have.
 
-`docs/repository-architecture.md` is the definition the repository is now checked against, and
+`ARCHITECTURE.md` is the definition the repository is now checked against, and
 three gate checks enforce the parts a machine can read.
 
 **What is NOT yet true:** the definition covers catalog packages, the eight roots and the
@@ -930,10 +931,10 @@ were migrated. Nobody has written a node since.
 
 **Delegated block access is the whole of what 0.6.0 adds to this list.** A person signs in to
 a building block as themselves and their own token is attached to every later call. It has
-been walked end to end on UAT for all three blocks — including the real CaseBox, which
-answered with the person's name and their apps rather than a shared key — and the automated
-loop runs from a revoked grant so that "the block names a person" is a result and not a
-tautology. What has NOT happened is anyone using it to do work: no round has run through it,
+been walked end to end for all three blocks — including one that enforces consent, which
+answered with the person's name and their own grants rather than a shared key — and the
+automated loop runs from a revoked grant so that "the block names a person" is a result and
+not a tautology. What has NOT happened is anyone using it to do work: no round has run through it,
 and the mocks accept a scope without enforcing it, so what is proven is the platform's half.
 
 Everything here passes the offline gate and its own engine, and 0.10.0 is the version the live

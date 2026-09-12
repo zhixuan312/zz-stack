@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.22
+version: 3.23
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -462,7 +462,7 @@ the conversation, because a judge an agent can invoke is a judge that varies wit
 
   A tool NOT on that list belongs to a building block, whatever it is called. The
   test is which server it comes from, never what the verb sounds like: zz-core's
-  `approve` records a gate on a document, while bookit's `approve_booking`
+  `approve` records a gate on a document, while bookit's `approve_slot`
   approves somebody's appointment. Same verb, different platform, and only one of
   them is a gate.
 - **Every tool in this skill and in a flow's skills is ZZ-CORE'S tool of that

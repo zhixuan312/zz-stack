@@ -155,7 +155,7 @@ async function main(argv: string[]): Promise<number> {
   const reqs = (JSON.parse(readFileSync(corpus, "utf8")) as { requirements: Record<string, Requirement> }).requirements;
 
   // WHAT WAS ACTUALLY RUN, and only that. Grading the whole corpus against a partial run
-  // reported twenty-seven requirements as producing no document when they had simply never
+  // reported most requirements as producing no document when they had simply never
   // been asked to — a table of failures that were not failures, which is worse than no table.
   const ran = new Map<string, string>();
   try {
@@ -221,7 +221,7 @@ async function main(argv: string[]): Promise<number> {
     const flags: string[] = [];
     // DID THE GATE PASS. A document that exists and was never approved does not let the flow
     // continue, and checking only that the file is there reports it as a success. This was found
-    // the expensive way: ops-spec scored 30 of 30 on documents and sections, and then ops-select
+    // the expensive way: ops-spec scored full marks on documents and sections, and then ops-select
     // refused two of them because the spec was still a draft — the step downstream noticed what
     // the grader had not.
     //
@@ -258,7 +258,7 @@ async function main(argv: string[]): Promise<number> {
   // ── THE VERDICT CHECK, for the step that chooses ───────────────────────────
   //
   // A step whose document is a SELECTION is the only kind with a checkable ground truth beyond
-  // its own sections: four of the thirty requirements cannot be built with the blocks on this
+  // its own sections: some requirements cannot be built with the blocks on this
   // deployment — no payment block, no identity block, no mapping block, no streaming block is
   // connected, and none of those is a matter of opinion. Keyed on `role`, not on the step's
   // name, so a flow that calls its selection step something other than ops-select still gets

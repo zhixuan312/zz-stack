@@ -1,7 +1,7 @@
 {
   "building-a-block": {
-    "version": "1.0",
-    "sha": "4674982dea34"
+    "version": "1.1",
+    "sha": "ac9f3dd5c0c9"
   },
   "sdlc-audit-criteria": {
     "version": "1.0",
@@ -84,16 +84,16 @@
     "sha": "5b372d293822"
   },
   "zz-block-locate": {
-    "version": "0.1",
-    "sha": "e393e2deaa61"
+    "version": "0.2",
+    "sha": "94ac42475605"
   },
   "zz-block-measure": {
     "version": "0.1",
     "sha": "a641fe169f75"
   },
   "zz-block-report": {
-    "version": "0.8",
-    "sha": "cfb63860cb4a"
+    "version": "0.9",
+    "sha": "0e694794bbab"
   },
   "zz-skill-define": {
     "version": "0.5",
@@ -120,8 +120,8 @@
     "sha": "38306c845a45"
   },
   "zz-backbone": {
-    "version": "3.22",
-    "sha": "4e4934cda772"
+    "version": "3.23",
+    "sha": "c8598327fb43"
   },
   "zz-knowledge": {
     "version": "2.4",

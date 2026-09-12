@@ -105,7 +105,7 @@ check("no fixture directory enters the image", () => {
 
 check("nothing in testing/ computes — it drives, and the computing lives in packages/tools", () => {
   // WHO RUNS IT is the boundary between the three script surfaces, and testing/ is the one
-  // that drives a RUNNING DEPLOYMENT by hand. See docs/repository-architecture.md.
+  // that drives a RUNNING DEPLOYMENT by hand. See ARCHITECTURE.md.
   //
   // LENGTH IS THE WRONG TEST and this check was written with it first, with a ninety-line
   // ceiling that caught shell drivers for being long — and they are long because the protocol

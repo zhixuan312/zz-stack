@@ -1,7 +1,7 @@
 # What each building block can actually do
 
 The judge reads this file when it decides whether a selection chose the right technology. It is
-prose rather than a tool dump on purpose: `get_cases` tells you a call exists, not that casebox is
+prose rather than a tool dump on purpose: `list_records` tells you a call exists, not that casebox is
 where case work belongs, and "right technology" is a judgement about fit, not about whether a
 function name appears somewhere.
 

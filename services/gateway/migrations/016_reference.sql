@@ -102,7 +102,7 @@ create table if not exists zz.skill_version (
 --
 -- The rule for reaching for an asset instead of a sentence: WHEN THE FAULT IS COMPLETENESS OVER
 -- AN ENUMERABLE SET, BUILD AN ASSET; WHEN IT IS JUDGEMENT, WRITE WORDS. ops-select omits a
--- candidate block in 25 of 27 documents, and ops-intent silently settles an ambiguity in 13 of 30
+-- candidate block in nearly every document, and ops-intent silently settles an ambiguity in 13 of 30
 -- -- both against rules those skills ALREADY STATE. That is the evidence that prose does not
 -- hold for completeness.
 create table if not exists zz.skill_asset (

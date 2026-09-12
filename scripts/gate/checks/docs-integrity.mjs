@@ -107,16 +107,16 @@ check("every document ours to keep is discovered and dated", () => {
   if (docs.length === 0) return "found no documents at all — the discovery is broken";
   note(`      ${docs.length} documents: ${docs.join(", ")}`);
 
-  // Held to a date stamp: docs/release/, and STATE.md at the root. These are what someone
-  // OUTSIDE this repo reads, so "which version of this am I holding" has to be answerable
-  // from the file itself.
+  // Held to a date stamp: STATE.md. It is what someone OUTSIDE this repo reads to answer
+  // "which version of this am I holding", so that has to be answerable from the file itself.
   //
   // STATE.md sits beside CHANGELOG.md on purpose — one is the balance, the other the
   // transaction log, and a reader should meet them together rather than find one at the root
   // and the other three directories down. It used to be docs/release/direction.md and read
   // as neither: a document describing where you are GOING has no obligation to be accurate
-  // about where you are, which is how it drifted.
-  const stamped_ = (x) => x.startsWith("docs/release/") || x === "STATE.md";
+  // about where you are, which is how it drifted. That directory is gone; the rule it earned
+  // is not, and it applies to whatever is held to a stamp next.
+  const stamped_ = (x) => x === "STATE.md";
   const bad = [];
   for (const d of docs.filter(stamped_)) {
     const txt = readFileSync(join(root, d), "utf8");
@@ -127,7 +127,7 @@ check("every document ours to keep is discovered and dated", () => {
 
 check("no document is older than the code it describes", () => {
   const notes = [];
-  for (const d of ourDocs().filter((x) => x.startsWith("docs/release/") || x === "STATE.md")) {
+  for (const d of ourDocs().filter((x) => x === "STATE.md")) {
     const txt = readFileSync(join(root, d), "utf8");
     const stamped = /\b(\d{4}-\d{2}-\d{2})\b/.exec(txt.slice(0, 1200))?.[1];
     if (!stamped) continue;
@@ -356,9 +356,8 @@ check("a gate check cited elsewhere is cited by a name that exists", () => {
 });
 
 check("a document's links point at something that exists", () => {
-  // The changelog links a reader to `docs/release/0.2.0-verification.md` for how that release
-  // was verified, the README sends an installer to `deploy/README.md`, and STATE.md points at
-  // the building-block contract. Each is a file in this repository that somebody can move or
+  // The README sends an installer to `deploy/README.md`, CONTRIBUTING.md points at
+  // `ARCHITECTURE.md`, and STATE.md points at the building-block contract. Each is a file in this repository that somebody can move or
   // rename, and a link that 404s in a document a person reads while UPGRADING is worse than no
   // link — it reads as though the evidence exists somewhere they cannot find.
   //
@@ -392,7 +391,7 @@ check("the standard names the requirements its own battery settles", () => {
   // This is the document handed to every block team. A requirement the standard says is not
   // measured is one nobody expects a verdict on, so the omission is a block shipping unchecked
   // against a check that runs.
-  const doc = readFileSync(join(root, "docs/release/building-block-contract.md"), "utf8");
+  const doc = readFileSync(join(root, "blocks/_standard/skills/building-a-block/references/contract.md"), "utf8");
   const eng = readFileSync(join(root, "packages/tools/src/testing/block-conformance.ts"), "utf8");
   const bad = [];
 

@@ -133,7 +133,7 @@ export function registerSkillTools(server: McpServer): void {
    * deployment.
    *
    * WHICH SKILLS DOES THIS BLOCK SHIP. ops-select told the agent to look for "usage guides in
-   * the shared skills library named `<block>-usage`". casebox ships four live ones and not one of
+   * the shared skills library named `<block>-usage`". casebox ships four and not one of
    * them is named that way: `using-casebox`, `writing-case-queries`, `writing-scripts`
    * and `writing-templates`. So an agent following the instruction guessed `casebox-usage`, found
    * nothing, and built without them — all four came out of the evaluation campaign 6/7 and

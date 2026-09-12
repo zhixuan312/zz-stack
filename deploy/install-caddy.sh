@@ -39,7 +39,7 @@ echo "$HOST: address $ADDR, gateway at $UPSTREAM"
 # the Caddyfile says why, and a substitution that rewrites the explanation leaves a comment
 # describing a topology that does not exist.
 #
-# THE WHOLE HOSTNAME, not the address fragment. Substituting the bare `165-232-169-165`
+# THE WHOLE HOSTNAME, not the address fragment. Substituting the bare `203-0-113-11`
 # against an $ADDR that already ends in .nip.io produces `<addr>.nip.io.nip.io` — site blocks
 # for hostnames nothing resolves, which is the same outage as copying the file verbatim
 # wearing a different mask. It took a host down a second time, four minutes after the first.
@@ -50,12 +50,12 @@ echo "$HOST: address $ADDR, gateway at $UPSTREAM"
 # repointed at loopback. A sed that matches nothing does not fail: it emits the file
 # unchanged, so $UPSTREAM was discarded and every install hardcoded whatever the template
 # happened to say. That is what the second guard below now catches.
-sed -e "s/165-232-169-165\.nip\.io/$ADDR/g" -e "s#127\\.0\\.0\\.1:8764#$UPSTREAM#g" \
+sed -e "s/203-0-113-11\.nip\.io/$ADDR/g" -e "s#127\\.0\\.0\\.1:8764#$UPSTREAM#g" \
     "$HERE/Caddyfile" > /tmp/caddy-$HOST.new
 grep -q "nip\.io\.nip\.io" /tmp/caddy-$HOST.new && { echo "substitution doubled the domain suffix" >&2; exit 1; }
 
 grep -q "$ADDR" /tmp/caddy-$HOST.new || { echo "substitution produced no site block for $ADDR" >&2; exit 1; }
-if grep -q "165-232-169-165" /tmp/caddy-$HOST.new && [ "$ADDR" != "165-232-169-165.nip.io" ]; then
+if grep -q "203-0-113-11" /tmp/caddy-$HOST.new && [ "$ADDR" != "203-0-113-11.nip.io" ]; then
   echo "the template's own address survived the substitution — refusing to install" >&2; exit 1
 fi
 # THE UPSTREAM HALF OF THE SAME CHECK. Without it a stale sed pattern is invisible: the

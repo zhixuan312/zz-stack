@@ -1,6 +1,5 @@
 # secrets & runtime state — never commit
 # working material: notes and captures that belong to no release
-docs/support/
 runs/
 
 .env
@@ -27,3 +26,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+
+# documentation is kept locally, not published with the package
+docs/

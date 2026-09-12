@@ -9,7 +9,7 @@
     "three briefs through sdlc-explore, or three grounded briefs through sdlc-spec, instead of",
     "the flow getting zero.",
     "",
-    "SDLC-FLOW IS NOT OPS-FLOW. ops-flow's corpus is thirty requirements built around whether a",
+    "SDLC-FLOW IS NOT OPS-FLOW. ops-flow's corpus is requirements built around whether a",
     "connected building block can do the work — its `exercises.blocks` and `.gap` are facts",
     "about a deployment's wiring. sdlc-flow has no building blocks and nothing it composes;",
     "it is the general delivery method — ground an idea, agree what ships, order how it gets",

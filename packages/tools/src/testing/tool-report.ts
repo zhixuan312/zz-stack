@@ -156,8 +156,8 @@ interface ToolStat {
   /** How large this tool's answers are. The gateway has recorded it on every call since the
    * telemetry was written and nothing read it — so "which tool floods a context window" was
    * a question the record could answer and nobody could ask. It is not idle: one block
-   * publishes a couple of hundred tools whose schemas alone cost 91K of a 115K window, and one of its
-   * answers measured 1.2 MB. */
+   * can publish enough tools that their schemas alone fill most of a context window, and one of its
+   * answers can run to megabytes. */
   p95_bytes: number;
 }
 /** One identifier value, and how often a run named it. */
@@ -411,7 +411,7 @@ function main(argv: string[]): number {
 
   for (const e of events) {
     // The tool, named as the table names it. `<surface>:<tool>` is kept as the display key so
-    // the report still reads `casebox:get_cases` rather than losing which door a tool was behind.
+    // the report still reads `casebox:list_records` rather than losing which door a tool was behind.
     const subject = e.subject;
     const d = e.detail ?? {};
     if (!perTool.has(subject)) perTool.set(subject, { calls: 0, ok: 0, refused: 0, unreadable: 0, ms: [], bytes: [] });

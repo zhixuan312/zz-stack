@@ -11,10 +11,6 @@
  *   /p/<platform>/mcp    streaming reverse proxy to the platform's real MCP,
  *                        authenticated with the calling user's stored key
  */
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { CatalogManifest, Envelope, jsonSchema } from "@zz/contracts";
 import { serveMcp } from "@zz/mcp-http";
 import express from "express";
@@ -32,7 +28,6 @@ import { initPlatformDb } from "./db.js";
 import { mountDiscussion } from "./discussion.js";
 import { logEvent, strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
-import { mountKb } from "./kb.js";
 import { mountMcpOauth } from "./mcp-oauth.js";
 import { mountPasskey, sweepSessions } from "./passkey.js";
 import { CORE_URL, HOP_HEADERS, NEVER_FORWARD, STRIP_RESPONSE, mcpRefusal, relayBody } from "./relay.js";
@@ -126,11 +121,9 @@ app.use(express.urlencoded({ extended: false, limit: "1mb" }));
  * the internet that is the wrong way round: anything not named here demands a
  * token, so forgetting costs a 401 rather than an exposure.
  *
- * The four exceptions and why they are safe:
+ * The three exceptions and why they are safe:
  *   /        the door index — the shape of the platform, never anything inside
  *   /health  liveness only
- *   /app     the knowledge-base shell, which is a login screen; every byte of
- *            its data comes from /api/kb/*, which is not exempt
  *   /schemas the envelope and manifest as JSON Schema — the RULES for writing a file,
  *            never a fact about anybody's data. It is exempt for the same reason the door
  *            index is: somebody writing a flow has to be able to read the rules before the
@@ -142,13 +135,8 @@ app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 // ever left — so an anonymous callback is still bound to exactly one person, and a replayed
 // one finds nothing. Being public is not the same as being unauthenticated.
 const OAUTH_CALLBACK = /^\/oauth\/[a-z0-9-]+\/callback$/;
-const PUBLIC_PATHS = new Set(["/", "/health", "/app", "/architecture"]);
-/** `/architecture` is the platform explained to a person, and it is exempt for the same reason
- * the door index is: it describes the shape of the platform and contains nothing from inside it
- * — no tenant document, no name, no key. It is checked for that before it ships. Someone being
- * shown this system should not need a token to read what it is.
- *
- * Public by PREFIX, kept separate from the exact set so the default stays "deny".
+const PUBLIC_PATHS = new Set(["/", "/health"]);
+/** Public by PREFIX, kept separate from the exact set so the default stays "deny".
  * Adding one should feel like the deliberate act it is.
  *
  * `/auth/` is the passkey sign-in, and it is public because it HAS to be: a person arriving
@@ -192,12 +180,6 @@ const DOORS = [
   { path: "/pkg/<client>.tgz", name: "client package", who: "everyone, for their own",
     what: "Your access, rendered as an installable marketplace for Claude Code, Codex or Hermes: the platform baseline, the tools for your own keys and tokens, and one plugin per flow your teams installed \u2014 so you receive no block and no method you do not use. A flow you run only in a terminal travels whole; one you also run in a browser stays a pointer, so both places run the same method. Your CLAUDE.md / AGENTS.md / SOUL.md are never touched.",
     auth: "Bearer <your token>" },
-  { path: "/architecture", name: "what this platform is", who: "everyone, no token",
-    what: "The platform explained end to end: the lifecycle shape and one method filling it in, how the method is measured and improved, what is remembered, why a document can be trusted, and what it takes to move it elsewhere.",
-    auth: "none — it describes the platform, and contains nothing from inside it" },
-  { path: "/app", name: "knowledge base", who: "everyone",
-    what: "Your team's documents in a browser: browse, search, and attach what someone said as a source. Documents themselves change only through their flow.",
-    auth: "your token, pasted at the login screen" },
 ];
 
 app.get("/", (req, res) => {
@@ -236,20 +218,6 @@ app.get("/", (req, res) => {
  * archive. Deliberately not a git remote: both CLIs accept a local directory,
  * so a tarball plus `tar xz` costs us nothing to serve and the person keeps no
  * repository. The archive holds pointers only — the method stays here. */
-// READ ONCE, at mount, and fail at boot if it is missing — the same argument the knowledge
-// base's own handler makes: a synchronous read that throws inside a request handler answers
-// with a stack trace, while a missing file at startup says which file, once, to whoever is
-// watching the container come up.
-//
-// From /docs in the image, or from the repository when running from source.
-const ARCH_HTML = existsSync("/docs/architecture.html")
-  ? "/docs/architecture.html"
-  : join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "docs", "architecture.html");
-const archHtml = readFileSync(ARCH_HTML, "utf8");
-app.get("/architecture", (_req, res) => {
-  res.type("html").send(archHtml);
-});
-
 mountBlockOauth(app, (block) => PLATFORMS[block]?.url);
 mountMcpOauth(app);
 
@@ -327,7 +295,6 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, ...(stranded.count ? { stranded_events: stranded } : {}) });
 });
 
-mountKb(app);
 
 // The admin console: browser sign-in, and the cross-team read API behind it.
 // Mounted after the identity gate, like every other authenticated surface — /auth/*

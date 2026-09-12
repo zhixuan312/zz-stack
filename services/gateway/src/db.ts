@@ -116,7 +116,7 @@ async function seed(): Promise<void> {
   // state: "reserved but never seeded means the home is a name with nothing behind it."
   //
   // Every day this platform learns things that are not about anybody's delivery: that a
-  // block returns a bare 422 and still has not been fixed, that 173 of a couple of hundred tools describe
+  // block returns a bare 422 and still has not been fixed, that most of a block's tools describe
   // themselves by restating their own name, that a section rule we wrote was strict enough
   // that six of six real documents broke it. None of that belongs to a tenant, and until
   // now it had nowhere to live — so it lived in a hand-written appendix, in STATE.md

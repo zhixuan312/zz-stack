@@ -140,7 +140,7 @@ check("the deploy stops what this release no longer defines", () => {
 
 check("no release document points at a repository path that does not exist", () => {
   // state.md (then direction.md) sent readers to `docs/building-block-contract.md` twice —
-  // it is at docs/release/building-block-contract.md — and named a "Component Register" and an
+  // it ships with the skill that teaches it — and named a "Component Register" and an
   // "Atlas" as companion references that have never existed. These documents are read by
   // people outside this repository, including the block teams the contract binds, so a path
   // that does not resolve is the reader concluding the standard was withdrawn.

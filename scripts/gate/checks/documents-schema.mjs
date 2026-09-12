@@ -558,6 +558,10 @@ check("the schema's own document names things that exist", () => {
   let corpus = "";
   for (const f of trackedFiles() ?? []) {
     if (!/\.(ts|mjs|sql|sh|md|json|yml|yaml)$/.test(f)) continue;
+    // Tracked is not present: a file deleted in the working tree stays tracked until the
+    // deletion is staged, and reading it throws — reporting a check that could not RUN as one
+    // that FAILED.
+    if (!existsSync(join(root, f))) continue;
     const text = readFileSync(join(root, f), "utf8");
     corpus += f.endsWith(".sql")
       ? text.split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n")

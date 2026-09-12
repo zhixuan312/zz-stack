@@ -179,7 +179,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // is always the bare `casebox`. With six spellings in the column the join matched the sixth of
     // rows that happened to agree, and reported the rest as predictions about nothing.
     //
-    // A client prefix is not part of a block's identity: `mcp__plugin_ops_casebox__get_cases` is the
+    // A client prefix is not part of a block's identity: `mcp__plugin_ops_casebox__list_records` is the
     // casebox block seen through one client's naming, and a record that keeps the client's spelling
     // is a record that changes when somebody swaps clients.
     const blocks = [...new Set((env.server ?? "")

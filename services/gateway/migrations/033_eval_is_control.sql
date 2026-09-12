@@ -11,7 +11,7 @@
 -- That is the one failure this apparatus cannot tolerate. The control is what establishes the
 -- judge was reading at all; a round that silently loses it keeps every number and drops the
 -- only evidence that the numbers mean anything. Found on the second skill evaluation, by the
--- flow itself, in a run whose real-vs-control gap turned out to be 0.34 — well inside the
+-- flow itself, in a run whose real-vs-control gap turned out to be under the noise floor — well inside the
 -- collapse line, so the honest verdict was "unverified" either way.
 --
 -- The column belongs on zz.eval rather than being inferred from its scores, because a session

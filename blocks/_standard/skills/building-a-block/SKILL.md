@@ -1,6 +1,6 @@
 ---
 name: building-a-block
-version: 1.0
+version: 1.1
 description: How a team turns their platform into a building block this delivery agent can discover, select, assemble and verify. Shapes the tools, the usage skills, the user guide and the staging affordances the standard requires.
 when_to_use: "A team is making their platform available as a building block, or fixing a conformance failure, or writing the usage skills that ship beside it. Read this before writing any of it — the standard it enforces is in references/contract.md."
 ---
@@ -25,7 +25,7 @@ that needs to be understood before it can be used has failed before R1.
 
 ## Your tools
 
-- **Name them for what a person does**, not for your internal model. `create_case` is
+- **Name them for what a person does**, not for your internal model. `create_record` is
   usable; `post_entity_v2` needs a translator.
 - **Refuse with a sentence that teaches the rule.** `ERROR: status is written by the
   platform, not by hand` tells the caller what to do instead. `400 Bad Request` starts a

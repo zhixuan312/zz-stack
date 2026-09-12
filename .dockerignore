@@ -21,11 +21,6 @@ dist
 # Working material, never part of a release.
 runs
 docs
-# …except one file. architecture.html is SERVED by the gateway at /architecture, so it is part
-# of the release even though everything else under docs/ is not. Excluding the directory and
-# re-including the one file keeps a single copy in the repository — the alternative was a second
-# copy under services/, which is how two versions of one document come to disagree.
-!docs/architecture.html
 .claude
 testing
 scripts
@@ -33,7 +28,7 @@ scripts
 # Fixtures. `COPY catalog /catalog` takes the whole tree, and the `runs` line above matches
 # the context ROOT only — so catalog/sdlc/sdlc-flow/tests (192 files, 2.3MB of requirements,
 # steps and expectations) was shipping in every image. Nothing at runtime reads it: eval-judge
-# and eval-grade read it from the repository, at test time. See docs/repository-architecture.md.
+# and eval-grade read it from the repository, at test time. See ARCHITECTURE.md.
 catalog/**/tests
 
 # Local environment and build output.

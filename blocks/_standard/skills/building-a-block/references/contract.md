@@ -209,7 +209,7 @@ Two things that measurement says, which the hand-written table did not:
   a description like that about WHEN to reach for one, which is the decision it is
   actually making. Counted descriptions are not the measure; useful ones are.
 - **R10 was unmet in the samples and nobody had counted it.** `RuleMill` ships
-  `create_decision_table` and `create_schedule` with no `get_*` to read either
+  `create_table` and `create_timer` with no `get_*` to read either
   back; `bookit` has the same gap.
 
 **R9 is met by nobody today.** Where it is implemented at all it is implemented under

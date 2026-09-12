@@ -2,8 +2,8 @@
 #
 # TWO HOSTNAMES, ONE MACHINE, one deployment:
 #
-#   165-232-169-165.nip.io           the console — the only dashboard this deployment has
-#   api.165-232-169-165.nip.io       the platform gateway — every non-browser client
+#   203-0-113-11.nip.io           the console — the only dashboard this deployment has
+#   api.203-0-113-11.nip.io       the platform gateway — every non-browser client
 #
 # THIS FILE IS A TEMPLATE, AND `install-caddy.sh` IS THE ONLY THING THAT SHOULD APPLY IT.
 # It substitutes the hostname above for the target's own and the upstream below for wherever
@@ -35,7 +35,7 @@
 #
 # After changing this file:
 #   1. run deploy/install-caddy.sh — do not copy it by hand
-#   2. set GATEWAY_PUBLIC_URL=https://api.165-232-169-165.nip.io in deploy/.env
+#   2. set GATEWAY_PUBLIC_URL=https://api.203-0-113-11.nip.io in deploy/.env
 #      — every generated client package embeds this value, so a stale one ships
 #      unreachable URLs to every person who installs
 #   3. systemctl reload caddy && docker compose up -d cred-proxy
@@ -68,7 +68,7 @@
 # console to read the record in. A site block pointing at a port nothing serves is worse than
 # no site block — Caddy answers 502 with a valid certificate, which reads as "the app is
 # broken" rather than "there is no app here".
-api.165-232-169-165.nip.io {
+api.203-0-113-11.nip.io {
 
     # THE MOCK BLOCKS' OWN OAUTH ENDPOINTS, reachable from a browser.
     #
@@ -112,7 +112,7 @@ api.165-232-169-165.nip.io {
 #   /auth/*          the passkey ceremony and logout            → gateway
 #   /api/console/*   the read API                                → gateway
 #   everything else  the Next app                                → console
-165-232-169-165.nip.io {
+203-0-113-11.nip.io {
     handle /auth/* {
         reverse_proxy 127.0.0.1:8764
     }

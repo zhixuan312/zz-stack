@@ -161,7 +161,7 @@ check("a package declares whether it is a flow, and the console reads the declar
   // guessing shape from contents. Guessing is wrong even when it guesses right: the day it
   // guesses wrong there is nothing to point at.
   //
-  // The rule, from docs/repository-architecture.md: a package is a flow if and only if it
+  // The rule, from ARCHITECTURE.md: a package is a flow if and only if it
   // declares a non-empty `stages`. Not gates, not documents, not skills — casebox-assist declares
   // one stage, no gate and no document, and is a flow.
   //

@@ -442,7 +442,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
       //
       // The names on both sides of this join have to be the SAME name. zz.event carries the bare
       // `casebox`; zz.decision.blocks carried casebox spelled six ways until it was normalised at index
-      // time (docs/findings/H8), so this join matched about a third of the rows it should
+      // time, so this join matched about a third of the rows it should
       // have and reported the rest as predictions about nothing.
       const named = [...new Set(claims.flatMap((c) => c.blocks ?? []))].filter(Boolean);
       const actual = new Map<string, { calls: number; refused: number; top: string | null }>();

@@ -36,10 +36,10 @@ not answer its directory's question is in the wrong place.
 | `scripts/` | How does this repository release and check itself? | no |
 | `testing/` | How do we drive a deployment by hand? | no |
 
-`docs/` is the ninth and answers: **what is written for a person to read?** Prose, findings,
-handoffs, walkthroughs. One file under it is also served — `docs/architecture.html` — and it is
-the only one that enters the image (`.dockerignore` excludes the directory and re-includes that
-file). `docs/support/` is gitignored working material.
+`docs/` is gitignored working material — prose, findings, handoffs, walkthroughs. None of it
+is published with the package and nothing that ships may read it: a document a deployment
+depends on belongs beside the code it describes, which is why this file is at the root rather
+than under there.
 
 `dist/` and `runs/` are generated. Both are gitignored, both are excluded from the build
 context, and neither may be read by anything that ships.

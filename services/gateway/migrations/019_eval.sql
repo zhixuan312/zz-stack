@@ -71,7 +71,7 @@ create table if not exists zz.eval_score (
   -- The scrambled twin: the same document marked against a NEIGHBOUR's requirement. It sits in
   -- the primary key so it can never be quietly dropped, because a quality score without one
   -- cannot be told apart from a judge rewarding confident prose. Every control run so far has
-  -- collapsed to 1.00 with 104 of 104 documents caught as off-topic.
+  -- collapsed to the floor with every document caught as off-topic.
   is_control   boolean not null default false,
   primary key (eval_id, subject_id, dimension_id, is_control)
 );

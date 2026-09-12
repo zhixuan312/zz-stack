@@ -311,10 +311,9 @@ already made.
 
 ### Fixed
 
-- **`deploy/Caddyfile` and `STATE.md` named addresses that belong to another platform.**
+- **`deploy/Caddyfile` and `STATE.md` named an address belonging to another platform.**
   The Caddyfile carried a hostname literal from before this became a single deployment, and it
-  had gone stale. `STATE.md` stated one of them
-  as the live gateway. Repointed at the deployment this repository actually targets, and the
+  had gone stale; `STATE.md` stated that same address as the live gateway. Repointed at the deployment this repository actually targets, and the
   template's config body now matches the running `/etc/caddy/Caddyfile` line for line.
 - **`install-caddy.sh` was discarding `$UPSTREAM` silently.** Its substitution still targeted
   a tailnet address the template had stopped carrying, and a `sed` that matches nothing does

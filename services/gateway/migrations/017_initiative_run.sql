@@ -49,8 +49,8 @@ create table if not exists zz.run (
   calls            int not null default 0,
   refusals         int not null default 0,
   -- Context spent. Kept beside refusals because a usage skill can be clean on refusals and
-  -- still be wrong: that usage skill took a single refusal across its calls -- clean -- while 32 calls to
-  -- one documentation tool burned tens of MB of context, and nothing in a refusal count could see it.
+  -- still be wrong: a usage skill can take a single refusal across all its calls -- clean -- while
+  -- a run of calls to one documentation tool burns tens of MB of context, and nothing in a refusal count could see it.
   -- A loop that measures only refusals optimises the half it can see.
   bytes_total      bigint not null default 0,
   started_at       timestamptz not null default now(),

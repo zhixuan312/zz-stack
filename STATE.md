@@ -124,9 +124,8 @@ trustworthy while every team works its own way.
 
 Platform vocabulary is **zz** (zz-stack, zz-core, gateway, the team store,
 `@zz/*`, zz-blocks, future zz-kb, zz-knowledge). Product vocabulary lives under
-`catalog/<owner>/` — `catalog/sdlc/` is software delivery (sdlc-flow + its tests),
-`catalog/sdlc/` is software delivery (sdlc-flow), and `catalog/zz/` holds the
-platform's own entries (zz-access, zz-admin, zz-knowledge, zz-flow-builder). Referring to
+`catalog/<owner>/` — `catalog/sdlc/` is software delivery (sdlc-flow and its tests),
+and `catalog/zz/` holds the platform's own entries (zz-access, zz-admin, zz-knowledge, zz-flow-builder). Referring to
 the platform from a flow uses the platform's real names; declaring a
 flow's identity uses its own.
 

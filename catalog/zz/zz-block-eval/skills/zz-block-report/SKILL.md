@@ -1,6 +1,6 @@
 ---
 name: zz-block-report
-version: 1.0
+version: 1.1
 description: Stage 3 of block evaluation, and the only document it writes. The numbers, then the defects, then what we ask for — one report, gated, and it is what the block team receives. Writes findings.md.
 when_to_use: "The three measurements are done. This is the whole output of a block evaluation."
 ---
@@ -112,8 +112,8 @@ Three tables come back:
 | **Tool by tool** | calls, refusals, the rate, and how many unrelated initiatives met each, heaviest first |
 | **Refusal classes** | each class, its count, and how far it spread |
 
-**Coverage first, and say in one sentence what it means.** Exercising 12 of a block's a couple of hundred
-tools is a different claim from exercising 12 of 14, and the table cannot make that point for
+**Coverage first, and say in one sentence what it means.** Exercising 12 of a block's several
+hundred tools is a different claim from exercising 12 of 14, and the table cannot make that point for
 you. `eval_block_surface` says what the block publishes; the gap is surface this round did
 not touch, and that is a fact about our round, not a defect in theirs.
 

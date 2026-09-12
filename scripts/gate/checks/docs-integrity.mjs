@@ -213,9 +213,9 @@ check("what someone says about a document has one home", () => {
   // table, an endpoint, or as a sentence in a skill telling somebody to leave a comment.
   //
   // NOT the prose documents. CHANGELOG.md and STATE.md record the removal, which is what a
-  // record is for, and docs/casebox-mcp-tools-reference.md describes a BLOCK's surface: CaseBox
-  // CaseBox has its own add_comment and it is theirs to have. This is about what THIS platform
-  // offers. Nor this file, which has to name the strings in order to look for them.
+  // record is for; and a document describing a BLOCK's surface is describing someone else's —
+  // a block has its own `add_comment` and it is theirs to have. This is about what THIS
+  // platform offers. Nor this file, which has to name the strings in order to look for them.
   const subjects = [...sourceFiles(["."], [".ts", ".mjs", ".html", ".sql"]),
                     ...sourceFiles(["catalog", "skills"], ["SKILL.md"])];
   for (const rel of subjects) {

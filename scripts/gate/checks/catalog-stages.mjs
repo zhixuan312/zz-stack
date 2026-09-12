@@ -340,16 +340,16 @@ check("no shell freezes one flow's fixture paths", () => {
   //
   // eval-judge, eval-grade and eval-store were all parameterised by --flow, and the component
   // depth still could not reach a second flow: eval-step.sh, the script that PRODUCES a run
-  // directory, held catalog/sdlc/sdlc-flow/tests/{requirements,steps}.json as constants and had no
-  // --flow at all. smoke-env.sh did the same with ops-flow's scenarios.json in its exec line. So
-  // a corpus was authored for sdlc-flow that nothing could run, and "drive a second flow end to
-  // end" was blocked by the launcher rather than by the engine.
+  // directory, held ONE flow's {requirements,steps}.json as constants and had no --flow at all.
+  // smoke-env.sh did the same with that flow's scenarios.json in its exec line. So a corpus
+  // authored for a SECOND flow was one nothing could run, and "drive a second flow end to end"
+  // was blocked by the launcher rather than by the engine.
   //
   // The tools were checked and the shells that call them were not, which is the same miss as
   // the --flow guard above: the migration inspected the files someone had decided were the
   // callers. Path comes from an argument now; this keeps it that way.
   const ALLOW = [
-    { file: "block-oracle.sh", reason: "derives which BUILDING BLOCKS a requirement needs, and block selection is an ops-flow stage no other flow declares — scoping it to ops-flow is the fact, not a shortcut" },
+    { file: "block-oracle.sh", reason: "derives which BUILDING BLOCKS a requirement needs, and block selection is a stage only some flows declare — scoping it to the flow that does is the fact, not a shortcut" },
   ];
   const dir = join(root, "testing");
   if (!existsSync(dir)) return null;

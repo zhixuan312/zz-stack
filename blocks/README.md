@@ -5,9 +5,10 @@ the usage skill that says how to use it well, and the tests that check we still 
 
 > **`casebox`, `bookit` and `RuleMill` are invented names**, here and everywhere else in this
 > repository. The platform was developed against systems belonging to other people; those
-> systems are not named, and the measurements taken from them are not published. What the
-> capability sheet beside this file describes is three blocks made up for the purpose — which
-> is all the judge it feeds needs them to be.
+> systems are not named, and the measurements taken from them are not published. Two of the
+> three stand for this project's own stand-ins and one for a system another team runs — which
+> of them is which is not said, and the capability sheet beside this file is written so that
+> the judge it feeds does not need to know.
 
 **There is no such directory today, and that is the mechanism working rather than an omission.**
 casebox, bookit and RuleMill each had one; all three moved to their own repository, and everything

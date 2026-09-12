@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Which blocks does each requirement ACTUALLY need — decided from the brief alone.
 #
-#   ./testing/block-oracle.sh > catalog/sdlc/sdlc-flow/tests/blocks-oracle.txt
+#   ./testing/block-oracle.sh > <flow>/tests/blocks-oracle.txt
 #
-# WHY THIS IS NOT `exercises.blocks`. That field was authored by hand alongside the corpus, as a
-# note on why each requirement earned its place in the set. Pressed into service as an answer key
-# it reported eleven over-selections, and the first one checked was wrong: one brief asked for
-# "a reminder the day before", BookIt cannot send one, and the selection that added
-# RuleMill for it named the exact schedule that would do it. The hand-written hint said BookIt
-# alone. The skill was right and the answer key was wrong.
+# Requires a corpus whose requirements carry a brief. A flow that declares no block-selection
+# stage has nothing for this to decide, and running it there answers a question nobody asked.
+#
+# WHY THIS IS NOT A HAND-WRITTEN `blocks` FIELD. A corpus may carry one, authored alongside it as
+# a note on why each requirement earned its place in the set. Pressed into service as an answer
+# key it reports over-selections that are not over-selections: one brief asks for "a reminder the
+# day before", the booking block cannot send one, and the selection that added the automation
+# block for it names the exact schedule that would do it — while the hand-written hint says the
+# booking block alone. The skill was right and the answer key was wrong.
 #
 # So the key gets derived the same way the answer does — by reading the brief — but BLIND: this
 # never sees the selection it will be compared against, which is the only thing that keeps it an

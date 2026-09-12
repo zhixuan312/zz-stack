@@ -13,11 +13,11 @@ import { CatalogManifest } from "@zz/contracts";
 import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { ALL_CLIENTS, buildClientPackage, type ClientKind, type ClientPackage, type InstalledFlow } from "../client-package.js";
+import { buildClientPackage, type ClientPackage, type InstalledFlow } from "../client-package.js";
 import { platformDb } from "../db.js";
 import { auditAdmin, isSuper, type Identity } from "../identity.js";
 import { callerIdentity as caller } from "../identity.js";
-import { describePackage } from "../package/archive.js";
+import { describePackage } from "../package/describe.js";
 import { whenToUse as whenToUseFor } from "../package/skills.js";
 import { principalId, teamAuthority, teamId } from "./authority.js";
 import { type TeamWriteOutcome } from "./teams.js";
@@ -61,7 +61,7 @@ async function flowsFor(target: string): Promise<InstalledFlow[]> {
   const db = platformDb();
   const { rows } = await db.query<{
     flow: string; version: string; agent_name: string | null;
-    manifest: CatalogManifest | null; clients: string[] | null;
+    manifest: CatalogManifest | null;
   }>(
     // `t.status = 'active'`, as caller() does six lines up. Without it, archiving a team
     // left its flows in every member's client package: the commands and skills stayed
@@ -69,7 +69,7 @@ async function flowsFor(target: string): Promise<InstalledFlow[]> {
     //
     // ORDERED PAST THE FLOW NAME, because the caller takes the first row per flow and two
     // teams can install one flow differently. `distinct` keeps both rows whenever the
-    // version, the agent name or the client list differs, and ordering by the flow alone left
+    // version or the agent name differs, and ordering by the flow alone left
     // which one survives to whatever the planner returned first — so a person in two teams
     // could get one version today and the other tomorrow, in a file they install. Newest
     // install wins: a package should carry the most recent method the person has access to.
@@ -82,10 +82,9 @@ async function flowsFor(target: string): Promise<InstalledFlow[]> {
     // tie-break above legal, and removing it as unused restores the outage.
     //
     // NOT `distinct on (f.flow)`, which would return one row per flow and read as tidier. The
-    // paragraph above is the reason: dedupe must happen AFTER the client filter, in
-    // clientPackageFor, or a flow whose newest install is codex-only vanishes from a person's
-    // claude-code package even though another of their teams installed it for claude-code.
-    `select distinct f.flow, f.version, f.agent_name, f.manifest, f.clients, f.created_at
+    // paragraph above is the reason: which of two installs survives is decided by the order,
+    // and `distinct on` would pick before that order has been applied.
+    `select distinct f.flow, f.version, f.agent_name, f.manifest, f.created_at
        from flow_install f
      join team t on t.id = f.team_id join membership m on m.team_id = t.id
      join principal p on p.id = m.principal_id
@@ -93,29 +92,21 @@ async function flowsFor(target: string): Promise<InstalledFlow[]> {
      order by f.flow, f.version desc, f.created_at desc`, [target]);
 
   const shape = (flow: string, version: string, agentName: string | null,
-                 m: CatalogManifest | null, chosen: string[] | null): InstalledFlow => {
-    const declared = m?.clients ?? ALL_CLIENTS;
-    return {
-      flow, version, entry: m?.entry || flow, agentName,
-      whenToUse: whenToUseFor(flow, m?.entry || flow),
-      blocks: m?.tools ?? [],
-      servers: m?.servers ?? [],
-      // What the flow can do, intersected with what the team asked for.
-      clients: chosen?.length ? declared.filter((c) => chosen.includes(c)) : declared,
-    };
-  };
+                 m: CatalogManifest | null): InstalledFlow => ({
+    flow, version, entry: m?.entry || flow, agentName,
+    whenToUse: whenToUseFor(flow, m?.entry || flow),
+    blocks: m?.tools ?? [],
+    servers: m?.servers ?? [],
+  });
 
   // EVERY row, deliberately. The duplicates `distinct` leaves — two teams installing one flow
-  // at different versions, agent names or client lists — are dropped by clientPackageFor,
-  // AFTER it filters by client, and that order is load-bearing: dedupe first and a flow whose
-  // newest install is codex-only disappears from a person's claude-code package even though
-  // another of their teams installed it for claude-code. "The caller takes the first row per
-  // flow" above means exactly that caller, at exactly that point.
-  const installed = rows.map((r) => shape(r.flow, r.version ?? "", r.agent_name, r.manifest, r.clients));
+  // at different versions or agent names — are dropped by clientPackageFor, which takes the
+  // first row per flow in the order this query established.
+  const installed = rows.map((r) => shape(r.flow, r.version ?? "", r.agent_name, r.manifest));
   const have = new Set(installed.map((f) => f.flow));
   // Platform flows are not a choice: a team that never installed them still has them.
   const auto = autoFlows().filter((a) => !have.has(a.flow))
-    .map((a) => shape(a.flow, a.manifest.version ?? "", null, a.manifest, null));
+    .map((a) => shape(a.flow, a.manifest.version ?? "", null, a.manifest));
   return [...installed, ...auto].sort((a, b) => a.flow.localeCompare(b.flow));
 }
 /** No default, deliberately.
@@ -138,10 +129,7 @@ const publicBase = (): string => {
  * my_client_setup on /manage (your own, a personal act) and
  * render_harness_config on /admin (someone else's, an admin act) — because a
  * config that drifts between doors is a support case waiting to happen. */
-export async function clientPackageFor(target: string, kind: ClientKind): Promise<ClientPackage> {
-  // The matrix: what the flow declares it runs on, intersected with the client asking.
-  // A flow that does not list this client is not in this package at all — no command, no
-  // skill, no block grant leaking in through its manifest.
+async function clientPackageFor(target: string): Promise<ClientPackage> {
   // ONE ENTRY PER FLOW, however many teams install it. Membership of two teams that both
   // run ops-flow produced two identical plugins, two identical MCP files, and a router that
   // offered the same flow twice — "Picks the right installed flow (ops-flow, ops-flow,
@@ -153,9 +141,8 @@ export async function clientPackageFor(target: string, kind: ClientKind): Promis
   // to one catalog entry; the version and the agent name are what differ.
   const seen = new Set<string>();
   const flows = (await flowsFor(target))
-    .filter((f) => f.clients.includes(kind))
     .filter((f) => !seen.has(f.flow) && seen.add(f.flow));
-  return buildClientPackage({ target, kind, base: publicBase(), flows });
+  return buildClientPackage({ target, base: publicBase(), flows });
 }
 /** Render a person's client setup as instructions they can follow.
  *
@@ -163,8 +150,8 @@ export async function clientPackageFor(target: string, kind: ClientKind): Promis
  * are engine-global, so a flow placed there rewrites how the person's whole
  * engine behaves on every unrelated task, and two installed flows collide in
  * one file. The package installs and uninstalls as a unit instead. */
-export async function renderClientSetup(target: string, kind: ClientKind): Promise<string> {
-  return describePackage(await clientPackageFor(target, kind), target);
+export async function renderClientSetup(target: string): Promise<string> {
+  return describePackage(await clientPackageFor(target), target);
 }
 /** The shelf, on the door the reader actually has.
  *
@@ -213,12 +200,12 @@ export function registerShelf(server: McpServer): void {
       return text(`ERROR: you are not a member of '${team}'`);
     }
     const db = platformDb();
-    const installed = new Map<string, string[] | null>();
+    const installed = new Set<string>();
     if (slug) {
-      const { rows } = await db.query<{ flow: string; clients: string[] | null }>(
-        `select f.flow, f.clients from flow_install f join team t on t.id = f.team_id where t.slug = $1`,
+      const { rows } = await db.query<{ flow: string }>(
+        `select f.flow from flow_install f join team t on t.id = f.team_id where t.slug = $1`,
         [slug]);
-      for (const r of rows) installed.set(r.flow, r.clients);
+      for (const r of rows) installed.add(r.flow);
     }
     // Which flows are automatic is ONE question with one answer: autoFlows(). Asking it here
     // as `manifest.install === "auto"` was the same rule written a second time, and the two
@@ -227,18 +214,14 @@ export function registerShelf(server: McpServer): void {
     const lines = installableFlows().map((entry) => {
       const flow = entry.split("/")[1] ?? entry;
       const m = catalogManifest(flow);
-      const declared = m?.clients ?? ALL_CLIENTS;
       const auto = automatic.has(flow);
       const has = auto || installed.has(flow);
-      const chosen = installed.get(flow);
-      const where = chosen?.length ? `on ${chosen.join(", ")}` : `on ${declared.join(", ")}`;
       return {
         flow,
         version: m?.version ?? "",
         description: (m?.description ?? "").slice(0, 160),
-        runs_on: declared,
         install: auto ? "automatic — every team has it" : "opt-in",
-        you: has ? (auto ? "installed (platform)" : `installed ${where}`) : "not installed",
+        you: has ? (auto ? "installed (platform)" : "installed") : "not installed",
         blocks: m?.tools ?? [],
       };
     });
@@ -249,7 +232,7 @@ export function registerShelf(server: McpServer): void {
  * what it records and why. */
 export async function installFlow(
   id: Identity | null, team: string, flow: string, version: string | undefined,
-  agentNameInput: string | undefined, clients: string[] | undefined,
+  agentNameInput: string | undefined,
   extraDetail: Record<string, unknown> = {},
 ): Promise<TeamWriteOutcome> {
   if (!teamAuthority(id, team)) return { ok: false, status: 403, error: `team admin or superadmin required for ${team}` };
@@ -271,63 +254,30 @@ export async function installFlow(
     return { ok: false, status: 400,
       error: `no flow '${flow}' in the catalog. Available: ${installableFlows().join(", ") || "(none mounted)"}` };
   }
-  // A manifest naming a client we cannot serve is a typo, and the failure it causes is
-  // invisible: the flow installs, and then simply never appears in anybody's package. Refuse
-  // it here, where the person is looking at the result.
-  // Deduplicated, because "did they ask for all of them" is decided by comparing counts
-  // below. `clients: ["claude-code", "claude-code"]` against two declared clients has the
-  // same length as the full set and passes the subset check, so it stored `null` — which
-  // means every client — and the team got one they never asked for. A set question answered
-  // by a length is a question answered by accident.
-  const declared = [...new Set(manifest.clients ?? ALL_CLIENTS)];
-  const unknown = declared.filter((c) => !ALL_CLIENTS.includes(c));
-  if (unknown.length) {
-    return { ok: false, status: 400, error:
-      `'${flow}' declares clients this platform cannot serve: ${unknown.join(", ")}. Known clients: ${ALL_CLIENTS.join(", ")}.` };
-  }
-  if (declared.length === 0) {
-    return { ok: false, status: 400,
-      error: `'${flow}' declares an empty clients list, so no one could ever reach it. Omit the field to mean every client.` };
-  }
-  // The team's choice, bounded by what the flow can actually do. Asking for a client the
-  // flow does not support is a mistake worth naming rather than quietly dropping.
-  const chosen = [...new Set(clients?.length ? clients : declared)];
-  const impossible = chosen.filter((c) => !declared.includes(c));
-  if (impossible.length) {
-    return { ok: false, status: 400,
-      error: `'${flow}' does not run on ${impossible.join(", ")}. It declares: ${declared.join(", ")}.` };
-  }
   // What the installer asked for, else what the flow calls itself, else a guess.
   const agentName = (agentNameInput ?? "").trim() || manifest.agentName || titleCase(flow);
   const actorId = await principalId(db, id.email);
   await db.query(
-    `insert into flow_install (team_id, flow, version, installed_by, manifest, agent_name, clients)
-     values ($1,$2,$3,$4,$5,$6,$7)
+    `insert into flow_install (team_id, flow, version, installed_by, manifest, agent_name)
+     values ($1,$2,$3,$4,$5,$6)
      on conflict (team_id, flow) do update
        set version = excluded.version, manifest = excluded.manifest,
-           agent_name = excluded.agent_name, clients = excluded.clients`,
-    [tid, flow, version ?? manifest.version ?? "", actorId, JSON.stringify(manifest), agentName,
-     chosen.length === declared.length ? null : chosen],
+           agent_name = excluded.agent_name`,
+    [tid, flow, version ?? manifest.version ?? "", actorId, JSON.stringify(manifest), agentName],
   );
   // The registry IS the install. A preset used to be projected into the front end's own
   // tables here, which made installing a flow a write into a product we do not control and
   // gave that product a copy of platform truth to drift from. The front end now reads what a
   // team runs the same way every other client does — over MCP, as the caller.
-  const report: string[] = [
-    `registry recorded — '${flow}' reaches people through ${chosen.join(", ")}.`,
-  ];
+  const report: string[] = [`registry recorded — '${flow}' is now on this team's shelf.`];
   const blocks = manifest.tools ?? [];
   if (blocks.length) report.push(`manifest declares blocks [${blocks.join(", ")}] — grant_tool each one (superadmin) if not already granted`);
   auditAdmin(id, "install_flow", `${team}:${flow}`, { version: version ?? "", agent: agentName, report, ...extraDetail }, team);
-  // Say where this install actually shows up, from what the team chose. Every client this
-  // platform serves is a local one now: the browser front end and its provisioner were
-  // removed on 2026-09-10, so there is no longer a destination that is not a package
-  // somebody fetches. The branch that named LibreChat, and the one that told the reader to
-  // run render_harness_config — a tool deleted in 0.24.0 — both went with them.
-  const tail = chosen.length
-    ? `\nTeam members see it in ${chosen.join(", ")} once each person re-fetches their `
-      + "client package; `my_client_setup` prints how."
-    : "";
+  // Say where this install actually shows up. There is one client, and it reads the shelf
+  // from GitHub rather than fetching a package — so the sentence that used to name the
+  // team's chosen clients, and the one before it that named LibreChat, are both gone.
+  const tail = "\nTeam members see it once they run `claude plugin marketplace update "
+    + "zz-stack`; `my_client_setup` prints how.";
   return { ok: true, message: `${flow} installed for ${team}.\n` + report.join("\n") + tail };
 }
 /** Remove a team's flow install. `confirm` must repeat the flow name exactly. */

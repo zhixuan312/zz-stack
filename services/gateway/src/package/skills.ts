@@ -88,7 +88,7 @@ export function cardDescription(flow: string, fallback: string): string {
  * cut that severed all five plugin cards mid-word ("...and where ea", "...Only insta"), in
  * the one field a person reads while choosing what to install. cardDescription's own comment
  * had already named that failure: a card cut mid-word "reads as a bug in the shelf". */
-export function trimTo(text: string, max: number): string {
+function trimTo(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
   const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
@@ -109,7 +109,7 @@ function standaloneSkills(flow: string): string[] {
  * commands — so it has to match delivery work and nothing else. Too broad and
  * it fires on ordinary coding; too narrow and those two clients have no way in.
  */
-export function routerSkill(flows: InstalledFlow[], forHermes: boolean): string {
+export function routerSkill(flows: InstalledFlow[]): string {
   const names = flows.map((f) => f.flow).join(", ") || "none yet";
   const fm = [
     "---",
@@ -125,15 +125,6 @@ export function routerSkill(flows: InstalledFlow[], forHermes: boolean): string 
     // question. A literal here answers neither, and never moves.
     `version: ${JSON.stringify(PLATFORM_VERSION)}`,
   ];
-  if (forHermes) {
-    fm.push(
-      "author: ZZ Stack",
-      "metadata:",
-      "  hermes:",
-      "    category: delivery",
-      "    tags: [ZZ, Delivery, Flows, Governance]",
-    );
-  }
   fm.push("---");
 
   const body = [

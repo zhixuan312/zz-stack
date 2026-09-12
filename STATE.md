@@ -67,9 +67,8 @@ One tool capability is likewise platform-owned: **zz-knowledge**, the
 improvement analysis every team's every flow gets for free.
 
 Everything else is deliberately replaceable: flows evolve and get
-discarded; interfaces follow the times (Claude Code,
-Codex, Hermes, our own web tomorrow); models rotate; blocks belong to
-other teams.
+discarded; interfaces follow the times (Claude Code today, our own
+web tomorrow); models rotate; blocks belong to other teams.
 
 ## 3. The three planes
 
@@ -253,7 +252,7 @@ replaceable; the platform services and the state they guard are not.**
 
 | Layer | Components | Replaceable | Owner |
 |---|---|---|---|
-| Clients | CLI harnesses (Claude Code, Codex) · agent runtime (Hermes) · read surface (Web KB) | yes, all of them | ZZ (projections) |
+| Clients | one CLI harness (Claude Code), installing from the public shelf | yes | ZZ (projections) |
 | Catalog | sdlc-flow · zz-access (access and the platform register, two skills on one door) · zz-skill-eval · zz-block-eval · each team's own packages under `catalog/<team>/` (flows, and skills-only packages) | yes, per team | flow team (content) / ZZ (machinery) |
 | Platform services | gateway · zz-core | **no** | ZZ |
 | Blocks | none registered on this deployment | yes, behind R1–R14 | third parties |
@@ -348,17 +347,14 @@ the difference that matters.
 | Class | Examples | Loop runs | Person uses | Also brings |
 |---|---|---|---|---|
 | **Web front end** | LibreChat | on our server, inside the front end itself | a browser | nothing local — all server-side |
-| **CLI harness** | Claude Code, Codex | on the person's own machine | a terminal | their files, git and shell — the reason to work there |
-| **Agent runtime** | Hermes | in a long-running daemon of its own | chat: its API, a messaging channel, or any UI in front | sessions, schedules, channels — it acts unattended |
+| **CLI harness** | Claude Code | on the person's own machine | a terminal | their files, git and shell — the reason to work there |
 | **Read surface** | Web KB (`/app`) | nowhere — no agent | a browser | nothing; reads the record, attaches sources |
 
-They compose: Hermes is a runtime, not a UI, so a chat front end can sit in
-front of it, and headless it still runs its schedules. LibreChat is the
-opposite — a front end that happens to carry its own loop. Two doors onto one implementation — `my_client_setup` for your own, `render_harness_config`
-for someone else's, which needs superadmin — build that client's own installable
-package from the registry — marketplace, plugin, router skill and MCP
-wiring — served as one archive from `/pkg/<client>.tgz`. It carries
-pointers only: the method is fetched at run time with `skill_view()`, and
+`my_client_setup` builds the shelf from the registry — marketplace, plugin,
+router skill and MCP wiring — and prints how to install it; pass `email`, as a
+superadmin, to render somebody else's. The shelf itself is committed to this
+repository and cloned from GitHub rather than served from `/pkg/<client>.tgz`,
+which went with Codex and Hermes on 2026-09-12. Skills travel as files, and
 `CLAUDE.md` / `AGENTS.md` / `SOUL.md` are never written to, because those
 are engine-global and a flow has no business changing how the whole engine
 behaves.
@@ -426,9 +422,9 @@ is the balance, and the balance is:
   `zz-access`, `zz-block-eval`, `zz-skill-eval`. `zz.skill` holds 32 rows, `zz.skill_version`
   35.
 - **The doors:** `/core/mcp`, `/manage/mcp` (the tool list IS the caller's role — 20 for a
-  member, 24 for a team admin, 34 for a superadmin), `/p/<block>/mcp`, `/pkg/<client>.tgz`.
+  member, 24 for a team admin, 34 for a superadmin), `/p/<block>/mcp`.
   Every route the gateway serves has a caller; the gate holds that.
-- **Terminal clients only.** claude-code, codex, hermes. The console is the one browser
+- **One terminal client.** claude-code. The console is the one browser
   surface, and it is a separate repository; the gateway serves it no HTML of its own.
 - **No block is registered.** `blocks.ts` ships an empty built-in registry — a deployment's
   blocks come entirely from `PLATFORMS`, and this one sets none.

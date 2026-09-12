@@ -107,23 +107,18 @@ probe("every tool the source registers is on the live door", () => {
     : null;
 });
 
-probe("the client package carries this version", () => {
+probe("the live door is running this version", () => {
   const want = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  // The package is generated live from the catalog INSIDE the image, so its version prefix is
-  // the running code's own answer rather than anything this checkout can compute.
-  const addr = url(), bearer = token();   // preconditions first — see mcp() above
-  let out;
-  // `curl -f` exits non-zero on any HTTP error, so a 401, a 500 and a dead route all throw —
-  // each of which is the platform's answer, not a probe that could not run.
-  try {
-    out = run("bash", ["-c",
-      `curl -fsSL -H "Authorization: Bearer $ZZ_DOCTOR_TOKEN" ${addr}/pkg/claude-code.tgz `
-      + `| tar xzO zz-platform/zz/.claude-plugin/plugin.json 2>/dev/null `
-      + `| node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))'`],
-      { env: { ...process.env, ZZ_DOCTOR_TOKEN: bearer } });
-  } catch (err) {
-    return `the package route did not serve a package: ${String(err.stderr ?? err.message ?? err).trim().slice(0, 160)}`;
-  }
-  if (!out) return "the package served no version";
-  return out.startsWith(`${want}+`) ? null : `the package reports "${out}", this checkout is ${want}`;
+  // THE HANDSHAKE, not a package download. This used to `curl /pkg/claude-code.tgz | tar xzO`
+  // a plugin.json out of the archive and read its version prefix — the only way to ask the
+  // running image what it thought it was, back when the package was the thing it served.
+  // `/pkg` went with Codex and Hermes on 2026-09-12; `serverInfo.version` answers the same
+  // question in one frame, from the same `serviceVersion` read, with no archive in the middle.
+  const hello = mcp("/core/mcp", initFrame("doctor"));
+  if (hello.unreachable) return hello.unreachable;
+  if (hello.error) return `the door refused initialize: ${JSON.stringify(hello.error).slice(0, 200)}`;
+  const live = hello?.result?.serverInfo?.version;
+  if (!live) return "the handshake carried no serverInfo.version";
+  return live === want ? null : `the door reports "${live}", this checkout is ${want}`;
 });
+);

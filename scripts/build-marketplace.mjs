@@ -34,7 +34,7 @@ process.env.ZZ_SKILLS_DIR ??= join(root, "skills");
 
 const load = (p) => import(pathToFileURL(join(root, p)).href);
 const { catalogManifest, installableFlows } = await load("packages/catalog/dist/index.js");
-const { ALL_CLIENTS, buildClientPackage } = await load("services/gateway/dist/client-package.js");
+const { buildClientPackage } = await load("services/gateway/dist/client-package.js");
 const { whenToUse } = await load("services/gateway/dist/package/skills.js");
 
 /** The address every `.mcp.json` on this shelf points at.
@@ -66,21 +66,14 @@ const flows = installableFlows()
       whenToUse: whenToUse(flow, entry),
       blocks: m.tools ?? [],
       servers: m.servers ?? [],
-      // A manifest with no `clients` declares EVERY client the platform supports — the
-      // reading InstalledFlow.clients documents. An empty array is not that and must never
-      // be substituted for it: `isLocalOnly()` is `clients.length > 0 && ...`, so empty
-      // makes it false, and a flow that is not local-only ships as pointers — a plugin with
-      // commands and no skills/ directory at all.
-      clients: m.clients ?? ALL_CLIENTS,
     };
   })
-  .filter((f) => f.clients.includes("claude-code"))
   .sort((a, b) => a.flow.localeCompare(b.flow));
 
 // `target` reaches exactly one string: the baseline plugin's description. On the gateway it
 // is the person's email, which is right for a package built for them and wrong for a shelf
 // anyone can read — a marketplace card is not the place to publish an address.
-const pkg = buildClientPackage({ target: "your team", kind: "claude-code", base: GATEWAY, flows });
+const pkg = buildClientPackage({ target: "your team", base: GATEWAY, flows });
 
 /* ── writing it out ───────────────────────────────────────────────── */
 

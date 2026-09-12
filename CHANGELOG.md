@@ -87,8 +87,34 @@ claude plugin marketplace add zhixuan312/zz-stack
 claude plugin install zz@zz-stack
 ```
 
-Codex and Hermes still take their package from `<gateway>/pkg/`, and it now unpacks to
-`~/.zz/zz-stack`.
+**Codex and Hermes are gone with it** — see below.
+
+### Removed
+- **Codex and Hermes as served clients**, and everything that existed to serve them: the
+  `/pkg/<client>.tgz` route, `tarGz` (a hand-rolled ustar writer of forty lines of octal field
+  offsets), two more install/refresh/remove stories, the `hermes` frontmatter branch in the
+  router skill, and half of the package-shape probe — which was a tar reader, checking
+  checksums this repository no longer writes. Nobody ran either client. A second install story
+  is not free: the rename to `zz-stack` had to be made in the Codex branch too, and one
+  instance of it was missed.
+- **The `clients` matrix**, root and branch: the manifest's `clients` field, `install_flow`'s
+  `clients` argument, the `flow_install.clients` column (migration 045), `ALL_CLIENTS`,
+  `CLIENT_KINDS`, `ClientKind`, and the `runs_on` / `installed on …` columns in
+  `list_catalog`. It intersected three sets — what a flow can run on, what a team wants, what
+  the platform supports — to decide where a flow appears. With one client the intersection has
+  one possible answer, and a decision with one answer is not a decision.
+- **`SERVED_CLIENTS` and `isLocalOnly`**, the served-versus-local split. A flow running in a
+  browser had to fetch its method from the platform, and one that ALSO shipped its skills as
+  files put two copies of one method in the world. The browser front end went on 2026-09-10;
+  after that `isLocalOnly` was true for every flow it was ever asked about, and the branch it
+  guarded had one live side.
+
+`services/gateway/src/package/archive.ts` is now `describe.ts`: with `tarGz` gone it holds the
+package's digest and the description a person reads, and no archive at all.
+
+**Also breaking:** `my_client_setup` no longer takes a `client` argument, `install_flow` no
+longer takes `clients`, and `GET /pkg/*.tgz` returns 404. A flow manifest still declaring
+`clients` now fails the gate rather than being silently ignored.
 
 ## [0.28.0] — 2026-09-12
 

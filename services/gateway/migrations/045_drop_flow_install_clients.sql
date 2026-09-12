@@ -1,0 +1,15 @@
+-- Drop the team's per-client choice for an installed flow.
+--
+-- 004_flow_install_clients.sql added it, and named the three questions it sat between:
+--   1. what the flow CAN run on   — its manifest's `clients`
+--   2. what the team WANTS        — this column
+--   3. what the platform SUPPORTS — the gateway's known client kinds
+-- The effective set was the intersection. Codex and Hermes were removed on 2026-09-12 and
+-- nobody had run either, so (3) is one client, (1) is every flow, and (2) is a choice with a
+-- single possible answer. An intersection of three sets that can only ever produce one value
+-- is not a decision the platform should be storing, asking for at install, or filtering a
+-- person's shelf by.
+--
+-- The manifest's `clients` went in the same change, and so did install_flow's `clients`
+-- argument. Nothing reads this column any more.
+alter table zz.flow_install drop column if exists clients;

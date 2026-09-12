@@ -19,14 +19,13 @@ import { z } from "zod";
 import { buildAccessServer } from "./access-door.js";
 import { mountBlockOauth } from "./block-oauth.js";
 import { PLATFORMS } from "./blocks.js";
-import { CLIENT_KINDS, type ClientKind } from "./client-package.js";
 import { mountConsoleAsk } from "./console-ask.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
 import { deleteMyCredentialFor, issueMyAccessTokenFor, myAccessTokensFor, myCredentialsFor, revokeMyAccessTokenFor, setMyCredentialFor } from "./credentials.js";
 import { initPlatformDb } from "./db.js";
 import { mountDiscussion } from "./discussion.js";
-import { logEvent, strandedEvents } from "./events.js";
+import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
 import { mountMcpOauth } from "./mcp-oauth.js";
 import { mountPasskey, sweepSessions } from "./passkey.js";
@@ -35,8 +34,6 @@ import { proxy } from "./relay.js";
 import { reconcileRuns } from "./runs.js";
 import { mountSettings } from "./settings.js";
 import { toolCallTelemetry } from "./tool-telemetry.js";
-import { clientPackageFor } from "./admin/flows.js";
-import { tarGz } from "./package/archive.js";
 
 
 
@@ -177,9 +174,6 @@ const DOORS = [
   { path: "/p/<block>/mcp", name: "building blocks", who: "teams granted that block",
     what: "A third-party platform, called with YOUR OWN key. Store the key first via /manage.",
     auth: "Bearer <your token>" },
-  { path: "/pkg/<client>.tgz", name: "client package", who: "everyone, for their own",
-    what: "Your access, rendered as an installable marketplace for Claude Code, Codex or Hermes: the platform baseline, the tools for your own keys and tokens, and one plugin per flow your teams installed \u2014 so you receive no block and no method you do not use. A flow you run only in a terminal travels whole; one you also run in a browser stays a pointer, so both places run the same method. Your CLAUDE.md / AGENTS.md / SOUL.md are never touched.",
-    auth: "Bearer <your token>" },
 ];
 
 app.get("/", (req, res) => {
@@ -214,36 +208,8 @@ app.get("/", (req, res) => {
   ].join("\n"));
 });
 
-/** A person's client package, built for whoever is asking and streamed as one
- * archive. Deliberately not a git remote: both CLIs accept a local directory,
- * so a tarball plus `tar xz` costs us nothing to serve and the person keeps no
- * repository. The archive holds pointers only — the method stays here. */
 mountBlockOauth(app, (block) => PLATFORMS[block]?.url);
 mountMcpOauth(app);
-
-app.get("/pkg/:file", (req, res) => {
-  void (async () => {
-    const email = req.zzIdentity?.email ?? "";
-    const kind = req.params.file.replace(/\.tgz$/, "") as ClientKind;
-    if (!CLIENT_KINDS.includes(kind)) {
-      res.status(404).json({
-        error: `unknown client '${req.params.file}'`,
-        available: CLIENT_KINDS.map((k) => `/pkg/${k}.tgz`),
-      });
-      return;
-    }
-    const pkg = await clientPackageFor(email, kind);
-    const body = tarGz(pkg.files, pkg.archivePrefix);
-    logEvent({ actor: email, kind: "pkg.download", subject: kind,
-               detail: { flows: pkg.flows.map((f) => f.flow), bytes: body.length } });
-    res.setHeader("content-type", "application/gzip");
-    res.setHeader("content-disposition", `attachment; filename="zz-${kind}.tgz"`);
-    res.send(body);
-  })().catch((err: unknown) => {
-    console.error("package render failed:", err);
-    if (!res.headersSent) res.status(500).json({ error: "package render failed" });
-  });
-});
 
 /* The envelope and the manifest, as JSON Schema, unauthenticated.
  *

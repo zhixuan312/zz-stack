@@ -15,7 +15,6 @@ import { z } from "zod";
 import { registerAdminTools } from "./admin.js";
 import { beginAuthorization, disconnectBlock } from "./block-oauth.js";
 import { PLATFORMS } from "./blocks.js";
-import { CLIENT_KINDS } from "./client-package.js";
 import { caller, deleteMyCredentialFor, implausibleKey, issueMyAccessTokenFor, myAccessTokensFor, myCredentialsFor, operatorOnly, revokeMyAccessTokenFor, setMyCredentialFor, withCredentials } from "./credentials.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
@@ -326,17 +325,16 @@ export async function buildAccessServer(): Promise<McpServer> {
       // THEIR setup, so the capability had to survive the merge; it is the same superadmin
       // check that tool made.
       description:
-        "The setup for connecting Claude Code, Codex or Hermes to this platform: the MCP " +
-        "config in that client's own format, pointing here, carrying only the blocks the " +
-        "team's installed flows declare, plus the flow router stanza. Yours by default — " +
-        "pair it with issue_my_access_token, since the config needs a token and it is shown " +
+        "The setup for connecting Claude Code to this platform: which marketplace to add, " +
+        "which plugins to install, and where to put your token — carrying only the blocks " +
+        "the team's installed flows declare. Yours by default — pair it with " +
+        "issue_my_access_token, since the setup needs a token and it is shown " +
         "once. Pass email to render somebody else's, for onboarding them (superadmin only).",
       inputSchema: {
-        client: z.enum(CLIENT_KINDS).optional(),
         email: z.string().email().optional().describe("Whose setup. Omit for your own; anyone else needs superadmin."),
       },
     },
-    async ({ client, email }) => {
+    async ({ email }) => {
       const me = caller().email;
       if (!me) return text("ERROR: no identity on this request");
       if (!platformDbReady()) return text("ERROR: platform db unavailable");
@@ -347,7 +345,7 @@ export async function buildAccessServer(): Promise<McpServer> {
       if (target !== me.toLowerCase() && !sup) {
         return text("ERROR: superadmin required to render another person's setup");
       }
-      return text(await renderClientSetup(target, client ?? "claude-code"));
+      return text(await renderClientSetup(target));
     },
   );
 

@@ -60,11 +60,11 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
       bad.push(`${f.flow}: entry is "${m.entry}" and no such skill is shipped` +
                (entrySkills.length ? ` (has: ${entrySkills.join(", ")})` : " (it ships none)"));
     }
-    // ABSENT clients is legitimate and means "every client the platform supports" —
-    // that default is what lets a flow written before the client matrix existed keep
-    // working. Only a present-but-wrong value is a defect.
-    if ("clients" in m && !Array.isArray(m.clients)) {
-      bad.push(`${f.flow}: clients is present but not an array`);
+    // `clients` was removed from the manifest on 2026-09-12 with Codex and Hermes. A manifest
+    // still carrying it is not harmless: the schema drops unknown keys, so the field would
+    // read as an honoured declaration and silently do nothing.
+    if ("clients" in m) {
+      bad.push(`${f.flow}: declares 'clients', a field this platform no longer reads`);
     }
   }
   return bad.length ? bad.join("; ") : null;

@@ -26,7 +26,6 @@ import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority
 import { autoFlows, canonicalJson, installFlow, uninstallFlow } from "./admin/flows.js";
 import { addPerson, deactivatePerson, grantTool, issueEnrolmentLink, listPeople, revokeTool } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
-import { CLIENT_KINDS } from "./client-package.js";
 import { platformDb } from "./db.js";
 import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, sha256, type Identity, TEAM_SLUG } from "./identity.js";
 
@@ -351,17 +350,15 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     description:
       "Install a catalog flow for a team: records registry truth, with the flow's manifest, " +
       "as the single place that says what this team runs. Clients read it rather than being " +
-      `written into — each person's package for ${CLIENT_KINDS.join("/")} is generated from ` +
-      "it on demand. agent_name is what the team sees.",
+      "written into — the shelf a person installs from is generated from it. agent_name is " +
+      "what the team sees.",
     inputSchema: {
       team: z.string(), flow: z.string(), version: z.string().optional(),
       agent_name: z.string().optional(),
-      clients: z.array(z.string()).optional()
-        .describe("Which of the flow's declared clients this team wants it on. Omit for all of them."),
     },
-  }, async ({ team, flow, version, agent_name, clients }) => {
+  }, async ({ team, flow, version, agent_name }) => {
     const id = await caller();
-    const r = await installFlow(id, team, flow, version, agent_name, clients);
+    const r = await installFlow(id, team, flow, version, agent_name);
     return text(r.ok ? r.message : `ERROR: ${r.error}`);
   });
 

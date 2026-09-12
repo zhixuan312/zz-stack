@@ -11,10 +11,6 @@
     "methodology",
     "flow"
   ],
-  "clients": [
-    "claude-code",
-    "codex"
-  ],
   "entry": "sdlc-flow",
   "tools": [],
   "standalone": [

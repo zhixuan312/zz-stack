@@ -430,7 +430,6 @@ export const CatalogManifest = z.object({
   description: z.string().optional(),
   /** BUILDING BLOCKS — gateway platform ids, never skill names. */
   tools: z.array(z.string()).optional(),
-  clients: z.array(z.string()).optional(),
   install: z.enum(["auto", "opt-in"]).optional(),
   standalone: z.array(z.string()).optional(),
   servers: z.array(z.object({ name: z.string(), path: z.string() })).optional(),

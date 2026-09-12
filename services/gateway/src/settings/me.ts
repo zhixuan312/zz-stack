@@ -14,7 +14,6 @@ import { redact } from "../redact.js";
 import { TEAM_SLUG } from "../identity.js";
 import { logEvent } from "../events.js";
 import { platformDb, platformDbReady } from "../db.js";
-import { CLIENT_KINDS, type ClientKind } from "../client-package.js";
 import { PLATFORMS } from "../blocks.js";
 import { beginAuthorization, disconnectBlock, myBlockConnectionsFor } from "../block-oauth.js";
 import { renderClientSetup } from "../admin/flows.js";
@@ -205,11 +204,8 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const requested = typeof req.query.client === "string" ? req.query.client : "";
-      const client: ClientKind = (CLIENT_KINDS as readonly string[]).includes(requested)
-        ? requested as ClientKind : "claude-code";
-      const config = await renderClientSetup(id.email, client);
-      res.json(redact({ client, config }));
+      const config = await renderClientSetup(id.email);
+      res.json(redact({ client: "claude-code", config }));
     })().catch((err: unknown) => {
       console.error("settings/me/client-setup failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not render client setup" });

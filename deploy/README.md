@@ -265,15 +265,12 @@ baseline, the access tools and one plugin per flow — everything the catalog ho
 than a set chosen per person, because what a person may actually *use* is decided by their
 role and their team's installs at the door, not by what their shelf lists.
 
-**Codex** and **Hermes** still install a package built for them, from the gateway:
-
-```bash
-mkdir -p ~/.zz && curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" <gateway>/pkg/codex.tgz | tar xz -C ~/.zz
-```
-
 `my_client_setup` on `/manage/mcp` prints these steps with the person's own values.
 
-They authenticate with a PAT (`issue_my_access_token`), and get the same identity, the same
+Claude Code is the only client. Codex and Hermes were served until 2026-09-12 — nobody ran
+either, and `/pkg/<client>.tgz` went with them.
+
+People authenticate with a PAT (`issue_my_access_token`), and get the same identity, the same
 team knowledge store and the same gates — enforced in zz-core, so no client can bypass them.
 
 The team's knowledge is readable in a browser at `<gateway>/app` (PAT login): documents,
@@ -320,7 +317,7 @@ Solves both problems at once: no shared key, and each person works in their own 
 Caddy + nip.io — no domain purchase needed. `deploy/Caddyfile` is a template and
 `install-caddy.sh` is the only thing that should apply it; see **Standing up a host** above. It
 serves two hostnames on one machine: the bare host for the console, and `api.<host>` for the
-gateway, which is how Claude Code, Codex and Hermes reach this platform from a laptop.
+gateway, which is how Claude Code reaches this platform from a laptop.
 
 Caddy fetches and renews Let's Encrypt automatically and proxies WebSockets. Swap the nip.io
 host for a real domain in the Caddyfile whenever one exists.

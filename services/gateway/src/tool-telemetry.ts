@@ -181,9 +181,10 @@ function cap(s: string): string {
  */
 const IDENTIFIER_ARGS = new Set([
   "team", "initiative", "flow", "platform", "block", "path", "name", "type", "id",
-  // `harness` left with render_harness_config, the tool that took it: my_client_setup
-  // absorbed that job and its argument is `client`, which is already here.
-  "old_id", "new_id", "client", "clients", "slug", "role",
+  // `harness` left with render_harness_config, then `client` and `clients` left with Codex
+  // and Hermes: my_client_setup takes no client any more, because there is one, and
+  // install_flow no longer asks a team to choose between them.
+  "old_id", "new_id", "slug", "role",
   "scope", "status", "direction", "prefix", "version", "agent_name", "limit",
   "include_superseded",
   // `disposition` — finished or abandoned, on close(), which is the most consequential act

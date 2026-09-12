@@ -208,7 +208,6 @@ check("the gateway is authenticated by default, and the exceptions are the inten
     ["/", true], ["/health", true],
     ["/schemas/envelope.json", true], ["/schemas/manifest.json", true],
     ["/core/mcp", false], ["/manage/mcp", false],
-    ["/pkg/claude-code.tgz", false],
     ["/p/casebox/mcp", false],
   ]) {
     if (isPublic(p) !== want) {

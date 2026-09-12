@@ -16,7 +16,7 @@ identity, a team's document store, and the rules about who may write what.
 result to be auditable by someone who was not in the room.
 
 ```bash
-npm install && npm run gate     # 279 offline checks, a few seconds
+npm install && npm run gate     # 280 offline checks, a few seconds
 ```
 
 **Start there.** The gate is the most useful thing in this repository: every check
@@ -224,11 +224,12 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             is how a probe ends up testing nothing
 ```
 
-Interfaces are projections, not the platform: Claude
-Code / Codex / Hermes through the client package (`my_client_setup` for your
-own, `render_harness_config` for someone else's). The same PAT, knowledge store
-and gates apply whichever one a team uses — and a flow declares which of them
-it runs on, so a flow meant for a terminal never appears in the browser.
+The interface is a projection, not the platform: Claude Code, installing from the
+public shelf this repository publishes (`my_client_setup` prints the steps, with
+`email` to render somebody else's). Codex and Hermes were served too until
+2026-09-12; nobody ran either, and between them they carried a tarball route, an
+archive writer and a client matrix threaded through the database. One client is
+not a limit anyone is working around — it is the honest count.
 
 
 Building blocks are NOT in this repo. A block is somebody else's MCP server, reached

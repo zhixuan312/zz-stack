@@ -145,9 +145,7 @@ export function mountTeamSettings(app: Express): void {
       if (!flow) { res.status(400).json({ error: "flow is required" }); return; }
       const version = typeof body.version === "string" ? body.version : undefined;
       const agentName = typeof body.agent_name === "string" ? body.agent_name : undefined;
-      const clients = Array.isArray(body.clients) && body.clients.every((c) => typeof c === "string")
-        ? body.clients as string[] : undefined;
-      const r = await installFlow(id, team, flow, version, agentName, clients, { via: "web" });
+      const r = await installFlow(id, team, flow, version, agentName, { via: "web" });
       if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
       res.json(redact({ ok: true, result: r.message }));
     })().catch((err: unknown) => {

@@ -5,11 +5,6 @@
   "version": "0.1.0",
   "description": "Measure a skill: its statistics first, then its definition of good, then its documents if it writes any. Produces evidence, never a change.",
   "shelved": true,
-  "clients": [
-    "claude-code",
-    "codex",
-    "hermes"
-  ],
   "entry": "zz-skill-eval",
   "tools": [],
   "servers": [

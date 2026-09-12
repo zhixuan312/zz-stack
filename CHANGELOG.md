@@ -33,6 +33,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+**The Claude Code shelf is published from this repository instead of served as a tarball.**
+Installing it no longer needs a token:
+
+```bash
+claude plugin marketplace add zhixuan312/zz-stack
+claude plugin install zz@zz-stack
+```
+
+Nothing is given away by that. Every tool behind these plugins is a door at the gateway, and
+the door still answers `401 authentication required: Bearer PAT (zzp_…)` to anyone without
+one — the shelf was never the boundary, it only looked like one while it sat behind a
+credential. What the shelf now carries in public is the *method*: the skills, which are files
+in this repository already.
+
+The reason to change it: the old path made a person's first act on the platform the one thing
+they needed the platform for. `curl -H "Authorization: Bearer $ZZ_TOKEN" <gateway>/pkg/…` runs
+before `marketplace add`, so somebody with no token had no way to install the tools that issue
+one, and the two commands they were handed failed on a directory that could not exist yet.
+
+### Added
+- **`npm run build:marketplace`** renders `marketplace/` and `.claude-plugin/marketplace.json`
+  from the catalog. It calls the same `buildClientPackage` the gateway serves packages with
+  rather than re-implementing it — a second renderer is the drift that function's own comments
+  keep warning about — with flows read from manifests instead of from `flow_install`.
+- **A gate check that the committed shelf is what the catalog renders.** Build output under
+  version control drifts the moment someone edits a skill and does not rebuild, and the drift
+  is invisible: the shelf keeps installing, it just installs last week's method. The check
+  rebuilds and fails on a dirty tree, so a red gate leaves the fix already written.
+
+### Changed
+- **The marketplace and every plugin now declare an owner and an author**, and the marketplace
+  carries a description. `claude plugin validate` asks for all three, and a public shelf is
+  read by people who did not write it.
+- **`target` no longer reaches a published card.** It named the person the package was built
+  for — correct for a package built for them, wrong for a shelf anyone can read, since a
+  marketplace card is not the place to publish an email address.
+
+**Breaking, twice.** `claude plugin marketplace add ~/.zz/zz-platform` is no longer the
+install path for Claude Code, **and the shelf is now called `zz-stack` rather than
+`zz-platform`** — so every id spells `zz@zz-stack`, `sdlc@zz-stack`. The two names were the
+same shelf: you added `zhixuan312/zz-stack` and then installed from `@zz-platform`, which
+made a person learn both and guess which belonged where. `zz-platform` remains the platform's
+own TEAM (`PLATFORM_TEAM`), which is what it always meant and is not a marketplace.
+
+Anyone on the old registration:
+
+```bash
+claude plugin marketplace remove zz-platform
+claude plugin marketplace add zhixuan312/zz-stack
+claude plugin install zz@zz-stack
+```
+
+Codex and Hermes still take their package from `<gateway>/pkg/`, and it now unpacks to
+`~/.zz/zz-stack`.
+
 ## [0.28.0] — 2026-09-12
 
 **zz-stack 0.28.0 · zz-stack-dashboard 0.4.0**

@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "build:marketplace": "node scripts/build-marketplace.mjs",
     "clean": "tsc -b --clean",
     "gate": "node scripts/gate.mjs",
     "doctor": "node scripts/doctor.mjs",

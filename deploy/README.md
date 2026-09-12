@@ -244,17 +244,34 @@ a person then gets is a client package.
 
 ## Interfaces
 
-**Claude Code**, **Codex** and **Hermes** each install a package built for them:
+**Claude Code** installs from the public shelf in this repository. No token is needed to read
+it — every tool behind these plugins is a door at the gateway, and the door still asks:
 
 ```bash
-mkdir -p ~/.zz && curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" <gateway>/pkg/claude-code.tgz | tar xz -C ~/.zz
-claude plugin marketplace add ~/.zz/zz-platform
-claude plugin install zz@zz-platform      # the baseline; then take what you want
+claude plugin marketplace add zhixuan312/zz-stack
+claude plugin install zz@zz-stack      # the baseline; then take what you want
 ```
 
-The package is a marketplace of plugins — the platform baseline, the access tools, and one per
-flow their teams have installed — so nobody receives building blocks or methods they do not
-use. `my_client_setup` on `/manage/mcp` prints these steps with the person's own values.
+Then the token, which is what the tools actually authenticate with:
+
+```bash
+(umask 077; mkdir -p ~/.zz) && chmod 700 ~/.zz
+(umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token) && chmod 600 ~/.zz/token
+```
+
+The shelf is build output, rendered by `npm run build:marketplace` from the catalog and
+committed here; the gate fails a release that forgot to rebuild it. It lists the platform
+baseline, the access tools and one plugin per flow — everything the catalog holds, rather
+than a set chosen per person, because what a person may actually *use* is decided by their
+role and their team's installs at the door, not by what their shelf lists.
+
+**Codex** and **Hermes** still install a package built for them, from the gateway:
+
+```bash
+mkdir -p ~/.zz && curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" <gateway>/pkg/codex.tgz | tar xz -C ~/.zz
+```
+
+`my_client_setup` on `/manage/mcp` prints these steps with the person's own values.
 
 They authenticate with a PAT (`issue_my_access_token`), and get the same identity, the same
 team knowledge store and the same gates — enforced in zz-core, so no client can bypass them.

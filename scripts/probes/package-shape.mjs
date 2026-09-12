@@ -167,8 +167,14 @@ for (const kind of CLIENT_KINDS) {
   // `claude plugin install` alone, so the identical defect in the Codex branch — the same
   // list, the same sentence above it, `codex plugin add` instead — passed untouched. A probe
   // narrower than the code it guards finds the instance you already knew about.
+  //
+  // The allowance names the BASELINE PLUGIN, not the shelf it sits on. It was the literal
+  // `zz@zz-platform`, so renaming the marketplace to `zz-stack` turned a correct install
+  // block red — the probe was asserting which marketplace exists, a fact it has no business
+  // holding, on its way to asserting which plugin may install itself. `zz@` matches only the
+  // baseline: `zz-access@zz-stack` and the rest have no `zz@` in them.
   const live = pkg.install.filter((l) => /^\s*(claude plugin install|codex plugin add) /.test(l));
-  const wrong = live.filter((l) => !/\bzz@zz-platform\b/.test(l));
+  const wrong = live.filter((l) => !/\bzz@[A-Za-z0-9._-]+\b/.test(l));
   if (wrong.length) {
     bad.push(`${kind} install block installs without being asked: ${wrong.join(" | ")}`);
   }

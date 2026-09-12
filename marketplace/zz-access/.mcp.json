@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "zz-access": {
+      "type": "http",
+      "url": "https://api.165-232-169-165.nip.io/manage/mcp",
+      "headersHelper": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/zz-mcp-headers.sh"
+    }
+  }
+}

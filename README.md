@@ -186,6 +186,10 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             a release), deployment.mjs (the one description of the deployment —
             its address, paths, images and how to speak to it — read by the
             release and the doctor alike), release.mjs,
+            build-marketplace.mjs (renders the public Claude Code shelf into
+            marketplace/ and .claude-plugin/, through the same buildClientPackage
+            the gateway serves packages with — the gate fails a release whose
+            committed shelf no longer matches the catalog),
             set-version.mjs, skill-versions.mjs (each skill's declared version beside
             the hash of what it actually says), manifests.mjs (where the packages are, read by
             both) and build-image.sh (the runtime image, from the lockfile). The

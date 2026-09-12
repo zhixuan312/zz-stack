@@ -13,8 +13,13 @@
  * changes the behaviour of the whole engine, and two flows collide in one file.
  * Everything below installs and uninstalls as a unit instead.
  *
- * Distribution is a tarball, not a git remote: Claude Code accepts a local path
- * and so does Codex, and a path costs us no git server.
+ * Distribution differs by client, and the reason is the token. Claude Code installs from a
+ * PUBLIC marketplace committed to this repository — `build-marketplace.mjs` renders it with
+ * the very function below — because the old tarball sat behind `Authorization: Bearer` and
+ * so put a credential in front of the tools a person installs in order to obtain one. The
+ * shelf was never the boundary: every tool it lists is a door at the gateway, and the door
+ * still refuses. Codex and Hermes still take a tarball from `/pkg/`, which needs no git
+ * server and is the one thing a path costs nothing to serve.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -34,6 +39,27 @@ import { cardDescription, commandFile, commandName, headersHelper, platformPlugi
  * comment beside serviceVersion records what a second answer to this question already cost:
  * three servers announcing three different wrong versions at the MCP handshake. */
 export const PLATFORM_VERSION: string = serviceVersion(import.meta.url);
+
+/** Where the Claude Code shelf is published, as `claude plugin marketplace add` takes it.
+ *
+ * The repository is the distribution: `build-marketplace.mjs` renders the shelf into it and
+ * the gate refuses a release whose committed copy has fallen behind. This is the one place
+ * that name is written — the install, refresh and owner URL below all read it. */
+const MARKETPLACE_REPO = "zhixuan312/zz-stack";
+
+/** What the shelf is CALLED, as `plugin@marketplace` ids spell it.
+ *
+ * The same word as the repository, deliberately: `marketplace add zhixuan312/zz-stack`
+ * followed by `install zz@zz-platform` made a person learn two names for one shelf and
+ * guess which belonged where. It is not the same word as the platform's own TEAM, which is
+ * `zz-platform` (PLATFORM_TEAM, in identity.ts) — those were the two things the old name
+ * ran together, and a marketplace and a team are not remotely the same object. */
+const MARKETPLACE = "zz-stack";
+
+/** Who publishes this shelf. One object for the marketplace's `owner` and every plugin's
+ * `author`, because they are the same claim and `claude plugin validate` asks for both —
+ * two literals would be two places to disagree about who made this. */
+const OWNER = { name: "ZZ Stack", url: `https://github.com/${MARKETPLACE_REPO}` };
 
 /** The clients a package is BUILT for — each one runs on a person's own machine and holds
  * files. Declared as a tuple so it can be the type, the runtime list AND the zod enum: the
@@ -342,8 +368,12 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
     files.push({
       path: ".claude-plugin/marketplace.json",
       content: JSON.stringify({
-        name: "zz-platform",
-        owner: { name: "ZZ Stack" },
+        name: MARKETPLACE,
+        owner: OWNER,
+        description:
+          "Delivery flows and platform tools for the ZZ platform. Every tool here is a door " +
+          "at the gateway and asks for your platform token; installing a plugin grants nothing " +
+          "on its own.",
         plugins: plugins.map((pl) => ({
           name: pl.name,
           source: `./${pl.name}`,
@@ -354,7 +384,7 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
     for (const pl of plugins) {
       files.push({
         path: `${pl.name}/.claude-plugin/plugin.json`,
-        content: JSON.stringify({ name: pl.name, description: pl.description, version }, null, 2) + "\n",
+        content: JSON.stringify({ name: pl.name, description: pl.description, version, author: OWNER }, null, 2) + "\n",
       });
       if (pl.servers.length) {
         files.push({
@@ -376,8 +406,27 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
 
     const optional = plugins.filter((pl) => !pl.required).map((pl) => pl.name);
     return {
-      kind, home: "~/.zz", archivePrefix: "zz-platform", files, flows, blocks, notes,
+      kind, home: "~/.zz", archivePrefix: MARKETPLACE, files, flows, blocks, notes,
       install: [
+        // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's
+        // umask — 644 on most machines — and the chmod lands after it already exists, so the
+        // person's platform token is world-readable for that window. server.ts made exactly
+        // this argument about the platform's own credential file ("setting it afterwards
+        // would leave a window where the new file is world-readable") and fixed it by
+        // creating with the mode; this is the same secret one layer out, on a machine that
+        // may well have other users.
+        //
+        // The chmod stays for what umask cannot cover: a ~/.zz or a token file left behind by
+        // an earlier install with looser permissions.
+        // THE SHELF FIRST, AND IT NEEDS NO TOKEN. It used to come from `${base}/pkg/…`, which
+        // put a credential in front of the tools a person installs to obtain one — so someone
+        // with no token was handed two `claude plugin` commands that failed on a directory
+        // that could not exist yet. The shelf is public because it was never the boundary:
+        // every tool below is a door at the gateway and the door still refuses.
+        `claude plugin marketplace add ${MARKETPLACE_REPO}`,
+        `claude plugin install zz@${MARKETPLACE}     # the baseline — everything else needs it`,
+        ``,
+        `# Then the token — it is what every tool above actually authenticates with.`,
         // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's
         // umask — 644 on most machines — and the chmod lands after it already exists, so the
         // person's platform token is world-readable for that window. server.ts made exactly
@@ -390,9 +439,6 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
         // an earlier install with looser permissions.
         `(umask 077; mkdir -p ~/.zz) && chmod 700 ~/.zz`,
         `(umask 077; printf '%s' "$ZZ_TOKEN" > ~/.zz/token) && chmod 600 ~/.zz/token`,
-        `curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" ${base}/pkg/claude-code.tgz | tar xz -C ~/.zz`,
-        `claude plugin marketplace add ~/.zz/zz-platform`,
-        `claude plugin install zz@zz-platform     # the baseline — everything else needs it`,
         ``,
         `# Then take what you want, and nothing else. To see the shelf:`,
         `#   /plugins in Claude Code, then the Marketplaces tab, or`,
@@ -401,7 +447,7 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
         // is only useful if it runs on the machine reading it.
         `#   claude plugin list --available --json | node -e '`,
         `#     let s="";process.stdin.on("data",d=>s+=d).on("end",()=>JSON.parse(s).available`,
-        `#       .filter(p=>(p.pluginId||"").includes("zz-platform"))`,
+        `#       .filter(p=>(p.pluginId||"").includes("${MARKETPLACE}"))`,
         `#       .forEach(p=>console.log(p.name,"—",(p.description||"").slice(0,70))))'`,
         // COMMENTED, so this block stays a menu rather than a script that chooses for you.
         // These lines used to be live, directly under "take what you want, and nothing
@@ -410,7 +456,7 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
         // with it, and a plugin that can create teams must not arrive by default.
         ``,
         `# Uncomment the ones you want:`,
-        ...optional.map((n) => `# claude plugin install ${n}@zz-platform`),
+        ...optional.map((n) => `# claude plugin install ${n}@${MARKETPLACE}`),
       ],
       // EXTRACT ONTO NOTHING. `tar xz` writes what the archive holds and removes nothing it
       // does not, so a plugin the platform has RETIRED stayed on the laptop for ever: the
@@ -421,10 +467,14 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
       //
       // Only the package directory is removed. `~/.zz/token` is a sibling of it, not a child,
       // and it is the one thing here that cannot be re-fetched.
+      // One command, because the shelf is a git clone rather than an archive unpacked over
+      // whatever was there before. That is what fixes the retirement problem this comment
+      // was written for: a plugin the platform has retired LEAVES the shelf on update, where
+      // `tar xz` could only ever add — so `zz-admin` stayed on laptops after it was folded
+      // into `zz-access`, listed by `claude plugin list` and pointing at a door that had
+      // stopped answering, with nothing saying why.
       refresh: [
-        `rm -rf ~/.zz/zz-platform`,
-        `curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" ${base}/pkg/claude-code.tgz | tar xz -C ~/.zz`,
-        `claude plugin marketplace update zz-platform`,
+        `claude plugin marketplace update ${MARKETPLACE}`,
       ],
       // Every plugin, not just the baseline. This said `uninstall zz` alone, so a person
       // who followed it kept zz-access and every flow installed — pointing at a
@@ -433,7 +483,7 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
       remove: [
         ...optional.map((n) => `claude plugin uninstall ${n}`),
         `claude plugin uninstall zz`,
-        `claude plugin marketplace remove zz-platform`,
+        `claude plugin marketplace remove ${MARKETPLACE}`,
         `rm -rf ~/.zz`,
       ],
     };
@@ -443,7 +493,7 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
     files.push({
       path: ".agents/plugins/marketplace.json",
       content: JSON.stringify({
-        name: "zz-platform",
+        name: MARKETPLACE,
         interface: { displayName: "ZZ Stack" },
         plugins: plugins.map((pl) => ({
           name: pl.name,
@@ -514,31 +564,31 @@ export function buildClientPackage({ target, kind, base, flows }: PackageInput):
 
     const optionalCx = plugins.filter((pl) => !pl.required).map((pl) => pl.name);
     return {
-      kind, home: "~/.zz", archivePrefix: "zz-platform", files, flows, blocks, notes,
+      kind, home: "~/.zz", archivePrefix: MARKETPLACE, files, flows, blocks, notes,
       install: [
         `(umask 077; mkdir -p ~/.zz) && chmod 700 ~/.zz`,
         `export ZZ_TOKEN=<your token>   # add to your shell profile`,
         `curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" ${base}/pkg/codex.tgz | tar xz -C ~/.zz`,
-        `codex plugin marketplace add ~/.zz/zz-platform`,
-        `codex plugin add zz@zz-platform          # the baseline — everything else needs it`,
+        `codex plugin marketplace add ~/.zz/${MARKETPLACE}`,
+        `codex plugin add zz@${MARKETPLACE}          # the baseline — everything else needs it`,
         ``,
         `# Then take what you want. To see the shelf: codex plugin list`,
         // Commented for the same reason as the Claude Code block: this is pasted into a
         // shell, so a live line here chooses for the person.
         `# Uncomment the ones you want:`,
-        ...optionalCx.map((n) => `# codex plugin add ${n}@zz-platform`),
+        ...optionalCx.map((n) => `# codex plugin add ${n}@${MARKETPLACE}`),
       ],
       // Onto nothing, for the reason spelled out over the Claude Code refresh above: an
       // extract never retires a plugin the platform has withdrawn. ~/.zz/token is a sibling.
       refresh: [
-        `rm -rf ~/.zz/zz-platform`,
+        `rm -rf ~/.zz/${MARKETPLACE}`,
         `curl -fsSL -H "Authorization: Bearer $ZZ_TOKEN" ${base}/pkg/codex.tgz | tar xz -C ~/.zz`,
-        `codex plugin marketplace upgrade zz-platform`,
+        `codex plugin marketplace upgrade ${MARKETPLACE}`,
       ],
       remove: [
         ...optionalCx.map((n) => `codex plugin remove ${n}`),
         `codex plugin remove zz`,
-        `codex plugin marketplace remove zz-platform`,
+        `codex plugin marketplace remove ${MARKETPLACE}`,
         `rm -rf ~/.zz`,
       ],
     };

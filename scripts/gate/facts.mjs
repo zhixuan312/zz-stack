@@ -203,7 +203,12 @@ export function ourDocs() {
       if (e.isDirectory()) {
         // Skill and source trees are documented by their own content checks; a run report is
         // a historical record, correct for ever, and not something a release re-dates.
-        if (["catalog", "skills", "services", "packages", "testing"].includes(r)) continue;
+        // `marketplace` is the rendered copy of `catalog` and `skills`, so it is excluded for
+        // the reason they are, twice over: its documents are checked at their source, and the
+        // paths inside them resolve against the PLUGIN root rather than this repository —
+        // `skills/sdlc-deck/deck-chassis.html` is a real file in the shipped plugin and has
+        // never been one here.
+        if (["catalog", "skills", "services", "packages", "testing", "marketplace"].includes(r)) continue;
         walk(r);
       } else if (e.name.endsWith(".md") && (!belongs || belongs.has(r))) {
         out.push(r);

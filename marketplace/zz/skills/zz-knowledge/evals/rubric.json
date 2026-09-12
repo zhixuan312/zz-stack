@@ -1,0 +1,26 @@
+{
+  "step": "zz-knowledge",
+  "role": "platform capability",
+  "produces_document": false,
+  "how_to_score": "Runs at the end of every flow and writes no document — it mints knowledge nodes. Scored on the nodes: what was promoted, what was correctly left behind, and whether they hold up when somebody re-tests them.",
+  "dimensions": [
+    {
+      "name": "Promotes facts about a registry entry, not about the team",
+      "evidence": "Each node created, against the initiative it came from.",
+      "five": "What is promoted would be true for any team meeting the same block, flow, provider or interface. What was specific to this team's circumstances is deliberately left behind, and the decision is visible.",
+      "one": "One team's local difficulty is promoted as platform knowledge — a single confusing afternoon recorded as a property of a block — so the next reader is misled by something that was never general."
+    },
+    {
+      "name": "Every node carries evidence and a version",
+      "evidence": "The node's evidence line, and its verified_against field.",
+      "five": "Each node names the initiative and the specific call, refusal or read-back that proves it, and the block version it was checked against. A reader can re-run the check and a maintainer can retire it when the block moves.",
+      "one": "Nodes assert. Nothing says how the claim was established or against what version, so it can never be retired — and a finding recorded once routes work around itself forever. Four nodes about one tool were wrong for a week for exactly this reason."
+    },
+    {
+      "name": "Supersedes rather than accumulates",
+      "evidence": "Whether a node contradicting an existing one went through knowledge_supersede.",
+      "five": "A finding that contradicts what is already recorded replaces it, so the store holds the current position. The correction says plainly what the earlier claim got wrong.",
+      "one": "A contradiction is added beside the claim it contradicts, leaving the store holding both. Every later reader has to work out which is true, and the search returns the wrong one as readily as the right one."
+    }
+  ]
+}

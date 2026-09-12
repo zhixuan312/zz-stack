@@ -1,0 +1,75 @@
+---
+name: sdlc-plan-audit
+version: 1.0
+description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, at most three rounds.
+when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
+---
+
+# sdlc-plan-audit
+
+<!-- Design note: read-only here is a DISCIPLINE, not an enforced tool denial. The round
+     loop belongs to the caller, not to this file. And auditing is split by document — a
+     spec and a plan fail in different ways, so one generic auditor would find the generic
+     half of both and miss what actually breaks. -->
+
+You are auditing a **plan** — the document a worker will follow task by task, literally, without
+asking questions. Everything below matters because of that: the executor cannot disambiguate, and
+it will not stop to check.
+
+**Load `sdlc-audit-criteria` first, then come back here.** It carries the eleven prose
+failure modes, the evidence shapes a finding must take, and the JSON a round returns —
+everything an audit does whatever document it was given. This file carries the one thing
+that is different: what a plan owes, below.
+
+Do not restate those criteria here. They were written twice once already, and two
+auditors applying different standards is worse than either standard.
+
+## Twelve: the plan's own contract
+
+The eleven failure modes in `sdlc-audit-criteria` are about prose. These are about what makes a plan executable, and a
+plan fails here far more often than it fails as prose.
+
+1. **Every spec AC is traced.** The traceability table maps every business AC in the spec to at
+   least one task. An untraced AC is scope that will not get built, and it is the highest-value
+   finding this audit can produce.
+2. **Every task carries its contract.** The five bullets, in this order and with these labels:
+   Inputs / Request · Outputs / Response · Data mapping · Errors · Behavior / invariants. A task
+   with a technical AC and no contract is a wish.
+3. **Every task has a technical AC traced to a business AC** (`← AC-N.N`), written as a testable
+   sentence rather than a goal.
+4. **Checks are real, or honestly absent.** A declared check's `Check:` path is a NEW dedicated
+   file — never the task's own `**Output:**` — and sits under a checks or tests directory. Every
+   `Run:` command is whitespace-delimited argv with **no shell metacharacters** and names a runner
+   the project actually has. A task with no deterministic check must say in its AC how the claim is
+   established instead: a missing Checks section is a statement, and a *silently* missing one is a
+   finding.
+5. **The format the executor depends on.** Phase headings are level-2
+   `## Phase N — <name>: <what works at the end>`. Task headings are level-3 `### Task I-N:` with N
+   as an arabic digit, numbered straight through regardless of phase. `**Output:**` and
+   `**Dependencies:**` are one line each, immediately after the heading. `sdlc-execute` names a task
+   by that id when it dispatches, so an ambiguous or duplicated id makes a task undispatchable.
+6. **Dependency order holds.** No task depends on the output of a later one. Phases end where a
+   person could actually inspect the increment — a boundary nobody can review buys nothing.
+7. **The full-suite gate exists**, as a section headed exactly `## Full-suite gate`, naming the
+   project's real build, typecheck, test and lint entry points — or, for a deliverable with no
+   suite, one line saying so and naming what stands in for it. Per-task checks prove each task did
+   its own job; they cannot prove it left the rest working, and every-check-green with the suite red
+   is the actual failure mode of a plan executed task by task.
+8. **No implementation code and no deliverable content leaked** into the plan. The only code is a
+   declared check's source.
+9. **Zero `<!-- enrich` markers remain.**
+10. **Paths are real.** Every path named was verified against the tree at HEAD, not guessed. Verify
+    the specific paths the plan names — do not enumerate the repository.
+11. **Granularity is human-sensible.** Roughly 2–6 tasks per phase, each a unit one person could
+    finish in a sitting. A hundred trivial tasks and two mega-tasks are both findings.
+
+Add `plan-contract` to `criteriaCovered` when you have walked these.
+
+## What a plan audit is not
+
+**Do not audit the spec.** It was agreed and already audited by `sdlc-spec-audit`; if the plan
+faithfully implements a spec you disagree with, that is not a plan finding.
+
+The exception is a genuine contradiction between the two — "Task I-4 builds X, but the spec puts X
+explicitly out of scope" — which is among the most valuable findings available here, because
+nothing else in the flow is positioned to see it.

@@ -427,10 +427,10 @@ is the balance, and the balance is:
   `zz-access`, `zz-block-eval`, `zz-skill-eval`. `zz.skill` holds 32 rows, `zz.skill_version`
   35.
 - **The doors:** `/core/mcp`, `/manage/mcp` (the tool list IS the caller's role — 20 for a
-  member, 24 for a team admin, 34 for a superadmin), `/p/<block>/mcp`, `/pkg/<client>.tgz`,
-  `/app`, `/architecture`. Every route the gateway serves has a caller; the gate holds that.
-- **Terminal clients only.** claude-code, codex, hermes. There is no browser front end and
-  nothing provisions one; the console and `/app` are the two browser surfaces.
+  member, 24 for a team admin, 34 for a superadmin), `/p/<block>/mcp`, `/pkg/<client>.tgz`.
+  Every route the gateway serves has a caller; the gate holds that.
+- **Terminal clients only.** claude-code, codex, hermes. The console is the one browser
+  surface, and it is a separate repository; the gateway serves it no HTML of its own.
 - **No block is registered.** `blocks.ts` ships an empty built-in registry — a deployment's
   blocks come entirely from `PLATFORMS`, and this one sets none.
 - **Governance in code, not in prose:** document-chain gates, the exact status and outcome

@@ -158,8 +158,6 @@ Later ones come from the console, or from `issue_enrolment` on `/manage/mcp`.
 | `/manage/mcp` | everyone; **the tool list is your role**, so a tool you cannot execute is a tool you are not offered |
 | `/p/<block>/mcp` | teams granted that block |
 | `/pkg/<client>.tgz` | everyone, for their own client package |
-| `/app` | everyone — the team's knowledge base in a browser, PAT login |
-| `/architecture` | everyone, no token |
 
 ## Developing against a checkout
 

@@ -398,7 +398,7 @@ check("both services authenticate their own network the same way", () => {
 });
 
 check("the paths documented as public are the ones the gateway exempts", () => {
-  // "Everything but `/`, `/health` and `/architecture` requires a token" is what STATE.md said, and
+  // "Everything but `/` and `/health` requires a token" is what STATE.md said, and
   // `/schemas/*` had been public since the release that added it — served deliberately
   // without a token, because a rulebook that answers 401 is one people copy by hand. The
   // list in the document and the list in the code are the same list, and only one of them

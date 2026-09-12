@@ -121,4 +121,3 @@ probe("the live door is running this version", () => {
   if (!live) return "the handshake carried no serverInfo.version";
   return live === want ? null : `the door reports "${live}", this checkout is ${want}`;
 });
-);

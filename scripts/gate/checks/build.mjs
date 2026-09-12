@@ -54,6 +54,31 @@ check("tsc -b", () => {
  * TS2304 AND TS2552 ONLY. checkJs over untyped ESM reports plenty besides — implicit any,
  * missing types on a destructure — and none of that is a defect in a script. "Cannot find name"
  * is, every time. */
+check("every script parses", () => {
+  // `node --check`, not the tsc run below, and not a substitute for it. They catch different
+  // halves: that one reads a name that was never imported — a ReferenceError when the line is
+  // reached — and deliberately filters for TS2304/TS2552 alone, so a file that cannot be
+  // PARSED produces TS1005/TS1128 and is dropped on the floor.
+  //
+  // Which is exactly what happened: a probe edit in `doctor/layers/contract.mjs` left a stray
+  // `);` behind, the gate went green over it 280 checks deep, and the error surfaced at
+  // `release.mjs --preflight` — the first command of a release — as a SyntaxError from node's
+  // module loader. Nothing here imports the doctor's layers, so nothing here loaded them.
+  // node is the runtime that will actually run these files, so node is what gets asked.
+  const files = sourceFiles(["scripts"], [".mjs"]);
+  if (!files.length) return "this check is reading nothing — no .mjs found under scripts/";
+  const bad = [];
+  for (const f of files) {
+    try {
+      execFileSync("node", ["--check", f], { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+    } catch (err) {
+      const msg = String(err.stderr ?? "").split("\n").find((l) => /Error/.test(l)) ?? "did not parse";
+      bad.push(`${f}: ${msg.trim()}`);
+    }
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
 check("no script uses a name it never imported", () => {
   const files = sourceFiles(["scripts"], [".mjs"]);
   if (!files.length) return "this check is reading nothing — no .mjs found under scripts/";

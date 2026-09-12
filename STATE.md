@@ -437,7 +437,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 280 checks**, and six of them RUN code rather than reading it: the
+- **The offline gate is 281 checks**, and six of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, plus the two behaviour suites the zz-core split made reachable.
 
@@ -518,7 +518,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 627 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **280 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **281 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".

@@ -455,8 +455,15 @@ export function mountPasskey(app: Express): void {
     });
   });
 
-  /** Sign out of this dashboard, and only this dashboard. */
-  app.get("/auth/logout", (req, res) => {
+  /** Sign out of this dashboard, and only this dashboard.
+   *
+   * POST, NOT GET. It revokes a session row, and a state-changing GET is reachable by anything
+   * that can make a browser issue one — an `<img src>` in a document body, a link in a mail,
+   * a prefetch. None of those can read the answer, which is why this is a nuisance rather
+   * than a breach: a person is signed out while working and has no idea why. The console
+   * submits a form; 303 sends the browser on with a GET, so the landing page is still a page.
+   */
+  app.post("/auth/logout", (req, res) => {
     void (async () => {
       const token = readCookie(req, CONSOLE_COOKIE);
       if (token && platformDbReady()) {
@@ -465,11 +472,11 @@ export function mountPasskey(app: Express): void {
           [sha256(token)]);
       }
       clearSessionCookie(res);
-      res.redirect(`${PUBLIC_URL}/signed-out`);
+      res.redirect(303, `${PUBLIC_URL}/signed-out`);
     })().catch((err: unknown) => {
       console.error("console logout failed:", err);
       clearSessionCookie(res);
-      res.redirect(`${PUBLIC_URL}/signed-out`);
+      res.redirect(303, `${PUBLIC_URL}/signed-out`);
     });
   });
 }

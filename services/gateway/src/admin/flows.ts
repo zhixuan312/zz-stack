@@ -182,8 +182,8 @@ export function registerShelf(server: McpServer): void {
     // own history — "until now the only way to discover a flow was to guess its name at
     // install_flow and read the error" — which is true, belongs in the changelog, and in a
     // tool description is prompt real estate teaching the model nothing it can act on. This
-    // repository has measured what descriptions cost: the block's 169 of them took 91K tokens of a
-    // 115K window before a single message.
+    // repository has measured what descriptions cost: a large tool surface's descriptions alone
+    // can take most of a context window before a single message.
     description:
       "The shelf: every flow this platform has, whether you already run it, and where it can " +
       "run. Use this to answer 'what could my team use?' rather than only 'what do we " +

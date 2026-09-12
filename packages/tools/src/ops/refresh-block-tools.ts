@@ -7,8 +7,8 @@
  *
  * WHY THIS IS DERIVED AND NOT WRITTEN BY HAND. the block's two DOCUMENTATION tools -- the ones a caller
  * naturally reaches for to learn how to use casebox properly -- return a very large payload bytes on average
- * (read_api_spec, peak larger still) and a very large payload bytes invariably (read_user_guide). Roughly 200,000
- * tokens to answer "how do I call this correctly".
+ * (read_api_spec, peak larger still) and a very large payload bytes invariably (read_user_guide) —
+ * most of a context window to answer "how do I call this correctly".
  *
  * NEITHER IS A REFUSAL. Both SUCCEED. Nothing is logged as an error, the refusal-based score for
  * that block's usage skill reads clean, and the only symptom is that the caller's context is gone

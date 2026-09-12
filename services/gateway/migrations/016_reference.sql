@@ -137,8 +137,8 @@ create table if not exists zz.block_tool (
                      check (verdict in ('preferred', 'use_with_care', 'avoid')),
   -- MEASURED, NOT REMEMBERED. zz.event.detail already carries `bytes` and `ms` on every call,
   -- so these are derived by a query anybody can re-run rather than typed from an incident.
-  -- casebox:read_api_spec averages a very large payload bytes over 32 calls and peaked at larger still -- roughly
-  -- 200,000 tokens, for the tool a caller reaches for to LEARN the API. casebox:read_user_guide
+  -- casebox:read_api_spec averages a very large payload bytes and peaks larger still -- most of a
+  -- context window, for the tool a caller reaches for to LEARN the API. casebox:read_user_guide
   -- returns a very large payload bytes every single time; its average equals its maximum.
   --
   -- Neither is a refusal. Both SUCCEED, which is why no error was ever recorded and why the

@@ -1,6 +1,6 @@
 ---
 name: zz-skill-profile
-version: 0.3
+version: 0.4
 description: Establish what is being measured and what the work was like, from telemetry only — no judgement, no scores. Writes no document: the numbers belong beside the verdict they support, in findings.md.
 when_to_use: "Stage 2 of zz-skill-eval, after zz-skill-locate has settled which skill. Never skipped: a score with no profile is a number nobody can compare to another number."
 ---
@@ -58,10 +58,10 @@ cron job.
 
 The line to hold is between DESCRIBING and JUDGING:
 
-    describe   "951 calls against 14 loads — it is opened once and then carries most of
+    describe   "<calls> against <loads> — it is opened once and then carries most of
                 the work of an initiative."
-    describe   "109 refusals, 84 of them one opaque 422 from a single block."
-    describe   "Not opened in any of the 5 runs that used its block."
+    describe   "<refusals>, most of them one opaque status from a single block."
+    describe   "Not opened in any of the runs that used its block."
 
     judge      "ops-build is the weakest skill on the platform."
     judge      "This refusal rate is unacceptable."

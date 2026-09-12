@@ -74,7 +74,7 @@ function docFor(documents: FlowDoc[], step: string, flow: string): FlowDoc {
 
 /** Technology a business document should not be naming. Used for a FLAG, never for a score:
  *  "the outcome must not be a solution" is a judgement, and this is only its cheapest proxy. */
-const TECHNOLOGY = /\b(casebox|RuleMill|bookit|mcp|webhook|api|database|workflow engine|case management system)\b/i;
+const TECHNOLOGY = /\b(casebox|rulemill|bookit|mcp|webhook|api|database|workflow engine|case management system)\b/i;
 
 /**
  * Whether a fact survived, allowing for the words a writer puts BETWEEN its words.

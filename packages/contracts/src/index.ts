@@ -388,8 +388,8 @@ export type FlowDoc = z.infer<typeof FlowDoc>;
  * team. The manifest's own `tools` grants building blocks to a whole flow, so every stage of
  * ops-flow could reach casebox, RuleMill and bookit — including ops-intent, which states what a person
  * wants and names no technology at all, and ops-spec, which writes the agreement in their words.
- * The event log has 62 casebox calls, 53 RuleMill and 27 bookit stamped `ops-intent`, one of them
- * `update_case_type`, which is a write. Nothing was broken by an agent going around a rule:
+ * The event log showed the first stage — the one that only listens — reaching all three blocks
+ * anyway, including one call that WRITES. Nothing was broken by an agent going around a rule:
  * there was no rule to go around, because a flow had no way to say it.
  *
  * The two fields are different questions and both are real:

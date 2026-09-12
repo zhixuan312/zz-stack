@@ -19,7 +19,7 @@ hands still the live one" (not if it predates this).
 > **This file is the single source of truth for the block standard.** It lives
 > in zz-stack because the platform is what defines the contract. Block teams are
 > handed this file, and the two worked examples that satisfy it live in the
-> sibling repository `zz-blocks` (`RuleMill/`, `bookit/`).
+> sibling repository `zz-blocks` (`rulemill/`, `bookit/`).
 > There is deliberately no second copy: the previous duplicate in zz-blocks had
 > already drifted out of date, and a standard that exists twice is a standard
 > nobody can trust.
@@ -181,7 +181,7 @@ because a sample that claims to pass and does not teaches the wrong lesson.
 
 | Sample | Category | Where |
 |---|---|---|
-| RuleMill-like (workflow automation) | connective automation | `zz-blocks/RuleMill/` |
+| RuleMill-like (workflow automation) | connective automation | `zz-blocks/rulemill/` |
 | BookIt-like (appointments) | public-facing bookings | `zz-blocks/bookit/` |
 
 **Where each block stands is measured, not written down here.** This section used

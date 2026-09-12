@@ -4,8 +4,8 @@
  * Until this existed the platform had exactly one block boundary and it was the TEAM: a
  * manifest's `tools` granted casebox, RuleMill and bookit to the whole of ops-flow, so ops-intent —
  * which interviews a person and names no technology at all — had the same reach as ops-build.
- * The event log shows what that cost: 62 casebox calls, 53 RuleMill and 27 bookit stamped
- * `ops-intent`, one of them `update_case_type`, which is a write. Every stage skill said in
+ * The event log showed what that cost: the interview stage reaching all three blocks in
+ * volume, including one call that WRITES. Every stage skill said in
  * prose not to, and prose is not a boundary.
  *
  * WHAT THIS DOES NOT DO is take the tools out of the model's context. A client is handed its

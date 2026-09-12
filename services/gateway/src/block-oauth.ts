@@ -131,7 +131,7 @@ const b64 = (b: Buffer): string => b.toString("base64url");
  *  the source. A computed lookup passes that check while documenting nothing. */
 // EMPTY, AND THAT IS THE TRUE ANSWER. This deployment ships no block: `blocks.ts` has an empty
 // built-in registry and a deployment's blocks come entirely from `PLATFORMS`, which this one
-// does not set. These two maps named `casebox`, `bookit` and `RuleMill` — three mock blocks that
+// does not set. These two maps named `casebox`, `bookit` and `rulemill` — three mock blocks that
 // moved to their own repository — so `clientFor` returned null for every block a person could
 // actually configure, and `connect_block`, a registered tool, could not succeed for any of
 // them. Three names that resolve to nothing read, to an operator, exactly like a feature that

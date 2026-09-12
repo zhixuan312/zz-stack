@@ -150,7 +150,7 @@ function doorOf(resource: string): string | null {
 
 /** Whether a browser on somebody's laptop could actually open this.
  *
- * A hostname with no dot in it is a compose service name — `RuleMill`, `bookit`, `cred-proxy`
+ * A hostname with no dot in it is a compose service name — `rulemill`, `bookit`, `cred-proxy`
  * — which resolves inside the Docker network and nowhere else. Redirecting a person there
  * produces a dead tab and no error anybody sees. `localhost` is the same shape from the
  * other direction: it resolves, to the wrong machine. */

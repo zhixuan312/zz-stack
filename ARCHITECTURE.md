@@ -265,9 +265,9 @@ volume, and it has exactly two entries:
 ```
 
 `reindexAllTeams` walks `teams/` and treats every directory under it as a team, so anything
-parked there becomes a team — production carried `teams/_archive-22-08-2026`, five initiatives
-of a team archived in August, and its 76 documents were in `zz.doc` and answered searches as
-though the work were live. Retired material goes to `archive/`, which nothing reads.
+parked there becomes a team — a deployment carried an `_archive-<date>` directory of retired
+initiatives, and every document under it sat in `zz.doc` and answered searches as though the
+work were live. Retired material goes to `archive/`, which nothing reads.
 
 The store and the index must agree in BOTH directions, and that is a property rather than a
 one-off cleanup:

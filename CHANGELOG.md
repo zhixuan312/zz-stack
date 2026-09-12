@@ -22,12 +22,12 @@ by `zz-stack/scripts/release.mjs`; separate lifecycles never meant separate depl
 runs; the other two were this project's own stand-ins, and the identity provider was a real
 one. Addresses in the entries are `@example.com`.
 
-Measurements went with the names, on both sides of the line: what a system this project did
-not write cost to call, and what running this platform's own method on somebody else's work
-produced. The findings those measurements led to are stated in full and stand on their own —
-a finding is an engineering fact, and it does not need the corpus it came from to be useful.
-Counts that are properties of this repository — how many checks the gate has, how many tools
-a door offers — are exact and unredacted.
+Numbers here follow one rule. A count that is a property of THIS repository — how many checks
+the gate has, how many tools a door offers, how large a file may be — is exact. A measurement
+of anything else — what a system this project did not write cost to call, what running this
+method on somebody else's work produced — is written as a shape rather than a figure. The
+findings those measurements led to are stated in full and stand on their own: a finding is an
+engineering fact, and it does not need the corpus it came from to be useful.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
@@ -742,7 +742,7 @@ Two releases (0.15, 0.16) shipped without an entry here. This one covers everyth
 
 ## [0.14.0] — 2026-09-06
 
-Everything here came out of running five requirements end to end on `casebox` and then trying
+Everything here came out of running a set of requirements end to end on `casebox` and then trying
 to measure what happened. Three of the fixes are things that had been silently broken for
 a week or more.
 
@@ -795,8 +795,8 @@ actually produced.
   declares any; the other five flows behave exactly as before.
 - **`block_skills`** — which building blocks this platform routes and which usage skills each
   one ships, from the registry rather than from a naming convention. `ops-select` told agents to
-  look for `<block>-usage`; casebox ships four usage skills and not one is named that way, so all
-  four came through a whole evaluation campaign never opened.
+  look for `<block>-usage`; a block ships its usage skills under the names its own authors
+  chose, so they came through a whole evaluation campaign never opened.
 - **`blocks` on a selection document**, written as its own `write_file` argument and capped at
   five. It is what `blocks: "selected"` resolves to, so the approved selection becomes the
   actual boundary of the build.
@@ -905,9 +905,9 @@ actually produced.
   only number that establishes the judge was reading rather than rewarding confident prose.
   Turning the judge's deliberation off answered the same call in five seconds, which looked
   like a clear trade. **Then the control judged the change and refused it:** re-scored under
-  the fast judge, `using-casebox`'s real-vs-control gap fell by a point and
-  `writing-case-queries` went to **minus 0.33** — the judge scoring the real subject *above* a
-  different skill's text under its own ruler, which is exactly the collapse the control exists
+  the fast judge, one subject's real-vs-control gap fell by a point and another went
+  **negative** — the judge scoring the real subject *above* a different skill's text under its
+  own ruler, which is exactly the collapse the control exists
   to detect. Deliberation stays on and the timeout is paid instead: a timed-out subject is
   reported skipped, `remaining` does not move, and the next call retries it with a fresh
   budget. The flag is kept so the comparison can be re-run, and a mode is part of a judge's
@@ -972,7 +972,7 @@ actually produced.
   nothing to judge. Runs are now recomputed from the event log — set-based, idempotent, on the
   grain 017 declared — when the gateway starts and every five minutes after.
 - **A run could not be recorded before its initiative existed, which is where a block usage
-  skill lives.** An agent loads `using-casebox`, makes twenty-two calls against casebox, and
+  skill lives.** An agent loads `using-casebox`, makes a run of calls against casebox, and
   opens an initiative later or not at all — so the skill showed 11 loads, 3 sessions, 22
   stamped calls and zero runs, which every query reads as a skill nobody has ever used.
   Migration 031 adds the partial unique index that makes initiative-less runs upsertable
@@ -1757,9 +1757,9 @@ anything.
   who they are rather than from which agent asked.
 - **`CASEBOX_OAUTH_SCOPE`, `BOOKIT_OAUTH_SCOPE`, `RULEMILL_OAUTH_SCOPE`** — what to ask a block's
   authorization server for. Unset means ask for whatever the block's own protected-resource
-  document advertises, which is right for a block that publishes its whole list. CaseBox does
-  not: its resource names one scope while the client also needs `offline_access`, and
-  without that no refresh token is issued.
+  document advertises, which is right for a block that publishes its whole list. Not every
+  block does: a resource document can name one scope while the client also needs
+  `offline_access`, and without that no refresh token is issued.
 - **A judge that scores substance rather than shape**, with the controls that show it does: a
   scrambled control scoring each document against a neighbour's requirement caught every one,
   and the noise floor was measured rather than assumed. Differences under it are

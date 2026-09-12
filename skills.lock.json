@@ -84,16 +84,16 @@
     "sha": "5b372d293822"
   },
   "zz-block-locate": {
-    "version": "0.2",
-    "sha": "94ac42475605"
+    "version": "0.3",
+    "sha": "796f7331f064"
   },
   "zz-block-measure": {
     "version": "0.1",
     "sha": "a641fe169f75"
   },
   "zz-block-report": {
-    "version": "0.9",
-    "sha": "0e694794bbab"
+    "version": "1.0",
+    "sha": "9e0d3022ea6e"
   },
   "zz-skill-define": {
     "version": "0.5",

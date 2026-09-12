@@ -59,7 +59,8 @@ There are two, and adding a third needs a reason written down before the directo
 
 ### `catalog/<owner>/<package>/` — what a team installs
 
-The unit is a package. `<owner>` is the team that owns the content: `casebox`, `sdlc`, `sm`, `zz`.
+The unit is a package. `<owner>` is the team that owns the content — `sdlc` and `zz` here, a
+block team's own name where a block ships one.
 Ownership is the directory; it is not a manifest field.
 
 A package holds:

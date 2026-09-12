@@ -59,7 +59,7 @@ selection comes to name three blocks for a brief that needed one.
 
 ## The baseline that makes a usage skill measurable
 
-casebox has a usage skill. bookit and RuleMill do not, and that is not a gap to rush.
+Some blocks have a usage skill and some do not, and that is not a gap to rush.
 
 What a block's task set scores with NO usage skill is the number its first usage skill has to
 beat. Write the skill first and that baseline is gone permanently — every later score becomes a

@@ -223,28 +223,24 @@ They compose: a booking event webhooks into an automation workflow that
 creates a case — each side discovered through R2/R3/R8 tools and each team's
 usage skills, none of it hard-coded in the agent.
 
-## Appendix — evidence log from real delivery runs (why we will ask you for these)
+## Appendix — evidence log (why we will ask you for these)
 
-> **Rows naming a specific third party's deployment are not in this table.** Some of the sharpest
-> findings came from calling a system this project did not write, and its defects are that
-> organisation's to publish or not. The rules those rows produced are stated in full above and
-> stand on their own; what is gone is the evidence, not the requirement. The rows that remain do
-> not say which system each was measured against, deliberately.
+> **Rows measured against a system this project did not write are not in this table.** Some of
+> the sharpest findings came from calling one, and its defects are that organisation's to
+> publish or not — a category label is not anonymity when there is one product in the
+> category. What remains was measured against this project's own stand-ins. The rules the
+> removed rows produced are stated in full above and stand on their own: what is gone is the
+> evidence, not the requirement.
 
 | Date | Kind | Gap | Requirement |
 |---|---|---|---|
-| 2026-08-20 | all three | no usage skills shipped initially — selection relied on tool-surface guesswork | R4 |
-| 2026-08-20 | case mgmt | smoke tests can move live counters with no restore guidance | R13 |
 | 2026-08-20 | automation | webhook ingress URL only discoverable after publish — must be stated in trigger docs | R3 |
 | 2026-08-20 | automation | template language lacked nested payload paths and webhook ingress flattened event objects — agent correctly stopped at a fork instead of guessing; platform patched to support {{payload.a.b}} + full nested payloads, docs updated | R3/R6 |
 | 2026-08-20 | automation | webhook payload initially exposed only top-level scalar keys — nested booking fields unreachable from templates; agent had to halt mid-build and escalate. Fixed: nested path resolution ({{payload.a.b}}) + documented | R14, R3 |
-| 2026-08-20 | all three | usage skills + Agent Plugins 1.0.0 packaging added (plugin.json, mcp.json, skills/<name>/SKILL.md + references samples) | R4 |
 | 2026-08-20 | bookings | notify convention (which field drives emails) was implicit — a differently-labelled email field silently produced no emails; agent could not self-verify AC. Fixed: any label containing 'email' + documented in read_api_spec | R3, R10 |
-| 2026-08-20 | case mgmt | tags could be created but never deleted — smoke-test cleanup physically impossible; agent had to declare residue at acceptance. Fixed: delete_tag added. Generic rule: every create needs a delete or a documented no-delete rationale | R10, R13 |
 | 2026-08-20 | bookings | booking records are never deletable (audit design) but that rule was undocumented — now stated in read_api_spec('bookings') so agents plan test residue upfront | R3, R13 |
 | 2026-08-20 | automation | simulate stubs for integration nodes were shape-blind (always a dict) — a foreach over a list result could never pass simulation, deadlocking the enforced lifecycle. Fixed: shape-aware stubs (search/list ops stub as lists). Generic rule: simulation must produce payloads of the same SHAPE as real calls | R7, R3 |
 | 2026-08-20 | automation | foreach item-template bindings ({{item.*}}) not rendered in fan-out emails — blank recipients; agent held the blocker honestly. Fixed: item exposed as pseudo-node to the template resolver. Also: workflows had no delete primitive (same create-without-delete gap class) — delete_workflow added | R10, R3 |
 | 2026-08-20 | bookings | which lifecycle events natively email the requester was undocumented — the agent assumed no rejection email existed and composed an unnecessary automation bridge (over-composition). Fixed: notification matrix in read_api_spec. Generic rule: document your NOTIFICATION MATRIX (event -> who gets told, via what) | R3 |
-| 2026-08-24 | all three | `get_app_url` (R9) is implemented by none of them — none of the three exposes an app-url tool. Measured through the gateway, not read from a README | R9 |
 | 2026-08-24 | automation | `read_api_spec` (R3) absent, while the other two blocks have it — the sample listed in §6 as a template does not meet the requirement it is meant to demonstrate | R3 |
 | 2026-08-26 | RuleMill (sample) | the same requirement, met on our side: a failing peer call now names the operation and the arguments sent, and says not to assume the peer is down. It cannot recover a reason the peer never gave — which is why R6 is a requirement on the BLOCK and cannot be worked around by its caller | R6 |

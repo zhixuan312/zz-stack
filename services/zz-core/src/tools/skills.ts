@@ -133,11 +133,10 @@ export function registerSkillTools(server: McpServer): void {
    * deployment.
    *
    * WHICH SKILLS DOES THIS BLOCK SHIP. ops-select told the agent to look for "usage guides in
-   * the shared skills library named `<block>-usage`". casebox ships four and not one of
-   * them is named that way: `using-casebox`, `writing-case-queries`, `writing-scripts`
-   * and `writing-templates`. So an agent following the instruction guessed `casebox-usage`, found
-   * nothing, and built without them — all four came out of the evaluation campaign 6/7 and
-   * 7/7 BLIND, never opened by anybody. That reads as agents preferring to improvise and it
+   * the shared skills library named `<block>-usage`". A block ships its usage skills under the
+   * names its own authors chose, which is rarely that one. So an agent following the
+   * instruction guesses `<block>-usage`, finds nothing, and builds without them — and they
+   * come out of evaluation BLIND, never opened by anybody. That reads as agents preferring to improvise and it
    * is nothing of the sort: it is a naming convention that was never true, used as a lookup.
    *
    * WHICH BLOCKS ARE THERE AT ALL. `list_skills` returns a flat array of names with no block

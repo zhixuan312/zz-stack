@@ -54,7 +54,7 @@ RUN npx tsc -b
 # Pruned HERE, in the build stage, so the sources never enter the runtime image at all.
 # Deleting them in a later RUN does not do it: layers are additive, the files stay in the
 # earlier layer, `docker save` gets them back, and the image gets BIGGER for the extra
-# layer. This repository is private and the image is pulled by every deploy host, so the
+# layer. The image is pulled by every deploy host, so the
 # difference between hidden and absent is the whole point.
 RUN find /repo/packages /repo/services \
       \( -name '*.ts' -o -name '*.tsbuildinfo' \) -delete

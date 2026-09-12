@@ -1,13 +1,13 @@
 ---
 name: zz-block-locate
-version: 0.2
+version: 0.3
 description: Stage 1 of block evaluation. Settle which block, which instance of it, and which contract version is in force — and whether the block is a real team's or a stand-in. Writes nothing; its answer becomes the report's header.
 when_to_use: "The first stage of zz-block-eval, always. A block evaluation with no instance named is about nothing in particular."
 ---
 
 # zz-block-locate
 
-Skill evaluation's locate stage resolves **ambiguity** — which of forty-seven skills somebody
+Skill evaluation's locate stage resolves **ambiguity** — which of the skills on the shelf somebody
 meant. This one resolves **identity and reality**, and they are different problems.
 
 ## Act for the platform, not for a delivery team — switch first
@@ -39,7 +39,7 @@ exist. If somebody asks for one, say that, and ask which real block they meant.
 
 **The question skill evaluation never has to ask.** A block is not one thing: the same block's
 staging instance and its production instance are different systems, with different data,
-different apps, and genuinely different behaviour. `app zhixuan on stg.casebox.example.com` is the subject; "casebox" is
+different apps, and genuinely different behaviour. `the <name> app on that block's staging instance` is the subject; "casebox" is
 not.
 
 Record the instance, the environment, and how you reached it. An evaluation whose instance

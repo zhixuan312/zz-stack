@@ -439,7 +439,7 @@ check("an environment variable's default is one value, wherever it is spelled", 
   // every default rather than to the one somebody was bitten by.
   //
   // The sharp one was ZZ_DEPLOY_HOST. sync.sh used to refuse to rsync --delete onto production by
-  // comparing HOST against `${ZZ_DEPLOY_HOST:-sm}`, and its comment claims it "asks that
+  // comparing HOST against `${ZZ_DEPLOY_HOST:-<host>}`, and its comment claims it "asks that
   // script's question rather than inventing a second answer to it". It is a second answer: the
   // variable is shared and the default is retyped. Change release.mjs's and the refusal guards
   // the wrong host — and that script's own header records the accident it exists to prevent,

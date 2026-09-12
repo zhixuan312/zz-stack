@@ -1,6 +1,6 @@
 ---
 name: zz-block-report
-version: 0.9
+version: 1.0
 description: Stage 3 of block evaluation, and the only document it writes. The numbers, then the defects, then what we ask for — one report, gated, and it is what the block team receives. Writes findings.md.
 when_to_use: "The three measurements are done. This is the whole output of a block evaluation."
 ---
@@ -80,7 +80,7 @@ than adding to it.
 The header of this document, and it is where the target lives now — there is no `target.md`
 in this flow.
 
-For skill evaluation there is one, because settling which of forty-seven skills somebody
+For skill evaluation there is one, because settling which of the skills on the shelf somebody
 meant is a narrowing DIALOGUE, and that dialogue is the reproducibility record. Here the
 target is three facts with a two-way choice: which block, which instance, which contract
 version. Same test applied, different answer, because the content is different.
@@ -88,7 +88,7 @@ version. Same test applied, different answer, because the content is different.
 State them:
 
 - **block and origin** — `team` or `platform`. A stand-in was refused at locate.
-- **the instance** — `app zhixuan on stg.casebox.example.com`, not "casebox". Two rounds against
+- **the instance** — `the <name> app on that block's staging instance`, not "casebox". Two rounds against
   different instances, compared, measure the environments rather than the block.
 - **the contract version in force**, with its date. A conformance result that does not name
   its contract cannot be compared with next quarter's.
@@ -169,13 +169,13 @@ after the call, not what the call said.
 **This is the rule this stage exists for.** Every defect is re-run against the live block
 before it goes in the document.
 
-On 2026-09-04, four knowledge nodes across five initiatives recorded `create_rule` as
-broken — "not transient across six payload shapes". Every later run read those nodes and
-took the fallback instead of retrying, so a misdiagnosis compounded for a week. One call with
-a corrected payload disproved it. What was actually there was narrow and real: an email block
-does not validate inside an advanced flow, whatever its encoding.
+Several knowledge nodes, across several initiatives, once recorded a tool as broken — "not
+transient across six payload shapes". Every later run read those nodes and took the fallback
+instead of retrying, so a misdiagnosis compounded for a week. One call with a corrected
+payload disproved it. What was actually there was narrow: one field shape the tool would not
+accept inside one kind of flow.
 
-"The tool is broken" was a dead end. The narrow version is a bug report their team can fix.
+"The tool is broken" was a dead end. The narrow version is a bug report a block team can fix.
 **A defect nobody has re-tested this round does not go in this document** — it goes in "what
 we are not claiming", with its age.
 

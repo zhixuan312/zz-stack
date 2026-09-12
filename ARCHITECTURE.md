@@ -148,8 +148,9 @@ rule is what the directory means:
   answer for overviews, teams, initiatives, knowledge, skills and the catalog, split the way
   the console's own URLs are, with `shared.ts` for what more than one of them needs.
 - **`services/gateway/src/admin/<subject>.ts` and `package/<part>.ts`** — the same rule one
-  level down: authority, flows, teams and people for the admin surface; skills and the archive
-  writer for the client package.
+  level down: authority, flows, teams and people for the admin surface; `skills.ts` and
+  `describe.ts` for the shelf a person installs. `describe.ts` was `archive.ts` until 0.29.0,
+  when the tarball it wrote went with Codex and Hermes.
 - **`services/gateway/src/settings/<scope>.ts` — split by AUTHORISATION, not by resource.**
   `me.ts`, `team.ts` and `platform.ts`, because who may call a route is the property that has
   to be obvious when reading it, and a file per scope makes a route in the wrong file look

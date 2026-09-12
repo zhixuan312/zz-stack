@@ -33,7 +33,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.29.0] — 2026-09-12
+
+**zz-stack 0.29.0 · zz-stack-dashboard 0.4.0 (unchanged)**
 
 **The Claude Code shelf is published from this repository instead of served as a tarball.**
 Installing it no longer needs a token:
@@ -112,9 +114,39 @@ claude plugin install zz@zz-stack
 `services/gateway/src/package/archive.ts` is now `describe.ts`: with `tarGz` gone it holds the
 package's digest and the description a person reads, and no archive at all.
 
-**Also breaking:** `my_client_setup` no longer takes a `client` argument, `install_flow` no
-longer takes `clients`, and `GET /pkg/*.tgz` returns 404. A flow manifest still declaring
-`clients` now fails the gate rather than being silently ignored.
+### Fixed
+- **The install text named a marketplace nobody has.** `describePackage` builds the paragraph
+  a person reads at install time, and its update command still said `@zz-platform` after the
+  rename — telling them to update against a shelf their client has never heard of. The name is
+  read from one constant now, like every other place that spells it.
+- **A script that does not parse is caught by the gate.** A probe edit left a stray `);` in
+  `doctor/layers/contract.mjs`; 280 checks ran green over it and the error surfaced at
+  `release.mjs --preflight`, because nothing in the gate imports the doctor's layers. The
+  neighbouring check runs tsc over `scripts/` but filters for TS2304/TS2552 alone, by design —
+  a file that cannot be parsed reports TS1005 and was dropped on the floor. `node --check` over
+  every script now, asked of the runtime that actually loads them.
+
+### Upgrade notes
+- **Every person with a client installed must re-add the shelf**, because it moved and was
+  renamed. Updating in place will not find it — `plugin update` reads a clone that no longer
+  describes anything:
+
+  ```bash
+  claude plugin marketplace remove zz-platform      # the old local-directory registration
+  claude plugin marketplace add zhixuan312/zz-stack
+  claude plugin install zz@zz-stack                 # then whichever others they had
+  claude plugin install sdlc@zz-stack
+  ```
+
+  `~/.zz/token` is untouched by this and does not need to be reissued. `~/.zz/zz-platform`, the
+  unpacked tarball, is now dead weight and can be deleted.
+- **Migration 045 drops `flow_install.clients`** and applies itself when the gateway starts.
+  Nothing to run. It is not backward compatible in the direction that matters: a gateway older
+  than this release reads that column, so a rollback past 0.29.0 needs the column back.
+- **`GET /pkg/*.tgz` returns 404.** Anything scripted against it — a bootstrap, a CI step — has
+  to install from the marketplace instead. `my_client_setup` prints the current steps.
+- **Nothing to set.** No environment key was added or made required by this release, so
+  `deploy/.env` on the host is correct as it stands and needs no edit before the upgrade.
 
 ## [0.28.0] — 2026-09-12
 

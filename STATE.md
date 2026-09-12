@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.28.0 (2026-09-12). What we believe, and what we have. The world as it stands at this
+Status: 0.29.0 (2026-09-12). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -446,6 +446,33 @@ hold zero rows, the smoke engine is not in the tree, and the CLI half of that tr
 SQL past the MCP door. §6c has said "the evaluation track exists, and has not been run" since
 0.11.0; it is still true, and the earlier §6 claimed a five-scenario standing suite on top of
 it.
+
+## 6q. In 0.29.0: one client, and a shelf anyone can read
+
+The client package stopped being a tarball behind a token. `claude plugin marketplace add
+zhixuan312/zz-stack` clones a shelf committed to this repository — `build-marketplace.mjs`
+renders it, through the same `buildClientPackage` the gateway has always used, so there is
+one renderer rather than two. The old path put a credential in front of the tools a person
+installs in order to obtain one: `curl -H "Authorization: Bearer $ZZ_TOKEN" /pkg/…` ran
+before `marketplace add`, so somebody with no token had no way to install the tools that
+issue one. Nothing is given away by publishing it. Every tool the shelf lists is a door at
+the gateway, and the door still answers 401 — the shelf was never the boundary.
+
+Build output under version control drifts, so a gate check rebuilds the shelf and fails on a
+dirty tree. A red gate leaves the fix already written.
+
+**Codex and Hermes are gone, and the `clients` matrix with them.** Nobody ran either. What
+they cost was not two branches: it was a tarball route, a hand-rolled ustar writer nothing
+else called, two more install stories, and a three-set intersection — what a flow can run on,
+what a team wants, what the platform supports — threaded from the manifest through
+`install_flow` into a database column, to decide something that now has one possible answer.
+`isLocalOnly` went the same way: it chose between shipping a flow's skills as files and
+leaving a pointer, and the pointer side existed for the browser front end removed in 0.28.0.
+It had been true for every flow it was ever asked about since.
+
+The marketplace is called `zz-stack`, the same word as the repository it is cloned from.
+`zz-platform` was the shelf AND the platform's own team, which meant one word for two
+unrelated objects and two names for one shelf.
 
 ## 6p. In 0.28.0: one front end, one set of APIs, and nothing that is not the package
 

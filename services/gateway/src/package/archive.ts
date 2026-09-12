@@ -9,7 +9,7 @@
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
-import { isLocalOnly, type ClientPackage, type InstalledFlow, type PackageFile } from "../client-package.js";
+import { MARKETPLACE, isLocalOnly, type ClientPackage, type InstalledFlow, type PackageFile } from "../client-package.js";
 import type { Plugin } from "../client-package.js";
 import { commandName, pluginName } from "./skills.js";
 
@@ -134,7 +134,10 @@ export function describePackage(pkg: ClientPackage, target: string): string {
       // `install` uses the plugin name and this used the flow name, so the update command
       // handed to a person named a plugin they never installed and the runtime would say so.
       // The same two-places-one-name failure as the /zz: commands above, in the same file.
-      : flows.map((f) => `${pkg.kind === "codex" ? "codex plugin upgrade" : "claude plugin update"} ${pluginName(f.flow)}@zz-platform`);
+      // MARKETPLACE, not a literal. The shelf was renamed zz-platform -> zz-stack and this
+      // line kept the old name — in the one paragraph a person reads AT INSTALL, telling
+      // them to update against a marketplace their client has never heard of.
+      : flows.map((f) => `${pkg.kind === "codex" ? "codex plugin upgrade" : "claude plugin update"} ${pluginName(f.flow)}@${MARKETPLACE}`);
   lines.push(
     ``,
     `## When a new flow is installed for your team`,

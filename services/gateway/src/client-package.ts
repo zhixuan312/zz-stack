@@ -54,7 +54,7 @@ const MARKETPLACE_REPO = "zhixuan312/zz-stack";
  * guess which belonged where. It is not the same word as the platform's own TEAM, which is
  * `zz-platform` (PLATFORM_TEAM, in identity.ts) — those were the two things the old name
  * ran together, and a marketplace and a team are not remotely the same object. */
-const MARKETPLACE = "zz-stack";
+export const MARKETPLACE = "zz-stack";
 
 /** Who publishes this shelf. One object for the marketplace's `owner` and every plugin's
  * `author`, because they are the same claim and `claude plugin validate` asks for both —

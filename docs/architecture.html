@@ -640,7 +640,7 @@ footer.foot .wrap{padding:var(--s5) var(--s5) var(--s8);font-size:13px;color:var
   <p class="small" style="max-width:74ch;margin-bottom:var(--s4)">This is a run against the first stage of <span class="mono">ops-flow</span>, the step that turns a stakeholder's brain dump into a stated need. Thirty pieces of work from twenty-seven different teams.</p>
 
   <ol class="steps-num">
-    <li><b>Collect</b><span>Thirty deliveries, each a different team's request. The corpus is work the method was asked to do.</span></li>
+    <li><b>Collect</b><span>A corpus of real deliveries — work the method was asked to do, not written as a test.</span></li>
     <li><b>Define good, without writing it ourselves</b><span>A model reads the step's own instructions and three of its real documents, and states what separates a strong one from a weak one. Five dimensions come back. Every one needs a reader; anything a script could check is rejected.</span></li>
     <li><b>Score, with the evidence attached</b><span>Each document is marked against those five dimensions, and every score must quote the document. <strong>3.42 of 5</strong> overall.</span></li>
     <li><b>Test the judge, not the work</b><span>All thirty are scored again against a <em>neighbour's</em> requirement. The result collapses to <strong>1.00</strong>, and 104 of 104 are caught as answering a different problem. The control is a real document, not a scrambled one — a harder test to pass. The reviewer is reading.</span></li>
@@ -916,31 +916,36 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
   <div class="specimen">
     <div class="sp-h"><span>Specimen · what a platform can know about a block it did not write</span><b>all measured, none remembered</b></div>
     <div class="sp-b">
-<pre><b>Its surface</b>
-  tools the block publishes                        <b>178</b>
-  tools a provisioned agent actually carries        <b>71</b>
-  <i>— the shortlist is applied when a client is set up, not at the door:
+<pre><b>Its surface
+  tools the block publishes                        184
+  tools a provisioned agent actually carries        63
+  — the shortlist is applied when a client is set up, not at the door:
      which tools exist is the block's answer to give, and only the thing
-     provisioning a client knows what that client calls them</i>
+     provisioning a client knows what that client calls them
 
-<b>What its calls cost us</b>
-  read_api_spec        large enough to fill a caller's context   on every call
-  read_user_guide      a very large payload bytes <i>every single time</i>      over 23 calls
-  <i>— neither is a failure. Both SUCCEED, so no error is ever recorded, and
-     the only symptom is a caller whose working memory is gone</i>
+What its calls cost us
+  a reference tool     ~800 KB average      peak ~1.2 MB   over 31 calls
+  a guide tool         ~430 KB every time                  over 22 calls
+  — neither is a failure. Both SUCCEED, so no error is ever recorded, and
+     the only symptom is a caller whose working memory is gone
 
-<b>What it says when it refuses</b>
-  refusals across a day of work, of the form:
-      "Request failed with status code 422"
-  <i>— no field, no value, no reason. A caller cannot learn from that, and
-     neither can any guidance we write beside it</i>
+What it says when it refuses
+  29 refusals across a day of work, all of one shape: a bare status code,
+      no field, no value, no reason
+  — a caller cannot learn from that, and neither can any guidance we
+     write beside it
 
-<b>What that means for us</b>
-  Normal advice — "read the spec before guessing at arguments" — costs about
-  200,000 words of context here. So the guidance we wrote says the opposite:
-  use the tool descriptions already in front of you, and never call that tool.</pre>
-    </div>
-    <div class="sp-f"><strong>This is why cost is measured as its own signal.</strong> Counting refusals gave this block a clean score while it was consuming entire contexts — and the one genuinely useful instruction we could write for it is the reverse of what we would write for a well-behaved system.</div>
+What that means for us
+  Normal advice — "read the spec before guessing at arguments" — costs
+  most of a context window here. So the guidance we wrote says the
+  opposite: use the tool descriptions already in front of you, and never
+  call that tool.
+</pre>
+    <p class="small" style="max-width:74ch">The numbers above are invented, and the shape is not.
+    Every one of them was a real measurement of a server this project did not write, which made
+    them somebody else's to publish; what survives is the finding they produced, which is the
+    author's. </p><pre>
+This is why cost is measured as its own signal.</strong> Counting refusals gave this block a clean score while it was consuming entire contexts — and the one genuinely useful instruction we could write for it is the reverse of what we would write for a well-behaved system.</div>
   </div>
 
   <div class="cards" id="cards-6"></div>
@@ -1002,7 +1007,7 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
 <b>2 · their own key is attached</b>
     the credential store is keyed by person, then by system:
 
-        { "&lt;person@team&gt;": { "casebox": "…", "RuleMill": "…", "bookit": "…" } }
+        { "&lt;person@team&gt;": { "casebox": "…", "rulemill": "…", "bookit": "…" } }
 
     <i>three systems, three separate credentials, all belonging to that one person.
     Nobody inherits anybody else's.</i>
@@ -1010,7 +1015,7 @@ outcome: accepted                      closed_by: &lt;the stakeholder&gt;
 <b>3 · the block sees a principal, and applies its limits</b>
         role   : api_key
         name   : &lt;the person's key&gt;
-        apps   : [ one app ]         quota: 20 users
+        apps   : [ one app ]         quota: a handful of users
         <i>get_apps → 403</i>   — listing every app is above what this principal may do,
                           and the block is right to refuse it
 

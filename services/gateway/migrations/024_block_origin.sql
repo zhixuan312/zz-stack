@@ -32,8 +32,8 @@ insert into zz.block (name, origin) values ('platform', 'platform')
 
 -- BY NAME, not by id. This has to run against production's data sight unseen, where the
 -- uuids differ and only the names are the same.
-update zz.block set origin = 'stand_in' where name in ('RuleMill', 'bookit');
-update zz.block set origin = 'team'     where name not in ('RuleMill', 'bookit', 'platform');
+update zz.block set origin = 'stand_in' where name in ('rulemill', 'bookit');
+update zz.block set origin = 'team'     where name not in ('rulemill', 'bookit', 'platform');
 
 update zz.skill
    set kind = 'block_usage',

@@ -83,7 +83,7 @@ usage skill stays loadable even when the platform is degraded.
 
 ## 2a. Delegated access — OPTIONAL (D1–D5)
 
-Everything above works with one API key per block, held by the platform on an requester's
+Everything above works with one API key per block, held by the platform on a requester's
 behalf. That key is the same for everybody: your audit log records the platform, not the
 person, and the key can do far more than any individual person needs.
 
@@ -225,13 +225,13 @@ usage skills, none of it hard-coded in the agent.
 
 ## Appendix — evidence log from real delivery runs (why we will ask you for these)
 
-> **Rows about a third party's own deployment are not in this table.** Several of the sharpest
-> findings came from calling a real system belonging to another organisation, and its defects are
-> that organisation's to publish or not. What is left is measured against blocks written here. The
-> rules the missing rows produced — R3, R6, R9, R13 — are stated in full above and stand on their
-> own; it is only the evidence that is somebody else's.
+> **Rows naming a specific third party's deployment are not in this table.** Some of the sharpest
+> findings came from calling a system this project did not write, and its defects are that
+> organisation's to publish or not. The rules those rows produced are stated in full above and
+> stand on their own; what is gone is the evidence, not the requirement. The rows that remain do
+> not say which system each was measured against, deliberately.
 
-| Date | Block (mock) | Gap | Requirement |
+| Date | Kind | Gap | Requirement |
 |---|---|---|---|
 | 2026-08-20 | all three | no usage skills shipped initially — selection relied on tool-surface guesswork | R4 |
 | 2026-08-20 | case mgmt | smoke tests can move live counters with no restore guidance | R13 |

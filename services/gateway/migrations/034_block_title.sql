@@ -22,5 +22,5 @@ comment on column zz.block.kind is
 -- list keeps its empty strings, which is the state every future block starts in.
 update zz.block set title = 'CaseBox',  kind = 'Case management'      where name = 'casebox'        and title = '';
 update zz.block set title = 'BookIt',       kind = 'Appointment booking'  where name = 'bookit' and title = '';
-update zz.block set title = 'RuleMill',            kind = 'Workflow automation'  where name = 'RuleMill'      and title = '';
+update zz.block set title = 'RuleMill',            kind = 'Workflow automation'  where name = 'rulemill'      and title = '';
 update zz.block set title = 'zz-core',         kind = 'The platform itself'  where name = 'platform'  and title = '';

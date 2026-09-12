@@ -4,7 +4,7 @@
 
 ```bash
 npm install
-npm run gate          # 278 checks, offline, a few seconds
+npm run gate          # 279 checks, offline, a few seconds
 ```
 
 Everything this project believes about itself is a check in there, and every check

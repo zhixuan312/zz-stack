@@ -112,7 +112,7 @@ Three tables come back:
 | **Tool by tool** | calls, refusals, the rate, and how many unrelated initiatives met each, heaviest first |
 | **Refusal classes** | each class, its count, and how far it spread |
 
-**Coverage first, and say in one sentence what it means.** Exercising 12 of a block's 169
+**Coverage first, and say in one sentence what it means.** Exercising 12 of a block's a couple of hundred
 tools is a different claim from exercising 12 of 14, and the table cannot make that point for
 you. `eval_block_surface` says what the block publishes; the gap is surface this round did
 not touch, and that is a fact about our round, not a defect in theirs.

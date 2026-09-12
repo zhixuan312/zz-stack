@@ -17,14 +17,16 @@ import { check } from "../run.mjs";
  * "it describes the shape of the platform and contains nothing from inside it — no tenant
  * document, no name, no key. IT IS CHECKED FOR THAT BEFORE IT SHIPS."
  *
- * It was not. Across every module here nothing read that file, and on 2026-09-11 the live
- * page was serving measured telemetry about a third party's production system to anonymous
- * callers, plus a webfont request that handed every reader's IP to a font host. This
- * repository names that exact failure mode about itself elsewhere — "two security checks
- * existed, passed, and had never been run" — and then shipped a third instance of it.
+ * Nothing checked it. A comment asserting a safety property IS a claim somebody relies on:
+ * either the check exists or the sentence should not. This is the check, and it is written
+ * against what an unauthenticated page can actually give away rather than against secrets
+ * alone — an address, a measurement, somebody else's error text, or a subresource that
+ * reports every reader to whoever serves it.
  *
- * A comment asserting a safety property IS a claim somebody relies on. Either the check
- * exists or the sentence should not. This is the check.
+ * A NOTE ON WHAT THIS COMMENT NO LONGER SAYS. It used to narrate the incident that prompted
+ * it, in detail, naming what had been served and to whom. That is the same mistake one level
+ * up: a public file describing exactly what leaked is an inventory for anyone who reads it.
+ * The check is the durable artefact; the story belonged in the review, not in the repository.
  */
 check("the unauthenticated architecture page discloses nothing from inside", () => {
   const rel = "docs/architecture.html";
@@ -52,6 +54,49 @@ check("the unauthenticated architecture page discloses nothing from inside", () 
                     /AKIA[0-9A-Z]{16}/, /sk-[A-Za-z0-9]{20}/]) {
     if (re.test(src)) bad.push(`serves something shaped like a credential (${re.source})`);
   }
+  // AND THE THING THIS CHECK WAS WRITTEN FOR AND DID NOT TEST.
+  //
+  // Its comment above says the live page was "serving measured telemetry about a third party's
+  // production system to anonymous callers". It then tested for addresses, IPs, credentials and
+  // outbound fetches — none of which is telemetry. That is the same defect as the server.ts
+  // comment this check exists to make good on: a stated property, and code that checks a
+  // different one. An audit found the panel still there, three rounds later.
+  //
+  // Three signals, each mechanical:
+  //
+  // 1. A MEASUREMENT. A comma-grouped number of six digits or more on a page about
+  //    architecture is a byte count or a call count, not a version or a year.
+  //    Six digits or more, so `1,229` stays and `803,840` does not. The first version of this
+  //    required TWO comma groups and therefore missed exactly the number that prompted it.
+  for (const m of src.matchAll(/\b\d{1,3}(?:,\d{3})+\b/g)) {
+    if (m[0].replace(/,/g, "").length >= 6) bad.push(`serves the measurement ${m[0]}`);
+  }
+  // 2. A QUOTED ERROR BODY. Somebody else's refusal text, reproduced.
+  for (const re of [/"[^"]*status code \d{3}[^"]*"/i, /"Request failed[^"]*"/i]) {
+    const m = re.exec(src);
+    if (m) bad.push(`serves a verbatim error body: ${m[0].slice(0, 60)}`);
+  }
+  // 3. THE DE-ANONYMISATION THAT ACTUALLY HAPPENED, and the reason this rule is worth more
+  //    than the other two. The page called its subject "a case-management system of the kind
+  //    this platform integrates with" — and then named two of its tools. Elsewhere in the
+  //    repository those same identifiers appear as `<block>:<tool>`, which says whose they
+  //    are. An anonymous description plus a named identifier is not anonymous.
+  const elsewhere = sourceFiles(["services", "packages", "scripts", "catalog", "blocks"], [".ts", ".mjs", ".sql", ".md"])
+    .filter((f) => f !== rel)
+    .map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+  //    An MCP tool name is snake_case and a command namespace is not, so requiring an
+  //    underscore separates `casebox:read_api_spec` from `/sdlc:deck` without a list of
+  //    namespaces to keep in step.
+  const qualified = new Set([...elsewhere.matchAll(/\b([a-z][a-z0-9_-]{2,}):([a-z][a-z0-9]*_[a-z0-9_]+)\b/g)]
+    .map((m) => m[2]));
+  for (const tool of qualified) {
+    if (new RegExp(`\\b${tool}\\b`).test(src)) {
+      bad.push(`names \`${tool}\`, which elsewhere in this repository is written as ` +
+               `\`<block>:${tool}\` — the page describes its subject anonymously and then ` +
+               `identifies it by a tool name`);
+    }
+  }
+
   // AND WHAT IT ASKS A READER'S BROWSER TO FETCH ON LOAD. A page that discloses nothing in
   // its own bytes still discloses every reader to whoever it fetches a font or a script
   // from — this page handed each anonymous visitor's IP to a font host until 2026-09-11.

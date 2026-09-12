@@ -35,7 +35,7 @@ set -euo pipefail
 {
 
 STEP=""; OUT=""; ONLY=""; FROM=""; MAXTURNS=8; MODEL="${LADDER_MODEL:-sonnet}"
-# NO FLOW OF ITS OWN. These two were catalog/ops/ops-flow/... , which made the one script that
+# NO FLOW OF ITS OWN. These two were catalog/sdlc/sdlc-flow/... , which made the one script that
 # PRODUCES a run directory the last ops-flow-locked link in the component depth: eval-judge,
 # eval-grade and eval-store all resolve their corpus from --flow, so sdlc-flow could be judged
 # but never driven, and the corpus authored for it had nothing that could run it.

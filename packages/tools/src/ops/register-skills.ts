@@ -39,7 +39,7 @@ type SkillKind = (typeof SKILL_KINDS)[number];
 /** What a skill version can carry besides its own words.
  *  script     — makes a guarantee the prose can only request.
  *  reference  — a block's real quirks, quoted from refusals we actually met.
- *  tool_index — the answer to a block advertising a couple of hundred tools and 268KB of schema in every prompt. */
+ *  tool_index — the answer to a block advertising a couple of hundred tools and hundreds of KB of schema in every prompt. */
 const ASSET_KINDS = ["script", "reference", "tool_index"] as const;
 type AssetKind = (typeof ASSET_KINDS)[number];
 
@@ -140,7 +140,7 @@ function findSkills(root: string): Found[] {
     }
   };
   // EVERY flow in the catalog, DISCOVERED — not a list. This was
-  //   for (const flowDir of ["catalog/ops/ops-flow/skills"])
+  //   for (const flowDir of ["catalog/sdlc/sdlc-flow/skills"])
   // a loop over a one-element array literal, which is the shape of a list somebody meant to
   // grow and never did, and it cost what that shape always costs. casebox-assist, sdlc-flow,
   // zz-access, zz-flow-builder and zz-knowledge were installable, reachable over MCP, and

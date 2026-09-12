@@ -26,9 +26,9 @@ const PlatformConfig = z.object({
    * of them. Omit for every tool.
    *
    * This is a CONTEXT budget, not an authorisation boundary — authorisation is decided per
-   * call by the gateway against the caller's own credential. CaseBox publishes 169
-   * tools; attaching all of them cost 91K tokens of a 115K window before a single message,
-   * resent every turn, and left 403 tokens free. The list lived in the old front end's
+   * call by the gateway against the caller's own credential. A block may publish a couple of hundred
+   * tools; attaching all of them can cost most of a context window before a single message,
+   * resent every turn. The list lived in the old front end's
    * bootstrap script, which made it a property of a browser rather than of the block. */
   tools: z.array(z.string().min(1)).optional(),
 });

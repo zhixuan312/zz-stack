@@ -413,7 +413,7 @@ export function mountMcpOauth(app: Express): void {
       if (conf?.header) {
         const started = await beginAuthorization(me.email, block, conf.url, code);
         // A REDIRECT IS FOLLOWED BY A BROWSER, so the address has to be one a browser can
-        // reach. A block on the compose network publishes `http://RuleMill:8000/authorize` —
+        // reach. A block on the compose network publishes `http://rulemill:8000/authorize` —
         // a perfectly good authorization endpoint that resolves only inside Docker, so
         // sending someone there is sending them nowhere, with no error we would ever see.
         //

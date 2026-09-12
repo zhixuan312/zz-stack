@@ -110,9 +110,10 @@ create table if not exists zz.skill_asset (
   skill_version_id uuid not null references zz.skill_version(id),
   -- script:     makes a guarantee the prose can only request.
   -- reference:  a block's real quirks, quoted from refusals we actually met.
-  -- tool_index: the 178-tool answer. casebox advertises a couple of hundred tools and ~268KB of schema in every
-  --             prompt; bookit and RuleMill advertise 24 and 25 at ~6KB. A caller cannot choose
-  --             well from 178, and this narrows it. Generated from zz.block_tool, not typed.
+  -- tool_index: the answer to a large tool surface. A block may advertise a couple of hundred
+  --             tools and a few hundred KB of schema in every prompt, where a small one
+  --             advertises a couple of dozen at a few KB. A caller cannot choose well from
+  --             hundreds, and this narrows it. Generated from zz.block_tool, not typed.
   kind             text not null check (kind in ('script', 'reference', 'tool_index')),
   path             text not null,
   content_hash     text not null default '',
@@ -141,7 +142,7 @@ create table if not exists zz.block_tool (
   -- returns a very large payload bytes every single time; its average equals its maximum.
   --
   -- Neither is a refusal. Both SUCCEED, which is why no error was ever recorded and why the
-  -- refusal-based score called that usage skill clean while it burned 26MB of context.
+  -- refusal-based score called that usage skill clean while it burned tens of MB of context.
   observed_bytes_avg bigint,
   observed_bytes_max bigint,
   observed_ms_max    bigint,

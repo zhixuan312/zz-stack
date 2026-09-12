@@ -16,7 +16,7 @@ identity, a team's document store, and the rules about who may write what.
 result to be auditable by someone who was not in the room.
 
 ```bash
-npm install && npm run gate     # 278 offline checks, a few seconds
+npm install && npm run gate     # 279 offline checks, a few seconds
 ```
 
 **Start there.** The gate is the most useful thing in this repository: every check

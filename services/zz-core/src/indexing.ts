@@ -194,11 +194,16 @@ export async function indexDoc(root: string, relPath: string, content: string, s
       // What is left has to look like a name. `+` reduces to nothing; `mcp` and `plugin` are
       // wrappers rather than blocks and are named explicitly.
       //
-      // The length bound is TWO, not three, and the difference is the whole column: the shortest
-      // block id on this deployment is two characters, so a rule written as `> 2` deleted the
-      // most-used block outright while leaving the longer names looking correct. Found by running
-      // the rule over every spelling the store actually holds instead of over the ones I had in
-      // mind. Do not "fix" this to `> 2`; it is the bound that is right.
+      // The length bound is TWO, not three. A block id may be two characters — one on this
+      // deployment was — and `> 2` silently deleted it while leaving the longer names looking
+      // correct, so the column reported predictions about nothing for the most-used block.
+      // Found by running the rule over every spelling the store actually holds instead of over
+      // the ones I had in mind.
+      //
+      // No id in the registry is that short TODAY, which is exactly why this comment says a
+      // block id MAY be: a bound justified by a fact that later stops being true is a bound the
+      // next reader deletes. The rule is about what an id is allowed to be, not about what the
+      // current ones happen to be.
       .filter((t) => t.length >= 2 && t !== "mcp" && t !== "plugin"))];
     const hash = createHash("sha256")
       // env.blocks is hashed as well as written. Without it a re-selection that changed only

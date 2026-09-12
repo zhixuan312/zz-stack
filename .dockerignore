@@ -31,7 +31,7 @@ testing
 scripts
 
 # Fixtures. `COPY catalog /catalog` takes the whole tree, and the `runs` line above matches
-# the context ROOT only — so catalog/ops/ops-flow/tests (192 files, 2.3MB of requirements,
+# the context ROOT only — so catalog/sdlc/sdlc-flow/tests (192 files, 2.3MB of requirements,
 # steps and expectations) was shipping in every image. Nothing at runtime reads it: eval-judge
 # and eval-grade read it from the repository, at test time. See docs/repository-architecture.md.
 catalog/**/tests

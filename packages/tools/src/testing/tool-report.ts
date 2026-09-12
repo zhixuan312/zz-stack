@@ -37,7 +37,7 @@ import { localStamp } from "../lib/shell.js";
 // silent coercion, no bare status codes". A refusal that names a status and stops is the
 // violation, and it is visible from here: the agent gets nothing to change, so it retries the
 // same call with the same arguments until it gives up. Measured on a real run,
-// casebox:add_app_variable was refused seven times out of nine with "Request failed with status
+// one block's write tool was refused on most calls with "Request failed with status
 // code 422" and nothing else — the same gap this contract's appendix recorded on 2026-08-20.
 //
 // The judgement lives in lib/refusal.ts, because block-conformance asks the same question of

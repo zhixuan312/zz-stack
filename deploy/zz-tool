@@ -3,8 +3,8 @@
 #
 #   ./deploy/zz-tool provision --email alice@example.com --team team-one --flow ops-flow
 #   ./deploy/zz-tool set-credential --csv keys.csv
-#   ./deploy/zz-tool audit --manifest /catalog/ops/ops-flow/flow.json --store /artifacts/teams/<team>
-#   ./deploy/zz-tool smoke /catalog/ops/tests/scenarios.json
+#   ./deploy/zz-tool audit --manifest /catalog/sdlc/sdlc-flow/flow.json --store /artifacts/teams/<team>
+#   ./deploy/zz-tool smoke /catalog/sdlc/tests/scenarios.json
 #   ./deploy/zz-tool                       # list what there is
 #
 # WHY THIS EXISTS. These tools were Python, standard library only, deliberately: they run on

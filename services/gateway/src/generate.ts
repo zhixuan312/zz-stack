@@ -21,7 +21,7 @@
  * CREDENTIAL, PER DEPLOYMENT. Read from LLM_API_KEY / LLM_BASE_URL / PLATFORM_BASE_MODEL —
  * the same three variables stakeholder.ts reads, because generation here runs on the
  * platform's own base model, not a separately-pinned judge model. Per-deployment, exactly as
- * Forge already reads these three: there is no team-scoped credential resolution in this
+ * multi-model-agent-forge, a sibling project of mine, already reads these three: there is no team-scoped credential resolution in this
  * file, and there must not be one — the reason this lives on the server at all is that a
  * deployment's own .env is the one place this secret is supposed to live.
  *

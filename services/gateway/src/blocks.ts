@@ -54,9 +54,8 @@ function registry(raw: string): PlatformMap {
  * EMPTY BY DEFAULT, AND THAT IS A REAL STATE. This deployment routes no building block: the
  * stand-ins were their own repository and went with it on 2026-09-10, and the blocks this
  * platform was developed against are other people's servers, not part of it.
- * `/p/<block>/mcp` therefore answers "no
- * such block" for everything, which is the honest answer and the one its own refusal already
- * gives by name.
+ * `/p/<block>/mcp` therefore answers "no such block" for everything, which is the honest
+ * answer and the one its own refusal already gives by name.
  *
  * The machinery stays, and is not dead code waiting for a use. It is the whole credential
  * model — a caller's OWN key, looked up per person and injected at the proxy, with the block's

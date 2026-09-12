@@ -110,8 +110,7 @@ declares its own documents, roles, gate chain and — per document — the secti
 headings it must carry, in its plugin. The platform enforces the headings
 without knowing what any of them mean: WHICH headings is the flow's business,
 THAT they are present is the platform's. A list of them in zz-core would make
-this an sdlc platform. The Operations
-flow declares five documents and three gates — `intent.md`, `spec.md`, `plan.md`, each
+this an sdlc platform. The Operations flow declares five documents and three gates — `intent.md`, `spec.md`, `plan.md`, each
 `gate: true`, with the acceptance at verification being a stakeholder verdict rather than a
 fourth gate; a minimal flow may declare one spec and one gate; both are fully compliant. The platform enforces
 *the chain each flow declares*, not our chain — zz-core holds no chain of its own, and a flow
@@ -125,7 +124,7 @@ trustworthy while every team works its own way.
 
 Platform vocabulary is **zz** (zz-stack, zz-core, gateway, the team store,
 `@zz/*`, zz-blocks, future zz-kb, zz-knowledge). Product vocabulary lives under
-`catalog/<owner>/` — `catalog/ops/` is Operations (ops-flow + its tests),
+`catalog/<owner>/` — `catalog/sdlc/` is software delivery (sdlc-flow + its tests),
 `catalog/sdlc/` is software delivery (sdlc-flow), and `catalog/zz/` holds the
 platform's own entries (zz-access, zz-admin, zz-knowledge, zz-flow-builder). Referring to
 the platform from a flow uses the platform's real names; declaring a
@@ -255,10 +254,10 @@ replaceable; the platform services and the state they guard are not.**
 
 | Layer | Components | Replaceable | Owner |
 |---|---|---|---|
-| Clients | web front end (LibreChat) · CLI harnesses (Claude Code, Codex) · agent runtime (Hermes) · read surface (Web KB) | yes, all of them | ZZ (projections) |
+| Clients | CLI harnesses (Claude Code, Codex) · agent runtime (Hermes) · read surface (Web KB) | yes, all of them | ZZ (projections) |
 | Catalog | sdlc-flow · zz-access (access and the platform register, two skills on one door) · zz-skill-eval · zz-block-eval · each team's own packages under `catalog/<team>/` (flows, and skills-only packages) | yes, per team | flow team (content) / ZZ (machinery) |
 | Platform services | gateway · zz-core | **no** | ZZ |
-| Blocks | CaseBox · RuleMill · BookIt | yes, behind R1–R14 | third parties |
+| Blocks | none registered on this deployment | yes, behind R1–R14 | third parties |
 | State | Postgres `zz` schema · artifacts volume | **no** | ZZ |
 
 Each service has one focus, and questions belong to exactly one of them:
@@ -922,7 +921,7 @@ and how it scores, and how each block actually refuses. Sign-in is corporate dir
 third identity adapter beside the PAT and the forwarded header, which is the shape identity.ts
 already described. Every page has been driven in a real browser against real data on UAT, and
 the sign-in redirect has been checked end to end; what has NOT happened is anyone signing in
-with a an organisation account, because the callback is not registered with that provider. So what is
+with an organisation account, because the callback is not registered with that provider. So what is
 proven is our half, again.
 
 Knowledge moved to the platform's own team in this version — one shelf every team reads
@@ -1049,7 +1048,7 @@ phase 0 and the Ongoing row.
 
 | Phase | Deliverable | Definition of done |
 |---|---|---|
-| **0 · Converge (now)** | Operations flow clean pass | one full smoke round, zero changes, audits all PASS; deploy the catalog/ops structure; round report + deck refresh |
+| **0 · Converge (now)** | Operations flow clean pass | one full smoke round, zero changes, audits all PASS; deploy the catalog/sdlc structure; round report + deck refresh |
 | **1 · One door** | gateway as the single platform endpoint + PAT identity | any harness configures ONE URL + one token; self-declared headers dead; Codex/CC run the Operations flow end-to-end with no Open WebUI involvement |
 | **2 · Install registry** | team → flows → agents → tool grants as platform truth | Open WebUI bootstrap and Codex config are *generated projections*; per-flow tool scoping enforced by the gateway |
 | **3 · Knowledge plane** | zz-kb read/search/provenance API + web v1 (read-only, responsive) | "search across teams by envelope" works; browse retires; today's team store migrates in place |

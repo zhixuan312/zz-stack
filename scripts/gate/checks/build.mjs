@@ -84,7 +84,7 @@ check("every package manifest carries the same version", () => {
 });
 
 check("no fixture directory enters the image", () => {
-  // catalog/ops/ops-flow/tests is 192 files and 2.3MB of requirements, steps and expectations.
+  // catalog/sdlc/sdlc-flow/tests is 192 files and 2.3MB of requirements, steps and expectations.
   // Nothing at runtime reads them — eval-judge and eval-grade do, at test time, from the
   // repository. They were shipping because `COPY catalog /catalog` takes the whole tree and
   // .dockerignore's `runs` pattern matches the context ROOT only, so the nested one sailed

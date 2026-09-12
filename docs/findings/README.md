@@ -20,10 +20,7 @@ round; and a greedy content match attributed one requirement's document to anoth
 it 2/9 when it was 9/9. The other three were the harness mishandling responses from systems
 this repository does not contain, and the detail belonged to those systems rather than here.
 
-**The numbering has gaps, and that is not an accident of this file.** H2 through H5 were
-findings about somebody else's production system. They are not here, they are not recoverable
-from this repository's history, and the gap is the honest record of a deliberate removal
-rather than of something lost.
+**The numbering has gaps.** Not every finding became a file.
 
 ## Why this group is kept, and kept first
 

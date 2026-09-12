@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Which blocks does each requirement ACTUALLY need — decided from the brief alone.
 #
-#   ./testing/block-oracle.sh > catalog/ops/ops-flow/tests/blocks-oracle.txt
+#   ./testing/block-oracle.sh > catalog/sdlc/sdlc-flow/tests/blocks-oracle.txt
 #
 # WHY THIS IS NOT `exercises.blocks`. That field was authored by hand alongside the corpus, as a
 # note on why each requirement earned its place in the set. Pressed into service as an answer key
@@ -20,8 +20,8 @@
 set -euo pipefail
 {
 CAP="$(cat blocks/CAPABILITIES.md)"
-for id in $(node -e 'console.log(Object.keys(require("./catalog/ops/ops-flow/tests/requirements.json").requirements).join(" "))'); do
-  BRIEF="$(node -e 'const r=require("./catalog/ops/ops-flow/tests/requirements.json").requirements[process.argv[1]];process.stdout.write(r.requester+" — "+r.title+"\n\n"+r.brief)' "$id")"
+for id in $(node -e 'console.log(Object.keys(require("./catalog/sdlc/sdlc-flow/tests/requirements.json").requirements).join(" "))'); do
+  BRIEF="$(node -e 'const r=require("./catalog/sdlc/sdlc-flow/tests/requirements.json").requirements[process.argv[1]];process.stdout.write(r.requester+" — "+r.title+"\n\n"+r.brief)' "$id")"
   ANS="$(printf '%s\n\n%s\n\nTHE REQUIREMENT\n\n%s\n' \
 "Decide which building blocks this requirement needs, from the sheet below. Answer with the
 smallest set that covers it: name a block only if removing it would leave something in the brief

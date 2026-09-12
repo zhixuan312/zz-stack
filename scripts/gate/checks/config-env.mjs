@@ -40,7 +40,7 @@ check("the documented defaults are the actual defaults", () => {
     // Only where compose actually HAS a default. `${VAR:-}` is compose saying "pass this
     // through, I have no default" — and .env.example is then documenting either the CODE's
     // default (LOG_LEVEL's, say, and saying so is useful) or an
-    // example value (PLATFORMS, OPUS_PEERS). Neither is a claim about compose, and treating
+    // example value (PLATFORMS, RULEMILL_PEERS). Neither is a claim about compose, and treating
     // them as one made this check name six things that were all correct, which is how a
     // check gets switched off.
     if (!real || shown === "" || real.has(shown)) continue;
@@ -149,8 +149,8 @@ check("the configuration surface is documented", () => {
   const named = new Set();
   for (const m of env.matchAll(/^#?\s*([A-Z][A-Z_0-9]{3,})=/gm)) named.add(m[1]);
   // A knob written WITHOUT the `=` was invisible to this mirror, and that is how a phantom
-  // survived: `# OPUS_URL / OPUS_WEB_URL / OPUS_INGRESS_BASE / OPUS_PEERS` offered four
-  // names in a format no other line in the file uses, and OPUS_URL was read by nothing,
+  // survived: `# RULEMILL_URL / RULEMILL_WEB_URL / RULEMILL_INGRESS_BASE / RULEMILL_PEERS` offered four
+  // names in a format no other line in the file uses, and RULEMILL_URL was read by nothing,
   // anywhere — not this repo, not zz-blocks, not compose. It existed only on the line
   // offering it to operators. The three beside it were real, which is exactly what made it
   // invisible to a person too.

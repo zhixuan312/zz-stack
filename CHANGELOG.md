@@ -17,15 +17,15 @@ zz-blocks versions separately and has its own changelog — the mock building bl
 for other teams' services and change for their own reasons. All three are released together
 by `zz-stack/scripts/release.mjs`; separate lifecycles never meant separate deployments.
 
-**Names in entries before 0.28.0 are not the names that were there.** `CaseBox`, `BookIt`,
-`RuleMill` and `SsoAuth` are inventions — three building blocks this platform integrated with,
-and an identity provider. Every address is `@example.com`. Evidence measured by calling systems
-this repository does not contain was removed with them: the rules those measurements produced
-are stated in full and stand on their own, but the measurements were somebody else's and are
-gone. `docs/findings/` numbers its files with gaps for the same reason, and says so there.
+**Names in the entries below are not the names that were there.** `CaseBox`, `BookIt`,
+`RuleMill` and `SsoAuth` are inventions. One of the three blocks was a system another team
+runs; the other two were this project's own stand-ins, and the identity provider was a real
+one. Addresses in the entries are `@example.com`.
 
-Nothing else was altered. The dates, the author's own defects, and the reasoning are what
-happened.
+Measurements taken by calling a system this project did not write went with the names — a
+refusal rate, a payload size, a context cost. The findings they produced are stated in full
+and stand on their own. The author's own evaluation numbers, of the author's own skills, are
+not redacted and are what they were.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
@@ -310,8 +310,8 @@ already made.
 ### Fixed
 
 - **`deploy/Caddyfile` and `STATE.md` named addresses that belong to another platform.**
-  `203.0.113.10` and `203.0.113.11` were this platform's hosts before it became a single
-  deployment; both now serve an unrelated deployment. `STATE.md` stated one of them
+  The Caddyfile carried a hostname literal from before this became a single deployment, and it
+  had gone stale. `STATE.md` stated one of them
   as the live gateway. Repointed to `165.232.169.165`, and the template's config body now
   matches the running `/etc/caddy/Caddyfile` line for line.
 - **`install-caddy.sh` was discarding `$UPSTREAM` silently.** Its substitution still targeted
@@ -1425,7 +1425,7 @@ actually produced.
 
 ### Added
 
-- **Sign in with a organisation identity.** The deployment can now put SsoAuth (or any OIDC
+- **Sign in with an organisation identity.** The deployment can now put SsoAuth (or any OIDC
   provider) beside the password box: `ALLOW_SOCIAL_LOGIN`, `OPENID_ISSUER`, `OPENID_CLIENT_ID`,
   `OPENID_CLIENT_SECRET`, `OPENID_SESSION_SECRET`, `OPENID_SCOPE`, `OPENID_CALLBACK_URL`,
   `OPENID_BUTTON_LABEL`, the two claim names, and `DOMAIN_CLIENT` / `DOMAIN_SERVER`. Off unless

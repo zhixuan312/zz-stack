@@ -42,7 +42,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         "not ask them to edit frontmatter. Use `on_behalf_of` only when the verdict is " +
         "someone else's and they are not this session — a stakeholder who said it elsewhere.",
       inputSchema: {
-        path: z.string().describe("e.g. '2026-08-23-enquiries/spec.md'"),
+        path: z.string().describe("e.g. '2026-08-23-support-queue/spec.md'"),
         on_behalf_of: z.string().optional().describe(
           "The person whose decision this is, when that is not the caller. Omit for the " +
           "normal case: you acting with someone's authority IS their decision, under their name."),
@@ -123,7 +123,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         "nobody signed off — an honest close is never the expensive one, but it is never free " +
         "either.",
       inputSchema: {
-        initiative: z.string().describe("The initiative folder, e.g. '2026-08-23-enquiries'"),
+        initiative: z.string().describe("The initiative folder, e.g. '2026-08-23-support-queue'"),
         // The stop word is the OUTCOME's, deliberately: what the caller says and what the
         // ledger records are the same word for the same thing, and coupling them here means a
         // rename cannot leave one behind. `finished` is this tool's own — the platform
@@ -298,14 +298,14 @@ export function registerInitiativeActTools(server: McpServer): void {
         "is not required; someone may simply edit their own document. " +
         "Never overwrite an approved document with write_file.",
       inputSchema: {
-        path: z.string().describe("e.g. '2026-08-23-enquiries/intent.md'"),
+        path: z.string().describe("e.g. '2026-08-23-support-queue/intent.md'"),
         content: z.string().describe("The full revised document, body and all."),
         source_content: z.string().optional()
           .describe("The input that caused this change, verbatim (the person's own words). Stored as a source and linked."),
         source_title: z.string().optional()
           .describe("Short title for that input, e.g. 'Second brain dump — SLA and approvals'."),
         sources: z.array(z.string()).optional()
-          .describe("Existing source files this revision is based on, e.g. ['sources/2026-08-23-ops-meeting.md']."),
+          .describe("Existing source files this revision is based on, e.g. ['sources/2026-08-23-weekly-review.md']."),
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index."),

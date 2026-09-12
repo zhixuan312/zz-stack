@@ -340,7 +340,7 @@ check("no shell freezes one flow's fixture paths", () => {
   //
   // eval-judge, eval-grade and eval-store were all parameterised by --flow, and the component
   // depth still could not reach a second flow: eval-step.sh, the script that PRODUCES a run
-  // directory, held catalog/ops/ops-flow/tests/{requirements,steps}.json as constants and had no
+  // directory, held catalog/sdlc/sdlc-flow/tests/{requirements,steps}.json as constants and had no
   // --flow at all. smoke-env.sh did the same with ops-flow's scenarios.json in its exec line. So
   // a corpus was authored for sdlc-flow that nothing could run, and "drive a second flow end to
   // end" was blocked by the launcher rather than by the engine.
@@ -387,8 +387,8 @@ check("no evaluation tool is wired to one flow", () => {
   ]) {
     const p = join(root, rel);
     if (!existsSync(p)) continue;
-    if (readFileSync(p, "utf8").includes("catalog/ops/ops-flow")) {
-      bad.push(`${rel} still hardcodes catalog/ops/ops-flow, so it can evaluate exactly one flow`);
+    if (readFileSync(p, "utf8").includes("catalog/sdlc/sdlc-flow")) {
+      bad.push(`${rel} still hardcodes catalog/sdlc/sdlc-flow, so it can evaluate exactly one flow`);
     }
   }
   return bad.length ? bad.join("; ") : null;

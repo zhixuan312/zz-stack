@@ -1,6 +1,6 @@
 ---
 name: zz-skill-locate
-version: 0.3
+version: 0.4
 description: Settle exactly which skill is being evaluated, and pin the version. Writes no document — what it settles goes in the header of every document this flow does write.
 when_to_use: "The first stage of zz-skill-eval, always. Nothing can be profiled, ruled or judged until it is settled which skill this is about."
 ---
@@ -20,9 +20,9 @@ The output is confidently, silently about something else.
     switch_team("zz-platform")
 
 **Do this before anything else.** An evaluation is the platform's own work and belongs in the
-platform's store. Without the switch you act for whichever team you last worked in, and the
-first real run of this flow wrote its report into `team-one` — a delivery team's store,
-mixed in with their initiatives, invisible to anybody looking for evaluations.
+platform's store. Without the switch you act for whichever team you last worked in, and an
+evaluation then lands in a delivery team's store — mixed in with their own initiatives, and
+invisible to anybody looking for evaluations. This flow has done it.
 
 Nothing warned about it and nothing could: every write succeeded, because writing into a team
 you are a member of is exactly what the platform is for.

@@ -1,6 +1,6 @@
 ---
 name: zz-skill-report
-version: 0.11
+version: 0.12
 description: Say what the round concluded, how much to trust it, and what to do about it. The closing document and the flow's second gate. Writes findings.md.
 when_to_use: "The scores are stored — eval_skill_judge has run, plainly and with control. This closes the evaluation, and its Recommendation is what somebody applies."
 ---
@@ -135,9 +135,9 @@ skill's ruler. Nothing is shuffled.
 
 That decides what a small gap MEANS, and it is usually not the judge's fault. A ruler whose
 dimensions another skill's work can satisfy is not measuring this skill, and no judge can
-rescue it. Measured across the whole campaign on 2026-09-06: every document
-round cleared by 2.25 to 3.73, because a document ruler is stage-specific, and every `body`
-round came out at or below zero, because a body ruler asks generic questions about a skill's
+rescue it, and which of the two you have is something the control tells you: a document
+round clears by a wide margin, because a document ruler is stage-specific, while a `body`
+round comes out at or below zero, because a body ruler asks generic questions about a skill's
 text and another decent skill's text answers them. **So a failed control sends you to zz-skill-define to re-cut the ruler, not to
 the judge.**
 
@@ -239,14 +239,13 @@ For each recurring thing: what it is, the initiatives it appeared in, and the ev
 each. A refusal class that appeared in two flows is stronger than one that appeared twice in
 the same flow — say which shape it has.
 
-The two found on 2026-09-04 are the model:
+Two shapes are the model:
 
-- `<initiative>/doc.md` sent where a bare document name was wanted — three occurrences, two
-  skills, two initiatives. The skills document a path shape that is right for one tool and
-  wrong for another.
-- Platform-managed frontmatter written by hand — three occurrences, three skills. The guard
-  caught every one, so nothing broke; a guard firing repeatedly across unrelated skills means
-  the skills do not say clearly enough which fields are the platform's.
+- `<initiative>/doc.md` sent where a bare document name was wanted, across more than one
+  skill. The skills document a path shape that is right for one tool and wrong for another.
+- Platform-managed frontmatter written by hand, across more than one skill. The guard catches
+  every one, so nothing breaks; a guard firing repeatedly across unrelated skills means the
+  skills do not say clearly enough which fields are the platform's.
 
 Findings with a single occurrence go here too, marked as such: worth recording, not worth
 acting on yet. They had a section of their own, which the manifest never declared and which

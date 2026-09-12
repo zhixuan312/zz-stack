@@ -22,10 +22,12 @@ by `zz-stack/scripts/release.mjs`; separate lifecycles never meant separate depl
 runs; the other two were this project's own stand-ins, and the identity provider was a real
 one. Addresses in the entries are `@example.com`.
 
-Measurements taken by calling a system this project did not write went with the names — a
-refusal rate, a payload size, a context cost. The findings they produced are stated in full
-and stand on their own. The author's own evaluation numbers, of the author's own skills, are
-not redacted and are what they were.
+Measurements went with the names, on both sides of the line: what a system this project did
+not write cost to call, and what running this platform's own method on somebody else's work
+produced. The findings those measurements led to are stated in full and stand on their own —
+a finding is an engineering fact, and it does not need the corpus it came from to be useful.
+Counts that are properties of this repository — how many checks the gate has, how many tools
+a door offers — are exact and unredacted.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
@@ -873,7 +875,7 @@ actually produced.
   described correctly with no change here; ops-flow's shape survives only as the fallback for an
   initiative whose flow the catalog cannot resolve.
 - **Every document reported `00:00`.** The index stored `updated_at` as the envelope's date
-  cast to `::date` — a day, therefore midnight — on all 565 documents. The envelope was the
+  cast to `::date` — a day, therefore midnight — on every document. The envelope was the
   right instinct for the wrong half of the problem: it is there because `now()` restamped the
   whole corpus to the moment of the last reindex, and what it protects is that a rebuild must
   not move the time. The file's mtime protects that too — re-reading does not change it — and
@@ -1083,10 +1085,10 @@ actually produced.
 - **Every team must now declare its flow on an initiative's first document.** The check that
   refuses an undeclared first document only ran for a team with two or more rows in
   `zz.flow_install` — and a platform flow never gets a row there, because the shelf ships it
-  to everyone. So the teams the check excused were the two it went wrong on: `team-one`, with
-  one install, opened a `zz-block-eval` initiative that was governed by `ops-flow` from the
-  second document onward; `zz-platform`, with no installs at all, was never asked anything,
-  and every evaluation it runs was governed by nothing — no gate on the one document the flow
+  to everyone. So the teams the check excused were the two shapes it went wrong on: a team with
+  exactly one install, whose initiative was then governed by the wrong flow from the second
+  document onward; and a team with no installs at all, which was never asked anything,
+  so every evaluation it runs was governed by nothing — no gate on the one document the flow
   exists to gate. The question is now "which flows can this team RUN", which is its installs
   plus the platform flows that declare documents of their own.
 
@@ -1125,8 +1127,8 @@ actually produced.
 ## [0.11.4] — 2026-09-05
 
 ### Fixed
-- **An evaluation wrote its report into a delivery team's store.** The first real run of
-  zz-block-eval put `2026-09-05-blockeval-casebox` into `team-one`. `issue_pat` says a person
+- **An evaluation wrote its report into a delivery team's store.** A `zz-block-eval` run
+  filed its report where the caller's active team pointed, which was not the platform's. `issue_pat` says a person
   keeps one token and "picks the team by picking that team's agent" — but an agent carries no
   team to the gateway, which resolves it from `principal.active_team_id`, so picking the
   evaluation agent picked whichever team the person last worked in. Nothing warned, and
@@ -1392,7 +1394,7 @@ actually produced.
   collected, which looks exactly like a quiet platform. It reaches both stores by service name
   now, and both flags still accept a command for off-host use.
 - **A document's date was the moment it was last indexed, not the moment it changed.** A
-  reindex touches every file it re-derives, so one rebuild restamped all 496 documents on one
+  reindex touches every file it re-derives, so one rebuild restamped every document on a
   deployment to the same afternoon and the whole corpus claimed to have been written at once.
   The envelope carries the date and the platform stamps it itself, so it is now read from
   there — including a knowledge node's `date`, which is the field `knowledge_add` writes.
@@ -2095,10 +2097,9 @@ read this as one release and note that the breaking changes take the minor.
   1 and moves only through `revise_document`, so a template typing `version: 1` asserted a
   fact it could not check.
 
-  The cost of the old arrangement was countable: of 93 approved documents on this deployment
-  four carried no `approved_at` and two no `approved_by`; two smoke runs signed a gate as
-  `team_one`, a team slug; the first live run closed an initiative `accepted` that
-  nobody had accepted. The ANONYMOUS blocklist exists to catch the worst of that, and its own
+  The cost of the old arrangement was countable: approved documents were found carrying no
+  `approved_at`, and others no `approved_by`; smoke runs signed a gate as a team SLUG rather
+  than a person; and a run closed an initiative `accepted` that nobody had accepted. The ANONYMOUS blocklist exists to catch the worst of that, and its own
   comment admits there is no way to test whether a string is a person.
 
   `sdlc-spec`'s `contract:` block moved out of frontmatter into the body under
@@ -2542,7 +2543,7 @@ reading the code.
   sorts wrong and reads differently in two countries. There had been three sources of truth
   for one mechanical fact: sm's skills asked authors for `<DD-MM-YYYY>`, sdlc's for
   `YYYY-MM-DD`, and `revise_document` had already decided this was the platform's job. On
-  disk that produced 36 documents in one format and 9 in the other. Six skill templates no
+  disk that produced most documents in one format and the rest in the other. Six skill templates no
   longer ask anyone to write a date.
 - **`zz-backbone` states where today comes from**: `today` from `get_my_info`, and nothing
   else — not the newest row in the store, not digits inside a run tag. The platform can

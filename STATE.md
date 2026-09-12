@@ -888,9 +888,9 @@ never scores anything.
 
 **What is NOT yet true:** neither flow has completed a run. No `rulers.md` has been approved,
 no `findings.md` has closed an initiative, and `zz-platform`'s store holds no evaluation. The
-numbers the flows already produce — ops-intent at 2.27 on constraints over 30 documents,
-one block's read tool refusing on every recorded call — were produced by running
-the scripts, not the flows. Running both end to end is the acceptance test and has not
+numbers the flows already produce — a low score on one skill's weakest dimension, a block's
+read tool refusing on every recorded call — were produced by running the scripts, not the
+flows. Running both end to end is the acceptance test and has not
 happened.
 
 ## 6b. In 0.10.0, deployed and verified but not yet exercised by a round
@@ -905,36 +905,35 @@ path and it served SKILL.md and nothing else.
 
 Every document now carries the skill version that wrote it — from the run that produced it,
 then the eval that judged it, then the version in force when it was created. ops-intent went
-from 30 attributable documents of 81 to all 81, and a score can be read against one version
-instead of averaged across two. The derivation was validated before it was trusted: on the
+from the documents that happened to be attributable to all of them, and a score can be read
+against one version instead of averaged across two. The derivation was validated before it was trusted: on the
 one skill that has ever changed version, the window predicts the record on every document
 where both exist.
 
-**What has NOT happened is anyone using any of it.** The console app runs on UAT alone —
-production gets its read API with this release and no browser app to reach it — and no round
-has been run against a skill page to decide anything. Production also had zero rows in
-`zz.skill` and `zz.skill_version` until this release registered them, so nothing there could
-be attributed to a skill or a version before now.
+**What is NOT proven is the half that needs a round.** The read API ships here; no evaluation
+round has yet been decided against a skill page, so the pages answer and nothing has acted on
+what they say. `zz.skill` and `zz.skill_version` were empty until this release registered
+them, so nothing before now could be attributed to a skill or a version at all.
 
 **The admin console is what 0.9.0 added to this list.** A separate browser app over a new
 read API on the gateway, showing every team's work, the knowledge base, what each skill costs
-and how it scores, and how each block actually refuses. Sign-in is corporate directory through SsoAuth — a
-third identity adapter beside the PAT and the forwarded header, which is the shape identity.ts
-already described. Every page has been driven in a real browser against real data on UAT, and
-the sign-in redirect has been checked end to end; what has NOT happened is anyone signing in
-with an organisation account, because the callback is not registered with that provider. So what is
-proven is our half, again.
+and how it scores, and how each block actually refuses. Sign-in is a directory through SsoAuth —
+a third identity adapter beside the PAT and the forwarded header, which is the shape
+identity.ts already described. Every page has been driven in a browser against a populated
+store, and the sign-in redirect has been checked end to end; what has NOT been exercised is
+the far side of that redirect, which is somebody else's to register. So what is proven is our
+half, again.
 
 Knowledge moved to the platform's own team in this version — one shelf every team reads
-instead of a journal per team, with each team's numbering colliding at 0001. Both deployments
-were migrated. Nobody has written a node since.
+instead of a journal per team, with each team's numbering colliding at 0001. The migration
+ran; the shelf has not been written to since.
 
 **Delegated block access is the whole of what 0.6.0 adds to this list.** A person signs in to
 a building block as themselves and their own token is attached to every later call. It has
 been walked end to end for all three blocks — including one that enforces consent, which
 answered with the person's name and their own grants rather than a shared key — and the
 automated loop runs from a revoked grant so that "the block names a person" is a result and
-not a tautology. What has NOT happened is anyone using it to do work: no round has run through it,
+not a tautology. What is NOT proven is the other side: no delivery round has run through it,
 and the mocks accept a scope without enforcing it, so what is proven is the platform's half.
 
 Everything here passes the offline gate and its own engine, and 0.10.0 is the version the live
@@ -1030,34 +1029,20 @@ our own work.
   generate.ts with no LLM_* set to prove generateConfigured() answers false and generate()
   refuses with a 503 naming all three variables rather than throwing at import.
 
-## 6a. Phases 1–5: delivered 2026-08-22 (all verified live)
+## 6a. Before 0.10.0: one door, a registry, a knowledge plane
 
-| Phase | Shipped | Proof |
+The four capabilities everything above is built on, and the check that proved each. They are
+listed by what they do rather than by when they landed: a delivery schedule is a fact about a
+calendar, and this file is the balance.
+
+| Capability | What it is | Proof |
 |---|---|---|
-| 1 · One door | zz schema in OUR db (the front end was a guest in it and is now gone — db+role renamed webui→zz); PAT identity (hashed, scoped, revocable); /admin/mcp with RBAC + confirm-params + audit; /core proxy; render_agent_definition; render_harness_config | tailnet w/o PAT → 401; spoofed header + PAT → identity rewritten to PAT owner; skills via one URL |
-| 2 · Registry | flow.json manifests drive the guardrail chain; install_flow/grant_tool registry; /p enforcement once a team has grants | chain enforced from manifest; registry seeded for team_one |
-| 3 · Knowledge | the journal is the PLATFORM's, on zz-platform, read by every team (search covers the caller's team and that shelf); version snapshots at approval; sources/ (ungated, immutable, auto envelope); mechanical ledger row at close; zz.doc index-on-write + reindex; search_knowledge with provenance; knowledge_add/supersede; zz-knowledge, run at the end of every flow; envelope fields in Operations templates | full chain test: 3 snapshots + ledger row + citable search hit; journal node 0001; OKR graded 0.75 |
-| 4 · Collaboration | /app web v1 (PAT login, browse, rendered docs, search, attach a source, activity) | browser note → lands as a source on the initiative → agent revises the document citing it → the new version IS the resolution; the proof-loop demo is real |
-| 5 · Many flows | flow-agnostic guardrails: the chain comes from each flow's manifest | proven with a one-document/one-gate fixture — same zz-core image, different manifest, different discipline, zero code changes; the fixture was deleted once it had done its job |
+| One door | the `zz` schema in our own database; PAT identity, hashed, scoped and revocable; `/admin/mcp` with RBAC, confirm-params and an audit trail; the `/core` proxy | a request without a PAT is refused; a spoofed identity header presented alongside a PAT is REWRITTEN to the PAT's owner, not trusted; every skill is reachable through one URL |
+| Registry | `flow.json` manifests drive the guardrail chain; `install_flow` / `grant_tool` decide what a team has; `/p` enforces it once grants exist | the chain is enforced from the manifest rather than from code that knows the flow's name |
+| Knowledge | one shelf on the platform's own team, read by every team; version snapshots taken at approval; `sources/` ungated and immutable; a mechanical ledger row at close; index-on-write with `search_knowledge` carrying provenance | a full chain test: three snapshots, a ledger row, and a search hit that cites its source |
+| Many flows | the guardrails are flow-agnostic — the chain comes from each flow's own manifest | proven with a one-document, one-gate fixture: same image, different manifest, different discipline, zero code changes. The fixture was deleted once it had done its job |
 
-## 7. Roadmap
-
-**Phases 1–5 were delivered on 2026-08-22 — §6a is the record, with the proof for each.**
-They stay here because the "definition of done" column is what they were held to, and a
-delivered phase whose bar has been deleted cannot be re-checked. What is actually open is
-phase 0 and the Ongoing row.
-
-| Phase | Deliverable | Definition of done |
-|---|---|---|
-| **0 · Converge (now)** | Operations flow clean pass | one full smoke round, zero changes, audits all PASS; deploy the catalog/sdlc structure; round report + deck refresh |
-| **1 · One door** | gateway as the single platform endpoint + PAT identity | any harness configures ONE URL + one token; self-declared headers dead; Codex/CC run the Operations flow end-to-end with no Open WebUI involvement |
-| **2 · Install registry** | team → flows → agents → tool grants as platform truth | Open WebUI bootstrap and Codex config are *generated projections*; per-flow tool scoping enforced by the gateway |
-| **3 · Knowledge plane** | zz-kb read/search/provenance API + web v1 (read-only, responsive) | "search across teams by envelope" works; browse retires; today's team store migrates in place |
-| **4 · Collaboration** | sources from the browser, activity feeds, agent-reads-sources | the loop: B writes from a phone → it lands as a source → A's agent revises citing it → versions show it |
-| **5 · Many flows** | chain-from-manifest guardrails; second real flow in the catalog | a non-Operations flow (e.g. personal zz-flow) installs and runs with zero platform changes |
-| **Ongoing** | contract evangelism · smoke gating · zz-knowledge cadence | block teams ship their own plugins (one has; our interim casebox-stg-usage became a reference on theirs); nothing ships that fails the suite; the ledger shows question-load falling |
-
-## 8. Principles (the rules that settle arguments)
+## 7. Principles (the rules that settle arguments)
 
 Thirteen, grouped by **what question they answer** rather than by the order they
 were written. Each one settles a real argument that has come up more than once,
@@ -1120,7 +1105,7 @@ is wrong for this list; it belongs with operations. "Blocks are consumed, never
 owned" split into 1 and 11, and its best half — *the contract is the
 relationship* — is kept verbatim in 11.
 
-## 9. To refine next (placeholders for detail passes)
+## 8. To refine next (placeholders for detail passes)
 
 - Semantic search — today retrieval is keyword-only, so "what did we decide
   about X" works only when the words match. The largest knowledge gap.

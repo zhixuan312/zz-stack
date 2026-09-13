@@ -33,6 +33,86 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.32.0] — 2026-09-13
+
+**zz-stack 0.32.0 · zz-stack-dashboard 0.5.0**
+
+**Evaluation's subject is a plugin now.** A plugin is what a person installs — a flow's skills
+plus the MCP servers those skills call. The platform evaluated the two halves separately and
+could therefore see neither of the things that decide whether the whole is any good: whether a
+flow that goes wrong can return to an earlier stage, and whether a tool its own skills name is
+ever actually called. Both are properties of the whole.
+
+### Added
+- **`zz-plugin-eval`** — five stages over one plugin at one released version, two gates
+  (`rulers.md` before anything is scored, `findings.md` before anything is closed).
+- **Two kinds of evidence, each with its own sufficiency line.** CASES come from
+  `claude plugin eval`, which runs a suite twice — with the plugin and without — and reports
+  the delta. That is a counterfactual, which no score can give, and it needs no history: one
+  case is enough. TRACES come from the event log and need five usable runs. A thin trace block
+  no longer stops the flow; only both empty does. A plugin released this morning is evaluable
+  this afternoon.
+- **Ten `plugin_*` tools.** `plugin_locate` `plugin_profile` `plugin_cases_record`
+  `plugin_conform` `plugin_ruler` `plugin_ruler_record` `plugin_affirm` `plugin_judge`
+  `plugin_scores` `plugin_finding_record`. Every read returns facts — counts, sets, orderings,
+  differences — and nothing else. `returns: 3` is a fact; whether three returns is a flow
+  re-grounding well or one thrashing belongs to a ruler a person approved.
+- **A per-plugin content digest, and a lock that makes a declared version true.**
+  `plugins.lock.json` records each plugin's version beside a digest of what it ships, and the
+  gate refuses a release where they disagree. The shelf-wide digest in `claude plugin list`
+  stays what it is — a per-person cache key — and is unchanged.
+- **`register-plugins`**, run by the release: a plugin version and the skill versions it
+  contained become rows. Release is the only moment anybody knows what a version contained —
+  `zz.skill.flow` is current registration, not per-version, and `flow_install` overwrites its
+  own history.
+- **Five eval case suites**, four for `sdlc` and one for `zz`, each grounded in something that
+  actually happened and carrying its provenance and expected delta. They ship WITH the plugin,
+  because `claude plugin eval` resolves an installed plugin to its cache directory and looks
+  for `evals/` below it.
+
+### Changed
+- **The console says Plugins where it said Flows and Blocks.** One page, one row per plugin:
+  name, version, its own digest, skills, servers, latest eval. Both halves were true and
+  neither was a thing anybody installs.
+
+### Removed
+- **`zz-skill-eval` and `zz-block-eval`, and their eight `eval_*` tools.** Also
+  `services/zz-core/src/evaluation.ts`, `judge-skill.ts`, the `packages/tools` eval and rubric
+  ops, `flow-compare.ts`, and two shell scripts whose only act was to invoke a binary that can
+  no longer be built. `judge.ts` survives: it is the subject-agnostic marking loop the new
+  judge runs on.
+- **Per-skill evaluation in the console** — the rubric, findings and score reads on
+  `/api/console/skills` and `/skills/:name`, and `/skills/:name/scores` entirely. Retired, not
+  relocated: an evaluation's subject is a plugin version, so nothing can write a per-skill
+  score again, and a page showing one would show what was measured before the change and then
+  nothing ever after.
+- **`zz.run.outcome`.** Written by one deleted op, read by nothing, zero non-empty rows.
+
+### Upgrade notes
+- **Two migrations apply on the gateway's next start, together: `047` then `048`.** 047 is
+  additive; 048 drops `zz.eval.skill_version_id`, `zz.eval_subject.skill_version_id`,
+  `zz.rubric.skill_id`, `zz.skill_version.rubric_id` and `zz.run.outcome`. Every affected table
+  held zero rows when this was written, measured on the deployment rather than remembered. Both
+  were verified applying as a pair in a rolled-back transaction.
+- **Run `npm run check:sql` after this deploys.** It PREPAREs every query against the migrated
+  schema and its own header calls it "the check that catches a migration going one way and a
+  query staying behind". Nine readers of dropped columns were found while writing 048 — the
+  ninth in a route nobody was looking at, with the gate green over it — and the rest of the
+  repository was swept by hand with the same scanner `check:sql` uses. The real tool is better
+  than that sweep.
+- **Anyone with `zz-skill-eval` or `zz-block-eval` installed loses them.** They have never been
+  run on this deployment and every eval table is empty, so nothing is lost but the flows
+  themselves.
+- **Three console response shapes changed**: `/api/console/skills` and `/skills/:name` no
+  longer carry evaluation fields, and `/api/console/runs` no longer carries `outcomes` or
+  `gaps.runsWithoutOutcome`. The console in this release follows them.
+- **`v0.31.1`'s tag does not describe the image that ran under it.** That release was built
+  while `14dbe03` was being pushed, so the image carries `fc9d987` and not the commit the tag
+  names — `plugin-lock.js` is in it, `plugin-eval.js` and `catalog/zz/zz-plugin-eval` are not,
+  and migration 047 never reached the database. Nothing is broken by it, but `v0.31.1` is not a
+  reliable rollback target for what its tag says. This release ships the whole of it.
+- No environment key was added or made required.
+
 ## [0.31.0] — 2026-09-13
 
 ### Fixed

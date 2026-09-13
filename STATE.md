@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.33.0 (2026-09-13). What we believe, and what we have. The world as it stands at this
+Status: 0.33.1 (2026-09-13). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b

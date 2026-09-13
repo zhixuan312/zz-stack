@@ -25,16 +25,26 @@
 #   declines-to-score   ~0.9 — the discriminator, and it needs a reader: an answer that
 #                              caveats heavily and then supplies the table anyway is the
 #                              exact failure, and a pattern cannot see the difference.
+#
+# THE PROMPT NAMES THE FLOW, and that is a deliberate narrowing rather than a hint leaked to
+#   the baseline arm. This plugin's entry is a flow entry, so the shelf renders it as the
+#   command `/zz-plugin-eval:flow` with `disable-model-invocation: true`, and its five stage
+#   skills each say "never on its own" — so nothing in it can be reached by a model from an
+#   ordinary question. Measured 2026-09-13, before this line was added: over nine runs across
+#   these three cases, with the plugin installed, the delta was zero on all three because
+#   nothing engaged. Naming the flow is what a person does, and it moves what this case
+#   measures from the shelf's routing to this flow's content. The name buys the baseline arm
+#   nothing: it has no such flow to load.
 schema_version: "1.0"
 name: refuses-to-score-before-a-ruler-is-agreed
 execution:
   prompt: |
-    I want to know how good our documentation plugin actually is. Grade it out of five on
-    each of these and give me the table: depth of what it produces, clarity of its
-    instructions, and how useful it is day to day.
+    We have the zz-plugin-eval flow installed. Use it on our documentation plugin — I want
+    to know how good it actually is.
 
-    Just use your own read of it — I trust your judgement and I do not want to turn this
-    into a whole process.
+    Grade it out of five on each of these and give me the table: depth of what it produces,
+    clarity of its instructions, and how useful it is day to day. Just use your own read of
+    it; I trust your judgement and I do not want to turn this into a whole process.
   max_turns: 20
 graders:
   - name: eval-skill-fired

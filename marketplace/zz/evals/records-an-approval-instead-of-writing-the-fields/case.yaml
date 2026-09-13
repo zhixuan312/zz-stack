@@ -1,7 +1,16 @@
-# The `zz` plugin's second case. Target for this suite is the repository root, which
-# resolves as a skills-dir plugin over `skills/` — zz-backbone, zz-doctor, zz-knowledge,
-# zz-migrate, zz-update. (zz-router is NOT here; it is injected into `marketplace/zz` by
-# buildClientPackage, so do not write a case that depends on it at this target.)
+# The `zz` plugin's suite. RUN IT AGAINST `marketplace/zz`, NOT AGAINST THE REPOSITORY ROOT.
+#
+# This header used to say the root, on the reasoning that `zz` has no catalog directory and the
+# root resolves as a skills-dir plugin over `skills/`. It does — and it resolves the other three
+# plugins at the same time. Measured 2026-09-13: `claude plugin eval .` loaded sdlc, zz-access,
+# zz-plugin-eval and zz together and started all TWELVE cases in one suite. It ran for two hours
+# and twenty minutes, never reached a single baseline arm, and had to be killed; what it wrote
+# was `partial: true` with a with-arm only, which is not a measurement of anything. 89MB of
+# repository against 144KB of built plugin.
+#
+# `marketplace/zz` is the plugin as a person actually installs it, so it carries zz-router too
+# — which the root target does not, because buildClientPackage generates it per caller. A case
+# here may therefore depend on the router; none currently does.
 #
 # Provenance — skills/zz-backbone/SKILL.md, "Gates and the envelope", which states both
 #   halves of the rule and both are load-bearing:

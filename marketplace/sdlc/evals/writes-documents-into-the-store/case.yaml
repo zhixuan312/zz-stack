@@ -55,6 +55,14 @@ execution:
     Write that up as the exploration document for the initiative, under the three headings
     the flow uses.
   max_turns: 20
+  # 600, NOT the 300 default, AND THAT IS A MEASUREMENT RATHER THAN A PRECAUTION. On
+  # 2026-09-13 all SIX runs of this case timed out at 300s -- both arms, every run -- and the
+  # delta it reported (0.111) was computed over six truncated transcripts. Worse, the baseline
+  # arm timed out at ZERO turns three times out of three, so the arm it was being compared
+  # against had produced nothing at all. A case whose every run dies is not a weak case, it is
+  # a case that did not run, and it looked from the numbers exactly like one that ran and
+  # found little. This is the longest prompt in the suite and it asks for a whole document.
+  timeout_seconds: 600
 graders:
   - name: explore-skill-fired
     type: tool_used

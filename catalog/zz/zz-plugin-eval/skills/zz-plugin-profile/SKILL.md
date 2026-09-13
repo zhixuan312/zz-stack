@@ -80,12 +80,19 @@ plugin_cases_record(plugin, version, result: "<the JSON at that path, verbatim>"
 Recording is what gives a delta a timestamp. Ask before spending; do not run it because a
 profile looked thin.
 
-**The target is whatever resolves to the plugin you are measuring, and from a checkout of this
-repository it is not the `@zz-stack` form.** `marketplace/<plugin>` is the built shelf entry for
-a catalog plugin — `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-plugin-eval` —
-and `zz` is the repository root, because `zz` has no catalog directory and resolves as a
-skills-dir plugin over `skills/`. Getting this wrong does not fail loudly: point it at the wrong
-directory and it reports "no eval cases found", which reads exactly like a plugin that has none.
+**The target is ONE built plugin directory: `marketplace/<plugin>`.** From a checkout of this
+repository that is `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-plugin-eval` or
+`marketplace/zz` — not the `@zz-stack` form, and above all **not the repository root.**
+
+The root resolves too, which is the trap. It resolves ALL FOUR plugins at once and runs every
+case in the repository as a single suite: measured 2026-09-13, that ran for two hours and twenty
+minutes over twelve cases, never reached a single baseline arm, and had to be killed — and what
+it wrote was `partial: true` carrying with-arm scores only, which reads like a suite where the
+plugin helped with nothing. 89MB of repository against 144KB of built plugin. Point it at one
+plugin.
+
+The other way to get it wrong is quieter: point it somewhere with no `evals/` below it and it
+reports "no eval cases found", which reads exactly like a plugin that has none.
 
 **Every plugin's MCP servers are absent from BOTH arms** unless you pass `--allow-real-servers`,
 which starts them as you, outside the sandbox. Do not. A case that grades whether a tool was

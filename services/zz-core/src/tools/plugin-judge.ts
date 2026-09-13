@@ -120,7 +120,7 @@ const bodyOf = (team: string, initiative: string, path: string): string | null =
 async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<string> {
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const traces = await pluginTraces(p, plugin, version, entry ? toolsNamedBy(entry.dir) : [], stages);
+  const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages);
   const cases = await pluginCases(p, plugin, version);
   const { stage_paths, ...figures } = traces;
   return JSON.stringify({
@@ -148,7 +148,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
       const [traces, cases, docs, runs] = await Promise.all([
-        pluginTraces(p, plugin, version, entry ? toolsNamedBy(entry.dir) : [], stages),
+        pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages),
         pluginCases(p, plugin, version),
         usageDocs(p, plugin, version),
         usageRuns(p, plugin, version),
@@ -394,12 +394,37 @@ export function registerPluginJudgeTools(server: McpServer): void {
             //
             // The round's items are what it is judging. A control must not be among them, and
             // that is knowable here without trusting a column nothing writes.
+            //
+            // AND IT MUST NOT COME FROM THIS PLUGIN'S OWN FLOW EITHER, which the second version
+            // of this fallback still allowed. It excluded the round's items and nothing else,
+            // so on this deployment it reached for the newest document that was not being
+            // judged and found `2026-09-13-console-brand-adoption/plan.md` — an initiative that
+            // ran sdlc-flow. sdlc's plan.md marked against sdlc's ruler is not a control; it is
+            // a second sample. It scored 4.00/5.00 against the real round's 4.00/5.00, and the
+            // round was read as "the ruler does not discriminate" when what had actually been
+            // asked was whether two sdlc documents score alike. They do, and should.
+            //
+            // The exclusion is by INITIATIVE, not by document. An initiative that ran this flow
+            // also holds documents the platform never stamped a flow on — 2026-09-13-console-
+            // brand-adoption carries three with `sdlc-flow` and two with nothing — and those
+            // are exactly as contaminated as their siblings. Filtering on `d.flow` alone would
+            // have let one of the two through and left the finding intact.
+            //
+            // A PLUGIN WITH NO FLOW OF ITS OWN SKIPS THIS ENTIRELY, rather than matching the
+            // empty string and sweeping in every document whose flow is blank. `zz` is the
+            // case, it has no flow.json, and an empty `ownFlow` compared with `<>` would have
+            // excluded precisely the unflowed documents and offered it sdlc's — the same defect
+            // this fallback was just fixed for, arriving through the fix.
+            const ownFlow = entryOf(plugin)?.flow ?? "";
             const judging = new Set(items.map((i) => i.docId).filter(Boolean));
-            const candidates = (await p.query<{ id: string; team_slug: string; initiative: string; path: string }>(`
+            const candidates = ownFlow ? (await p.query<{ id: string; team_slug: string; initiative: string; path: string }>(`
               select d.id::text as id, d.team_slug, d.initiative, d.path
                 from zz.doc d
+                join zz.team t on t.slug = d.team_slug
+                left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
                where d.path not like '\\_versions/%'
-               order by d.created_at desc limit 50`)).rows;
+                 and coalesce(d.flow, '') <> $1 and coalesce(i.flow, '') <> $1
+               order by d.created_at desc limit 50`, [ownFlow])).rows : [];
             const doc = candidates.find((c) => !judging.has(c.id));
             if (doc) {
               const body = bodyOf(doc.team_slug, doc.initiative, doc.path);
@@ -411,11 +436,19 @@ export function registerPluginJudgeTools(server: McpServer): void {
 
             // NEITHER. Said plainly rather than skipped: a round whose control could not be
             // taken is unvalidated, and that is a fact about the round the report has to carry.
+            //
+            // `zz` reaches here by construction and will keep reaching here, which is the
+            // honest answer rather than a gap. Every initiative on this platform runs on zz —
+            // it is the required plugin — so there is no document anywhere that zz did not have
+            // a hand in, and no amount of searching produces one. A control for zz's document
+            // half would have to come from a platform zz does not run. Its CASE half needs no
+            // control: the ablation arm IS the control, taken by construction.
             throw new Error(
-              "no control subject exists — this platform holds no run from another plugin and " +
-              "no document this plugin's runs did not produce. The round can still be scored, " +
-              "but nothing in it says whether the judge was reading, so report it as " +
-              "unvalidated rather than averaging its numbers into a series.");
+              `no control subject exists for "${plugin}" — this platform holds no run from ` +
+              "another plugin, and every document it holds comes from an initiative that ran " +
+              `${ownFlow || "this plugin"}. The round can still be scored, but nothing in it ` +
+              "says whether the judge was reading, so report it as unvalidated rather than " +
+              "averaging its numbers into a series.");
           },
         };
         const got = await markAll(p, marking, control === true, take ?? 1, eval_id ?? null, bodyOf);

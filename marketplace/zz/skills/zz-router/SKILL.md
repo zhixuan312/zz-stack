@@ -19,7 +19,7 @@ Never resume from your memory of a conversation.
 
 ## Pick the flow
 
-### sdlc-flow (v0.1.0)
+### sdlc-flow (v0.2.0)
 
 **When:** Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex).
 
@@ -28,7 +28,7 @@ Never resume from your memory of a conversation.
 on the zz-core server, not this client's own skills. Follow those skills
 exactly — they are the method; this file is only the door.
 
-### zz-plugin-eval (v0.1.0)
+### zz-plugin-eval (v0.2.0)
 
 **When:** Somebody asks whether a plugin is any good, whether installing it beats not installing it, or what a round of real use says about it. Also before deciding to keep, change or retire one. Platform capability — a delivery agent never runs this.
 

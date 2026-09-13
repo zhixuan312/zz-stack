@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.2
+version: 1.3
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -92,13 +92,36 @@ discover that later.
 Three things, in this order. A worker missing any of them writes something plausible and
 wrong.
 
-1. **Its instructions**: follow the stage's skill. Do not paste the skill's text into the
-   prompt — it is hundreds of lines, and a pasted copy goes stale the next time the package
-   updates. The subagent inherits your tools and can load the skill itself.
+1. **Its instructions**: follow the stage's skill, and **load it with `skill_view("<stage>")`
+   as its first act, before anything else.** Do not paste the skill's text into the prompt —
+   it is hundreds of lines, and a pasted copy goes stale the next time the package updates.
+   The subagent inherits your tools and can load the skill itself.
 2. **The payload**: the confirmed inputs verbatim — decisions, the approved spec, the plan
    item. Verbatim, not summarised. A summary is a second act of judgement the caller did
    not intend to make.
 3. **Where it lands**: the initiative and the document name.
+
+**Why `skill_view` and not whatever your runtime offers.** A worker that loads the skill from
+its own plugin directory gets the same text and leaves no trace, and the platform attributes a
+step from the last `skill_view` it was asked for. So a stage loaded locally did not happen as
+far as the record is concerned. Measured on 2026-09-13: across every initiative this platform
+has ever recorded, `zz.event` holds not one `sdlc-spec-audit` or `sdlc-plan-audit` row — both
+audits, the two stages whose whole value is that somebody independent read the document, are
+invisible. `sdlc-recall`, `sdlc-investigate` and `sdlc-research` are dispatched exactly the same
+way and are all over the log, because those workers happen to call a platform tool that loads
+their skill first.
+
+What that costs is not bookkeeping. A return — the audit that sends a spec back, which this
+method exists to make possible — is a stage entered after a later one has run. With the audit
+missing there is no later stage, so an initiative that went spec → audit → spec reads as a
+straight line, and the one thing plugin evaluation most wants to know about this flow cannot be
+asked of it.
+
+**The honest limit, so nobody reads more into the record than is there:** the platform
+correlates a step with the calls that follow it per CALLER, and your subagents share your
+credential. So your calls and theirs interleave in one trace, and a step is only ever the last
+one anybody loaded. The instruction above makes a dispatched stage visible; it does not make the
+main agent's and the worker's calls separable.
 
 ## What you do when it returns
 

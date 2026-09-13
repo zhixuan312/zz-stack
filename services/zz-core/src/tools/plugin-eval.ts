@@ -47,6 +47,30 @@ export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[numbe
   return catalogEntries().find((e) => e.flow.replace(/-flow$/, "") === plugin);
 }
 
+/** The platform's own skills — the `zz` plugin's content. The same constant plugin-lock.ts
+ *  keeps on the gateway side, spelled again here because zz-core does not depend on the
+ *  gateway, and honouring the same override for the same reason: the gate runs on a machine
+ *  where /skills does not exist. */
+const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
+
+/** Where a plugin's skills are on disk, or "" if this deployment holds none.
+ *
+ * `zz` IS A PLUGIN AND HAS NO CATALOG ENTRY, and every caller of toolsNamedBy used to guard the
+ * call with a ternary on the catalog entry, falling back to the empty list. The consequence
+ * was not an error anywhere: zz reported `tools_named: []`, so `reachable` was empty, so
+ * `never_called` was empty, so the one finding this whole half exists to produce — a tool a
+ * skill tells an agent to call and no agent ever called — was structurally impossible for the
+ * plugin every account installs, and read as a clean bill of health. The `tool fit` dimension
+ * found `knowledge_add` for sdlc on its first real round; zz-knowledge names `knowledge_add`
+ * too, and the question could never have been asked of it.
+ *
+ * Resolved here rather than at each call site so there is one answer to it. */
+function skillsDirOf(plugin: string): string {
+  const entry = entryOf(plugin);
+  if (entry) return join(entry.dir, "skills");
+  return plugin === "zz" ? SKILLS_DIR : "";
+}
+
 /** The MCP surfaces this plugin can actually reach.
  *
  * THE BASELINE IS NOT OPTIONAL AND IS NOT DECLARED. `zz` is required by every package, so
@@ -84,9 +108,9 @@ function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined)
  * The static half of the same question is already settled elsewhere and is not recomputed here:
  * the gate refuses a release whose skill names a tool its package cannot reach. That is a
  * precondition of a plugin version existing, not an input to its evaluation. */
-export function toolsNamedBy(dir: string): string[] {
-  const skills = join(dir, "skills");
-  if (!existsSync(skills)) return [];
+export function toolsNamedBy(plugin: string): string[] {
+  const skills = skillsDirOf(plugin);
+  if (!skills || !existsSync(skills)) return [];
   const named = new Set<string>();
   const walk = (d: string): void => {
     for (const f of readdirSync(d, { withFileTypes: true })) {
@@ -152,7 +176,7 @@ export function registerPluginEvalTools(server: McpServer): void {
         mode: row.origin === "third_party" ? "assess only" : "assess, then change",
         skills,
         servers: serversOf(entry),
-        tools_named: entry ? toolsNamedBy(entry.dir) : [],
+        tools_named: toolsNamedBy(plugin),
       });
     },
   );
@@ -175,7 +199,7 @@ export function registerPluginEvalTools(server: McpServer): void {
       if (!pool) return noDb();
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-      const traces = await pluginTraces(pool, plugin, version, entry ? toolsNamedBy(entry.dir) : [], stages);
+      const traces = await pluginTraces(pool, plugin, version, toolsNamedBy(plugin), stages);
       const cases = await pluginCases(pool, plugin, version);
       return json({
         plugin, version,
@@ -249,7 +273,7 @@ export function registerPluginEvalTools(server: McpServer): void {
     async ({ plugin, version }) => {
       const entry = entryOf(plugin);
       if (!entry) return text(`ERROR: "${plugin}" is not in the catalog`);
-      const named = toolsNamedBy(entry.dir);
+      const named = toolsNamedBy(plugin);
       const servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
 
       // WHAT THIS TOOL DOES NOT DO, said before what it does, because an earlier version of it

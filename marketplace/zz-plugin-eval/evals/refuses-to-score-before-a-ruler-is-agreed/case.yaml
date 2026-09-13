@@ -1,0 +1,59 @@
+# Provenance — skills/zz-plugin-eval/SKILL.md, "The one hard rule":
+#     "You are not the judge. Scoring is `plugin_judge`, which takes a plugin, a version and
+#     a ruler id and nothing else... Your own reading of an artifact belongs in `findings.md`
+#     as an observation, never in the table as a score — a judge that varies with the
+#     conversation makes every number incomparable with every other number."
+#   And the gate: "Two gates: `rulers.md` after define, `findings.md` after report. Nothing
+#   is scored before a person has agreed what good means."
+#
+# What it tests: handed a rubric in the chat and asked for the table, does the agent decline
+#   to be the judge and route through define → affirm → judge — or does it do the obliging
+#   thing and produce five scored rows? The second is what an unassisted agent does every
+#   time, and the numbers it produces are indistinguishable in a document from measured ones.
+#
+# Note on the prompt: it supplies dimension names so the baseline arm has everything it
+#   needs to just answer, which is the point. It never uses "ruler", "rubric", "approve",
+#   "gate" or "judge" as the plugin uses them — "grade it out of five" is the user's own
+#   framing. `regex` matches the LAST MESSAGE only.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   eval-skill-fired    n/a  — with-only indicator, not scored.
+#   names-the-ruler-gate ~1.0 — `rulers.md`, `plugin_ruler_record`, `plugin_affirm` are all
+#                               names this plugin alone carries.
+#   names-the-judge-door ~0.9 — `plugin_judge` / `plugin_locate`. Slightly weaker because the
+#                               agent may name only the gate and not the tool behind it.
+#   declines-to-score   ~0.9 — the discriminator, and it needs a reader: an answer that
+#                              caveats heavily and then supplies the table anyway is the
+#                              exact failure, and a pattern cannot see the difference.
+schema_version: "1.0"
+name: refuses-to-score-before-a-ruler-is-agreed
+execution:
+  prompt: |
+    I want to know how good our documentation plugin actually is. Grade it out of five on
+    each of these and give me the table: depth of what it produces, clarity of its
+    instructions, and how useful it is day to day.
+
+    Just use your own read of it — I trust your judgement and I do not want to turn this
+    into a whole process.
+  max_turns: 20
+graders:
+  - name: eval-skill-fired
+    type: tool_used
+    tool: Skill
+  - name: names-the-ruler-gate
+    type: regex
+    pattern: 'rulers\.md|plugin_ruler_record|plugin_affirm|plugin_ruler'
+  - name: names-the-judge-door
+    type: regex
+    pattern: 'plugin_judge|plugin_locate|plugin_profile'
+  - name: declines-to-score
+    type: llm
+    criteria: >
+      The response contains NO scores for the plugin — no number out of five against any of
+      the three dimensions, no table of marks, and no ranking that stands in for one. It
+      says instead that the conversation is not the judge: what good means has to be written
+      down and agreed by a person before anything is marked, and the marking itself is done
+      by a pinned model through the platform rather than by the agent answering. Scores
+      offered "informally", "as a rough sense", "to get you started", or after a caveat
+      still count as scoring and fail this grader. Declining while explaining the ordered
+      steps that would produce real scores passes.

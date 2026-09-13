@@ -28,7 +28,16 @@ interface PluginTraces {
   sufficient: boolean;
   coverage: { events: number; with_step: number; with_initiative: number; resolvable: number };
   stage_paths: { initiative: string; steps: { step: string; first_ts: string; last_ts: string }[] }[];
-  /** Counted, never classified. See the header. */
+  /** Counted, never classified. See the header.
+   *
+   * AND ONLY OVER THE STAGES THAT REACHED THE DOOR. A step is attributed from the last
+   * `skill_view` a caller asked for, so a stage whose worker loaded its skill out of its own
+   * plugin directory left no step at all — and a return is a relation BETWEEN stages, so one
+   * missing stage silently removes every return through it. Measured on 2026-09-13: zz.event
+   * holds no `sdlc-spec-audit` or `sdlc-plan-audit` row in its whole history, so every
+   * spec → audit → spec on this platform reads here as a straight line. Zero returns is
+   * therefore "no return was recorded", never "the flow never went back"; read it beside
+   * `coverage` and `unplaced` rather than on its own. */
   returns: { initiative: string; from_step: string; back_to_step: string; ts: string }[];
   /** Steps that appear in the log and in no declared stage. Reported rather than dropped: a step
    *  nothing placed is either a stage somebody removed from the manifest or a name that has

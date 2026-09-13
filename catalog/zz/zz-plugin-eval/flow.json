@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-plugin-eval",
   "agentName": "ZZ Plugin Evaluation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Measure a whole plugin: what its real runs did, and whether installing it beats not installing it. Two kinds of evidence, one ruler you agree, evidence and never a change.",
   "entry": "zz-plugin-eval",
   "tools": [],

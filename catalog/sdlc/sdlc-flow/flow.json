@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "sdlc-flow",
   "agentName": "SDLC Agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Software delivery: explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge. sdlc-flow is the entry point, sdlc-method says how every stage is executed, and each stage is its own skill.",
   "license": "MIT",
   "keywords": [

@@ -1,0 +1,63 @@
+# Provenance — skills/zz-access/SKILL.md, "There is no shared team key", which is the one
+#   section of that skill written as a correction of what an agent would otherwise say:
+#     "A key belongs to one person. There is no team-wide key and no tool to store one, and
+#     that is deliberate rather than missing."
+#     "Never tell somebody to wait for an admin to store a key for the team. Nobody can, and
+#     saying so leaves them waiting for something that is not coming."
+#   And the answer it offers instead: "Offer `connect_block`, which returns a link they open.
+#   It takes one click, the block ends up holding a token that names them, and no secret
+#   passes through anybody's hands."
+#
+# What it tests: asked for the thing the platform deliberately does not have, does the agent
+#   say so and offer the better answer — or does it do the helpful, wrong thing an
+#   unassisted agent does, which is to describe a shared service credential and tell the
+#   person to ask an administrator for it? That last failure is why this section exists: it
+#   leaves somebody waiting on a request nobody can fulfil, and the wait is invisible.
+#
+# Note on the prompt: it deliberately OFFERS the admin route ("if an admin has to set it up,
+#   say who to ask"), because a baseline agent takes it and the plugin arm has to decline it.
+#   It never uses "shared", "team key", "per person" or "sign in". `regex` matches the LAST
+#   MESSAGE only.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   access-skill-fired  n/a  — with-only indicator, not scored.
+#   offers-block-signin ~1.0 — `connect_block` is a tool name carried only by this plugin.
+#   names-the-per-person-tools ~0.8 — `set_my_credential` / `my_credentials`. The `my_`
+#                                prefix is the whole point and is plugin vocabulary; a
+#                                baseline agent inventing a name lands elsewhere.
+#   declines-the-shared-key ~0.9 — the discriminator. A baseline agent's default is to
+#                                explain how to provision a team service account and name an
+#                                admin. The plugin arm has to say plainly that nobody can do
+#                                that here.
+schema_version: "1.0"
+name: refuses-a-shared-team-key
+execution:
+  prompt: |
+    Four of us need to reach the same upstream data provider through our internal platform.
+    Setting each person up individually is going to be a nuisance and two of them are
+    contractors who rotate out in a month.
+
+    Can you get one credential configured for the whole group instead? If that has to be
+    done by an administrator rather than by me, tell me who to ask and what to ask them for.
+  max_turns: 15
+graders:
+  - name: access-skill-fired
+    type: tool_used
+    tool: Skill
+  - name: offers-block-signin
+    type: regex
+    pattern: 'connect_block'
+  - name: names-the-per-person-tools
+    type: regex
+    pattern: 'set_my_credential|my_credentials|list_platforms'
+  - name: declines-the-shared-key
+    type: llm
+    criteria: >
+      The response says plainly that a single credential shared by the group is not
+      available on this platform and cannot be created by anyone, including an
+      administrator — not that it is discouraged, not that it is a bad practice, but that
+      no such thing exists. It therefore does not name an administrator to ask, does not
+      describe how to provision a team or service account, and does not tell the person to
+      wait for anyone. It offers the per-person route instead. A response that explains the
+      security downsides of a shared key and then explains how to obtain one anyway, or
+      that says "ask your platform admin", fails this grader.

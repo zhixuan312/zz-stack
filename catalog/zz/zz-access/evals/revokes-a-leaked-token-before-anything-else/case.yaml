@@ -1,0 +1,69 @@
+# Provenance — skills/zz-access/SKILL.md, which states the order as a rule rather than as
+#   advice, because getting it wrong costs the window in which the token is still live:
+#     "If they think a token leaked, do not discuss it — revoke it first with
+#     `revoke_my_access_token`, confirm it is dead, then issue a replacement."
+#   It also says what a token IS, which is why the order matters: "It acts as them — their
+#   identity, their teams". A leaked platform token is somebody else acting as this person
+#   until it is dead.
+#
+# What it tests: handed a suspected leak, does the agent kill the credential first and
+#   triage afterwards, or does it do what an unassisted agent does — ask which credential,
+#   how it leaked, who might have seen it, and reach for revocation somewhere down the list?
+#
+# Note on the prompt: it never uses the words "revoke", "token", "rotate" or "first". The
+#   platform's own nouns are what the plugin arm should supply; handing them to the baseline
+#   arm collapses the delta. `regex` matches the run's LAST MESSAGE only, so every pattern
+#   below has to survive into the final answer rather than merely appear mid-transcript.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   access-skill-fired  n/a  — with-only indicator, not scored. It says the plugin engaged.
+#   names-the-revoke-tool ~1.0 — `revoke_my_access_token` is a tool name that exists only
+#                                inside this plugin. The baseline arm cannot produce it.
+#   names-the-reissue-path ~0.9 — `issue_my_access_token` / `my_access_tokens`, same reason.
+#                                Slightly weaker only because the agent may stop at the kill
+#                                and leave the replacement for a follow-up turn.
+#   kills-it-first      0.00 — MEASURED, 3 runs per arm, 2026-09-13: with 0.67, without 0.67.
+#                              The prediction here was ~0.8 and it was wrong. A bare agent
+#                              told a credential was on screen in a forty-person channel says
+#                              "revoke it now" as readily as this plugin does; the ordering
+#                              rule is not what the plugin adds. Kept, and kept unchanged: a
+#                              grader that measures zero is a result about where this
+#                              plugin's value actually is, and rewriting it until it flatters
+#                              the plugin is the one thing an eval suite must never do. The
+#                              delta on this case (0.67) is carried entirely by the two tool
+#                              names, which is the honest account of it.
+#
+#   That leaves a question for the next round rather than a fix for this one: is there a
+#   version of this prompt where the ordering DOES separate the arms — a leak the agent has
+#   to notice is a leak, rather than one the prompt has already framed as urgent? Write it as
+#   a new case beside this one; do not edit this one into it, or the series stops comparing.
+schema_version: "1.0"
+name: revokes-a-leaked-token-before-anything-else
+execution:
+  prompt: |
+    I recorded my screen for a walkthrough this morning and I have just realised the
+    terminal was visible while I was setting up the connection to our internal platform.
+    The recording went to a channel with about forty people in it.
+
+    What do I do about it?
+  max_turns: 15
+graders:
+  - name: access-skill-fired
+    type: tool_used
+    tool: Skill
+  - name: names-the-revoke-tool
+    type: regex
+    pattern: 'revoke_my_access_token'
+  - name: names-the-reissue-path
+    type: regex
+    pattern: 'issue_my_access_token|my_access_tokens'
+  - name: kills-it-first
+    type: llm
+    criteria: >
+      The response's first recommended action is to revoke or kill the exposed credential
+      immediately, before any investigation. It does not open by asking which credential
+      was shown, how long it was visible, who is in the channel, or whether the value was
+      actually readable, and it does not present revocation as one item among several
+      equally-weighted steps. Confirming the credential is dead and issuing a replacement
+      may follow; anything that puts triage, questions, or an assessment of the risk ahead
+      of the revocation fails this grader.

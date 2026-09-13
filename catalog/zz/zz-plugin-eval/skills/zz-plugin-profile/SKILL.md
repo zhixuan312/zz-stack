@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.1
+version: 0.2
 description: Stage 2 of plugin evaluation. Compute the two evidence blocks — traces from real runs and cases from the ablation suite — each with its own sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -71,12 +71,30 @@ Running the suite is a deliberate act and nothing here does it for you: it is a 
 machine spending this account's own credential, roughly $0.40 a case.
 
 ```
-claude plugin eval <plugin>@zz-stack --json
-plugin_cases_record(plugin, version, result: "<the JSON, verbatim>")
+claude plugin eval <plugin>@zz-stack --json <path>
+plugin_cases_record(plugin, version, result: "<the JSON at that path, verbatim>")
 ```
 
 Recording is what gives a delta a timestamp. Ask before spending; do not run it because a
 profile looked thin.
+
+**The target is whatever resolves to the plugin you are measuring, and from a checkout of this
+repository it is not the `@zz-stack` form.** `marketplace/<plugin>` is the built shelf entry for
+a catalog plugin — `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-plugin-eval` —
+and `zz` is the repository root, because `zz` has no catalog directory and resolves as a
+skills-dir plugin over `skills/`. Getting this wrong does not fail loudly: point it at the wrong
+directory and it reports "no eval cases found", which reads exactly like a plugin that has none.
+
+**Every plugin's MCP servers are absent from BOTH arms** unless you pass `--allow-real-servers`,
+which starts them as you, outside the sandbox. Do not. A case that grades whether a tool was
+actually CALLED therefore reads zero on both sides and contributes nothing; grade what the
+skill makes the agent say, name and decline. Every case in this repository is written that way.
+
+**A grader that measures zero is a result, not a broken case.** zz-access's
+`kills-it-first` predicted ~0.8 and measured 0.00 — a bare agent revokes a leaked credential
+first as readily as the plugin does. It is left exactly as written, with the measurement
+recorded beside the prediction. Editing a case until it flatters its plugin ends the series:
+nothing after it can be compared with anything before it.
 
 ## Conformance, for a plugin with no history of its own
 

@@ -24,9 +24,24 @@
 #   401 and a dead MCP server improvises a differential diagnosis, reads config files, and
 #   suggests things to try. The plugin hands over one command that answers it.
 #
+# THE PROMPT TYPES THE COMMAND, and that is forced rather than chosen. zz-doctor does NOT
+#   ship as a skill: measured 2026-09-13, `marketplace/zz/skills/zz-doctor/` contains
+#   `doctor.mjs` and no SKILL.md at all, because buildClientPackage renders zz's three typed
+#   capabilities (doctor, update, migrate) as COMMANDS — and a command carries
+#   `disable-model-invocation: true`, so no model can open it whatever the prompt says.
+#
+#   The first version of this case asked the question in ordinary words and graded
+#   `Skill(zz-doctor)`. Every grader scored 0.00 in the WITH arm, across three runs: the
+#   skill it named does not exist in the shipped plugin, and nothing told the agent the
+#   script was there. Delta 0.00 — a case about a capability that is genuinely present,
+#   measuring nothing, because it reached for it the one way that cannot work.
+#
+#   Typing `/zz:doctor` is what a person does, and it costs the baseline arm nothing: with no
+#   such command installed, the line is just text.
+#
 # `regex` matches the run's LAST MESSAGE only (measured on the sdlc suite, 2026-09-13),
-#   and any string quoted in the prompt is free to the baseline arm. Neither pattern below
-#   appears anywhere in the prompt.
+#   and any string quoted in the prompt is free to the baseline arm. `doctor.mjs` and `zzp_`
+#   below appear nowhere in the prompt; `/zz:doctor` DOES, so it is not graded.
 #
 # What it tests: given the exact symptom pair the skill names, does the agent reach for
 #   zz-doctor and hand over the script, instead of improvising a diagnosis?
@@ -37,7 +52,8 @@
 #   would put a live network call inside an eval.
 #
 # Expected Δ (with-plugin minus no-plugin):
-#   doctor-skill-fired    ~1.0 — the skill does not exist in the baseline arm.
+#   (doctor-skill-fired was removed: it graded `Skill(zz-doctor)`, and there is no such
+#    skill in the shipped plugin. See the note above.)
 #   hands-over-the-script ~1.0 — `doctor.mjs` is a filename that exists only inside this
 #                                plugin. The baseline arm cannot produce it by guessing.
 #   plugin-only-vocabulary ~0.9 — `zzp_` (the platform's token prefix), `/zz:update` (the
@@ -50,17 +66,19 @@ schema_version: "1.0"
 name: diagnoses-a-401-with-zz-doctor
 execution:
   prompt: |
+    /zz:doctor
+
     Something is wrong with my ZZ setup in Claude Code. The MCP server will not connect at
     all, and one of the doors that did answer came back 401. I have no idea which half is
     broken. What is wrong, and how do I find out for certain?
   max_turns: 15
 graders:
-  - name: doctor-skill-fired
-    type: tool_used
-    tool: Skill(zz-doctor)
+  # `/zz:doctor` was in this alternation and has been removed: the prompt now types it, so
+  # the baseline arm gets it for free by quoting the request back. `doctor.mjs` is the file
+  # name only this plugin carries.
   - name: hands-over-the-script
     type: regex
-    pattern: 'doctor\.mjs|/zz:doctor'
+    pattern: 'doctor\.mjs'
   - name: plugin-only-vocabulary
     type: regex
     pattern: 'zzp_|/zz:update|CLAUDE_PLUGIN_ROOT'

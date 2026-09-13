@@ -125,6 +125,23 @@ than sitting beside it.
   credential, so their calls and the main agent's interleave in one trace, and a
   step is only ever the last one anybody loaded. The change makes a dispatched
   stage visible; it does not make the two separable.
+- **Two case-running mistakes that produce numbers rather than errors**, both found
+  by making them. Running `claude plugin eval` against the repository root
+  resolves all four plugins at once and starts every case as one suite: two hours
+  and twenty minutes, twelve cases, not one baseline arm reached, killed — and the
+  output was `partial: true` with with-arm scores only, which reads like a suite in
+  which the plugin helped with nothing. And an sdlc case whose six runs all timed
+  out at the 300s default still reported a delta of 0.111, with the baseline arm
+  timing out at zero turns three times out of three. The target is
+  `marketplace/<plugin>`, one plugin; that case now declares
+  `timeout_seconds: 600` and measures 0.67.
+- **A capability that ships as a COMMAND cannot be reached by a case that asks
+  in words**, and two suites had to learn it separately. `zz-doctor` does not
+  ship as a skill at all — `marketplace/zz/skills/zz-doctor/` holds `doctor.mjs`
+  and no SKILL.md, because zz's three typed capabilities render as commands — so
+  a case grading `Skill(zz-doctor)` scored 0.00 on every grader in the with arm,
+  for a capability that is present and works. Both that case and
+  `zz-plugin-eval`'s three now reach their subject the way a person does.
 - Plugin versions: `sdlc` 0.1.0 → 0.2.0, `zz-access` 2.0.0 → 2.1.0,
   `zz-plugin-eval` 0.1.0 → 0.2.0.
 

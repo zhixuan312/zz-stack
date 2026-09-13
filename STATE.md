@@ -494,6 +494,15 @@ gap between "the platform can evaluate a plugin" and "the platform can evaluate 
   its skill locally. A return is a relation between stages, so every `spec → audit → spec` on
   this platform reads as a straight line.
 
+**And the same lesson twice, from two directions: a capability that ships as a COMMAND cannot be
+reached by a case that asks in words.** `zz-doctor` does not ship as a skill at all —
+`marketplace/zz/skills/zz-doctor/` holds `doctor.mjs` and no SKILL.md, because zz's three typed
+capabilities render as commands with `disable-model-invocation: true`. A case grading
+`Skill(zz-doctor)` therefore scored 0.00 on every grader in the with arm, for a capability that
+is present and works. What makes this worth a section rather than a footnote is that the failure
+is silent in the direction that matters: the suite reports a delta, the delta is zero, and zero
+reads as "this plugin adds nothing here".
+
 **A prediction that was wrong, kept as written.** zz-access's `kills-it-first` grader predicted
 a delta of ~0.8 and measured 0.00: a bare agent told a credential was visible in a forty-person
 channel revokes it first as readily as the plugin does. The case is unchanged and the

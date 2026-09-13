@@ -108,19 +108,19 @@
     "sha": "4e39db5d39ec"
   },
   "zz-doctor": {
-    "version": "1.0",
-    "sha": "75c80644ff6f"
+    "version": "1.1",
+    "sha": "c13c9f3f378c"
   },
   "zz-knowledge": {
     "version": "2.4",
     "sha": "93465dacc57f"
   },
   "zz-migrate": {
-    "version": "1.0",
-    "sha": "c930b815ce1c"
+    "version": "1.1",
+    "sha": "da3351179981"
   },
   "zz-update": {
-    "version": "1.0",
-    "sha": "e00ecd0c5e04"
+    "version": "1.1",
+    "sha": "35dff1aca787"
   }
 }

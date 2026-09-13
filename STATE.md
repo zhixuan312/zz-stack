@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.33.1 (2026-09-13). What we believe, and what we have. The world as it stands at this
+Status: 0.34.0 (2026-09-14). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -439,9 +439,27 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 285 checks**, and six of them RUN code rather than reading it: the
+- **The offline gate is 297 checks**, and twelve of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
-  authority rules, plus the two behaviour suites the zz-core split made reachable.
+  authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
+  split made reachable, the two alias checks that import the frozen maps and resolve through
+  them, the eval-cost check that imports the real case parser, the contract-fields check that
+  imports `FlowStage` and `CatalogManifest` and parses fixtures through them, and the judge's
+  own usage recorder, driven through `markAll` against a fake pool and a stubbed `fetch`
+  because "every path out of the fetch writes exactly one row" is not a property a regex can
+  state.
+  (This number is hand-maintained and has been wrong twice in one session — two authors each
+  adjusted it and both undercounted, because the enumeration silently omitted the
+  fetched-before-approval record. It is the exact species Task I-33 removes: a count describing
+  the surface that nothing derives.)
+- **The gate now invokes what is in `checks/`, which for months it did not.** It registered
+  three of the forty-four files there; the rest ran only when somebody typed their name, so
+  "the gate passes" and "the checks pass" were two claims that sounded like one. Each check
+  is registered as its task completes. Two kinds stay out on purpose and neither is an
+  oversight: a `gate-*.mjs` break-test SPAWNS the gate to prove a planted defect turns it red,
+  so registering one would make the gate invoke itself forever; and a host-dependent check
+  (`returns-sees-a-backtrack.mjs` reaches the live database over ssh) belongs to the release,
+  which has a deployment to reach.
 
 **What is NOT claimed here, and was:** there is no standing evaluation. All five eval tables
 hold zero rows, the smoke engine is not in the tree, and the CLI half of that track writes raw
@@ -654,8 +672,8 @@ step per file. The console API is 70 lines over seven resources; `settings.ts` s
 AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
-held a whole second subject; `judge.ts` at 627 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **285 checks** and the console's
+held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
+files allowed to be large is a list nobody prunes. The gate is **297 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".

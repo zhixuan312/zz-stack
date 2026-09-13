@@ -24,15 +24,15 @@
     }
   },
   "zz": {
-    "version": "0.33.1",
-    "digest": "0f814dfc",
+    "version": "0.34.0",
+    "digest": "2f4aacec",
     "cases_digest": "c424dd5f",
     "skills": {
       "zz-backbone": "4e39db5d39ec",
-      "zz-doctor": "75c80644ff6f",
+      "zz-doctor": "c13c9f3f378c",
       "zz-knowledge": "93465dacc57f",
-      "zz-migrate": "c930b815ce1c",
-      "zz-update": "e00ecd0c5e04"
+      "zz-migrate": "da3351179981",
+      "zz-update": "35dff1aca787"
     }
   },
   "zz-access": {

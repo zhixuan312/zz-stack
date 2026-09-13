@@ -1,0 +1,31 @@
+-- Delete the runs that name no skill version, because every one of them is junk this
+-- release stops producing.
+--
+-- 964825c fixed the cause: reconcileRuns() resolved a version through `zz.event.step_version`,
+-- a column stamped only when a skill is served WHOLE through skill_view. Claude Code reads an
+-- installed skill off disk, so in normal operation nothing stamps it — measured twice a day
+-- apart, it sat frozen at 39 while the event log grew by a third. Every row the
+-- initiative-bearing insert ever wrote therefore carried `skill_version_id` NULL, and a NULL
+-- cannot match that insert's conflict target because Postgres treats NULLs as distinct — the
+-- same trap 031 documents one column over. `do update` never fired, so the timer appended a
+-- fresh duplicate on every pass: 1808 of 1812 rows on this deployment, growing by roughly 950
+-- a day.
+--
+-- THE CODE FIX ALONE DOES NOT CLEAR THEM. It stops new ones being written; the existing rows
+-- stay, and they are what every count of zz.run reads. The doctor probe added in a227251 fails
+-- while they are there, which is correct and is also why this runs as a migration rather than
+-- as an operator's note: migrations apply on the gateway's start, before anything verifies the
+-- deployment, so the fix and the cleanup land in one deploy instead of leaving a release that
+-- cannot go green.
+--
+-- SAFE BECAUSE THE TABLE IS DERIVED. zz.run is rebuilt from zz.event by reconcileRuns(); these
+-- rows hold no fact that is not in the event log. The three tables that reference a run —
+-- zz.event, zz.doc, zz.eval_subject — all carry ON DELETE SET NULL, so nothing is orphaned and
+-- no constraint is violated, and the linkbacks re-attach on the next pass because each one
+-- matches `where <fk> is null`. What comes back is the honest set: on this deployment the new
+-- derivation resolves six real runs across three initiatives where the old one resolved none.
+--
+-- `skill_version_id is null` is the whole predicate, and after 964825c it cannot select a
+-- legitimate row: the inserts join skill_version inner, so a run without a version is one
+-- written by the old code. The four rows that carry a version are untouched.
+delete from zz.run where skill_version_id is null;

@@ -37,8 +37,6 @@ declare -A TOOLS=(
   [set-credential]=ops/set-credential
   [probe-block]=ops/probe-block
   [call]=ops/call
-  [loop-eval]=ops/loop-eval
-  [rubric-load]=ops/rubric-load
   # register-skills and the two block-registry tools were missing from this map while their
   # own docstrings said `zz-tool register-skills` and the README listed them as day-2 ops.
   # A deploy host has no toolchain, so a tool absent here is a tool that cannot be run where
@@ -46,17 +44,13 @@ declare -A TOOLS=(
   [register-skills]=ops/register-skills
   [register-plugins]=ops/register-plugins
   [refresh-block-tools]=ops/refresh-block-tools
-  [eval-decide]=ops/eval-decide
-  [eval-record]=ops/eval-record
   [audit]=testing/manifest-audit
   [chain-check]=testing/chain-check
   [conformance]=testing/block-conformance
   [tool-report]=testing/tool-report
-  [flow-compare]=testing/flow-compare
   [evolve-report]=testing/evolve-report
   [step-score]=testing/step-score
   [skill-reflect]=testing/skill-reflect
-  [eval-grade]=testing/eval-grade
   [watch-results]=ops/watch-results
   [sql-check]=testing/sql-check
 )

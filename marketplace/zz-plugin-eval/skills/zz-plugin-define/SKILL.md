@@ -82,6 +82,23 @@ The two blocks answer different questions and a dimension has to name which one 
 from. A `recovery` dimension read from cases and a `recovery` dimension read from traces are not
 the same measurement, and a reader six months later cannot tell them apart unless you say.
 
+## Recording it, then writing it
+
+The ruler has to exist in two places and they are not the same act.
+
+```
+plugin_ruler_record(plugin, version, rubric_version, subject, dimensions)
+```
+
+puts it in the registry, where the judge reads it. It refuses a quantitative dimension with no
+`threshold`, or with no `threshold_reason`, or a qualitative one missing either end — all three
+for the same reason: a dimension a marker cannot place is one that gets placed by mood, and a
+line with no stated reason is a number somebody can move later to make a result come out
+differently.
+
+**Record before the person reads it, approve after.** Recording is not approving — nothing is
+scored until `plugin_affirm` says a person agreed.
+
 ## Writing it
 
 `write_file` into the initiative as `rulers.md`, with the three sections the manifest declares,

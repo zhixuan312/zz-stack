@@ -17,16 +17,6 @@
       "description": "Access, yours and everybody's: your platform token, your keys for the building blocks, and the setup for whichever client you work in — plus, if your role carries them, the people, teams, flow installs and block grants behind them. One door; the tools you are offered are the ones your role can execute."
     },
     {
-      "name": "zz-block-eval",
-      "source": "./marketplace/zz-block-eval",
-      "description": "Measure an MCP surface: what it offers, what it honours of the standard, and what it does that its documentation does not describe. Points at any registered block — including 'platform', which is this platform's own surface."
-    },
-    {
-      "name": "zz-skill-eval",
-      "source": "./marketplace/zz-skill-eval",
-      "description": "Measure a skill: its statistics first, then its definition of good, then its documents if it writes any. Produces evidence, never a change."
-    },
-    {
       "name": "sdlc",
       "source": "./marketplace/sdlc",
       "description": "Software delivery: explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge."

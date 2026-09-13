@@ -235,8 +235,9 @@ to add a tool; it adds the tool to `zz-core` and asks for the door.
 ### `shelved` — who owns it, not what it is
 
 `shelved: true` means *ZZ owns this and every account already has it* — a team cannot install
-it, and it is hidden from the installable listing. It says nothing about shape: `zz-skill-eval`
-is shelved and has five stages, two documents and a gate.
+it, and it is hidden from the installable listing. It says nothing about shape: `zz-access`
+is shelved and is a flow with a stage, while `zz-plugin-eval` is not shelved and has five
+stages, two documents and two gates.
 
 It was `kind: "platform"`, and that name is what put `zz-admin` in the flow menu — the one field
 that could have said "not a flow" was already spoken for by ownership, so the console guessed

@@ -24,7 +24,6 @@ import { reindexAllTeams } from "./indexing.js";
 import { db } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
-import { registerEvaluationTools } from "./tools/evaluation.js";
 import { registerPluginEvalTools } from "./tools/plugin-eval.js";
 import { registerPluginJudgeTools } from "./tools/plugin-judge.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
@@ -203,7 +202,6 @@ function buildServer(): McpServer {
     }) as never);
   }) as RegisterTool;
   // THE DOORS, in the order their tools are registered.
-  registerEvaluationTools(server);
   registerPluginEvalTools(server);
   registerPluginJudgeTools(server);
   registerSkillTools(server);

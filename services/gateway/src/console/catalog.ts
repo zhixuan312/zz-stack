@@ -165,11 +165,13 @@ export function mountCatalog(app: Express): void {
                        -- WHEN IT LAST RAN. The list sorts on it, so a plugin nobody has
                        -- touched in a month sinks below one in use rather than sitting
                        -- wherever the catalog walk happened to put it.
+                       -- NO EVAL COUNT. This counted the rounds run against a skill, through
+                       -- zz.eval.skill_version_id. 048 drops that column: an evaluation's
+                       -- subject is a plugin version now, so "how many times was this SKILL
+                       -- evaluated" is not a question the store can answer or will ever be
+                       -- asked again. The plugin's own count is on the release row below.
                        (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
-                         where e.kind = 'tool_call' and e.step = s.name)                  as last_run,
-                       (select count(*) from zz.eval ev
-                          join zz.skill_version v on v.id = ev.skill_version_id
-                         where v.skill_id = s.id)                                         as evals
+                         where e.kind = 'tool_call' and e.step = s.name)                  as last_run
                   from zz.skill s`),
       // WHAT WAS RELEASED, and the most recent ablation run against it.
       //
@@ -237,7 +239,6 @@ export function mountCatalog(app: Express): void {
         origin: s.origin, version: s.version, description: s.description, source: s.source,
         versions: st ? +st.versions : 0,
         calls: st ? +st.calls : 0,
-        evals: st ? +st.evals : 0,
         // A skill the plugin ships and the store has never seen. Not an error — a plugin
         // nobody has run yet is a plugin, and saying so is the point.
         everRun: !!st && +st.calls > 0,

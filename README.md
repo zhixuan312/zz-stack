@@ -84,19 +84,7 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 lines — cases from the ablation suite, which need no
                                 history, and traces from real runs, which need five.
                                 locate, profile, define (the gate: what good means for
-                                THIS plugin), judge, report. Replaces the two below
-            zz/zz-skill-eval    skill evaluation, 6 skills — locate (which skill,
-                                of the two kinds, at which version), profile, define
-                                (the one gate: is the ruler right for this
-                                version), judge, report. Measures; never changes
-            zz/zz-block-eval    block evaluation, 4 skills — locate (which block,
-                                which INSTANCE; stand-ins are refused), measure (three
-                                scripts, no document: the surface and WHAT MOVED, tool-by-
-                                tool usage with whose defect each refusal is, and
-                                conformance), report. ONE document — the numbers, the
-                                defects, what we ask for — gated, and it is what the
-                                block team receives.
-                                The MCP surface itself, never the skills about it
+                                THIS plugin), judge, report. Measures; never changes
 skills/     platform skills, served whatever flow a team runs. Two are UNIVERSAL and
             bookend every flow: zz-backbone (the spine, loaded first — file tools,
             gates, documents, credentials, the tag kinds the knowledge base
@@ -131,38 +119,24 @@ docs/       written for somebody who does not work on this every day.
             finished: a deck that reports progress is wrong the week after it
             is shown, and invites an argument about percentages instead of
             about design.
-testing/    the shell around the engines: reset-store.sh, oauth-delegation.mjs
-            (the delegated-access
+testing/    the shell around the engines: eval-step.sh (every requirement in
+            the corpus through ONE step, each in its own initiative, keeping
+            what it produced), oauth-delegation.mjs (the delegated-access
             loop end to end against a live deployment, starting from a REVOKED
             grant — without that baseline "the block names a person" would
-            prove nothing), judge-all.sh (every step's quality scored AND
-            its scrambled control, because one without the other is not a
-            measurement), block-oracle.sh (which blocks a requirement needs,
+            prove nothing), block-oracle.sh (which blocks a requirement needs,
             decided from the brief alone and blind to what was chosen),
             reset-store.sh (archives a corpus's initiatives so the next version
             answers instead of resuming the last one). The
             engines themselves
             are TypeScript, in
-            packages/tools/src/testing/: eval-grade (the mechanical sanity floor for what ONE step produced
-            across the requirement corpus: sections declared, facts carried —
-            all of it answerable by pattern, none of it about quality),
-            eval-store (puts an evaluation where it survives — one row per
-            subject per dimension into zz.eval_score, never an average, because
-            an average over 30 pieces of work and one over 130 are not
-            comparable and a number collapsed at write time cannot be
-            un-collapsed at read time),
-            eval-judge (the other half: a rubric DERIVED from the step's own
-            output, every instance marked against it by a model, a scrambled
-            control proving the judge reads, and expect/compare/pattern — write
-            the expected answer blind, diff it against the actual, and rank what
-            goes wrong in MANY requirements over what went wrong in one),
+            packages/tools/src/testing/:
             manifest-audit (mechanical record audit), chain-check (the document
             chain over MCP, no model in the loop — it answers whether the
             PLATFORM works when a provider outage means the harness cannot get a
             turn), tool-report (what the tools actually did, read back from the
             platform's own tool_call record), evolve-report (which STEP stalls,
-            in the platform's own refusal sentences), flow-compare (the same
-            metrics across flows and teams), block-conformance (each block
+            in the platform's own refusal sentences), block-conformance (each block
             measured against the published building-block standard),
             mcp-client-check (the shared MCP client, against a stub server — no
             gateway, no network, one second) and sql-check (every query in the
@@ -223,25 +197,7 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             flow_install overwrites its own history), refresh-block-tools (what somebody else's tools
             actually COST us, derived from the bytes already recorded — a call
             that SUCCEEDS can still spend a caller's whole working memory, and
-            no error is recorded when it does), eval-decide (what we decided about an
-            evaluation finding, and whether a run's work landed — the only writer
-            of zz.eval_finding.decision and zz.run.outcome, and a finding nobody
-            records a decision about gets re-proposed forever),
-            watch-results, loop-eval (did each skill REACH the work — the eval
-            pipeline judges documents, and only 5 of 40 skills produce one, so
-            this reads telemetry instead and separates "not exercised" from
-            "NOT CONSULTED", a block called repeatedly while its own skills
-            were never loaded), rubric-load (every definition of good the
-            catalog carries, into zz.rubric — storing the ruler and taking the
-            measurement are different acts, and eval-store could only do both
-            at once, which left 36 skills unable to have one; --affirm records
-            that a VERSION is judged by a ruler, which the evaluation gate
-            decides and only eval-store could previously write), eval-record (one
-            judgement of one document from a judge that is NOT eval-judge — a
-            person at a gate, a reviewer disagreeing with the model — with the
-            judge's own name in zz.eval.judge_model, because a delta between a
-            model's baseline and a person's read measures the instrument rather
-            than the work)
+            no error is recorded when it does), watch-results
             probes/  what the gate cannot assert by reading — it builds a real
             client package and looks at it. A file rather than a string inside
             a gate module, because these are full of regexes and escaping them twice

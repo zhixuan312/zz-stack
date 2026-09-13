@@ -1,9 +1,0 @@
-{
-  "name": "zz-skill-eval",
-  "description": "Measure a skill: its statistics first, then its definition of good, then its documents if it writes any. Produces evidence, never a change.",
-  "version": "0.31.0+793edc63",
-  "author": {
-    "name": "ZZ Stack",
-    "url": "https://github.com/zhixuan312/zz-stack"
-  }
-}

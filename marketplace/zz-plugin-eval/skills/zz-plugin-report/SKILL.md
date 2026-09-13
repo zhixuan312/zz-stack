@@ -46,6 +46,27 @@ The two blocks answer different questions and a finding has to name which one it
 
 A finding that mixes them without saying so is a claim nobody can check.
 
+## Record the findings, not just write them
+
+```
+plugin_finding_record(eval_id, findings)
+```
+
+`findings.md` is what a person reads. These rows are what the NEXT round reads — a finding that
+exists only in prose cannot be asked "did this recur?" six weeks later, and that question is
+the whole reason to keep a series.
+
+Each is **generic** (it recurs across unrelated work, so it is the plugin's habit and worth
+changing the plugin over) or **specific** (one piece of work's own problem). The tool refuses a
+generic finding with no proposed change, and the refusal is the same argument as the
+Recommendation section below: a claim about the plugin that names no change leaves the next
+round nothing to test against.
+
+For somebody else's plugin, findings carry no proposed change at all. We assess and stop.
+
+Recording is not deciding. A finding lands `deferred`; applying or rejecting it is a separate
+act by whoever owns the plugin.
+
 ## Where the evidence is thin
 
 Its own section, and it is not an apology. "Four usable runs, so nothing here rests on trace
@@ -78,9 +99,18 @@ Prefer graders that cost nothing — `tool_order`, `tool_used`, `regex`, `file_e
 the plugin: say the delta you expect and why, so a later reader can tell a regression from a
 badly written case.
 
-## Recommendation, and what it is not
+## Recommendation — ONE CHANGE, AND SAY WHAT YOU EXPECT IT TO DO
 
-Say what to change and why. **Do not change it.** The catalog is read-only wherever the platform
+Say what to change and why. **Do not change it.**
+
+**One change, with its expected effect stated.** Not a list of five improvements — one, named,
+with the number you expect it to move and roughly how far. "Drop /manage from sdlc's servers;
+never_called should fall from 6 to 3" is a recommendation the next round can contradict.
+"Tighten the plan stage" is not, and a recommendation nothing can contradict is one nobody can
+learn from — it reads as vindicated whatever happens next, which is the opposite of evidence.
+
+Five changes at once have the same problem in a different shape: if the next round moves, you
+cannot say which one moved it. The catalog is read-only wherever the platform
 runs, and that is what keeps every agent's copy of a skill identical to what the gate checked.
 The change is a repository edit and a release by whoever owns the plugin.
 

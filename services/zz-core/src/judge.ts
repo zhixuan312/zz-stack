@@ -17,16 +17,16 @@
  *
  * What the CLI kept that a container cannot is the `claude` binary. There is none in this
  * image and there will not be one, so the pinned judge is a model on the platform's own LLM
- * endpoint. `zz.eval.judge_model` has always carried the judge's name and every comparison in
- * evaluation.ts groups by it, so scores taken under the old judge stay their own group rather
+ * endpoint. `zz.eval.judge_model` has always carried the judge's name and every comparison
+ * groups by it, so scores taken under the old judge stay their own group rather
  * than being silently averaged with these.
  *
  * WHAT IS IN THIS FILE AND WHAT IS BESIDE IT. This is the judge: the pinned model, the prompt
  * it is given, the one loop that marks a subject and stores what came back. What a SUBJECT is
- * lives next door — judge-skill.ts knows a skill's body, its documents and its runs, and
- * tools/plugin-judge.ts knows a plugin's. The split happened when the second subject arrived
- * and this file would otherwise have gone past the repository's own size ceiling; until then
- * one subject kind meant the two were genuinely one thing.
+ * lives next door — tools/plugin-judge.ts knows what a plugin's subjects are. The split
+ * happened when a second subject kind arrived and this file would otherwise have gone past the
+ * repository's own size ceiling; the skill-side half that prompted it has since been deleted
+ * with the flow it served, and the split is kept because the loop is better off not knowing.
  */
 import type pg from "pg";
 
@@ -87,7 +87,7 @@ const TRACE_CAP = 400;
  * print it beside the denominator so a capped round reads as a sample rather than a census. */
 export const SUBJECT_CAP = 20;
 
-export type Subject = "document" | "trace" | "body";
+export type Subject = "document" | "trace";
 
 interface Mark { dimension: string; score: number; cite: string; why: string }
 
@@ -200,19 +200,9 @@ function systemFor(kind: Subject, noun: string, name: string, version: string,
         + "the kind of thing they were written for; score what is in front of you."
       : kind === "trace"
       ? `You are judging one RUN of the ${noun} "${name}" version ${version}.`
-      : kind === "body"
-      ? `You are marking the ${noun} "${name}" version ${version} ITSELF — the text below is the ${noun}.`
       : `You are marking one document produced by the ${noun} "${name}" version ${version}.`,
     "",
-    kind === "body"
-      ? [
-        `This is not work the ${noun} produced. It is the ${noun}: the instructions an agent is`,
-        "handed when it loads this name. Judge whether these instructions earn their place —",
-        "whether they say anything a reader could not get elsewhere, whether they fit the work",
-        "they are served into, whether they are honest about their own age. Do not judge",
-        "whether they are well written.",
-      ].join("\n")
-      : kind === "trace"
+    kind === "trace"
       ? [
         `This ${noun} writes no document. What it leaves is a changed system and a trail of tool`,
         "calls, and that trail is what you are reading. Judge the WORK, not the prose — there is",
@@ -248,15 +238,14 @@ export async function traceOf(p: pg.Pool, runId: string): Promise<{ text: string
     : { text: body, truncated: 0 };
 }
 
-/** One artifact to mark, already identified. `text` is filled in only where the caller had to
- *  read it from somewhere this file cannot see — a skill's own body off the catalog shelf. A
- *  document is fetched through `bodyOf` and a run through `traceOf`, at the moment it is
- *  judged, so a round that stops early never paid to read what it did not mark. */
+/** One artifact to mark, already identified. A document is fetched through `bodyOf` and a run
+ *  through `traceOf`, at the moment it is judged, so a round that stops early never paid to
+ *  read what it did not mark. There was a third way in — a `text` the caller had already read,
+ *  for a skill's own body off the catalog shelf — and it went with the body subject. */
 export interface MarkItem {
   key: string; label: string;
   runId: string | null; docId: string | null;
   team: string; init: string; path: string;
-  text?: string | null;
 }
 
 /**
@@ -275,10 +264,11 @@ export interface MarkItem {
  * The caller that knows what a subject is resolves it; the loop never learns a subject kind.
  */
 export interface Marking {
-  /** zz.eval and zz.eval_subject carry the subject's version in one of two columns. Both are
-   *  nullable and exactly one is written, which is what lets a skill round and a plugin round
-   *  live in one table without either pretending to be the other. */
-  versionColumn: "skill_version_id" | "plugin_version_id";
+  /** The column on zz.eval and zz.eval_subject that carries the subject's version. It was a
+   *  union of two while a round could be about a skill or about a plugin; 048 dropped the
+   *  skill-side columns and there is one kind of subject now. Kept as a field rather than
+   *  inlined because the loop's whole design is that it never learns what a subject is. */
+  versionColumn: "plugin_version_id";
   versionId: string;
   /** How the prompt names the subject: "skill" or "plugin". The skill wording is unchanged to
    *  the byte — a prompt change is a judge change, and it would start an incomparable series
@@ -301,7 +291,7 @@ export interface Marking {
   facts: string | null;
 }
 
-export interface JudgeResult {
+interface JudgeResult {
   subject: string; version: string; judge: string; rubric_version: string;
   eval_id: string; kind: Subject; control: boolean;
   judged_now: number; judged_total: number; remaining: number;
@@ -475,7 +465,7 @@ export async function markAll(
       insert into zz.eval (${m.versionColumn}, rubric_id, judge_model, selection_note, doc_count, is_control)
       values ($1::uuid, $2::uuid, $3, $4, 0, $5) returning id::text`,
       [versionId, m.rubricId, JUDGE_MODEL,
-       `${kind === "body" ? "the body" : kind === "document" ? "documents" : "run traces"}` +
+       `${kind === "document" ? "documents" : "run traces"}` +
        ` of ${m.name} ${m.version}${control ? ", control" : ""}`, control])).rows[0].id;
   }
 
@@ -494,7 +484,7 @@ export async function markAll(
 
   const controlText = control && todo.length ? await m.control() : null;
 
-  const system = systemFor(control && kind !== "body" ? "trace" : kind, m.noun, m.name, m.version,
+  const system = systemFor(control ? "trace" : kind, m.noun, m.name, m.version,
                            qual, control);
   const dimOf = matcher(qual);
   const marked: { subject: string; mean: number; truncated: number }[] = [];
@@ -543,7 +533,6 @@ export async function markAll(
   for (const x of todo) {
     let text = "", truncated = 0;
     if (controlText) { text = controlText.text; truncated = controlText.truncated; }
-    else if (x.text != null) text = x.text;
     else if (x.docId) text = bodyOf(x.team, x.init, x.path) ?? "";
     else if (x.runId) { const t = await traceOf(p, x.runId); text = t.text; truncated = t.truncated; }
     if (!text.trim()) { skipped.push(`${x.label} — nothing to read`); continue; }
@@ -560,8 +549,7 @@ export async function markAll(
     }
     if (!marks.length) { skipped.push(`${x.label} — the judge answered nothing parseable`); continue; }
 
-    const subjId = await subjectRow(x.init, kind === "body" ? x.key : x.docId ? x.path : null,
-                                    x.runId, x.docId);
+    const subjId = await subjectRow(x.init, x.docId ? x.path : null, x.runId, x.docId);
     let sum = 0, n = 0;
     for (const mk of marks) {
       const dim = dimOf(mk.dimension);

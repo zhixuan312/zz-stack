@@ -19,8 +19,15 @@
 # an open question rather than a conversation, so running it without a person to ask is running
 # it as designed rather than crippling it.
 #
+# WHAT CONSUMES THIS CHANGED; IT DID NOT GO AWAY. This fed eval-grade, eval-judge and
+# eval-store, all three deleted with the skill-level evaluation. What it produces now is
+# EVIDENCE rather than a corpus to be graded: real runs leave real events, and events are half
+# of what a plugin evaluation reads — the trace side, beside the ablation cases, which is the
+# half no case suite can supply. So this is still the only thing in the repository that puts a
+# whole corpus through one step. It reads like a harness with no consumer and it is not one.
+#
 # IT WILL LEAVE THIRTY INITIATIVES BEHIND, in the eval team's store, on purpose: they are the
-# artefacts being graded. Empty that store before a run, never during, and never point this at
+# artefacts being measured. Empty that store before a run, never during, and never point this at
 # a team doing real work.
 #
 # NEVER TWO OF THESE AT ONCE against the same deployment. The platform attributes a call to the
@@ -36,9 +43,8 @@ set -euo pipefail
 
 STEP=""; OUT=""; ONLY=""; FROM=""; MAXTURNS=8; MODEL="${LADDER_MODEL:-sonnet}"
 # NO FLOW OF ITS OWN. These two were one flow's paths, hard-coded, which made the one script that
-# PRODUCES a run directory the last ops-flow-locked link in the component depth: eval-judge,
-# eval-grade and eval-store all resolve their corpus from --flow, so sdlc-flow could be judged
-# but never driven, and the corpus authored for it had nothing that could run it.
+# PRODUCES a run directory the last ops-flow-locked link in the component depth — so sdlc-flow
+# could be judged but never driven, and the corpus authored for it had nothing that could run it.
 # Derived from --flow below, after parsing, so --corpus can still override just the corpus.
 FLOW=""; CORPUS=""; STEPS=""
 while [ $# -gt 0 ]; do
@@ -283,6 +289,5 @@ Reply as yourself." < /dev/null 2>/dev/null || true)"
   ' "$OUT/$id.jsonl" || echo "  (no result frame — the turn did not complete)"
 done
 
-printf '\n  %d requirement(s) through %s@%s. Grade them with:\n' "$n" "$STEP" "$VERSION"
-printf '    npm run build && npm run eval-grade -- --flow %s --step %s --out %s\n\n' "$FLOW" "$STEP" "$OUT"
+printf '\n  %d requirement(s) through %s@%s, kept in %s.\n\n' "$n" "$STEP" "$VERSION" "$OUT"
 }

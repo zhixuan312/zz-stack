@@ -253,7 +253,7 @@ replaceable; the platform services and the state they guard are not.**
 | Layer | Components | Replaceable | Owner |
 |---|---|---|---|
 | Clients | one CLI harness (Claude Code), installing from the public shelf | yes | ZZ (projections) |
-| Catalog | sdlc-flow · zz-access (access and the platform register, two skills on one door) · zz-skill-eval · zz-block-eval · each team's own packages under `catalog/<team>/` (flows, and skills-only packages) | yes, per team | flow team (content) / ZZ (machinery) |
+| Catalog | sdlc-flow · zz-access (access and the platform register, two skills on one door) · zz-plugin-eval · each team's own packages under `catalog/<team>/` (flows, and skills-only packages) | yes, per team | flow team (content) / ZZ (machinery) |
 | Platform services | gateway · zz-core | **no** | ZZ |
 | Blocks | none registered on this deployment | yes, behind R1–R14 | third parties |
 | State | Postgres `zz` schema · artifacts volume | **no** | ZZ |
@@ -419,9 +419,10 @@ is the balance, and the balance is:
 - **One deployment**, whose address is read off the machine rather than written here — gateway
   on the `api.` subdomain of the host's own name, console on the bare host.
   `ssh <host> 'curl -s ifconfig.me'` is the one answer that cannot go stale. Four containers: zz-core, cred-proxy, postgres, and the console.
-- **Four flows in the catalog**, all installable: `sdlc-flow` (7 stages, 17 skills),
-  `zz-access`, `zz-block-eval`, `zz-skill-eval`. `zz.skill` holds 32 rows, `zz.skill_version`
-  35.
+- **Three flows in the catalog:** `sdlc-flow` (7 stages, 17 skills), `zz-plugin-eval`
+  (5 stages, 6 skills), and `zz-access`, which is shelved. The two component-level
+  evaluators, `zz-skill-eval` and `zz-block-eval`, were deleted when `zz-plugin-eval`
+  replaced them; the rows they registered on this deployment are still in `zz.skill`.
 - **The doors:** `/core/mcp`, `/manage/mcp` (the tool list IS the caller's role — 20 for a
   member, 24 for a team admin, 34 for a superadmin), `/p/<block>/mcp`.
   Every route the gateway serves has a caller; the gate holds that.

@@ -31,10 +31,12 @@ interface PluginCase {
   with_score: number;
   without_score: number;
   runs: number;
-  /** Whether this case tells the two arms apart at all. A case both arms pass is not a case
-   *  about the plugin, and one both arms fail is a case that is broken or too hard. Reported as
-   *  a fact; whether to delete it is the person's call. */
-  discriminating: "strong" | "weak" | "dead";
+  /** Whether this case tells the two arms apart at all, and which way. A case both arms pass is
+   *  not a case about the plugin, and one both arms fail is a case that is broken or too hard.
+   *  `harmful` is the fourth answer and it is not a synonym for any of the others: the arm WITH
+   *  the plugin did measurably worse. Reported as a fact; what to do about it is the person's
+   *  call. */
+  discriminating: "strong" | "weak" | "dead" | "harmful";
 }
 
 interface PluginCases {
@@ -44,12 +46,21 @@ interface PluginCases {
   cases_digest: string;
   sufficient: boolean;
   cases: PluginCase[];
+  /** Runs that errored or timed out, over both arms of every case.
+   *
+   * A run that never finished scores 0, and a 0 from a dead agent is indistinguishable in the
+   * mean from a 0 the plugin earned. Carried beside the mean rather than folded into it, so a
+   * delta computed over a suite that half fell over cannot be read as a measurement. */
+  errored_runs: number;
+  /** The CLI's own `partial` flag: the suite did not finish. */
+  partial: boolean;
   /** Why there is nothing, when there is nothing. Never a fabricated delta. */
   reason?: string;
 }
 
 const EMPTY = (reason: string): PluginCases => ({
-  count: 0, mean_delta: null, last_run: null, cases_digest: "", sufficient: false, cases: [], reason,
+  count: 0, mean_delta: null, last_run: null, cases_digest: "", sufficient: false, cases: [],
+  errored_runs: 0, partial: false, reason,
 });
 
 /** Where a case sits between "the plugin decided this" and "this decides nothing".
@@ -58,10 +69,16 @@ const EMPTY = (reason: string): PluginCases => ({
  * (the delta) into a shape a person can act on, which is the one place in this module that is
  * not purely mechanical, and it is reported beside the delta itself so nobody has to trust it. */
 function discriminationOf(delta: number, withScore: number): PluginCase["discriminating"] {
+  void withScore;
   if (delta >= 0.5) return "strong";
   if (delta > 0.1) return "weak";
+  // THE NEGATIVE SIDE IS NOT "dead", which is what this returned for every delta below 0.1
+  // including the ones well below zero. A case the plugin arm loses is the single most
+  // interesting result a suite can produce -- installing it made the answer worse -- and
+  // filing it under the label for "this case decides nothing" hides exactly that. The band is
+  // symmetric with the `weak` band above it so the two are read the same way.
+  if (delta <= -0.1) return "harmful";
   // Both arms pass, or both fail. Either way the case does not tell them apart.
-  void withScore;
   return "dead";
 }
 
@@ -103,24 +120,44 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
   }
 
   const cases: PluginCase[] = [];
+  let errored = 0;
   for (const entry of raw) {
     const c = asRecord(entry);
     if (!c) continue;
-    const num = (k: string): number | null => (typeof c[k] === "number" ? c[k] as number : null);
-    // Both arm scores, however the CLI spells them. A delta it already computed is trusted; one
-    // it did not is derived, and a case with neither is skipped rather than scored as zero --
-    // zero is a real finding ("this case decides nothing") and must not also mean "unreadable".
-    const withScore = num("with_score") ?? num("with") ?? null;
-    const withoutScore = num("without_score") ?? num("without") ?? null;
-    const delta = num("delta") ?? num("mean_delta")
+    const num = (o: Record<string, unknown> | null, k: string): number | null =>
+      (o && typeof o[k] === "number" ? o[k] as number : null);
+
+    // WHERE THE NUMBERS ACTUALLY ARE, verified against the CLI rather than assumed. On
+    // 2.1.269 a case carries `aggregates: { score, passRate, scoreWithout, passRateWithout,
+    // delta }` and `runsPerCase`, and nothing at its top level named `delta`, `with_score` or
+    // `with`. This module read only those three, so it found no delta on any case and returned
+    // "carries no case this module could read a delta from" for a run that measured perfectly
+    // — a real suite reported as an unreadable one. The flat spellings are kept below the
+    // nested ones because they cost a line and this schema is not in the CLI's own --help.
+    const agg = asRecord(c.aggregates);
+    const withScore = num(agg, "score") ?? num(c, "with_score") ?? num(c, "with");
+    const withoutScore = num(agg, "scoreWithout") ?? num(c, "without_score") ?? num(c, "without");
+    // A delta the CLI computed is trusted; one it did not is derived, and a case with neither
+    // is skipped rather than scored as zero -- zero is a real finding ("this case decides
+    // nothing") and must not also mean "unreadable".
+    const delta = num(agg, "delta") ?? num(c, "delta") ?? num(c, "mean_delta")
       ?? (withScore !== null && withoutScore !== null ? withScore - withoutScore : null);
     if (delta === null) continue;
+
+    // A run that errored or timed out scored 0 and is already inside the arm means above.
+    // Counted so the reader can see how much of the suite actually ran.
+    const arms = asRecord(c.arms);
+    for (const arm of ["with", "without"]) {
+      const runs = arms && Array.isArray(arms[arm]) ? arms[arm] as unknown[] : [];
+      for (const r of runs) if (asRecord(r)?.error) errored += 1;
+    }
+
     cases.push({
       name: typeof c.name === "string" ? c.name : "(unnamed)",
       delta,
       with_score: withScore ?? 0,
       without_score: withoutScore ?? 0,
-      runs: num("runs") ?? 0,
+      runs: num(c, "runsPerCase") ?? num(c, "runs") ?? 0,
       discriminating: discriminationOf(delta, withScore ?? 0),
     });
   }
@@ -136,5 +173,7 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
     // ONE case is enough. Cases need no history, which is the whole reason this half exists.
     sufficient: cases.length >= 1,
     cases,
+    errored_runs: errored,
+    partial: root?.partial === true,
   };
 }

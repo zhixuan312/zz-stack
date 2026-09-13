@@ -25,6 +25,15 @@ Two questions are only visible from the whole:
 a repository edit and a release by whoever owns the plugin. Fold improvement into the measuring
 flow and the measurement bends toward the intervention somebody already wanted.
 
+**It is a platform capability, not a stage of anybody's delivery.** An agent in the middle of
+shipping something does not stop and evaluate the plugin it is shipping with — that is a
+separate piece of work with its own initiative. This sentence used to live in this skill's
+`when_to_use` as "a delivery agent never runs this", and putting it there cost the skill its
+front door: measured over nine runs on 2026-09-13, asked three questions this skill exists to
+answer, it fired zero times. A negation in the field a model reads to decide whether to open a
+skill reads as "do not open it". The rule is the same; it belongs in the body, where it is
+addressed to a reader who has already arrived.
+
 Load `zz-backbone` first, as with every flow on this platform.
 
 ## Two kinds of evidence, and each has its own sufficiency line

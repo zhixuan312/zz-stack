@@ -1,8 +1,8 @@
 ---
 name: zz-plugin-eval
-version: 0.1
+version: 0.2
 description: The front door to plugin evaluation. Five stages — locate, profile, define, judge, report — over one plugin at one released version. Two kinds of evidence, two gates, evidence about whether a plugin does the job it claims; never a change.
-when_to_use: "Somebody asks whether a plugin is any good, whether installing it beats not installing it, or what a round of real use says about it. Also before deciding to keep, change or retire one. Platform capability — a delivery agent never runs this."
+when_to_use: "Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
 
 # zz-plugin-eval
@@ -23,6 +23,15 @@ Two questions are only visible from the whole:
 **This measures. It does not improve.** `findings.md` says what to change; making the change is
 a repository edit and a release by whoever owns the plugin. Fold improvement into the measuring
 flow and the measurement bends toward the intervention somebody already wanted.
+
+**It is a platform capability, not a stage of anybody's delivery.** An agent in the middle of
+shipping something does not stop and evaluate the plugin it is shipping with — that is a
+separate piece of work with its own initiative. This sentence used to live in this skill's
+`when_to_use` as "a delivery agent never runs this", and putting it there cost the skill its
+front door: measured over nine runs on 2026-09-13, asked three questions this skill exists to
+answer, it fired zero times. A negation in the field a model reads to decide whether to open a
+skill reads as "do not open it". The rule is the same; it belongs in the body, where it is
+addressed to a reader who has already arrived.
 
 Load `zz-backbone` first, as with every flow on this platform.
 

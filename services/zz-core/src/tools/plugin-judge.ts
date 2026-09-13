@@ -415,6 +415,17 @@ export function registerPluginJudgeTools(server: McpServer): void {
             // case, it has no flow.json, and an empty `ownFlow` compared with `<>` would have
             // excluded precisely the unflowed documents and offered it sdlc's — the same defect
             // this fallback was just fixed for, arriving through the fix.
+            //
+            // AN INITIATIVE DOCUMENT IS PREFERRED OVER A KNOWLEDGE NODE, and the ordering is
+            // the point rather than a tidiness. The blind control is "a different subject's
+            // artifact OF THE SAME KIND", and a knowledge node is a ten-line finding while the
+            // artifacts under judgement are specs and plans. A node will score low against a
+            // spec ruler because it is a different genre, not because the judge discriminated
+            // — so it validates that the judge is READING and proves nothing about whether it
+            // is calibrated. It is still far better than no control, so it is kept as the last
+            // resort and `control_read` names it in full: on this deployment every non-node
+            // initiative has run sdlc-flow, so a node is what sdlc's control actually is
+            // today, and a report that does not say so is claiming more than it measured.
             const ownFlow = entryOf(plugin)?.flow ?? "";
             const judging = new Set(items.map((i) => i.docId).filter(Boolean));
             const candidates = ownFlow ? (await p.query<{ id: string; team_slug: string; initiative: string; path: string }>(`
@@ -424,12 +435,16 @@ export function registerPluginJudgeTools(server: McpServer): void {
                 left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
                where d.path not like '\\_versions/%'
                  and coalesce(d.flow, '') <> $1 and coalesce(i.flow, '') <> $1
-               order by d.created_at desc limit 50`, [ownFlow])).rows : [];
+               order by (d.initiative = '_knowledge'), d.created_at desc limit 50`, [ownFlow])).rows : [];
             const doc = candidates.find((c) => !judging.has(c.id));
             if (doc) {
               const body = bodyOf(doc.team_slug, doc.initiative, doc.path);
               if (body?.trim()) {
-                controlSource = `${doc.initiative}/${doc.path}`;
+                controlSource = doc.initiative === "_knowledge"
+                  ? `${doc.initiative}/${doc.path} (a knowledge node — a different kind of ` +
+                    "artifact from the ones judged, so a low control score here shows the judge " +
+                    "is reading and does not show it is calibrated)"
+                  : `${doc.initiative}/${doc.path}`;
                 return { text: body, truncated: 0 };
               }
             }

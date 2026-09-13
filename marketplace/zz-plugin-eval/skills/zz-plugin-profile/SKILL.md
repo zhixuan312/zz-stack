@@ -51,8 +51,10 @@ refusal as an error, or the next agent starts inventing data to get past it.
 Every case ran twice, once with the plugin and once without, and the delta is the difference. A
 delta is a **counterfactual**: it says the plugin caused the outcome, which no score can.
 
-- `discriminating` per case: `strong`, `weak` or `dead`. A `dead` case is one both arms pass or
-  both arms fail — it does not test the plugin, and it is noise in the mean.
+- `discriminating` per case: `strong`, `weak`, `dead` or `harmful`. A `dead` case is one both
+  arms pass or both arms fail — it does not test the plugin, and it is noise in the mean. A
+  `harmful` one is the opposite of noise: the arm WITH the plugin did worse. Never average a
+  `harmful` case away — say which case it was and what it asked.
 - `last_run` — **always report the date.** A three-week-old delta read as today's is worse than
   no delta.
 

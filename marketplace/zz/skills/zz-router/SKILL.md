@@ -30,7 +30,7 @@ exactly — they are the method; this file is only the door.
 
 ### zz-plugin-eval (v0.2.0)
 
-**When:** Somebody asks whether a plugin is any good, whether installing it beats not installing it, or what a round of real use says about it. Also before deciding to keep, change or retire one. Platform capability — a delivery agent never runs this.
+**When:** Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here...
 
 **Then:** call the `zz-core` tool **skill_view**, passing `zz-backbone` as its
 `name` argument; then call it again passing `zz-plugin-eval`. Both are MCP tools

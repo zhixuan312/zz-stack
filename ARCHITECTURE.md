@@ -76,9 +76,11 @@ tests/                          fixtures for this package — requirements, step
 
 ### `skills/` — carried by everyone
 
-`zz-backbone` and `zz-knowledge`. These are not in `catalog/` because they belong to no
-package: every flow carries them regardless of who wrote the flow. A skill goes here only when
-that is true of it.
+`zz-backbone` and `zz-knowledge`, which a flow loads, and `zz-doctor`, `zz-update` and
+`zz-migrate`, which a person types — the last three declare `standalone: true` and the
+baseline plugin promotes exactly those to commands. These are not in `catalog/` because they
+belong to no package: everybody carries them regardless of which flow they run. A skill goes
+here only when that is true of it.
 
 ### `blocks/<block>/` — someone else's building block
 

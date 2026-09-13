@@ -33,6 +33,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.30.0] — 2026-09-13
+
+### Added
+- **`/zz:doctor`, `/zz:update` and `/zz:migrate`** — three commands on the baseline plugin,
+  so they are on every machine that has `zz@zz-stack` and need no repository. The baseline
+  shipped skills and no commands until now; it promotes any platform-own skill declaring
+  `standalone: true` in its own frontmatter, which is the rule flows have always used.
+  - `/zz:doctor` answers whether THIS machine can reach the platform: the token and its file
+    mode, the doors, which plugins are installed and whether they are on one version, and who
+    the token belongs to. It reads the gateway URL from the installed plugin rather than
+    carrying one, so it can never report that the deployment it was written against is fine.
+    It is not `npm run doctor`, which asks whether a deployment matches a checkout from inside
+    this repository — the person typing the command does not have this repository.
+  - `/zz:update` refreshes the marketplace and then every plugin that is actually installed,
+    in that order, and prints each version before and after. The order matters and nothing
+    used to say so: a plugin resolved against a stale shelf is truthfully reported as up to
+    date, at the version it already had.
+  - `/zz:migrate` brings an mma repository's `.mma/` onto the platform. See Upgrade notes.
+- **`client` on every tool-call event**, and the `tool-report` section that reads it. Which of
+  the things we ship people actually run was already half of `caller`, hashed together with an
+  address and therefore unreadable; on its own it names software and never a person.
+
+### Changed
+- **`knowledge_supersede` takes an optional `shelf`.** Ids are allocated per shelf and both
+  shelves start at `0001`, so one bare id naming two nodes is the ordinary case. The refusal
+  told the caller to supersede "the one you mean by its own shelf" and gave them no argument
+  in which to say which — so a node whose number also existed on the other shelf could not be
+  superseded at all. Existing calls are unaffected: the argument is only needed when the
+  refusal says it is.
+
+### Upgrade notes
+- **Restart Claude Code after updating.** The three commands and their scripts arrive as
+  files; a running session is still holding the old ones. `/zz:update` says so when something
+  moved.
+- **Migrating from mma:** run `/zz:migrate` from inside the repository whose `.mma/` you want,
+  and rehearse with `--dry-run` first. What it does, and what it deliberately does not:
+  - The journal becomes knowledge nodes — mma's six node types are this platform's six.
+  - Specs, plans, explorations, audits, backlogs, verifications, notes, retros and decks
+    become **sources** on one archive initiative per repository, not documents. An
+    initiative's documents are gated, `plan.md` requires an approved `spec.md`, and historical
+    plans carry no approvals because nobody approved them under rules that did not exist yet.
+  - That archive is what every migrated node cites as **evidence**, which is the only way an
+    mma node can satisfy a requirement mma had no concept of.
+  - `dropped` and `inconclusive` nodes are skipped and counted, because the platform stamps
+    `adopted` on everything it writes.
+  - **The archive initiative stays open** and appears in `initiative_status()`. Closing runs
+    through a flow's closing document and every flow gates it; signing that gate to tidy a
+    listing is the one thing gates exist to prevent.
+  - It is resumable and safe to run twice — every send is recorded in `.mma/.zz-migrated.json`
+    as it succeeds, which also means a corpus migrated on 0.29.0 should be re-run once this
+    release is live to pick up the supersede edges that version could not make.
+
 ## [0.29.0] — 2026-09-12
 
 **zz-stack 0.29.0 · zz-stack-dashboard 0.4.0 (unchanged)**

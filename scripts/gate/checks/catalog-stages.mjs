@@ -199,6 +199,11 @@ check("every flow that declares stages ships scenarios, or says why not", () => 
     // against. That cannot be fixed by proving the mechanism; it is a property of the tools.
     { flow: "zz-access", reason: "the mechanism is unproven for a one-stage surface, and its admin tools mutate the live registry — a driven scenario would create and deactivate real principals on whichever deployment it ran against", mayBeMissing: true, permanent: true },
     { flow: "zz-skill-eval", reason: "deferred; it is itself an evaluator", mayBeMissing: true },
+    // The flow that replaces the two above, and exempt for a sharper reason than theirs: its
+    // subject is a RELEASED plugin version with recorded runs, so a driven scenario would have
+    // to cut a release to have anything to evaluate. When zz-skill-eval and zz-block-eval go,
+    // their two lines go with them and this one stays.
+    { flow: "zz-plugin-eval", reason: "its subject is a released plugin version with recorded runs; a driven scenario would have to cut a release to have a subject at all", mayBeMissing: true, permanent: true },
     { flow: "zz-block-eval", reason: "deferred; it is itself an evaluator", mayBeMissing: true },
     { flow: "sdlc-flow", reason: "no browser agent: clients declares claude-code and codex only, so depth 2 cannot reach it", mayBeMissing: true, permanent: true },
     // TWO STRUCTURAL EXEMPTIONS, AND THEY ARE EXEMPT FOR DIFFERENT REASONS.

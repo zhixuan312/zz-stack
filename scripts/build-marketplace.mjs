@@ -31,6 +31,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // dynamic imports, and the assertion at the bottom.
 process.env.ZZ_CATALOG_DIR ??= join(root, "catalog");
 process.env.ZZ_SKILLS_DIR ??= join(root, "skills");
+process.env.ZZ_EVALS_DIR ??= join(root, "evals");
 
 const load = (p) => import(pathToFileURL(join(root, p)).href);
 const { catalogManifest, installableFlows } = await load("packages/catalog/dist/index.js");

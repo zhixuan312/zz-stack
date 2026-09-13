@@ -1,0 +1,57 @@
+# The `zz` plugin's baseline case. Target for this suite is the repository root, which
+# resolves as a skills-dir plugin over `skills/` — zz-backbone, zz-doctor, zz-knowledge,
+# zz-migrate, zz-update. (zz-router is NOT here; it is injected into `marketplace/zz` by
+# buildClientPackage, so do not write a case that depends on it at this target.)
+#
+# Provenance — skills/zz-doctor/SKILL.md, which exists precisely because this question
+#   used to be answered by guessing:
+#     "It answers ONE question: can this laptop, with the token it has, reach the platform
+#     through the plugins it installed?"
+#     "FAIL on a door — a 401 is the token, a 404 is the plugin declaring a path this
+#     gateway does not serve, and no answer at all is the network or the platform being
+#     down."
+#   The skill's whole instruction is: run the deterministic script, report what it
+#   printed, add no judgement. That is the behaviour under test — a bare agent handed a
+#   401 and a dead MCP server improvises a differential diagnosis, reads config files, and
+#   suggests things to try. The plugin hands over one command that answers it.
+#
+# `regex` matches the run's LAST MESSAGE only (measured on the sdlc suite, 2026-09-13),
+#   and any string quoted in the prompt is free to the baseline arm. Neither pattern below
+#   appears anywhere in the prompt.
+#
+# What it tests: given the exact symptom pair the skill names, does the agent reach for
+#   zz-doctor and hand over the script, instead of improvising a diagnosis?
+#
+# Bash is not granted by default, so the agent cannot RUN doctor.mjs. Quoting the command
+#   for the person to run is the intended observable and is what the skill tells it to do
+#   anyway when it cannot execute — do not add `--allow-tools Bash` to make it run, that
+#   would put a live network call inside an eval.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   doctor-skill-fired    ~1.0 — the skill does not exist in the baseline arm.
+#   hands-over-the-script ~1.0 — `doctor.mjs` is a filename that exists only inside this
+#                                plugin. The baseline arm cannot produce it by guessing.
+#   plugin-only-vocabulary ~0.9 — `zzp_` (the platform's token prefix), `/zz:update` (the
+#                                fix the skill names for a version mismatch) and
+#                                `CLAUDE_PLUGIN_ROOT` (how the skill spells the path) are
+#                                all facts carried by the skill text. Weaker than the
+#                                other two only because the agent may pick just one of the
+#                                three and phrase it differently.
+schema_version: "1.0"
+name: diagnoses-a-401-with-zz-doctor
+execution:
+  prompt: |
+    Something is wrong with my ZZ setup in Claude Code. The MCP server will not connect at
+    all, and one of the doors that did answer came back 401. I have no idea which half is
+    broken. What is wrong, and how do I find out for certain?
+  max_turns: 15
+graders:
+  - name: doctor-skill-fired
+    type: tool_used
+    tool: Skill(zz-doctor)
+  - name: hands-over-the-script
+    type: regex
+    pattern: 'doctor\.mjs|/zz:doctor'
+  - name: plugin-only-vocabulary
+    type: regex
+    pattern: 'zzp_|/zz:update|CLAUDE_PLUGIN_ROOT'

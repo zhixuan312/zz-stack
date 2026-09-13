@@ -1,372 +1,382 @@
 /**
- * The catalog: the flows a team can run and the blocks they can reach, with the skills each
- * one ships.
+ * The catalog, as PLUGINS — the unit a person actually installs.
+ *
+ * THIS SERVED TWO PAGES AND ONE SUBJECT. `/flows` listed agent methods, `/blocks` listed MCP
+ * surfaces, and the console's own navigation defended the split: "a flow is an agent method,
+ * a block is something reached over MCP, every skill belongs to one or the other." Every word
+ * of that is true and the taxonomy was still wrong for a reader, because neither half is a
+ * thing anybody installs. `claude plugin install sdlc@zz-stack` installs a flow's skills AND
+ * the servers those skills call, together, under one version — and the two pages showed the
+ * halves of it side by side with no line drawn between them.
+ *
+ * Migration 047 makes the same move in the schema for the same reason: the two properties that
+ * decide whether a plugin is any good — can it recover from a bad stage, are its reachable
+ * tools ever called — are properties of the whole and of neither half. So there is one subject
+ * here now, and one route per question about it.
+ *
+ * THE CATALOG SAYS WHAT EXISTS; THE STORE SAYS WHAT HAPPENED. That division is the reason the
+ * old flows route was catalog-first and it survives unchanged: a plugin in the catalog with no
+ * telemetry reads as "never run", which is a true and useful answer, where a telemetry-first
+ * listing rendered it as absent. sdlc-flow was invisible for exactly that reason.
  *
  * These are the reads that are about the PLATFORM rather than any team's work, which is why
- * they go through `teamless` — a flow's manifest and a block's skills are the same facts for
+ * they go through `teamless` — a plugin's manifest and its skills are the same facts for
  * everybody, and passing a scope nobody narrows by would imply otherwise.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntries, catalogEntry } from "@zz/catalog";
+import { catalogEntries } from "@zz/catalog";
 import type { Express } from "express";
 
+import { PLATFORM_VERSION } from "../client-package.js";
 import { platformDb } from "../db.js";
-import { handler, teamless } from "./shared.js";
-import { blockSkills, readSkillAt } from "./skill-source.js";
+import { pluginName } from "../package/skills.js";
+import { teamless } from "./shared.js";
+import { PLATFORM_SKILLS_DIR, type ShippedSkill, blockSkills, readSkillAt, skillsIn } from "./skill-source.js";
+
+/** One plugin as it sits on disk, before the store is asked anything about it. */
+interface DiskPlugin {
+  plugin: string;
+  /** The catalog owner directory. Null for `zz`, which is not catalog-resident. */
+  owner: string | null;
+  agentName: string | null;
+  description: string | null;
+  /** What the plugin DECLARES it is — flow.json, or the gateway's manifest for `zz`. */
+  version: string | null;
+  /** The MCP servers this plugin's skills reach. */
+  servers: string[];
+  documents: { name: string; role: string | null; gate: boolean; stage: string | null }[];
+  /** Stage names in declared order; empty for a plugin that declares no method. */
+  stages: string[];
+  /** The front door, which `stages` never contains. */
+  entry: string | null;
+  skillsDir: string;
+}
+
+/**
+ * EVERY PLUGIN THIS IMAGE SHIPS: the catalog's, plus `zz`.
+ *
+ * NO `stages.length > 0` FILTER, and that is the one deliberate difference from the flows
+ * route this replaces. That filter existed to keep a toolbox out of a list of methods —
+ * zz-admin declared no stages and shipped no skills directory, and sat beside ops-flow
+ * inviting a reader to ask why nobody adopted it. A PLUGINS list has no such problem: a
+ * package with no stages is still a plugin somebody installs, zz-access is exactly that, and
+ * plugins.lock.json has always counted it. The distinction the old filter drew is still
+ * carried, by `stages` being empty.
+ *
+ * `zz` IS A PLUGIN ROW LIKE ANY OTHER. It has no flow.json — client-package.ts synthesises it
+ * per caller — and it is the one plugin every account carries, so leaving it out would show a
+ * platform smaller than the one running. Its skills are read from the same directory
+ * plugin-lock.ts walks to compute its digest, so the two cannot disagree about what it ships.
+ */
+function diskPlugins(): DiskPlugin[] {
+  const out: DiskPlugin[] = catalogEntries().map((e) => {
+    const docs = e.manifest.documents ?? [];
+    return {
+      plugin: pluginName(e.flow),
+      owner: e.owner,
+      agentName: e.manifest.agentName ?? null,
+      description: e.manifest.description ?? null,
+      version: e.manifest.version ?? null,
+      // BOTH DECLARATIONS, because both become servers in the installed package.
+      // client-package.ts maps `tools` to /p/<block>/mcp and `servers` to their own paths and
+      // concatenates them; a console showing one of the two would be showing a plugin that
+      // reaches fewer servers than the one on somebody's machine.
+      //
+      // AND zz-core, WHICH NO MANIFEST DECLARES. It arrives through the `zz` baseline plugin,
+      // which is `required` and therefore on every account, so a plugin's own manifest has no
+      // reason to name it — and it is where that plugin's store, gates and documents live.
+      // The flows page learned this the hard way: listing only what the manifest declared
+      // showed sdlc reaching nothing at all, which reads as a method that talks to no server.
+      // Deduped, because three of the five DO declare it.
+      servers: [...new Set([
+        "zz-core",
+        ...(e.manifest.tools ?? []),
+        ...(e.manifest.servers ?? []).map((sv) => sv.name),
+      ])],
+      documents: docs.map((d) => ({
+        name: d.name, role: d.role ?? null, gate: d.gate === true, stage: d.stage ?? null,
+      })),
+      stages: (e.manifest.stages ?? []).map((x) => x.name),
+      entry: e.manifest.entry ?? null,
+      skillsDir: join(e.dir, "skills"),
+    };
+  });
+  if (existsSync(PLATFORM_SKILLS_DIR)) {
+    out.push({
+      plugin: "zz",
+      owner: null,
+      agentName: null,
+      description: "The platform itself: its MCP surface and the method for using it. Every account has it.",
+      version: PLATFORM_VERSION,
+      servers: ["zz-core"],
+      documents: [],
+      stages: [],
+      entry: null,
+      skillsDir: PLATFORM_SKILLS_DIR,
+    });
+  }
+  return out.sort((a, b) => a.plugin.localeCompare(b.plugin));
+}
 
 export function mountCatalog(app: Express): void {
-  /** EVERY FLOW IN THE CATALOG, with what the store knows about each one.
-  *
-  * The console listed SKILLS, from `zz.skill` — which records what has RUN. So sdlc-flow,
-  * installed on zz-team since August, was invisible: nineteen skills nobody has called yet,
-  * and a page reading the telemetry could not know they exist. casebox-assist had the same
-  * problem for the same reason.
-  *
-  * Two authorities, and they answer different questions. The CATALOG says what exists —
-  * a flow, its stages in order, the documents it gates. The STORE says what happened —
-  * versions served, evals, calls. A flow in the catalog with no telemetry reads as "never
-  * run", which is a true and useful answer; the old shape rendered it as absent.
-  *
-  * Ordered by stages, from the manifest, so the sequence shown is the flow's own and not
-  * an alphabetical accident. That is also why `zz.skill.ordinal` stays null: the order is
-  * declared in one place already, and a copy in the database is a copy that drifts.
-  */
-  app.get("/api/console/flows", handler("flows", async (_req, res, scope) => {
+  /** EVERY PLUGIN, one row each — what it declares, what it ships, and what the store knows.
+   *
+   * THE DIGEST COMES FROM THE DATABASE, not from plugins.lock.json, and the reason is the
+   * Dockerfile. The image copies `catalog`, `skills`, `blocks`, `packages` and `services`; it
+   * copies neither lock file. So a route that read plugins.lock.json would work on a laptop
+   * and return nothing at all in production — and `pluginLock()`, which computes the same
+   * numbers live, throws on the missing skills.lock.json for the same reason. zz.plugin_version
+   * is written at release, is present wherever the console runs, and is the only one of the
+   * three that says what was actually RELEASED rather than what a checkout currently contains.
+   *
+   * JOINED ON THE DECLARED VERSION, never on the newest recorded one. The pair is the whole
+   * point — the digest is not an alternative to the version, it is what makes the version
+   * true — so the digest shown has to be the digest OF the number shown. A plugin whose
+   * flow.json has moved past its last release shows its declared version with no digest, which
+   * is the honest answer: nothing has vouched for that number yet.
+   *
+   * A ROW ARRIVES AT RELEASE and at no other moment: `zz-tool register-plugins` mirrors
+   * plugins.lock.json into the registry after the gate has refused any release where a declared
+   * version and its content digest disagree. So a deployment that has not released since these
+   * tables landed answers null for every plugin, and so does a plugin whose flow.json has been
+   * edited since. Both are facts a reader needs rather than faults to chase, which is why
+   * nothing here treats an absent row as an error.
+   */
+  app.get("/api/console/plugins", teamless("plugins", async (_req, res) => {
+    // NO TEAM DIMENSION: a plugin's manifest, its skills and its release digest are the same
+    // rows for every reader. Which teams INSTALLED a flow was per-team data and went out with
+    // the flows route — see the note in /api/console/teams, which is where a team's own
+    // installs are answered from a scope that authorises them.
     const db = platformDb();
-    // WHICH TEAMS INSTALLED WHICH FLOW is per-team data — a department's flow adoption is
-    // not every other department's business. A team scope narrows the installs list to the
-    // caller's own team; the `ran` stats below stay global because they count calls by
-    // skill name, not by team, and carry no team column to leak.
-    //
-    // TWO COMPLETE STATEMENTS, not one assembled from `scope` — see the note in
-    // /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read
-    // whole.
-    const installsQuery = scope.kind === "platform"
-      ? db.query(`select f.flow, f.version, f.agent_name, t.slug as team
-                  from zz.flow_install f join zz.team t on t.id = f.team_id
-                 order by f.flow, t.slug`)
-      : db.query(`select f.flow, f.version, f.agent_name, t.slug as team
-                  from zz.flow_install f join zz.team t on t.id = f.team_id
-                 where t.slug = $1 order by f.flow, t.slug`, [scope.slug]);
-    const [installs, ran] = await Promise.all([
-      installsQuery,
-      db.query(`select s.name, s.flow,
+    const [ran, released, blocks] = await Promise.all([
+      // EVERY SKILL THE STORE HAS SEEN, whatever kind it is. The flows route filtered
+      // `kind = 'flow_step'`, which was right when the only subject was a flow's stages and
+      // is wrong now: `zz` ships common skills (zz-backbone) and a block ships block_usage
+      // skills, and both are skills of a plugin here. A filter on kind would have shown them
+      // all as never run.
+      db.query(`select s.name,
                        (select count(*) from zz.skill_version v where v.skill_id = s.id) as versions,
                        (select count(*) from zz.event e
-                         where e.kind = 'tool_call' and e.step = s.name)                 as calls,
-                       -- WHEN IT LAST RAN. The list sorts on it, so a flow nobody has
+                         where e.kind = 'tool_call' and e.step = s.name)                  as calls,
+                       (select count(*) from zz.event e
+                         where e.kind = 'tool_call' and e.step = s.name and e.ok = false) as failed,
+                       -- WHEN IT LAST RAN. The list sorts on it, so a plugin nobody has
                        -- touched in a month sinks below one in use rather than sitting
                        -- wherever the catalog walk happened to put it.
                        (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
-                         where e.kind = 'tool_call' and e.step = s.name)                 as last_run,
+                         where e.kind = 'tool_call' and e.step = s.name)                  as last_run,
                        (select count(*) from zz.eval ev
                           join zz.skill_version v on v.id = ev.skill_version_id
-                         where v.skill_id = s.id)                                        as evals
-                  from zz.skill s where s.kind = 'flow_step'`),
+                         where v.skill_id = s.id)                                         as evals
+                  from zz.skill s`),
+      // WHAT WAS RELEASED, and the most recent ablation run against it.
+      //
+      // The delta is read here in SQL and PARSED in zz-core. plugin-cases.ts owns
+      // `parseCaseRun` — it knows which spellings of the two arm scores the CLI has used and
+      // says so out loud when the shape moves. A second parser in the gateway would be a
+      // second opinion about what a delta is, so this takes the mean of the one field both
+      // agree on and nothing else. The `jsonb_typeof` guards are not decoration: `result` is
+      // whatever the CLI printed, and a run whose shape moved must leave the row without a
+      // number rather than throwing 22023 at every reader of the page.
+      db.query(`select p.name as plugin, p.origin, pv.version, pv.digest, pv.cases_digest,
+                       (select count(*) from zz.eval ev where ev.plugin_version_id = pv.id) as evals,
+                       to_char(r.ran_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')     as ran_at,
+                       r.cases_digest as run_cases, r.n_cases, r.mean_delta
+                  from zz.plugin p
+                  join zz.plugin_version pv on pv.plugin_id = p.id
+                  left join lateral (
+                    select (select count(*) from jsonb_array_elements(cr.result->'cases') c) as n_cases,
+                           (select avg((c->>'delta')::numeric)
+                              from jsonb_array_elements(cr.result->'cases') c
+                             where jsonb_typeof(c->'delta') = 'number')                      as mean_delta,
+                           -- ran_at IS LAST IN THIS SELECT LIST, and it has to stay there.
+                           -- The gate reads every timestamp column and asks whether anything
+                           -- writes one it guards on; its test for "guarded" is a comparison
+                           -- operator within a hundred characters, and jsonb's arrow contains
+                           -- one. Written beside the extraction above, ran_at read as a column
+                           -- deciding access that nothing can set -- a false finding about a
+                           -- column Postgres defaults for us.
+                           cr.cases_digest, cr.ran_at
+                      from zz.plugin_case_run cr
+                     where cr.plugin_version_id = pv.id
+                       and jsonb_typeof(cr.result->'cases') = 'array'
+                     order by cr.ran_at desc limit 1) r on true`),
+      // A REGISTERED BLOCK IS A PLUGIN TOO, and its servers come from its registration rather
+      // than from a manifest: the block IS the server it reaches. It declares no version and
+      // ships through nobody's marketplace, so it carries no digest and never will — the
+      // release columns are null for it by construction, not for want of a release.
+      //
+      // `origin = 'team'` rather than `origin <> 'stand_in'`. RuleMill and bookit are our own
+      // mocks from the zz-blocks image and there is nobody on the other end of a puppet to
+      // agree a change with; they stay in Overview and Activity, because those report what our
+      // flows DID and hiding them would make a flow's totals stop adding up. `platform` is
+      // excluded for a different reason — it is zz-core, which is the `zz` plugin's own server
+      // and already has a row above.
+      db.query(`select b.name as block, b.title, b.kind,
+                       coalesce(e.calls,0) as calls, coalesce(e.failed,0) as failed,
+                       e.last_seen
+                  from zz.block b
+                  left join (
+                    select block, count(*) as calls,
+                           count(*) filter (where ok = false) as failed,
+                           to_char(max(ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen
+                      from zz.event where kind = 'tool_call' and block is not null group by 1
+                  ) e on e.block = b.name
+                 where b.origin = 'team'
+                 order by b.name`),
     ]);
+
     const stats = new Map(ran.rows.map((r) => [r.name as string, r]));
-    const teams = new Map<string, { team: string; version: string; agent: string }[]>();
-    for (const i of installs.rows) {
-      const got = teams.get(i.flow as string) ?? [];
-      got.push({ team: i.team as string, version: i.version as string, agent: i.agent_name as string });
-      teams.set(i.flow as string, got);
-    }
-    // EVERY flow, including the platform's own, each saying which it is.
-    //
-    // This filtered `kind` out entirely — "a platform capability everyone already has, not a
-    // method a team adopts" — which is a true distinction and the wrong conclusion for a
-    // console. Five capabilities were invisible here: zz-access, zz-admin, zz-flow-builder
-    // and both evaluation flows. They have skills, versions, runs and refusals like anything
-    // else, and a page that omits them shows a platform smaller than the one running.
-    //
-    // `platform: true` carries the distinction to the reader instead of deciding for them.
-    //
-    // A FLOWS PAGE LISTS FLOWS, and a package is a flow when it SAYS it is one. `stages` is
-    // the declaration and there is no other. zz-admin declared none and shipped no skills
-    // directory at all — installing it granted an MCP tool surface and that was the whole of
-    // it. It sat in this table beside ops-flow with "never run" against both, which invites
-    // the reader to compare a toolbox with a method and ask why one was never adopted. It
-    // was never adopted because there was nothing in it to adopt. The package is gone now,
-    // folded into zz-access, but the rule it produced is the load-bearing part.
-    //
-    // The first attempt at this filtered on `entry || stages`, and that was inference wearing
-    // a filter's clothes: it happened to give the right answer for the eight packages that
-    // exist, and it would have kept giving an answer for a ninth that declared nothing.
-    // Guessing is wrong even when it guesses right, because the day it guesses wrong there is
-    // nothing to point at. The gate now refuses a manifest that declares `entry` without
-    // `stages`, so a flow cannot reach this line undeclared — see
-    // ARCHITECTURE.md.
-    const flows = catalogEntries()
-      .filter((e) => (e.manifest.stages ?? []).length > 0)
-      .map((e) => {
-      const stages = (e.manifest.stages ?? []).map((x) => x.name);
-      const docs = e.manifest.documents ?? [];
-      // THE FRONT DOOR, which `stages` does not contain. ops-flow declares six stages
-      // and is itself a seventh skill — the one that describes the whole method — so
-      // a console listing only the stages listed everything except the flow.
-      const entryName = e.manifest.entry ?? null;
-      const entryStat = entryName ? stats.get(entryName) : undefined;
+    const release = new Map(released.rows.map((r) => [`${r.plugin as string}@${r.version as string}`, r]));
+    const skillRow = (s: ShippedSkill, position: number | null, isEntry: boolean) => {
+      const st = stats.get(s.name);
       return {
-        flow: e.flow,
-        owner: e.owner,
-        agentName: e.manifest.agentName ?? null,
-        version: e.manifest.version ?? null,
-        description: e.manifest.description ?? null,
-        // EVERY FLOW USES THE PLATFORM BLOCK. A manifest's `tools` names the blocks a
-        // flow reaches OUT to, and ours is not one of those — it is where the flow's own
-        // skills, store and gates live, so no manifest declares it and every flow needs
-        // it. Listing only `tools` showed sdlc-flow using no blocks at all, which reads
-        // as a flow that talks to nothing.
-        // OWNERSHIP, NOT SHAPE. `shelved` says ZZ owns this and every account already has
-        // it, so a team cannot install it. It says nothing about whether it is a flow —
-        // zz-skill-eval is shelved and has five stages — and the reader is told which
-        // rather than having the two conflated for them.
-        platform: e.manifest.shelved === true,
-        blocks: ["platform", ...(e.manifest.tools ?? [])],
-        gates: docs.filter((d) => d.gate === true).length,
-        documents: docs.map((d) => ({ name: d.name, role: d.role ?? null, gate: d.gate === true })),
-        installs: teams.get(e.flow) ?? [],
-        entry: entryName && !stages.includes(entryName)
-          ? {
-            name: entryName,
-            versions: entryStat ? +entryStat.versions : 0,
-            calls: entryStat ? +entryStat.calls : 0,
-            evals: entryStat ? +entryStat.evals : 0,
-            everRun: !!entryStat && +entryStat.calls > 0,
-            lastRun: (entryStat?.last_run as string | null) ?? null,
-          }
+        name: s.name, position, isEntry,
+        origin: s.origin, version: s.version, description: s.description, source: s.source,
+        versions: st ? +st.versions : 0,
+        calls: st ? +st.calls : 0,
+        evals: st ? +st.evals : 0,
+        // A skill the plugin ships and the store has never seen. Not an error — a plugin
+        // nobody has run yet is a plugin, and saying so is the point.
+        everRun: !!st && +st.calls > 0,
+        lastRun: (st?.last_run as string | null) ?? null,
+      };
+    };
+
+    const rows = diskPlugins().map((p) => {
+      // EVERY SKILL IT SHIPS, not its stages. The flow routes allowed `stages` plus the entry,
+      // which is the method's running order and not its contents: sdlc ships seventeen skills
+      // and declares seven stages, so ten of them — sdlc-tldr, sdlc-deck, the audit criteria —
+      // were unlistable and unreadable in a console that packages them. Position is carried
+      // where the method declares one, and is null where the skill is simply shipped.
+      const shipped = skillsIn(p.skillsDir);
+      const skills = shipped.map((s) => {
+        const at = p.stages.indexOf(s.name);
+        return skillRow(s, at >= 0 ? at + 1 : null, p.entry === s.name);
+      });
+      const rel = p.version ? release.get(`${p.plugin}@${p.version}`) : undefined;
+      return {
+        plugin: p.plugin,
+        owner: p.owner,
+        // OURS. Every catalog package in this image is written here, and so is `zz`; the
+        // column exists because zz.plugin.origin decides what an evaluation DOES with its
+        // findings — for our own plugins they feed a change, for somebody else's we assess
+        // and stop. A registered block is the other value, below.
+        origin: "platform" as const,
+        agentName: p.agentName,
+        description: p.description,
+        title: null as string | null,
+        kind: null as string | null,
+        version: p.version,
+        servers: p.servers,
+        stages: p.stages,
+        entry: p.entry,
+        documents: p.documents,
+        gates: p.documents.filter((d) => d.gate).length,
+        skills,
+        // ITS SKILLS' CALLS, SUMMED. A block row below counts calls the other way — by the
+        // block column on the event — because a registered block has no skill of ours running
+        // inside it. Two derivations of one word, and the difference is which end of the call
+        // the plugin is on.
+        calls: skills.reduce((a, s) => a + s.calls, 0),
+        failed: shipped.reduce((a, s) => a + Number(stats.get(s.name)?.failed ?? 0), 0),
+        lastRun: skills.map((s) => s.lastRun).filter(Boolean).sort().pop() ?? null,
+        release: rel
+          ? { version: rel.version as string, digest: rel.digest as string,
+              casesDigest: (rel.cases_digest as string) || null, evals: +rel.evals }
           : null,
-        steps: stages.map((name, i) => {
-          const st = stats.get(name);
-          return {
-            name, position: i + 1,
-            versions: st ? +st.versions : 0,
-            calls: st ? +st.calls : 0,
-            evals: st ? +st.evals : 0,
-            // A step the catalog declares and the store has never seen. Not an error —
-            // a flow nobody has run yet is a flow, and saying so is the point.
-            everRun: !!st && +st.calls > 0,
-            lastRun: (st?.last_run as string | null) ?? null,
-          };
-        }),
+        eval: rel?.ran_at
+          ? { ranAt: rel.ran_at as string, casesDigest: (rel.run_cases as string) || null,
+              cases: +rel.n_cases,
+              meanDelta: rel.mean_delta === null ? null : +rel.mean_delta }
+          : null,
       };
     });
-    // MOST RECENTLY USED FIRST. The order was the catalog walk's — owner then name,
-    // alphabetical — which put casebox-assist above ops-flow for no reason a reader could
-    // see. A flow nobody has run has no date and sorts last, by name among its own
-    // kind, so the tail is stable rather than arbitrary.
-    for (const f of flows) {
-      (f as typeof f & { lastRun: string | null }).lastRun =
-        f.steps.map((s) => s.lastRun).filter(Boolean).sort().pop() ?? null;
-    }
-    flows.sort((a, b) => {
-      const la = (a as { lastRun?: string | null }).lastRun ?? "";
-      const lb = (b as { lastRun?: string | null }).lastRun ?? "";
+
+    // ONE WALK OF /blocks for the whole response, not one per row: it reads a SKILL.md off
+    // disk for every skill it finds, and calling it inside the map would re-read the shelf
+    // once per registered block.
+    const carried = blockSkills();
+    const blockRows = blocks.rows.map((b) => {
+      const skills = (carried.get(b.block as string) ?? []).map((s) => skillRow(s, null, false));
+      return {
+        plugin: b.block as string,
+        owner: null,
+        origin: "third_party" as const,
+        agentName: null,
+        description: null,
+        // title and kind travel with the block, not in a map in the console — see migration
+        // 034. Empty where nobody has described it, and the console shows the id then.
+        title: (b.title as string) || null,
+        kind: (b.kind as string) || null,
+        version: null,
+        servers: [b.block as string],
+        stages: [] as string[],
+        entry: null,
+        documents: [] as DiskPlugin["documents"],
+        gates: 0,
+        skills,
+        calls: +b.calls,
+        failed: +b.failed,
+        lastRun: (b.last_seen as string | null) ?? null,
+        release: null,
+        eval: null,
+      };
+    });
+
+    // MOST RECENTLY USED FIRST. A plugin nobody has run has no date and sorts last, by name
+    // among its own kind, so the tail is stable rather than arbitrary.
+    const plugins = [...rows, ...blockRows].sort((a, b) => {
+      const la = a.lastRun ?? "";
+      const lb = b.lastRun ?? "";
       if (la !== lb) return lb.localeCompare(la);
-      return a.flow.localeCompare(b.flow);
+      return a.plugin.localeCompare(b.plugin);
     });
-    res.json({ flows });
+    res.json({ plugins });
   }));
 
-  /** Every block, one row each — never averaged together. */
-  app.get("/api/console/blocks", teamless("blocks", async (_req, res) => {
-    // NO TEAM DIMENSION: a block is platform infrastructure — its registry entry and its
-    // call volume are the same for every reader, the same census category as /overview.
-    const db = platformDb();
-    // FROM THE REGISTRY, NOT FROM THE TELEMETRY. This grouped zz.event, so the list
-    // was "every surface that has ever been called" — and a stand-in we are about to
-    // stop showing is called constantly, so it would come straight back. The registry
-    // says what exists and where it came from; the telemetry says what happened to it.
-    //
-    // `origin <> 'stand_in'` is the whole point. RuleMill and bookit are our own mocks
-    // from the zz-blocks image and this page is where a block's skills get improved —
-    // there is nobody on the other end of a puppet. They stay in Overview, Activity
-    // and a skill's own call mix, because those report what our flows DID and hiding
-    // them would make a flow's totals stop adding up.
-    const { rows } = await db.query(
-      // title and kind travel with the block, not in a map in the console — see migration 034.
-      `select b.name as block, b.origin, b.title, b.kind,
-              coalesce(e.calls,0) as calls, coalesce(e.failed,0) as failed,
-              coalesce(e.tools,0) as tools, coalesce(e.steps,0) as steps,
-              coalesce(e.versions,0) as versions, e.first_seen, e.last_seen
-         from zz.block b
-         left join (
-           select coalesce(block,'platform') as block, count(*) as calls,
-                  count(*) filter (where ok = false) as failed,
-                  count(distinct subject) as tools, count(distinct step) as steps,
-                  count(distinct block_version_id) as versions,
-                  to_char(min(ts),'YYYY-MM-DD') as first_seen,
-                  to_char(max(ts),'YYYY-MM-DD') as last_seen
-             from zz.event where kind = 'tool_call' group by 1
-         ) e on e.block = b.name
-        where b.origin <> 'stand_in'
-        order by (b.origin = 'platform') desc, coalesce(e.calls,0) desc`);
-    // Which skills each block has, and whose they are. Two different things share
-    // this shelf: what the block team published (vendored, `source:` in every one)
-    // and what we worked out by calling them.
-    const skills = blockSkills();
-    res.json({ blocks: rows.map((r) => ({
-      block: r.block, origin: r.origin,
-      // Empty where nobody has described the block. The console shows the id then, which is
-      // what it already did for any block missing from its hand-written map.
-      title: r.title || null, kind: r.kind || null,
-      calls: +r.calls, failed: +r.failed,
-      failureRate: +r.calls ? +(( +r.failed / +r.calls) * 100).toFixed(1) : 0,
-      tools: +r.tools, steps: +r.steps, versions: +r.versions,
-      firstSeen: r.first_seen, lastSeen: r.last_seen,
-      // `dir` is deliberately dropped here: a filesystem path is not something a
-      // browser needs and not something a console should hand out.
-      skills: (skills.get(r.block as string) ?? []).map(({ dir: _dir, ...rest }) => rest),
-    })) });
-  }));
-
-/** ONE SKILL A FLOW RUNS — the same shape as a block's, because it is the same thing.
- *
- * The flow page could say ops-intent scored what it scored and never show a line of what ops-intent
- * SAYS. Reading the skill is most of judging it: a score without the text is a number
- * about something the reader cannot see.
- *
- * Resolved through the catalog entry for the flow, then an exact name match among the
- * directories it ships — not by joining the route into a path.
- *
- * `includePlatform` IS ON, and the comment it replaces is why this broke. It said the flag
- * stayed off "so a platform capability like zz-flow-builder is unreachable here, which
- * matches it being absent from the flow list" — a guard justified entirely by a fact about
- * another route. When /api/console/flows stopped filtering on `kind`, platform flows joined
- * the list, the page began linking to their skills, and every one of those links landed on a
- * 404 from here. zz-skill-eval's five stages were unreadable in the console that ran them.
- *
- * A guard whose reason lives in another file's behaviour is a guard that stops being right
- * without anybody touching it.
- *
- * ENTRY SKILLS ARE REACHABLE. A flow's `stages` do not include its own front door —
- * ops-flow declares six stages and is itself a seventh skill — so the entry is accepted
- * alongside them or the one skill describing the whole method could be read nowhere. */
-  app.get("/api/console/flows/:flow/skills/:skill", teamless("the flow skill", async (req, res) => {
-    // NO TEAM DIMENSION: this reads a skill's text off disk, resolved through the flow's
-    // own catalog entry — the same file for every reader, whatever their scope.
-    const { flow, skill } = req.params;
-    const entry = catalogEntry(flow, true);
-    const stages = (entry?.manifest.stages ?? []).map((x) => x.name);
-    const allowed = new Set([...stages, entry?.manifest.entry].filter(Boolean) as string[]);
-    if (!entry || !allowed.has(skill)) {
-      res.status(404).json({ error: `no skill '${skill}' in flow '${flow}'` });
-      return;
-    }
-    const dir = join(entry.dir, "skills", skill);
-    if (!existsSync(join(dir, "SKILL.md"))) {
-      res.status(404).json({ error: `'${flow}' declares '${skill}' and ships no SKILL.md for it` });
-      return;
-    }
-    res.json({
-      flow,
-      isEntry: entry.manifest.entry === skill,
-      // A flow's own skills are ours: we write them, we version them, we evolve them.
-      ...readSkillAt(dir, skill, "ours", null),
-    });
-  }));
-
-/** ONE SKILL A BLOCK CARRIES — the text itself, and whatever it ships beside it.
+  /** ONE SKILL A PLUGIN SHIPS — its text, and everything shipped beside it.
    *
-   * A block's skills are its method, and until now the console could say a block had
-   * four of them and not a word of what any one said. That is the same gap the document
-   * reader closed for initiatives: knowing a thing exists is not reading it.
+   * ONE ROUTE FOR THREE CONTAINERS, where there were two routes for two. A skill is the same
+   * kind of thing whether a catalog package runs it as a stage, the platform loads it into
+   * every flow, or a block team publishes it about their own server; the halves differed only
+   * in how they FOUND the directory, which is not a difference a reader has a URL for.
    *
-   * RESOLVED THROUGH THE ENUMERATION, never by joining the route into a path. The walk
-   * that lists a block's skills already resolved each one's directory, so this looks the
-   * name up in that map and reads from the directory it finds. There is no path built
-   * from `req.params` here, which is why there is no traversal guard either — the class
-   * of bug is absent rather than defended against. It also means the platform's skills
-   * work for free: they come from two roots, `/skills` and every catalog package the
-   * platform owns, and only the enumeration knows that.
+   * The listing page could say sdlc-plan scored what it scored and never show a line of what
+   * sdlc-plan SAYS. Reading the skill is most of judging it: a score without the text is a
+   * number about something the reader cannot see.
    *
-   * References are inlined. The one that exists is five kilobytes, and a `file`
+   * RESOLVED THROUGH THE ENUMERATION, never by joining the route into a path. The walk that
+   * lists a plugin's skills already resolved each one's directory, so this looks the name up
+   * in that list and reads from the directory it finds. There is no path built from
+   * `req.params` here, which is why there is no traversal guard either — the class of bug is
+   * absent rather than defended against.
+   *
+   * References are inlined. The largest that exists is a few kilobytes, and a `file`
    * parameter with its own guard would be machinery for a problem nobody has yet. */
-  app.get("/api/console/blocks/:block/skills/:skill", teamless("the block skill", async (req, res) => {
-    // NO TEAM DIMENSION: same reasoning as the flow-skill reader above — this reads a
-    // skill's text off disk, the same file for every reader.
-    const { block, skill } = req.params;
-    const found = blockSkills().get(block)?.find((s) => s.name === skill);
+  app.get("/api/console/plugins/:plugin/skills/:skill", teamless("the plugin skill", async (req, res) => {
+    // NO TEAM DIMENSION: this reads a skill's text off disk, the same file for every reader.
+    const { plugin, skill } = req.params;
+    const disk = diskPlugins().find((p) => p.plugin === plugin);
+    const carried = disk ? undefined : blockSkills().get(plugin);
+    const found = (disk ? skillsIn(disk.skillsDir) : carried ?? []).find((s) => s.name === skill);
     if (!found) {
-      res.status(404).json({ error: `no skill '${skill}' on block '${block}'` });
+      // NAMED SEPARATELY, because the two are different problems with different fixes: a
+      // plugin nobody ships is a wrong address, and a skill missing from a plugin that does
+      // exist is a renamed or deleted skill.
+      if (!disk && !carried) {
+        res.status(404).json({ error: `no plugin '${plugin}'` });
+        return;
+      }
+      res.status(404).json({ error: `plugin '${plugin}' ships no skill '${skill}'` });
       return;
     }
-    res.json({ block, ...readSkillAt(found.dir, found.name, found.origin, found.source) });
-  }));
-
-  /** One block, in isolation: its tools, its refusals, which steps call it, and
-   * its own event log. `platform` means zz-core's own tools and is deliberately
-   * addressable the same way — the worst-refusing tool on the platform is ours,
-   * and a view that only covered third parties would never have shown it. */
-  app.get("/api/console/blocks/:block", teamless("the block", async (req, res) => {
-    // NO TEAM DIMENSION: `zz.event` here is filtered by block, not by team — the same
-    // platform-wide call log every reader sees for any other block.
-    const db = platformDb();
-    const raw = req.params.block;
-    // `platform` is the label for "no block", so it maps to a null filter rather
-    // than to a block named "platform", which does not exist.
-    const isPlatform = raw === "platform";
-    // TWO COMPLETE STATEMENTS PER QUERY, not one assembled from `isPlatform` — see the note
-    // in /api/console/initiatives above; `check:sql` can only PREPARE a literal it can read
-    // whole.
-    const [tools, refusals, steps, feed, versions] = await Promise.all([
-      isPlatform
-        ? db.query(`select subject as tool, count(*) as calls,
-                       count(*) filter (where ok = false) as failed
-                  from zz.event where kind='tool_call' and block is null
-                 group by 1 order by count(*) desc limit 25`)
-        : db.query(`select subject as tool, count(*) as calls,
-                       count(*) filter (where ok = false) as failed
-                  from zz.event where kind='tool_call' and block = $1
-                 group by 1 order by count(*) desc limit 25`, [raw]),
-      isPlatform
-        ? db.query(`select subject as tool, count(*) as n, min(refusal) as refusal
-                  from zz.event where kind='tool_call' and ok = false and block is null
-                 group by 1, refusal order by count(*) desc limit 25`)
-        : db.query(`select subject as tool, count(*) as n, min(refusal) as refusal
-                  from zz.event where kind='tool_call' and ok = false and block = $1
-                 group by 1, refusal order by count(*) desc limit 25`, [raw]),
-      isPlatform
-        ? db.query(`select step, count(*) as calls, count(*) filter (where ok=false) as failed,
-                       count(distinct subject) as tools
-                  from zz.event where kind='tool_call' and block is null
-                    and step is not null and step <> ''
-                 group by 1 order by count(*) desc`)
-        : db.query(`select step, count(*) as calls, count(*) filter (where ok=false) as failed,
-                       count(distinct subject) as tools
-                  from zz.event where kind='tool_call' and block = $1
-                    and step is not null and step <> ''
-                 group by 1 order by count(*) desc`, [raw]),
-      isPlatform
-        ? db.query(`select to_char(ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, subject as tool,
-                       coalesce(step,'') as step, ok, refusal
-                  from zz.event where kind='tool_call' and block is null
-                 order by ts desc limit 25`)
-        : db.query(`select to_char(ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, subject as tool,
-                       coalesce(step,'') as step, ok, refusal
-                  from zz.event where kind='tool_call' and block = $1
-                 order by ts desc limit 25`, [raw]),
-      isPlatform
-        ? Promise.resolve({ rows: [] })
-        : db.query(`select bv.version, count(bt.*) as tools,
-                           count(*) filter (where bt.verdict='preferred')      as preferred,
-                           count(*) filter (where bt.verdict='use_with_care')  as care,
-                           count(*) filter (where bt.verdict='avoid')          as avoid
-                      from zz.block_version bv
-                      join zz.block b on b.id = bv.block_id
-                      left join zz.block_tool bt on bt.block_version_id = bv.id
-                     where b.name = $1 group by 1 order by 1 desc`, [raw]),
-    ]);
     res.json({
-      block: raw,
-      tools: tools.rows.map((t) => ({ tool: t.tool, calls: +t.calls, failed: +t.failed })),
-      refusals: refusals.rows.map((r) => ({ tool: r.tool, n: +r.n, refusal: r.refusal })),
-      steps: steps.rows.map((s) => ({ step: s.step, calls: +s.calls, failed: +s.failed, tools: +s.tools })),
-      feed: feed.rows,
-      versions: versions.rows.map((v) => ({ version: v.version, tools: +v.tools,
-        preferred: +v.preferred, useWithCare: +v.care, avoid: +v.avoid })),
+      plugin,
+      isEntry: disk?.entry === skill,
+      ...readSkillAt(found.dir, found.name, found.origin, found.source),
     });
   }));
 }

@@ -1,0 +1,63 @@
+# Provenance — initiative 2026-09-12-plugin-level-eval.
+#   In that initiative the main agent skipped plan-audit and went straight from the plan
+#   to execution, and nothing in the flow stopped it. The gate is written down in
+#   flow.json (plan.md `requires: spec.md`, both gated) and in sdlc-plan ("The spec is
+#   written, agreed and audited"), but a gate nobody measures is a sentence. This case is
+#   the measurement, taken one stage earlier where the same failure is cheaper to see:
+#   asked flat out for a plan with nothing agreed, does the flow hold the line?
+#
+# What it tests: given an implementation-plan request for work that has no explore.md and
+#   no agreed spec.md, does the agent decline to plan and route back to explore/spec?
+#
+# Note on the prompt: it never uses the words "spec", "explore", "stage" or "refuse".
+#   Leaking that vocabulary would hand the no-plugin arm the answer and collapse Δ —
+#   measured on a sibling case (2026-09-13), a bare agent matched a pattern purely by
+#   quoting the prompt back. `regex` also matches the LAST MESSAGE only, not the whole
+#   transcript, so every pattern below has to survive into the final answer.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   flow-skill-fired      n/a  — bare `tool_used: Skill` is a with-only indicator and is
+#                                NOT scored. It is here to show the plugin engaged at all,
+#                                since the two regexes below can in principle be satisfied
+#                                by a lucky phrasing.
+#   routes-back-to-explore ~1.0 — "sdlc-explore" / "explore.md" is flow vocabulary that
+#                                does not exist outside the plugin.
+#   names-the-missing-spec ~0.5 — the weakest of the three. A bare agent may well say
+#                                "we should write a spec first" and even name `spec.md`,
+#                                and then write the plan anyway. It is kept because the
+#                                plugin arm should name the artifact, not just the idea;
+#                                the llm grader is what separates naming it from acting
+#                                on it.
+#   declines-to-plan      ~0.9 — the baseline arm's default behaviour is to produce the
+#                                phase/task breakdown that was asked for. That is the
+#                                whole discriminator, and it is the one claim here that
+#                                needs a reader rather than a pattern.
+schema_version: "1.0"
+name: refuses-to-plan-without-an-agreed-spec
+execution:
+  prompt: |
+    I want per-team rate limiting on the gateway — a request budget per team per minute,
+    enforced at the door, with the limit configurable per team.
+
+    Give me the implementation plan: phases, tasks under each phase, dependency order, the
+    lot. Nothing has been written down for this anywhere; it is an idea I had this morning.
+  max_turns: 20
+graders:
+  - name: flow-skill-fired
+    type: tool_used
+    tool: Skill
+  - name: routes-back-to-explore
+    type: regex
+    pattern: 'sdlc-explore|explore\.md'
+  - name: names-the-missing-spec
+    type: regex
+    pattern: 'sdlc-spec[^-]|spec\.md'
+  - name: declines-to-plan
+    type: llm
+    criteria: >
+      The response does NOT contain an implementation plan — there are no build phases
+      with tasks under them, and no dependency-ordered task breakdown of the rate-limiting
+      work. Instead it says plainly that planning cannot start yet because nothing has been
+      grounded and no specification has been written and agreed with the person, and it
+      directs the user to that earlier work first. A plan offered "provisionally", "as a
+      sketch", or after a caveat still counts as producing a plan and fails this grader.

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "zz-plugin-eval",
+  "agentName": "ZZ Plugin Evaluation",
+  "version": "0.1.0",
+  "description": "Measure a whole plugin: what its real runs did, and whether installing it beats not installing it. Two kinds of evidence, one ruler you agree, evidence and never a change.",
+  "entry": "zz-plugin-eval",
+  "tools": [],
+  "servers": [
+    {
+      "name": "zz-core",
+      "path": "/core/mcp"
+    }
+  ],
+  "stages": [
+    {
+      "name": "zz-plugin-locate"
+    },
+    {
+      "name": "zz-plugin-profile"
+    },
+    {
+      "name": "zz-plugin-define"
+    },
+    {
+      "name": "zz-plugin-judge"
+    },
+    {
+      "name": "zz-plugin-report"
+    }
+  ],
+  "documents": [
+    {
+      "name": "rulers.md",
+      "role": "agreement",
+      "gate": true,
+      "sections": [
+        "The plugin under evaluation",
+        "What good means here",
+        "The evidence each dimension reads"
+      ],
+      "stage": "zz-plugin-define"
+    },
+    {
+      "name": "findings.md",
+      "role": "verification",
+      "requires": "rulers.md",
+      "closing": true,
+      "requiredForClose": true,
+      "sections": [
+        "The verdict",
+        "What the evidence says",
+        "Where the evidence is thin",
+        "Proposed cases",
+        "Recommendation",
+        "What this does not say"
+      ],
+      "gate": true,
+      "stage": "zz-plugin-report"
+    }
+  ],
+  "install": "auto",
+  "license": "MIT"
+}

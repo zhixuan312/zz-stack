@@ -187,13 +187,26 @@ check("a package declares whether it is a flow, and the console reads the declar
   // And the console must READ that declaration rather than reconstruct it. The first fix
   // here filtered on `entry || stages`, which gave the right answer for the eight packages
   // that existed and would have kept giving an answer for a ninth that declared nothing.
+  //
+  // IT USED TO CHECK A FILTER, and there is no filter left to check. The console listed FLOWS,
+  // so `catalogEntries().filter((e) => stages.length > 0)` was the line where the declaration
+  // was read and this asserted its shape. The console lists PLUGINS now — one page where there
+  // were two — and every catalog package is one whether or not it declares a method, so the
+  // filter is gone on purpose and its absence is not evidence of anything.
+  //
+  // What the rule was always about survives unchanged: the console carries `stages` to the
+  // reader, and it never decides what a package is from `entry`. Both halves are still
+  // checkable, and the second half is the one that caught a real bug.
   const consoleSrc = consoleSource();
-  const filter = /catalogEntries\(\)\s*\n\s*\.filter\(\(e\) => ([^\n]*)\)/.exec(consoleSrc);
-  if (!filter) {
-    bad.push("console.ts no longer filters catalogEntries() for the flows page — this check reads nothing");
-  } else if (/manifest\.entry/.test(filter[1])) {
-    bad.push("the console's flows listing reads `entry` to decide what is a flow — that is " +
-             "inference. `stages` is the declaration and the only one.");
+  if (!/manifest\.stages/.test(consoleSrc)) {
+    bad.push("the console no longer reads manifest.stages — `stages` is a package's only " +
+             "declaration of its method, and a console that does not read it is back to guessing");
+  }
+  for (const m of consoleSrc.matchAll(/\.filter\(\([^)]*\) => ([^\n]*)\)/g)) {
+    if (/manifest\.entry/.test(m[1])) {
+      bad.push("the console decides what a package is from `entry` — that is inference. " +
+               "`stages` is the declaration and the only one.");
+    }
   }
   return bad.length ? bad.join("; ") : null;
 });

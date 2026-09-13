@@ -87,6 +87,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 # with change on their own cadence, and neither is code.
 COPY catalog /catalog
 COPY skills /skills
+# The baseline plugin's own eval cases. `zz` is generated per caller rather than read from
+# catalog/, so its suite has nowhere else to ride along.
+COPY evals /evals
 # Everything written ON TOP of a building block: its usage skill and its tests.
 COPY blocks /blocks
 

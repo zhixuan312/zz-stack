@@ -1,7 +1,7 @@
 ---
 name: zz-router
-description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow) and loads it. Not for ordinary coding, debugging or questions about this repository."
-version: "0.31.1"
+description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow, zz-plugin-eval) and loads it. Not for ordinary coding, debugging or questions about this repository."
+version: "0.31.0"
 ---
 # zz-router
 
@@ -25,6 +25,15 @@ Never resume from your memory of a conversation.
 
 **Then:** call the `zz-core` tool **skill_view**, passing `zz-backbone` as its
 `name` argument; then call it again passing `sdlc-flow`. Both are MCP tools
+on the zz-core server, not this client's own skills. Follow those skills
+exactly — they are the method; this file is only the door.
+
+### zz-plugin-eval (v0.1.0)
+
+**When:** Somebody asks whether a plugin is any good, whether installing it beats not installing it, or what a round of real use says about it. Also before deciding to keep, change or retire one. Platform capability — a delivery agent never runs this.
+
+**Then:** call the `zz-core` tool **skill_view**, passing `zz-backbone` as its
+`name` argument; then call it again passing `zz-plugin-eval`. Both are MCP tools
 on the zz-core server, not this client's own skills. Follow those skills
 exactly — they are the method; this file is only the door.
 

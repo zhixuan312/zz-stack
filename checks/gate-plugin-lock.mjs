@@ -48,6 +48,26 @@ if (!redMissing) {
        "a membership that is silently short is one the profile resolves events through anyway");
 }
 
+// 4 — a plugin the lock records and the enumeration no longer finds.
+//
+// This is the failure an audit predicted would be SILENT: if a directory override were wrong,
+// zz would be hashed over an empty file list, computed and recorded would agree forever, and no
+// zz content change would ever move the digest. It is not silent, for two independent reasons,
+// and this asserts the second. First, plugin-lock omits a plugin whose tree it cannot read
+// rather than hashing nothing -- verified directly: with ZZ_SKILLS_DIR pointing nowhere the
+// enumeration returns five plugins and zz is absent, not present-and-empty. Second, an absence
+// is exactly what this branch catches.
+const parsed3 = JSON.parse(lock);
+parsed3["a-plugin-the-catalog-does-not-ship"] = { version: "9.9.9", digest: "deadbeef", cases_digest: "", skills: {} };
+writeFileSync(LOCK, JSON.stringify(parsed3, null, 2) + "\n");
+const redGhost = gate().status !== 0;
+writeFileSync(LOCK, lock);
+if (!redGhost) {
+  fail("the gate stayed GREEN with a plugin in the lock that the catalog does not ship — so a " +
+       "plugin that vanished from the enumeration would pass unnoticed, which is the whole " +
+       "failure mode the omit-rather-than-hash-empty rule exists to make loud");
+}
+
 if (gate().status !== 0) fail("the gate did not return to GREEN after restoring everything");
 console.log("PASS: red on a frozen-version content change, red on an extra member, red on a " +
-            "missing member, green otherwise.");
+            "missing member, red on a plugin the catalog does not ship, green otherwise.");

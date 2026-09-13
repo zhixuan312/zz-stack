@@ -25,6 +25,8 @@ import { db } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
 import { registerEvaluationTools } from "./tools/evaluation.js";
+import { registerPluginEvalTools } from "./tools/plugin-eval.js";
+import { registerPluginJudgeTools } from "./tools/plugin-judge.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
 import { registerInitiativeStatusTools } from "./tools/initiative-status.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
@@ -202,6 +204,8 @@ function buildServer(): McpServer {
   }) as RegisterTool;
   // THE DOORS, in the order their tools are registered.
   registerEvaluationTools(server);
+  registerPluginEvalTools(server);
+  registerPluginJudgeTools(server);
   registerSkillTools(server);
   registerArtifactTools(server);
   registerKnowledgeTools(server);

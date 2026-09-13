@@ -75,6 +75,16 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 register behind them — people, teams, installs,
                                 grants (zz-admin). Which tools a caller is offered
                                 is their role
+            zz/zz-plugin-eval   plugin evaluation, 6 skills — the whole unit a person
+                                installs, which is the level the platform ships at and
+                                the only level two of its properties are visible from:
+                                whether a flow that goes wrong can return to an earlier
+                                stage, and whether a tool its skills name was ever
+                                called. TWO kinds of evidence with their own sufficiency
+                                lines — cases from the ablation suite, which need no
+                                history, and traces from real runs, which need five.
+                                locate, profile, define (the gate: what good means for
+                                THIS plugin), judge, report. Replaces the two below
             zz/zz-skill-eval    skill evaluation, 6 skills — locate (which skill,
                                 of the two kinds, at which version), profile, define
                                 (the one gate: is the ruler right for this
@@ -206,7 +216,11 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             day-2 ops tools are npm scripts over packages/tools/src/ops/:
             set-credential, probe-block, register-skills (what we OFFER, from
             the catalog into zz.skill — a file cannot be joined against five
-            thousand events), refresh-block-tools (what somebody else's tools
+            thousand events), register-plugins (the same, one level up: each
+            plugin VERSION and which skill versions it contained, from
+            plugins.lock.json. Release is the only moment anybody knows, because
+            zz.skill.flow is current registration rather than per-version and
+            flow_install overwrites its own history), refresh-block-tools (what somebody else's tools
             actually COST us, derived from the bytes already recorded — a call
             that SUCCEEDS can still spend a caller's whole working memory, and
             no error is recorded when it does), eval-decide (what we decided about an

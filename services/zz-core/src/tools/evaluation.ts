@@ -18,7 +18,7 @@ import { z } from "zod";
 
 import { tableRow } from "../document-rules.js";
 import * as evalq from "../evaluation.js";
-import { affirmRuler, enumerate, judgeSkill } from "../judge.js";
+import { affirmRuler, enumerate, judgeSkill } from "../judge-skill.js";
 import { sanitize } from "../paths.js";
 import { ARTIFACTS_DIR, db } from "../platform-db.js";
 

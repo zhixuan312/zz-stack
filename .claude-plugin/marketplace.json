@@ -30,6 +30,11 @@
       "name": "sdlc",
       "source": "./marketplace/sdlc",
       "description": "Software delivery: explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge."
+    },
+    {
+      "name": "zz-plugin-eval",
+      "source": "./marketplace/zz-plugin-eval",
+      "description": "Measure a whole plugin: what its real runs did, and whether installing it beats not installing it. Two kinds of evidence, one ruler you agree, evidence and never a change."
     }
   ]
 }

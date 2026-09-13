@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.24
+version: 3.25
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -454,6 +454,7 @@ reading later can see one caused the other.
   | status | `initiative_status` `reconcile` `get_my_info` |
   | utility | `encode_base64` |
   | evaluation | `eval_skill_profile` `eval_skill_ruler` `eval_skill_affirm` `eval_skill_judge` `eval_skill_scores` `eval_block_surface` `eval_block_usage` `eval_block_defects` |
+  | plugin evaluation | `plugin_locate` `plugin_profile` `plugin_cases_record` `plugin_conform` `plugin_ruler` `plugin_affirm` `plugin_judge` `plugin_scores` |
 
 The evaluation tools are read-only and belong to the two evaluation flows. They exist because
 an agent here has MCP tools and no shell: a stage that says "run this program" is a stage the

@@ -44,6 +44,7 @@ declare -A TOOLS=(
   # A deploy host has no toolchain, so a tool absent here is a tool that cannot be run where
   # it matters — and the registry it maintains is what the console reads.
   [register-skills]=ops/register-skills
+  [register-plugins]=ops/register-plugins
   [refresh-block-tools]=ops/refresh-block-tools
   [eval-decide]=ops/eval-decide
   [eval-record]=ops/eval-record

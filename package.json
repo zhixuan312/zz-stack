@@ -38,6 +38,7 @@
     "eval-store": "node packages/tools/dist/testing/eval-store.js",
     "refresh-block-tools": "node packages/tools/dist/ops/refresh-block-tools.js",
     "register-skills": "node packages/tools/dist/ops/register-skills.js",
+    "register-plugins": "node packages/tools/dist/ops/register-plugins.js",
     "step-score": "node packages/tools/dist/testing/step-score.js",
     "skill-reflect": "node packages/tools/dist/testing/skill-reflect.js",
     "eval-decide": "node packages/tools/dist/ops/eval-decide.js"
@@ -47,7 +48,7 @@
     "typescript": "^5.6.0",
     "@types/node": "^22.7.0"
   },
-  "version": "0.31.1",
+  "version": "0.31.0",
   "license": "MIT",
   "private": true
 }

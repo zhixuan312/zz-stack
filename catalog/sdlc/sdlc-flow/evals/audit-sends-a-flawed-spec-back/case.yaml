@@ -1,0 +1,78 @@
+# Provenance — initiative 2026-09-12-plugin-level-eval.
+#   The spec's FR-0a said the resolver must NEVER resolve a block through a particular
+#   column, and FR-0c joined on that same column. Round 2 of sdlc-spec-audit caught the
+#   contradiction and the spec went BACK to sdlc-spec for revision rather than being
+#   planned from. The requirement pair below is that incident, renumbered onto a
+#   self-contained excerpt so the case needs no repository.
+#
+# What it tests: given a spec whose own numbered requirements contradict each other,
+#   does the flow (a) audit it at all, and (b) route back to the spec stage rather than
+#   ploughing on to sdlc-plan?
+#
+# Grader design, from a measured baseline run of the sibling audit case (2026-09-13):
+#   `regex` matches the run's LAST MESSAGE only, and any string quoted in the prompt is
+#   free to the baseline arm. So there is deliberately NO grader here on "FR-0a and FR-0c
+#   are both cited" — both identifiers are in the prompt, a bare reviewer quotes them
+#   back, and the grader would score 1.0 in both arms while measuring nothing. The
+#   substance of the finding is the llm grader's job instead.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   spec-audit-skill-fired  ~1.0 — the skill does not exist in the baseline arm.
+#                                  MAY UNDER-REPORT in the with-arm: sdlc-method says
+#                                  audits are DISPATCHED, so if the sandbox grants an
+#                                  Agent tool the Skill call happens in a subagent. This
+#                                  case takes the flow-runner framing on purpose;
+#                                  audit-catches-an-unverified-claim takes the dispatched
+#                                  framing, so the pair covers both.
+#   returns-to-the-spec-stage ~1.0 — "sdlc-spec" and "the spec stage" are flow vocabulary;
+#                                  a bare agent has no stage model, reports findings and
+#                                  stops. ("back to the spec" was dropped as an
+#                                  alternative — a bare reviewer can say that too.)
+#   audit-blocks-the-plan   ~0.7 — the baseline arm has no notion that planning is the
+#                                  next stage or that an audit can refuse it.
+schema_version: "1.0"
+name: audit-sends-a-flawed-spec-back
+execution:
+  prompt: |
+    The spec for initiative 2026-09-12-plugin-level-eval is agreed by the person. This is
+    its Goals & Requirements component, verbatim:
+
+    ## Goals & Requirements
+
+    ### Functional requirements
+
+    - **FR-0a** — The resolver MUST never resolve a block through `flow_install.block_id`.
+      That column is a legacy denormalisation, it is not maintained, and rows written
+      before 0.24 carry a stale value in it.
+    - **FR-0b** — The resolver MUST resolve a block by `blocks.slug`, which is unique and
+      is the only identifier the gateway accepts on the wire.
+    - **FR-0c** — The listing endpoint MUST join `flow_install` on `block_id` to resolve
+      each installed flow's block name for display.
+
+    ### Acceptance criteria
+
+    - [ ] **AC-0.1** — Resolving a known slug returns the matching block.
+    - [ ] **AC-0.2** — The listing shows a block name for every installed flow.
+
+    Audit it, then tell me what happens to this initiative next.
+  max_turns: 25
+graders:
+  - name: returns-to-the-spec-stage
+    type: regex
+    pattern: 'sdlc-spec[^-]|spec stage'
+  - name: audit-blocks-the-plan
+    type: llm
+    criteria: >
+      The response identifies that FR-0a forbids resolving through `flow_install.block_id`
+      while FR-0c requires joining on that same column, treats it as a blocking
+      (critical or high) defect rather than a nit, and says the spec must go back to be
+      revised and re-agreed before an implementation plan is written from it. It does NOT
+      propose an implementation plan or pick one of the two requirements on its own
+      authority.
+
+# MEASURED 2026-09-13 on the sibling case, and applied here for the same reason.
+# `tool_used: Skill(sdlc-spec-audit)` scored 0 in every with-arm run: sdlc-method DISPATCHES an
+# audit to a subagent, so the Skill call lands in a child transcript the parent's tool log never
+# sees. The case comment above predicted this as a risk; the measurement settled it. A grader
+# that can only ever fail measures the harness, not the plugin, and averaging it in understates
+# the plugin on every run. The two graders left carry the signal.

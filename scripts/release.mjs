@@ -486,6 +486,26 @@ try {
       `is run: ${String(e).slice(0, 200)}`);
 }
 
+// And the PLUGIN registry, immediately after, because its membership rows resolve against the
+// skill versions the step above just wrote. Run it first and every member is unresolved.
+//
+// zz.plugin_version is what an evaluation's subject IS. Without these rows plugin_locate reads
+// an empty table and the flow fails at its first stage, complaining about a plugin that plainly
+// exists — which is a confusing enough failure to be worth one line of ordering.
+try {
+  const out = run("node", ["packages/tools/dist/ops/register-plugins.js",
+                           "--root", ".", "--psql", regPsql]);
+  const unresolved = /members UNRESOLVED (\d+)/.exec(out)?.[1];
+  log(`  plugin registry updated from plugins.lock.json` +
+      (unresolved ? ` — ${unresolved} member(s) unresolved` : ""));
+} catch (e) {
+  // Loud, not fatal, for the same reason as the step above: a stale plugin registry costs the
+  // ability to evaluate this release, which is a reporting failure. Rolling a good deployment
+  // back over it would be the worse trade.
+  log(`  WARNING: register-plugins failed, so no plugin VERSION row exists for this release. ` +
+      `zz-plugin-eval will not find a subject until it is run: ${String(e).slice(0, 200)}`);
+}
+
 /* ── 5 · verify the LIVE deployment ───────────────────────────────────────── */
 step(5, "verify");
 execSync("sleep 12");

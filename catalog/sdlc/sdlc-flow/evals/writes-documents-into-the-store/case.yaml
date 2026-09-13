@@ -1,0 +1,67 @@
+# Provenance — skills/zz-backbone, restated in sdlc-spec/SKILL.md:249 in its own words:
+#   "A spec written to a local path is a file on your disk: no envelope, no version
+#   snapshot at approval, no telemetry, and nothing the person can approve or the auditor
+#   can read. It also looks exactly like success."
+#   That last sentence is why this needs an eval rather than a code path: writing to the
+#   wrong place produces no error, so nothing but a measurement ever notices.
+#   sdlc-explore/SKILL.md:80 and sdlc-method/SKILL.md:161 carry the same rule.
+#
+# What it tests: asked to write an initiative's document, does the agent reach for the
+#   platform's `write_file` and a store-relative path, rather than its runtime's local
+#   Write tool?
+#
+# IMPORTANT — no MCP server runs in this eval. The sdlc plugin ships no `.mcp.json`, and
+#   under the default `--mocks record` a server with no mock is not started, so
+#   `mcp__plugin_zz_zz-core__write_file` is not callable in either arm. The observable is
+#   therefore what the agent SAYS it is doing, not a tool call. Do not "fix" this with a
+#   `tool_used` grader on the MCP tool — it would fail in both arms and measure nothing.
+#   Write and Bash are also ungranted, so the baseline arm cannot write locally either;
+#   what separates the arms is which vocabulary and which path shape the answer uses.
+#
+# Note on the prompt: it says exploration is FINISHED so sdlc-explore does not try to fan
+#   out subagents, and it never says "write_file", "store", "platform" or "local" —
+#   measured on a sibling case (2026-09-13), a bare agent scored a regex grader purely by
+#   quoting a word back out of the prompt. `regex` matches the LAST MESSAGE only, so both
+#   patterns below have to survive into the final answer; the with-arm reaches them
+#   either by reporting the write it made or by saying which tool it needed and lacked.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   explore-skill-fired      ~1.0 — the skill does not exist in the baseline arm. May
+#                                   under-report if the agent reaches sdlc-flow or
+#                                   sdlc-method instead and writes from there.
+#   names-the-platform-write ~1.0 — `write_file` is zz-core's tool name. A bare agent
+#                                   says "I'll create explore.md" and uses Write.
+#   store-relative-path      ~0.6 — the baseline arm may echo the initiative name from the
+#                                   prompt into a directory, so this is the weakest of the
+#                                   three; it is kept because path shape is the actual
+#                                   failure mode the rule exists to prevent.
+schema_version: "1.0"
+name: writes-documents-into-the-store
+execution:
+  prompt: |
+    Exploration for initiative 2026-09-12-plugin-level-eval is finished — I have the
+    answers back from all of the workers and there is nothing left to dig into. Here is
+    what it turned up:
+
+    - The eval case schema is not documented by `--help`; it had to be established by
+      probing the validator, which reports unknown keys as load failures.
+    - A bare `tool_used: Skill` grader is treated as a with-only indicator and is not
+      scored, so a suite built on it reports a delta of zero on every case.
+    - The no-plugin baseline arm is the thing that makes a case mean anything: a case both
+      arms pass says nothing about the plugin.
+    - The plugin's own MCP servers are not started under the default mock mode, so any
+      case whose success depends on calling one fails in both arms.
+
+    Write that up as the exploration document for the initiative, under the three headings
+    the flow uses.
+  max_turns: 20
+graders:
+  - name: explore-skill-fired
+    type: tool_used
+    tool: Skill(sdlc-explore)
+  - name: names-the-platform-write
+    type: regex
+    pattern: 'write_file'
+  - name: store-relative-path
+    type: regex
+    pattern: '2026-09-12-plugin-level-eval/explore\.md'

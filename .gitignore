@@ -29,3 +29,9 @@ dist/
 
 # documentation is kept locally, not published with the package
 docs/
+
+# The HTML reports and JSON `claude plugin eval` leaves behind. The RESULT is recorded in
+# zz.plugin_case_run by plugin_cases_record, which is what gives it a timestamp; the directory
+# is a local by-product of the run that produced it.
+evals/results/
+**/evals/results/

@@ -33,25 +33,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [0.31.1] — 2026-09-13
-
-### Fixed
-- **`/zz:migrate` sent the platform token to whatever MCP server was listed first.** Its
-  `gateway()` walked EVERY installed plugin and returned the first that named any MCP server,
-  from any marketplace — so a machine with an unrelated MCP plugin installed ahead of the
-  baseline resolved to that plugin's host, and the import's first request carries the platform
-  token in an `Authorization: Bearer` header. It did not merely point an import at the wrong
-  host: it disclosed a credential to a third party, and surfaced as a 404 that reads like the
-  platform being down. It now reads only this marketplace's plugins, preferring the core door —
-  the same rule `/zz:doctor` already applied, which is why doctor passed on the same machine
-  and nothing caught it.
-
-### Upgrade notes
-- **If you ran `/zz:migrate` on a machine with another marketplace's MCP plugin installed,
-  treat your platform token as disclosed and rotate it:** `my_access_tokens` to find it,
-  `revoke_my_access_token`, then a fresh `issue_pat`. No import data was affected — the
-  wrong host answers 404, so nothing was written anywhere.
-
 ## [0.31.0] — 2026-09-13
 
 ### Fixed

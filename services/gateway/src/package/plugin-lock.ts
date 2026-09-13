@@ -33,7 +33,7 @@ export const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 /** The `zz` plugin's own eval cases. Beside its skills for the same reason they are: `zz` is
  *  the one plugin everybody installs, which makes it the one most worth knowing about, and the
  *  only one whose content is not catalog-resident. Same override, same reason. */
-const EVALS_DIR = process.env.ZZ_EVALS_DIR || "/evals";
+export const EVALS_DIR = process.env.ZZ_EVALS_DIR || "/evals";
 
 /** Where a skill's declared version and content hash are recorded. */
 const SKILLS_LOCK = "skills.lock.json";

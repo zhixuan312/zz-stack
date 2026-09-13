@@ -30,6 +30,7 @@ import { catalogEntry } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
+import { EVALS_DIR } from "./package/plugin-lock.js";
 import { cardDescription, commandFile, commandName, headersHelper, platformPlugins, pluginName, promotePlatformOwn, promoteStandalone, routerSkill, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one
@@ -122,6 +123,28 @@ function platformOwnSkills(prefix: string): PackageFile[] {
   return out;
 }
 
+/** The baseline plugin's own eval cases. Same walk and the same directories-only rule as
+ * `platformOwnSkills`, rooted at `evals/` because that is where the command looks.
+ *
+ * `zz` needs its own because it is the one plugin not read from the catalog — it is synthesised
+ * per caller — so `residentFiles` has nothing to resolve for it. It is also the plugin everybody
+ * installs, which makes it the one most worth having a suite for. */
+function platformOwnEvals(): PackageFile[] {
+  if (!existsSync(EVALS_DIR)) return [];
+  const out: PackageFile[] = [];
+  const walk = (dir: string, rel: string): void => {
+    for (const f of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, f.name);
+      if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
+      else out.push({ path: `evals/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
+    }
+  };
+  for (const e of readdirSync(EVALS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.isDirectory()) walk(join(EVALS_DIR, e.name), e.name);
+  }
+  return out;
+}
+
 /** What the baseline plugin carries: the router, the platform's own skills, and a command
  * for each of those skills that declares itself standalone.
  *
@@ -137,15 +160,27 @@ function baselineFiles(flows: InstalledFlow[]): PackageFile[] {
   const { commands, promoted } = promotePlatformOwn(skills);
   // Assets beside a promoted skill still travel: only its SKILL.md moves. That is what
   // carries each command's script, which lives in the skill's own directory.
-  return [...commands, ...skills.filter((sk) => !promoted.has(sk))];
+  return [...commands, ...skills.filter((sk) => !promoted.has(sk)), ...platformOwnEvals()];
 }
 
-/** Every file under a flow's skills/ directory, as package files rooted at `prefix`. */
-function residentSkills(flow: string, prefix: string): PackageFile[] {
+/** Every file under one of a catalog entry's directories, as package files rooted at the same
+ * name.
+ *
+ * `sub` was hard-coded to "skills" while the caller passed a `prefix` that was always that same
+ * word — one directory the shelf could carry. It carries two now: `evals/` holds the cases
+ * `claude plugin eval` runs against the plugin, and they have to travel WITH it. The command
+ * resolves an installed plugin to its cache directory and looks for `evals/` below it, so a
+ * suite left behind in the catalog is a suite nobody can run against what they actually
+ * installed — and the run silently becomes a baseline-only one with no comparison in it at all.
+ *
+ * Source and destination are the same word deliberately: a package that renamed the directory
+ * on the way out would be a package whose layout the tool reading it cannot predict. */
+function residentFiles(flow: string, sub: string): PackageFile[] {
   const e = catalogEntry(flow, true);
   if (!e) return [];
-  const root = join(e.dir, "skills");
+  const root = join(e.dir, sub);
   if (!existsSync(root)) return [];
+  const prefix = sub;
   const out: PackageFile[] = [];
   const walk = (dir: string, rel: string): void => {
     for (const f of readdirSync(dir, { withFileTypes: true })) {
@@ -272,18 +307,19 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       files: baselineFiles(flows),
     },
     ...platformPlugins().map((pp): Plugin => {
-      const skills = residentSkills(pp.dir, "skills");
+      const skills = residentFiles(pp.dir, "skills");
       const { commands, promoted } = promoteStandalone(pp.dir, skills, true);
       return {
         name: pp.name,
         description: pp.description,
         servers: pp.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
         // Assets beside a promoted skill still travel: only its SKILL.md moves.
-        files: [...commands, ...skills.filter((sk) => !promoted.has(sk))],
+        files: [...commands, ...skills.filter((sk) => !promoted.has(sk)),
+                ...residentFiles(pp.dir, "evals")],
       };
     }),
     ...flows.map((f): Plugin => {
-      const skills = residentSkills(f.flow, "skills");
+      const skills = residentFiles(f.flow, "skills");
       const entry = skills.find((s) => s.path === `skills/${f.entry}/SKILL.md`);
       // A skill a person invokes ON PURPOSE — the front door, and each standalone skill —
       // becomes a command; it ships exactly once either way. Stage skills are never
@@ -312,6 +348,10 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
           ...standaloneCommands,
           // Assets beside a promoted skill still travel: only its SKILL.md moves.
           ...skills.filter((sk) => !promoted.has(sk)),
+          // And the eval suite, for the reason residentFiles gives: a suite that did not travel
+          // with the plugin turns `claude plugin eval` into a baseline-only run with no
+          // comparison in it, which looks like a result and is not one.
+          ...residentFiles(f.flow, "evals"),
         ],
       };
     }),

@@ -52,3 +52,35 @@ probe("the skill registry is not behind the catalog", () => {
     : `the catalog ships ${onDisk} skills and the registry holds ${rows} row(s) — the deploy step's ` +
       `registry update has not run for what is on disk`;
 });
+
+// EVERY RUN NAMES A VERSION, or the evaluation track is reading noise.
+//
+// zz.run is DERIVED from zz.event by reconcileRuns() on a timer, and it keyed the version on
+// zz.event.step_version — a column stamped only when a skill is served whole through
+// skill_view, which an installed skill read off disk never is. So every row the
+// initiative-bearing insert wrote carried skill_version_id NULL; a NULL cannot match that
+// insert's conflict target, because Postgres treats NULLs as distinct; `do update` therefore
+// never fired and each pass of the timer appended another copy. The table reached 1791 rows of
+// which 1787 were duplicates of two, growing by roughly 950 a day, every one of them with
+// events attached by a linkback that matched NULLs deliberately.
+//
+// Nothing offline could see it. The gate is static and cannot reach a database; tsc cannot see
+// inside a template literal; and a table full of rows that look like runs reads, in every
+// query, as a healthy table. This is the probe that would have said so on day one, and it is
+// here rather than in the gate for exactly that reason.
+//
+// READ-ONLY, like everything in this file. A null row is reported, never deleted: the cleanup
+// is an operator's decision made once, and a doctor that fixed what it found would be a doctor
+// nobody could safely run while something was broken.
+probe("every run names the skill version it ran", () => {
+  const total = Number((psql("select count(*) from zz.run").trim() || "0"));
+  const orphan = psql("select count(*) from zz.run where skill_version_id is null").trim();
+  if (orphan === "") throw new Error("could not count zz.run on the host");
+  const n = Number(orphan);
+  if (!n) return null;
+  const pct = total ? Math.round((n / total) * 1000) / 10 : 0;
+  return `${n} of ${total} zz.run rows (${pct}%) name no skill version. reconcileRuns() cannot ` +
+         `dedupe them — a NULL never matches its conflict target — so the timer appends another ` +
+         `copy every pass. Delete them once (they are derived, and re-derive from zz.event), ` +
+         `and check that the version is resolved by released_at rather than by step_version`;
+});

@@ -345,3 +345,57 @@ check("a service reaches its database through one accessor", () => {
   }
   return bad.join("\n");
 });
+
+check("a run is attributed to a version by time, not by a column nothing stamps", () => {
+  // WHAT A RUN IS KEYED ON, and the shape that made zz.run 99.8% junk.
+  //
+  // reconcileRuns() joined zz.skill_version on `sv.version = e.step_version`. That column is
+  // written only when a skill is served WHOLE through skill_view; an installed skill read off
+  // disk stamps nothing. Measured a day apart: the event log grew 381 -> 510 and step_version
+  // stayed at 39. Not sparse -- dead.
+  //
+  // Dead alone would only have lost rows. What made it compound is the pair: the join was
+  // LEFT, so an unresolvable event still produced a row carrying skill_version_id NULL, and a
+  // NULL cannot match that insert's conflict target, because Postgres treats NULLs as
+  // distinct. `do update` never fired, so the timer appended a duplicate every pass -- 1787 of
+  // 1791 rows, growing by roughly 950 a day, each with events attached by a linkback that
+  // matched NULLs deliberately. Nothing in the gate or in tsc could see it: SQL lives in
+  // template literals, and a table full of plausible-looking rows reads as a healthy table.
+  //
+  // THE RULE IS THE SHAPE. Two halves, and either alone is worse than neither: binding by a
+  // dead column loses every row, and an inner join over a dead column writes nothing at all,
+  // for all time. So this asks for both.
+  //
+  // Only EVENT-RESOLVED joins are held to it. A join on `sv.id = run.skill_version_id` reads a
+  // version the insert already decided and needs no predicate; what must be time-bound is the
+  // step where an event becomes a version, and those are recognisable by resolving against the
+  // event row itself.
+  const rel = "services/gateway/src/runs.ts";
+  const f = join(root, rel);
+  if (!existsSync(f)) return `${rel} is gone -- this check reads nothing`;
+  const code = withoutComments(readFileSync(f, "utf8"));
+
+  const bad = [];
+  if (/\bstep_version\b/.test(code)) {
+    bad.push(`${rel} still keys on step_version. It is stamped on under 8% of events and has ` +
+             "not moved in a month; resolve the version from the event's timestamp against " +
+             "zz.skill_version.released_at instead");
+  }
+  // Every place a version is resolved FROM AN EVENT -- recognised by the skill being matched
+  // on the event's own step -- must carry released_at. Counted, so that deleting the
+  // derivation to satisfy the rule above cannot pass as a green tick.
+  const resolutions = [...code.matchAll(/zz\.skill_version[\s\S]{0,200}/g)]
+    .map((m) => m[0])
+    .filter((w) => /\be\.(?:step|ts)\b/.test(w));
+  if (!resolutions.length) {
+    return `${rel} resolves a skill version from an event nowhere -- either the run derivation ` +
+           "is gone or this extraction is broken, and both need a person rather than a tick";
+  }
+  for (const w of resolutions) {
+    if (!/released_at/.test(w)) {
+      bad.push(`${rel} resolves a version from an event without released_at: ` +
+               `${w.replace(/\s+/g, " ").slice(0, 90)}`);
+    }
+  }
+  return bad.length ? firstOf(bad) : null;
+});

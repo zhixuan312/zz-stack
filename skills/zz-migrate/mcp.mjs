@@ -18,6 +18,10 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/** The marketplace this platform ships from. The filter below is about a credential, so it
+ * must name one marketplace and never "whatever is installed". */
+const MARKETPLACE = "zz-stack";
+
 export function token() {
   const read = (p) => { try { return readFileSync(p, "utf8"); } catch { return null; } };
   const t = process.env.ZZ_TOKEN
@@ -43,14 +47,31 @@ export function gateway() {
     throw new Error("Could not ask the claude CLI what is installed, so there is no way to " +
       "know which gateway to import into. Is `claude` on PATH?");
   }
-  for (const p of listed) {
-    for (const sv of Object.values(p?.mcpServers ?? {})) {
-      const m = /^(https?:\/\/[^/]+)/.exec(sv?.url ?? "");
-      if (m) return m[1];
-    }
-  }
-  throw new Error("No installed plugin declares an MCP server, so this machine is not " +
-    "connected to a platform yet. Install the baseline first: " +
+  // ONLY THIS MARKETPLACE'S PLUGINS, and the reason is a credential rather than a hostname.
+  //
+  // This walked EVERY installed plugin and returned the first one that named any MCP server at
+  // all. A person with `context7@<some other marketplace>` installed got `mcp.context7.com` —
+  // and `Door` puts the platform token in an `Authorization: Bearer` header on the very first
+  // request, so the bug did not merely point the import at the wrong host, it SENT SOMEBODY'S
+  // PLATFORM CREDENTIAL TO A THIRD PARTY. It surfaced as a 404 and looked like the platform
+  // being down.
+  //
+  // zz-doctor already filtered to this marketplace and so passed on the same machine, which is
+  // why nothing caught it: two files deciding one thing, and only one of them was right. The
+  // filter here is written to be the same rule, in the same words.
+  const mine = listed.filter((p) => typeof p?.id === "string" && p.id.endsWith(`@${MARKETPLACE}`));
+
+  // The core door by preference, then any door this marketplace's plugins declare. A flow
+  // plugin names block doors on the same gateway, so either answers the question "which
+  // deployment" — but preferring the one we are about to call keeps the answer obvious.
+  const urls = mine.flatMap((p) => Object.values(p?.mcpServers ?? {}).map((sv) => sv?.url))
+                   .filter((u) => typeof u === "string");
+  const host = (u) => /^(https?:\/\/[^/]+)/.exec(u)?.[1];
+  for (const u of urls) if (u.includes("/core/mcp")) { const h = host(u); if (h) return h; }
+  for (const u of urls) { const h = host(u); if (h) return h; }
+
+  throw new Error(`No plugin from the ${MARKETPLACE} marketplace declares an MCP server, so ` +
+    "this machine is not connected to the platform yet. Install the baseline first: " +
     "claude plugin marketplace add zhixuan312/zz-stack && claude plugin install zz@zz-stack");
 }
 

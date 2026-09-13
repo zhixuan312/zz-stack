@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.31.0 (2026-09-13). What we believe, and what we have. The world as it stands at this
+Status: 0.32.0 (2026-09-13). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -448,6 +448,50 @@ hold zero rows, the smoke engine is not in the tree, and the CLI half of that tr
 SQL past the MCP door. §6c has said "the evaluation track exists, and has not been run" since
 0.11.0; it is still true, and the earlier §6 claimed a five-scenario standing suite on top of
 it.
+
+## 6r. In 0.32.0: the subject of an evaluation is a plugin, and it has not been run
+
+**Held to this section's bar, which means saying what is NOT verified.** Everything below is
+in the release and none of it has been exercised against the deployment, because migrations
+`047` and `048` apply on the gateway's next start and that start is this release.
+
+A plugin is what a person installs — a flow's skills plus the MCP servers those skills call.
+The platform evaluated the halves separately and could see neither of the two things that
+decide whether the whole works: whether a flow that goes wrong can return to an earlier stage,
+and whether a tool its own skills name is ever actually called.
+
+**Two kinds of evidence, and the second one is new to this platform.** TRACES come from the
+event log and need five usable runs. CASES come from `claude plugin eval`, which runs a suite
+twice — with the plugin and without — and reports the delta. That is a COUNTERFACTUAL, which
+no score can give: it says the plugin caused the outcome. It needs no history at all, which is
+what makes a plugin evaluable the day it ships. Each block carries its own sufficiency and only
+both empty stops the flow.
+
+**What is verified about it, and it is not the flow:**
+- One case ran end to end against the shipped shelf — `Plugin under test: "sdlc" version
+  "0.31.0+600dd6c5"`, two arms, with-arm 0.75, $1.40. The ablation resolves and both arms run.
+- That run paid for itself: a grader keyed on `Skill(sdlc-spec-audit)` scored 0 in all three
+  with-arm runs, not because the plugin failed but because `sdlc-method` DISPATCHES an audit to
+  a subagent whose transcript the parent's tool log never sees. It measured the harness and
+  understated the plugin by a quarter every run.
+- `047` and `048` apply as a pair, verified in a rolled-back transaction against the live
+  database. Every affected table held zero rows, measured rather than remembered.
+- 199 queries across `services/`, `packages/` and `scripts/` PREPARE against the post-`048`
+  schema. Nine readers of dropped columns were found and fixed; the ninth was in a route
+  nobody was looking at, with the gate green over it.
+
+**What is not verified: the flow itself.** `/zz:zz-plugin-eval sdlc` has never been run. On the
+data as it stands it should take the full path — six usable runs and four cases both clear
+their thresholds — but that is a prediction, not an observation, and this section does not
+record predictions as facts.
+
+**Three write tools exist because their absence was found three times.** `plugin_cases_record`,
+`plugin_ruler_record` and `plugin_finding_record`. Each closed a hole where the flow READ a
+table nothing could write: the case results are produced by a CLI on somebody's laptop and
+zz-core is a container that cannot see them; a ruler was written into a document and never into
+a row, so the judge would have refused forever with the gate green; and `zz.eval_finding` lost
+its only writer when the old evaluation went. The shape was one shape three times — the design
+specified what the flow reads and under-specified what it writes.
 
 ## 6q. In 0.29.0: one client, and a shelf anyone can read
 

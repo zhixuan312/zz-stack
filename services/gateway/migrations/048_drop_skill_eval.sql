@@ -27,6 +27,13 @@
 -- rows are gone with the column, and "we checked, it was empty" is not recoverable from a
 -- schema. If this migration is ever applied somewhere those tables are NOT empty, it destroys
 -- the attribution of every skill-side score to the version that earned it. Check first.
+--
+-- AND AFTER THIS APPLIES, `npm run check:sql` IS WHAT PROVES IT SAFE. Nothing offline can see a
+-- dropped column -- that is 047's whole argument -- but sql-check PREPAREs every query in the
+-- repository against a migrated database, which resolves every table and column without
+-- executing anything. Its own header calls it "the check that catches a migration going one way
+-- and a query staying behind". It is not in the gate because it needs a live database, so it
+-- has to be run deliberately: run it as part of releasing this.
 
 -- ── the subject columns ─────────────────────────────────────────────────────────────────
 --

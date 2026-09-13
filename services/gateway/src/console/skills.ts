@@ -128,15 +128,21 @@ export function mountSkills(app: Express): void {
    * per-skill comparison the new design refuses, because every ruler now belongs to one
    * plugin and two skills' numbers under two rulers are not comparable.
    */
-  /** Runs, as recorded. Includes the two gaps rather than hiding them: turns
-   * that are never attributed, and runs that end with no outcome. */
+  /** Runs, as recorded. States the one gap it still has rather than hiding it: turns that are
+   * never attributed.
+   *
+   * NO OUTCOME BREAKDOWN. This grouped every run by `zz.run.outcome` and reported the runs
+   * that ended without one as a gap. 048 drops that column: its only writer was the
+   * `eval-decide` op, which went with the skill-level evaluation, and nothing has set a run's
+   * outcome since. A breakdown of a column nothing writes is one bar reading "(not recorded)"
+   * across every run forever, and a "gap" that can never close is not a gap — it is a feature
+   * nobody built, reported as a defect. If the platform decides a run has an outcome again,
+   * this comes back with whatever writes it. */
   app.get("/api/console/runs", teamless("runs", async (_req, res) => {
     // NO TEAM DIMENSION: `zz.run` carries no team column and this reports platform-wide
-    // outcome and volume totals, the same census category as /overview.
+    // volume totals, the same census category as /overview.
     const db = platformDb();
-    const [outcomes, totals] = await Promise.all([
-      db.query(`select coalesce(outcome,'(not recorded)') as outcome, count(*) as n
-                  from zz.run group by 1 order by count(*) desc`),
+    const [totals] = await Promise.all([
       db.query(`select count(*) as runs, coalesce(sum(calls),0) as calls,
                        coalesce(sum(refusals),0) as refusals, coalesce(sum(turns),0) as turns,
                        round((sum(bytes_total)/1048576.0)::numeric,1) as mb,
@@ -146,7 +152,6 @@ export function mountSkills(app: Express): void {
     const t = totals.rows[0];
     res.json({
       totals: { runs: +t.runs, calls: +t.calls, refusals: +t.refusals, mb: +t.mb },
-      outcomes: outcomes.rows.map((r) => ({ outcome: r.outcome, n: +r.n })),
       gaps: {
         // Both stated as data so the front end never has to hardcode a caveat
         // that stops being true the day the platform starts recording them.
@@ -159,7 +164,6 @@ export function mountSkills(app: Express): void {
         // the reader to ignore the ones that mean something.
         turnsAttributed: +t.turns > 0 || (+t.runs === 0 && +t.turn_events === 0),
         turnEvents: +t.turn_events,
-        runsWithoutOutcome: +(outcomes.rows.find((r) => r.outcome === "(not recorded)")?.n ?? 0),
       },
     });
   }));

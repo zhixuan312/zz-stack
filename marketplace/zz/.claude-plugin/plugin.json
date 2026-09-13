@@ -1,7 +1,7 @@
 {
   "name": "zz",
   "description": "ZZ platform baseline for your team — identity, your team's documents and knowledge, the gates, and where each piece of work stands. Required by everything else.",
-  "version": "0.31.0+a964cd2b",
+  "version": "0.31.1+de3dc3a6",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

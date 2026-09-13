@@ -26,6 +26,7 @@ import { Refusal } from "./refusal.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
 import { registerPluginEvalTools } from "./tools/plugin-eval.js";
 import { registerPluginJudgeTools } from "./tools/plugin-judge.js";
+import { registerPluginRecordTools } from "./tools/plugin-record.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
 import { registerInitiativeStatusTools } from "./tools/initiative-status.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
@@ -204,6 +205,7 @@ function buildServer(): McpServer {
   // THE DOORS, in the order their tools are registered.
   registerPluginEvalTools(server);
   registerPluginJudgeTools(server);
+  registerPluginRecordTools(server);
   registerSkillTools(server);
   registerArtifactTools(server);
   registerKnowledgeTools(server);

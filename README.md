@@ -197,7 +197,11 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             the gateway serves packages with — the gate fails a release whose
             committed shelf no longer matches the catalog),
             set-version.mjs, skill-versions.mjs (each skill's declared version beside
-            the hash of what it actually says), manifests.mjs (where the packages are, read by
+            the hash of what it actually says), plugin-versions.mjs (the same
+            argument one level up, for the unit a person actually installs: each
+            plugin's declared version beside a digest of what it ships, recorded in
+            plugins.lock.json so the gate can refuse content that moved under a
+            frozen number), manifests.mjs (where the packages are, read by
             both) and build-image.sh (the runtime image, from the lockfile). The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:
             set-credential, probe-block, register-skills (what we OFFER, from

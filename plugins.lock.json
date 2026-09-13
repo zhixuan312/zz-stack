@@ -1,0 +1,71 @@
+{
+  "sdlc": {
+    "version": "0.1.0",
+    "digest": "86b23544",
+    "cases_digest": "",
+    "skills": {
+      "sdlc-audit-criteria": "2e6e7658e10d",
+      "sdlc-authoring": "36835b1ba955",
+      "sdlc-breakout": "053edf157618",
+      "sdlc-deck": "bb0f737c315b",
+      "sdlc-execute": "9a04bd96e3dd",
+      "sdlc-explore": "9a753290ce0b",
+      "sdlc-flow": "6aa89ba0a1f8",
+      "sdlc-investigate": "c52bfb4eff39",
+      "sdlc-method": "52e2f6ef2b3f",
+      "sdlc-plan": "895cd03f4da6",
+      "sdlc-plan-audit": "7ad834323396",
+      "sdlc-recall": "11d3248df3c0",
+      "sdlc-research": "356f31a674f0",
+      "sdlc-review": "aa2dd0db648a",
+      "sdlc-spec": "77e51ec5f4ac",
+      "sdlc-spec-audit": "a8861d50826a",
+      "sdlc-tldr": "2469c2720bad"
+    }
+  },
+  "zz": {
+    "version": "0.31.0",
+    "digest": "66b01ed3",
+    "cases_digest": "",
+    "skills": {
+      "zz-backbone": "235fd223ba19",
+      "zz-doctor": "75c80644ff6f",
+      "zz-knowledge": "93465dacc57f",
+      "zz-migrate": "c930b815ce1c",
+      "zz-update": "e00ecd0c5e04"
+    }
+  },
+  "zz-access": {
+    "version": "2.0.0",
+    "digest": "bd11f993",
+    "cases_digest": "",
+    "skills": {
+      "zz-access": "08caf5051cdb",
+      "zz-admin": "6fd5f6827f61"
+    }
+  },
+  "zz-block-eval": {
+    "version": "0.1.0",
+    "digest": "8c3e0e80",
+    "cases_digest": "",
+    "skills": {
+      "zz-block-eval": "5b372d293822",
+      "zz-block-locate": "796f7331f064",
+      "zz-block-measure": "a641fe169f75",
+      "zz-block-report": "6da5dcb79647"
+    }
+  },
+  "zz-skill-eval": {
+    "version": "0.1.0",
+    "digest": "1fb6767c",
+    "cases_digest": "",
+    "skills": {
+      "zz-skill-define": "e9a1524be5ed",
+      "zz-skill-eval": "ff1055cfc3e8",
+      "zz-skill-judge": "5dc8dfa5cfa8",
+      "zz-skill-locate": "fb69901c9238",
+      "zz-skill-profile": "4701ba81e468",
+      "zz-skill-report": "b2d7060ff1ef"
+    }
+  }
+}

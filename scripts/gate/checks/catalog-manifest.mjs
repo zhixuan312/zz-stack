@@ -344,3 +344,110 @@ check("a flow's manifest is read through one reader", () => {
   }
   return bad.join("\n");
 });
+
+check("a plugin's content cannot move under a version nobody bumped", () => {
+  // WHAT A PLUGIN VERSION IS WORTH, and it was worth nothing until this.
+  //
+  // A plugin is what a person installs. Its version is declared by hand in flow.json, and
+  // `set-version.mjs` bumps every manifest in the workspace while never touching catalog/ — so
+  // the one number a person cites when they say "sdlc 0.2 fixed it" was the one number nothing
+  // checked. Content could move under it forever.
+  //
+  // This is skill-shape.mjs's lock check one level up, and its reasoning transfers whole: the
+  // hash is not an alternative to the version, it is what makes the version true.
+  //
+  // THE RULE IS IMPORTED FROM THE TOOL THAT FIXES IT. pluginLock() is the same function
+  // plugin-versions.mjs calls, which is the same enumeration the packager ships from. A second
+  // implementation of "what does this plugin contain" would drift, and then the digest would
+  // vouch for something nobody installs. Run in a subprocess because the enumeration reads
+  // three directories that are absolute in the image and relative here — the shape
+  // catalog-manifest already uses above, for the same reason.
+  const lockPath = join(root, "plugins.lock.json");
+  if (!existsSync(lockPath)) {
+    return "plugins.lock.json does not exist — run `node scripts/plugin-versions.mjs --write`";
+  }
+  const probe = `
+    const { pluginLock } = await import(${JSON.stringify(join(root, "services/gateway/dist/package/plugin-lock.js"))});
+    process.stdout.write(JSON.stringify(pluginLock(${JSON.stringify(root)})));
+  `;
+  let live;
+  try {
+    live = JSON.parse(execFileSync("node", ["--input-type=module", "-e", probe], {
+      encoding: "utf8",
+      env: { ...process.env,
+             ZZ_CATALOG_DIR: join(root, "catalog"),
+             ZZ_SKILLS_DIR: join(root, "skills"),
+             ZZ_EVALS_DIR: join(root, "evals") },
+    }));
+  } catch (err) {
+    return `the plugin enumeration could not be run: ${String(err.stderr ?? err).slice(-300)}`;
+  }
+  // An empty enumeration must FAIL, not pass. A wrong directory finds nothing, and nothing
+  // agrees with nothing — a green tick over a lock that vouches for no plugin at all.
+  if (!live.length) return "the plugin enumeration returned nothing — the extraction is broken";
+
+  const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
+  const bad = [];
+  for (const p of live) {
+    const was = recorded[p.name];
+    if (!was) {
+      bad.push(`${p.name} ships and plugins.lock.json has never heard of it — run ` +
+               "`node scripts/plugin-versions.mjs --write`");
+      continue;
+    }
+    if (was.digest !== p.digest && was.version === p.version) {
+      bad.push(`${p.name} still declares ${p.version} and its content moved ` +
+               `(${was.digest} -> ${p.digest}) — bump the version in its flow.json, or re-run ` +
+               "`node scripts/plugin-versions.mjs --write` if the change is deliberate");
+    }
+  }
+  for (const name of Object.keys(recorded)) {
+    if (!live.some((p) => p.name === name)) {
+      bad.push(`plugins.lock.json still lists ${name}, which the catalog no longer ships — ` +
+               "re-run `node scripts/plugin-versions.mjs --write`");
+    }
+  }
+  return bad.length ? firstOf(bad) : null;
+});
+
+check("a plugin's recorded membership is the one it ships", () => {
+  // WHICH SKILL VERSIONS WERE IN THIS PLUGIN VERSION, which nothing recorded until now.
+  //
+  // zz.skill_version has no plugin column, zz.skill.flow is CURRENT registration rather than
+  // per-version, and flow_install overwrites its own history on reinstall. So "which version of
+  // this skill was running" had no honest answer, and the evaluation track resolved it to
+  // whatever happened to be current at read time -- a wrong answer indistinguishable from a
+  // right one.
+  //
+  // Release is the only moment anybody actually knows, so release is where it is written. This
+  // refuses a lock whose membership has drifted from the catalog, because a membership that is
+  // wrong is worse than one that is missing: the profile would resolve events through it and
+  // report the result as fact.
+  const lockPath = join(root, "plugins.lock.json");
+  if (!existsSync(lockPath)) return null;   // the check above already says this
+  const recorded = JSON.parse(readFileSync(lockPath, "utf8"));
+  const bad = [];
+  for (const [plugin, entry] of Object.entries(recorded)) {
+    // catalogPackages is an ARRAY of {owner, flow, dir}, not a function, and dir is already
+    // absolute -- so the plugin name is its flow with the -flow suffix off, the same rule
+    // pluginName() applies in the packager.
+    const dirs = plugin === "zz"
+      ? [join(root, "skills")]
+      : catalogPackages.filter((e) => e.flow.replace(/-flow$/, "") === plugin)
+                       .map((e) => join(e.dir, "skills"));
+    if (!dirs.length || !dirs.some((d) => existsSync(d))) continue;
+    const onDisk = new Set(dirs.flatMap((d) => existsSync(d)
+      ? readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+      : []));
+    const inLock = new Set(Object.keys(entry.skills ?? {}));
+    for (const name of onDisk) {
+      if (!inLock.has(name)) bad.push(`${plugin} ships skill ${name} and the lock does not record it`);
+    }
+    for (const name of inLock) {
+      if (!onDisk.has(name)) bad.push(`the lock says ${plugin} contains ${name}, which it does not ship`);
+    }
+  }
+  return bad.length
+    ? `${firstOf(bad)} — re-run \`node scripts/plugin-versions.mjs --write\``
+    : null;
+});

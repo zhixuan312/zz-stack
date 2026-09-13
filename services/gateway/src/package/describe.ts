@@ -23,20 +23,52 @@ import { commandName, pluginName } from "./skills.js";
 export function digestOf(plugins: Plugin[]): string {
   const h = createHash("sha256");
   for (const pl of [...plugins].sort((a, b) => a.name.localeCompare(b.name))) {
-    // The description counts. It is the marketplace card and it lands in plugin.json, but
-    // it reaches those through the OUTER file list rather than pl.files — so editing a
-    // flow.json description moved the card and left the digest still, and the runtime's
-    // version-keyed cache went on serving the old text with no way to notice.
-    h.update(pl.name).update("\0").update(pl.description).update("\0")
-      .update(pl.required ? "required" : "optional").update("\0");
-    for (const sv of [...pl.servers].sort((a, b) => a.name.localeCompare(b.name))) {
-      h.update(sv.name).update("\0").update(sv.url).update("\0");
-    }
-    for (const f of [...pl.files].sort((a, b) => a.path.localeCompare(b.path))) {
-      h.update(f.path).update("\0").update(f.content).update("\0");
-    }
+    feed(h, pl, true);
   }
   return h.digest("hex").slice(0, 8);
+}
+
+/** WHAT ONE PLUGIN *IS*, which is a different question from the one above.
+ *
+ * `digestOf` answers "what did this PERSON receive": it runs over the whole shelf, it includes
+ * each server's URL, and it is the runtime's per-person cache key. Correct for that job, and
+ * useless as an identity for a plugin — every plugin on a shelf carries the same value, it
+ * moves when an unrelated plugin moves, and it differs between two people running identical
+ * code. `claude plugin list` shows it: sdlc and zz both read 0.29.0+1e7d702a.
+ *
+ * This answers "what IS this plugin": one plugin, and no server URL. The URL carries the
+ * deployment's own base address, so including it would make two deployments running
+ * byte-identical content disagree about what that content is — the opposite of what a content
+ * identity is for. Everything else is the same fields in the same order, fed by the same
+ * function, so the two cannot drift apart.
+ *
+ * Paired with the version a plugin declares, this is what makes that version TRUE: the gate
+ * compares them and refuses a release whose content moved while its number did not. The same
+ * argument skill-versions.mjs makes for skills, one level up. */
+export function digestOfPlugin(plugin: Plugin): string {
+  const h = createHash("sha256");
+  feed(h, plugin, false);
+  return h.digest("hex").slice(0, 8);
+}
+
+/** The fields of one plugin, in a fixed order, into a hash.
+ *
+ * ONE function for both digests so that adding a field to a plugin cannot be remembered in one
+ * and forgotten in the other — which is how the description came to be left out of the shelf
+ * digest for a while: editing a flow.json description moved the marketplace card and left the
+ * digest still, and the version-keyed cache went on serving the old text with no way to notice.
+ *
+ * `withUrl` is the ONLY difference between the two, and it is not a detail. See digestOfPlugin. */
+function feed(h: ReturnType<typeof createHash>, pl: Plugin, withUrl: boolean): void {
+  h.update(pl.name).update("\0").update(pl.description).update("\0")
+    .update(pl.required ? "required" : "optional").update("\0");
+  for (const sv of [...pl.servers].sort((a, b) => a.name.localeCompare(b.name))) {
+    h.update(sv.name).update("\0");
+    if (withUrl) h.update(sv.url).update("\0");
+  }
+  for (const f of [...pl.files].sort((a, b) => a.path.localeCompare(b.path))) {
+    h.update(f.path).update("\0").update(f.content).update("\0");
+  }
 }
 /** The human-readable answer a person gets when they ask for their setup. */
 export function describePackage(pkg: ClientPackage, target: string): string {

@@ -33,6 +33,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.33.1] — 2026-09-13
+
+A defect fix and two pieces of console presentation. Nothing to do on upgrade.
+
+### Fixed
+- **The gate could not see a plugin lock a whole release behind the catalog.** Its condition
+  read `was.digest !== p.digest && was.version === p.version` — "content moved and the version
+  did NOT" — so the moment a version moved the conjunction collapsed and a stale lock passed
+  silently. That is how 0.33.0 deployed with `zz.plugin_version` describing 0.32.3: sdlc 0.1.0,
+  zz 0.31.0, zz-access 2.0.0, zz-plugin-eval 0.1.0, written for a release containing none of
+  them. Nothing about that deployment was wrong; what was wrong was which version its work
+  would be attributed to, and `plugin_cases_record` refused every recording against it.
+
+  `plugins.lock.json` is an INPUT, not a record — `release.mjs` registers from it and does not
+  regenerate it. So the check now also fails on a version mismatch, `checks/gate-plugin-lock.mjs`
+  proves it goes red on a lock a release behind, and the release prints `N member(s) unresolved`
+  as a warning naming what to run rather than as a count appended to a success line. **Running
+  `node scripts/plugin-versions.mjs --write` before the gate is still a manual step**; what
+  changed is that forgetting it is now caught instead of shipped.
+
+### Changed
+- **Console — the login page.** The mascot moves from the marketing column to the sign-in
+  column. The right column used to end at its own fine print, leaving the bottom half of the
+  screen empty while the left ran nearly full height; the mascot sat mid-column on the left with
+  air on all four sides. One move fixes both, and it is the more honest placement: the left
+  column says what the platform records, and she is not a record — she greets you at the door.
+  "AI friend for a brighter you" travels with her, having been sitting under a paragraph about
+  telemetry.
+- **Console — the favicon has clear corners.** The master draws the purple tile on a white
+  canvas, so the four corners outside the rounded curve stayed opaque — invisible on a light
+  page and four bright dots on a dark browser tab, which is where a favicon lives. The
+  background is now removed by flood fill from the corners, so only white CONNECTED TO THE EDGE
+  clears and the white `Z` inside is untouched.
+
+### Upgrade notes
+- Nothing. No migration, no environment key, and no client re-pull — no skill or catalog text
+  moved in this release, so an installed plugin is already current.
+
 ## [0.33.0] — 2026-09-13
 
 Every plugin on the shelf can now be evaluated, and four defects in the evaluation

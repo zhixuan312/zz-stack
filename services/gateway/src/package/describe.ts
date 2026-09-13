@@ -56,6 +56,16 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     `## 3. Use it`,
   ];
 
+  // THE BASELINE'S OWN COMMANDS COME FIRST, and they are listed whether or not a flow is
+  // installed — they are the three that work on an empty account. `/zz:doctor` especially:
+  // the moment this setup text is wrong about anything, it is the thing that says so, and a
+  // person whose install did not take is exactly the person who cannot reach a flow to ask.
+  lines.push(
+    `\`/zz:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
+    `\`/zz:update\` brings every ZZ plugin you have up to date, in one command.`,
+    ``,
+  );
+
   if (pkg.flows.length === 0) {
     lines.push(`No flow is installed for your team yet — ask a platform admin to install one.`);
   } else {

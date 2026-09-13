@@ -68,6 +68,30 @@ if (!redGhost) {
        "failure mode the omit-rather-than-hash-empty rule exists to make loud");
 }
 
+// 5 — the lock is a whole release behind the catalog.
+//
+// THIS ONE SHIPPED. The check read `was.digest !== p.digest && was.version === p.version`, so
+// it could only fire when content moved and the version did NOT -- the moment a version moved,
+// the conjunction collapsed and a lock a release out of date passed silently. 0.33.0 went out
+// that way: plugins.lock.json still said sdlc 0.1.0 while the catalog declared 0.2.0, and
+// because release.mjs registers zz.plugin_version FROM that file and never regenerates it, the
+// database ended up describing 0.32.3. Every one of the release's 17 live probes was green,
+// because each asks whether the deployment matches the CHECKOUT and the stale lock was part of
+// the checkout. It agreed with itself.
+const parsed4 = JSON.parse(lock);
+const victim4 = Object.keys(parsed4)[0];
+const realVersion = parsed4[victim4].version;
+parsed4[victim4].version = "0.0.1-stale";
+writeFileSync(LOCK, JSON.stringify(parsed4, null, 2) + "\n");
+const redStale = gate().status !== 0;
+writeFileSync(LOCK, lock);
+if (!redStale) {
+  fail(`the gate stayed GREEN with ${victim4} locked at 0.0.1-stale while the catalog declares ` +
+       `${realVersion} — so a release would register the PREVIOUS release's plugin versions, ` +
+       "and nothing anywhere would say so");
+}
+
 if (gate().status !== 0) fail("the gate did not return to GREEN after restoring everything");
 console.log("PASS: red on a frozen-version content change, red on an extra member, red on a " +
-            "missing member, red on a plugin the catalog does not ship, green otherwise.");
+            "missing member, red on a plugin the catalog does not ship, red on a lock a " +
+            "release behind the catalog, green otherwise.");

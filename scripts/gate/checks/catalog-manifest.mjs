@@ -358,7 +358,7 @@ check("a flow's manifest is read through one reader", () => {
   return bad.join("\n");
 });
 
-check("a plugin's content cannot move under a version nobody bumped", () => {
+check("plugins.lock.json says what the catalog ships, on both version and digest", () => {
   // WHAT A PLUGIN VERSION IS WORTH, and it was worth nothing until this.
   //
   // A plugin is what a person installs. Its version is declared by hand in flow.json, and
@@ -408,10 +408,28 @@ check("a plugin's content cannot move under a version nobody bumped", () => {
                "`node scripts/plugin-versions.mjs --write`");
       continue;
     }
-    if (was.digest !== p.digest && was.version === p.version) {
+    if (was.version === p.version && was.digest !== p.digest) {
       bad.push(`${p.name} still declares ${p.version} and its content moved ` +
                `(${was.digest} -> ${p.digest}) — bump the version in its flow.json, or re-run ` +
                "`node scripts/plugin-versions.mjs --write` if the change is deliberate");
+    } else if (was.version !== p.version) {
+      // THE LOCK BEING BEHIND THE CATALOG WAS CHECKED BY NOTHING, and the branch above is why:
+      // it reads `content moved AND the version did not`, so the moment a version moves the
+      // conjunction collapses and a lock a whole release out of date passes silently.
+      //
+      // That is not a tidiness failure, because plugins.lock.json is not a record — it is an
+      // INPUT. release.mjs:496 registers zz.plugin_version from it and never regenerates it,
+      // so a stale lock makes a release write the PREVIOUS release's plugin versions into the
+      // database. It happened on 0.33.0: the deployment was correct and every one of its 17
+      // live probes was green, because each of them asks whether the deployment matches the
+      // checkout and the stale lock WAS part of the checkout. It agreed with itself. What
+      // broke was the ability to say which version anything belonged to — plugin_cases_record
+      // resolves its subject through that table and refused every recording against a version
+      // the release plainly contained.
+      bad.push(`plugins.lock.json records ${p.name} at ${was.version} and the catalog now ` +
+               `declares ${p.version} — run \`node scripts/plugin-versions.mjs --write\`. The ` +
+               "release registers zz.plugin_version FROM this file and never regenerates it, " +
+               "so a stale entry here registers the previous release's version.");
     }
   }
   for (const name of Object.keys(recorded)) {

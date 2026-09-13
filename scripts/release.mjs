@@ -495,9 +495,22 @@ try {
 try {
   const out = run("node", ["packages/tools/dist/ops/register-plugins.js",
                            "--root", ".", "--psql", regPsql]);
-  const unresolved = /members UNRESOLVED (\d+)/.exec(out)?.[1];
-  log(`  plugin registry updated from plugins.lock.json` +
-      (unresolved ? ` — ${unresolved} member(s) unresolved` : ""));
+  // UNRESOLVED IS NOT A STATISTIC, AND PRINTING IT AS ONE IS HOW 0.33.0 SHIPPED A REGISTRY
+  // DESCRIBING 0.32.3. This read `— 27 member(s) unresolved` appended to a success line, in the
+  // grammar of a count, so it looked like a property of the data rather than a defect. Zero is
+  // the only correct value: a member is a skill version this lock names, and every one of them
+  // was written by register-skills two steps earlier. Any other number means the lock is
+  // describing a catalog that is not the one being released.
+  const unresolved = Number(/members UNRESOLVED (\d+)/.exec(out)?.[1] ?? 0);
+  if (unresolved) {
+    log(`  \x1b[33mWARNING: ${unresolved} plugin member(s) UNRESOLVED — plugins.lock.json is ` +
+        `describing a different catalog than the one being released, so zz.plugin_version now ` +
+        `holds the PREVIOUS release's versions. Run \`node scripts/plugin-versions.mjs ` +
+        `--write\`, commit it, then re-run register-plugins. Nothing about the deployment is ` +
+        `wrong; what is wrong is which version its work will be attributed to.\x1b[0m`);
+  } else {
+    log("  plugin registry updated from plugins.lock.json");
+  }
 } catch (e) {
   // Loud, not fatal, for the same reason as the step above: a stale plugin registry costs the
   // ability to evaluate this release, which is a reporting failure. Rolling a good deployment

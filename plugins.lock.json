@@ -1,8 +1,8 @@
 {
   "sdlc": {
-    "version": "0.1.0",
-    "digest": "a2975dc5",
-    "cases_digest": "8853f784",
+    "version": "0.2.0",
+    "digest": "e5b3642b",
+    "cases_digest": "5b892e95",
     "skills": {
       "sdlc-audit-criteria": "2e6e7658e10d",
       "sdlc-authoring": "36835b1ba955",
@@ -12,7 +12,7 @@
       "sdlc-explore": "9a753290ce0b",
       "sdlc-flow": "6aa89ba0a1f8",
       "sdlc-investigate": "c52bfb4eff39",
-      "sdlc-method": "52e2f6ef2b3f",
+      "sdlc-method": "af362dd16723",
       "sdlc-plan": "895cd03f4da6",
       "sdlc-plan-audit": "7ad834323396",
       "sdlc-recall": "11d3248df3c0",
@@ -24,9 +24,9 @@
     }
   },
   "zz": {
-    "version": "0.31.0",
-    "digest": "fcf9e457",
-    "cases_digest": "786b3776",
+    "version": "0.33.0",
+    "digest": "0f814dfc",
+    "cases_digest": "c424dd5f",
     "skills": {
       "zz-backbone": "4e39db5d39ec",
       "zz-doctor": "75c80644ff6f",
@@ -36,24 +36,24 @@
     }
   },
   "zz-access": {
-    "version": "2.0.0",
-    "digest": "bd11f993",
-    "cases_digest": "",
+    "version": "2.1.0",
+    "digest": "ac717b27",
+    "cases_digest": "5aa23b57",
     "skills": {
       "zz-access": "08caf5051cdb",
       "zz-admin": "6fd5f6827f61"
     }
   },
   "zz-plugin-eval": {
-    "version": "0.1.0",
-    "digest": "16164ec7",
-    "cases_digest": "",
+    "version": "0.2.0",
+    "digest": "49540a29",
+    "cases_digest": "11e1bc05",
     "skills": {
       "zz-plugin-define": "a3c6baa250d1",
-      "zz-plugin-eval": "e88d1c1c5e83",
+      "zz-plugin-eval": "1d0a715dd045",
       "zz-plugin-judge": "93ddf954c040",
       "zz-plugin-locate": "641a2d2e8a99",
-      "zz-plugin-profile": "02738a4bec61",
+      "zz-plugin-profile": "2dbbe1e0d91d",
       "zz-plugin-report": "084a6246cec6"
     }
   }

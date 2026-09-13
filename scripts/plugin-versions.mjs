@@ -78,11 +78,19 @@ if (process.argv.includes("--write")) {
   console.log(`\n  ${pad("plugin", 16)}${pad("declared", 11)}${pad("digest", 10)}${pad("cases", 8)}${pad("skills", 8)}state`);
   for (const p of entries) {
     const was = prev[p.name];
-    const state = !was ? "new"
+    // EVERY STATE THAT IS NOT `unchanged` SAYS WHAT TO DO, IN THE IMPERATIVE. The last branch
+    // used to print `0.1.0 -> 0.2.0`, which is the grammar of a changelog: it reads as "this
+    // release moves the version", not as "this file is behind and you must rewrite it". It was
+    // read that way, eight times in one day, by somebody who then shipped 0.33.0 with a lock
+    // describing 0.32.3 — and the gate could not catch it either, so the misreading was never
+    // contradicted. A tool that reports drift in the grammar of a narration will be read as a
+    // narration. The fix is one line of wording and it belongs here rather than in the reader.
+    const state = !was ? "new — run --write"
       : was.digest === p.digest ? "unchanged"
       : was.version === p.version
         ? "CHANGED WITHOUT A VERSION BUMP — bump flow.json, or re-run --write if the change is intended"
-        : `${was.version} -> ${p.version}`;
+        : `STALE: the lock says ${was.version}, the catalog says ${p.version} — RUN --write, ` +
+          "the release registers plugin versions FROM this file";
     console.log(`  ${pad(p.name, 16)}${pad(p.version, 11)}${pad(p.digest, 10)}` +
                 `${pad(p.cases_digest || "(none)", 8)}${pad(p.skills.length, 8)}${state}`);
   }

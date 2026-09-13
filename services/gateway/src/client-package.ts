@@ -30,7 +30,7 @@ import { catalogEntry } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
-import { cardDescription, commandFile, commandName, headersHelper, platformPlugins, pluginName, promoteStandalone, routerSkill, withoutFrontmatter } from "./package/skills.js";
+import { cardDescription, commandFile, commandName, headersHelper, platformPlugins, pluginName, promotePlatformOwn, promoteStandalone, routerSkill, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one
  * number and no second place to forget to update.
@@ -120,6 +120,24 @@ function platformOwnSkills(prefix: string): PackageFile[] {
     if (e.isDirectory()) walk(join(SKILLS_DIR, e.name), e.name);
   }
   return out;
+}
+
+/** What the baseline plugin carries: the router, the platform's own skills, and a command
+ * for each of those skills that declares itself standalone.
+ *
+ * The baseline got skills and no commands, so `doctor`, `update` and `migrate` — the three a
+ * person types rather than a method loads — had no way to be typed. Flows have promoted their
+ * standalone skills to commands since they existed; this is the same rule applied to the one
+ * plugin everybody has. */
+function baselineFiles(flows: InstalledFlow[]): PackageFile[] {
+  const skills = [
+    { path: "skills/zz-router/SKILL.md", content: routerSkill(flows) },
+    ...platformOwnSkills("skills"),
+  ];
+  const { commands, promoted } = promotePlatformOwn(skills);
+  // Assets beside a promoted skill still travel: only its SKILL.md moves. That is what
+  // carries each command's script, which lives in the skill's own directory.
+  return [...commands, ...skills.filter((sk) => !promoted.has(sk))];
 }
 
 /** Every file under a flow's skills/ directory, as package files rooted at `prefix`. */
@@ -251,10 +269,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       // has been read 194 times through skill_view — shipped in no plugin at all.
       // They were reachable over MCP and installable by nobody. This is the one
       // plugin everybody must have, and what we are is our MCP and our method.
-      files: [
-        { path: "skills/zz-router/SKILL.md", content: routerSkill(flows) },
-        ...platformOwnSkills("skills"),
-      ],
+      files: baselineFiles(flows),
     },
     ...platformPlugins().map((pp): Plugin => {
       const skills = residentSkills(pp.dir, "skills");

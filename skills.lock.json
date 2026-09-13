@@ -123,8 +123,20 @@
     "version": "3.24",
     "sha": "235fd223ba19"
   },
+  "zz-doctor": {
+    "version": "1.0",
+    "sha": "75c80644ff6f"
+  },
   "zz-knowledge": {
     "version": "2.4",
     "sha": "93465dacc57f"
+  },
+  "zz-migrate": {
+    "version": "1.0",
+    "sha": "c930b815ce1c"
+  },
+  "zz-update": {
+    "version": "1.0",
+    "sha": "e00ecd0c5e04"
   }
 }

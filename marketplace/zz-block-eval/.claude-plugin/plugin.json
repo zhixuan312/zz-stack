@@ -1,7 +1,7 @@
 {
   "name": "zz-block-eval",
   "description": "Measure an MCP surface: what it offers, what it honours of the standard, and what it does that its documentation does not describe. Points at any registered block — including 'platform', which is this platform's own surface.",
-  "version": "0.29.0+1e7d702a",
+  "version": "0.29.0+f40678fe",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

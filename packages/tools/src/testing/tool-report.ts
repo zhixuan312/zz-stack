@@ -74,6 +74,10 @@ interface CallRow {
     bytes?: number;
     /** A stable hash, never a person: it correlates one conversation and identifies nobody. */
     caller?: string;
+    /** Which of our own tools made the call — the chat plugin, a command, a harness. Names a
+     * piece of software, never a person, and is what "which of the things we ship get used"
+     * is counted from. */
+    client?: string;
     /** One conversation, so one evaluation round can be told from the next. */
     run?: string;
     /** Hash of the skill text actually served. The gate refuses a changed skill that kept its
@@ -179,9 +183,14 @@ interface ReportShape {
   accepted_rate: number;
   aborted: number;
   tools: Record<string, ToolStat>;
+  /** One row per client — which of the things we ship actually get run, and how often they are
+   * refused. Named software, never a person. */
+  clients: ClientStat[];
   refusals: Refusal[];
   named: NamedId[];
 }
+
+interface ClientStat { client: string; calls: number; refused: number; tools: number }
 
 /** Whether a parsed file is one of this tool's own reports.
  *
@@ -405,6 +414,10 @@ function main(argv: string[]): number {
   // is one row of twelve, which is the shape the question needs: not how many calls a run
   // made, but which things it kept reaching for.
   const named = new Map<string, { key: string; value: string; count: number; tools: Set<string> }>();
+  // WHICH OF THE THINGS WE SHIP GET USED. One row per client — the chat plugin, each command,
+  // each harness — because "improve the tools people use" needs to know which those are, and
+  // until this existed the answer was buried inside a hash that also carried an address.
+  const perClient = new Map<string, { calls: number; refused: number; tools: Set<string> }>();
   let aborted = 0;
   let batched = 0;
   const example = new Map<string, { tool: string; args: string[]; shapes: Record<string, string>; text: string }>();
@@ -421,6 +434,17 @@ function main(argv: string[]): number {
     // the batch's duration and the response's whole size. Averaging those in counts one
     // measurement sixty-two times and calls it sixty-two calls' latency — the batched flag
     // exists precisely so a reader can tell, and nothing was reading it.
+    {
+      // `unattributed` rather than dropping the row: a client that sends no header is a
+      // caller we ship and forgot to tag, and a report that silently omits it would hide
+      // exactly the gap worth closing.
+      const c = d.client || "unattributed";
+      if (!perClient.has(c)) perClient.set(c, { calls: 0, refused: 0, tools: new Set() });
+      const pc = perClient.get(c)!;
+      pc.calls++;
+      pc.tools.add(subject);
+      if (e.ok === false) pc.refused++;
+    }
     if (d.batched) batched++;
     else {
       if (typeof d.ms === "number" && Number.isInteger(d.ms)) t.ms.push(d.ms);
@@ -463,6 +487,9 @@ function main(argv: string[]): number {
     unreadable: [...perTool.values()].reduce((a, v) => a + v.unreadable, 0),
     accepted_rate: Math.round(rate * 10) / 10,
     aborted,
+    clients: [...perClient]
+      .sort((a, b) => b[1].calls - a[1].calls)
+      .map(([client, v]) => ({ client, calls: v.calls, refused: v.refused, tools: v.tools.size })),
     tools: Object.fromEntries(
       [...perTool]
         .sort((a, b) => b[1].refused - a[1].refused || b[1].calls - a[1].calls)
@@ -548,6 +575,14 @@ function main(argv: string[]): number {
     // Skills first, because that is the question it was added for: a run that stalls and a
     // run that finishes load different ones, and the difference is a fact about the method
     // rather than about the model.
+    if (report.clients.length) {
+      console.log(`\nwhat made these calls (${report.clients.length} client${report.clients.length > 1 ? "s" : ""})`);
+      console.log("-".repeat(69));
+      for (const c of report.clients) {
+        const refused = c.refused ? `, ${c.refused} refused` : "";
+        console.log(`  ${String(c.calls).padStart(4)}  ${c.client.padEnd(18)} ${c.tools} distinct tool${c.tools > 1 ? "s" : ""}${refused}`);
+      }
+    }
     if (report.named.length) {
       const skills = report.named.filter((n) => n.key === "name" && n.tools.some((t) => t.includes("skill_view")));
       // Capped for the terminal, and the cap is stated. A listing that quietly stops at

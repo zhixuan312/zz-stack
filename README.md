@@ -92,7 +92,13 @@ skills/     platform skills, served whatever flow a team runs. Two are UNIVERSAL
             gates, documents, credentials, the tag kinds the knowledge base
             enforces, and what a team overlay may and may not do) and zz-knowledge
             (the handover, run last — one closed initiative's documents and
-            telemetry turned into what the next team should know). What an
+            telemetry turned into what the next team should know). Three more
+            are TYPED rather than loaded, and ship as the baseline's commands:
+            zz-doctor (can this machine reach the platform), zz-update (one
+            command to bring every installed plugin level) and zz-migrate
+            (an mma repository's journal and history, brought over). Each
+            carries its own script beside it, because what they do is
+            mechanical and a script is the part that cannot drift. What an
             evaluation calls for is not a skill: the report SPECIFIES one change
             and its expected effect, and a repository edit plus a release applies
             it, because /catalog and /skills are read-only wherever this runs.

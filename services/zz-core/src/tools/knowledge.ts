@@ -295,9 +295,19 @@ function subjectTagError(tags: string[] | undefined): string | null {
       inputSchema: {
         old_id: z.string().regex(/^\d{4,}$/),
         new_id: z.string().regex(/^\d{4,}$/),
+        // THE WAY OUT OF THE AMBIGUITY BELOW. Ids are allocated per shelf and both shelves
+        // start at 0001, so the same number naming two nodes is the normal case rather than
+        // an edge one — and the refusal told the caller to "supersede the one you mean by its
+        // own shelf" with no argument in which to say so. A node whose number happened to
+        // exist on the other shelf could therefore never be superseded at all, in the tool
+        // whose premise is that knowledge evolves. Both ids are on this shelf: a node is
+        // superseded by one beside it, which is the rule enforced further down anyway.
+        shelf: z.enum(["team", "platform"]).optional()
+          .describe("Which shelf both ids are on. Only needed when a bare id means a node on " +
+                    "each shelf; the refusal says so when it does."),
       },
     },
-    async ({ old_id, new_id }) => {
+    async ({ old_id, new_id, shelf }) => {
       const who = parseCaller(requestHeaders());
       // Two shelves now, and ids are allocated per shelf, so the same number can exist on
       // both — a bare id is ambiguous by design. Resolving must therefore hand back WHICH
@@ -327,13 +337,18 @@ function subjectTagError(tags: string[] | undefined): string | null {
       async function findId(id: string) {
         const onTeam = team ? resolve(id, "team", await userRoot()) : null;
         const onPlatform = resolve(id, "platform", knowledgeRoot());
+        // An explicit shelf settles it. It is a CHOICE BETWEEN the two, never a third answer:
+        // asking for a shelf the id is not on returns nothing and is refused as "no node",
+        // rather than quietly falling back to the other one and relabelling it.
+        if (shelf) return (shelf === "team" ? onTeam : onPlatform);
         if (onTeam && onPlatform) return { ambiguous: true as const, id, onTeam, onPlatform };
         return onTeam ?? onPlatform;
       }
       const bothShelves = (id: string, a: string, b: string) =>
         `ERROR: node ${id} exists on BOTH shelves — \`${a}\` on your team's and \`${b}\` on ` +
         "the platform's. Ids are allocated per shelf, so a bare number means two different " +
-        "nodes here. Supersede the one you mean by its own shelf: a team lesson is replaced " +
+        "nodes here. Pass `shelf: \"team\"` or `shelf: \"platform\"` to say which you mean — " +
+        "both ids are read from that one shelf. A team lesson is replaced " +
         "by a team node, a platform fact by a platform node, and promoting a lesson means " +
         "writing a NEW platform node with the old one as evidence rather than relabelling " +
         "across shelves.";

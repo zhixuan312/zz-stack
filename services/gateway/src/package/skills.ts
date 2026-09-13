@@ -297,6 +297,31 @@ export function promoteStandalone(flow: string, skills: PackageFile[], useComman
     promoted: new Set(picked.map((x) => x.file)),
   };
 }
+/** The platform's own standalone skills, as commands.
+ *
+ * A flow says which of its skills a person types by listing them in its manifest's
+ * `standalone`. The platform's own skills have no manifest — they are a tree beside the
+ * catalog — so each one declares it in its OWN frontmatter with `standalone: true`, and the
+ * baseline plugin promotes exactly those. A second list here would be a place for the answer
+ * to drift away from the skill it is about.
+ *
+ * zz-backbone and zz-knowledge declare nothing and stay skills, which is right: they are
+ * loaded by a method, not typed by a person. */
+export function promotePlatformOwn(skills: PackageFile[]):
+    { commands: PackageFile[]; promoted: Set<PackageFile> } {
+  const picked = skills.filter((sk) =>
+    /^skills\/[^/]+\/SKILL\.md$/.test(sk.path) && fmField(sk.content, "standalone") === "true");
+  return {
+    commands: picked.map((sk) => {
+      const name = sk.path.split("/")[1];
+      return {
+        path: `commands/${commandName("zz", name)}.md`,
+        content: standaloneCommandFile("zz", name, sk.content),
+      };
+    }),
+    promoted: new Set(picked),
+  };
+}
 /** A standalone skill, as a Claude Code command.
  *
  * Same rule as the flow's front door: Claude Code has commands and Codex does not, so a

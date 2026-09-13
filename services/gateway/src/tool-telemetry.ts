@@ -508,6 +508,16 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
             ms,
             bytes,
             caller: callerHash,
+            // WHICH OF OUR OWN TOOLS MADE THE CALL — `zz-plugin` for a person's chat session,
+            // `zz-doctor`, `zz-update`, `zz-migrate` for the commands, `provision`/`smoke` for
+            // the harnesses. It is already half of `caller`, hashed in with the address and
+            // therefore unreadable; on its own it names no person and answers the question the
+            // hash cannot: which of the things we ship do people actually run.
+            //
+            // NOT a second capture path. Everything that reaches a door is recorded here, by
+            // this one mount, as a by-product of the call — so a tool becomes measurable by
+            // sending the header it already has to send, and never by reporting itself.
+            ...(req.headers["x-zz-client"] ? { client: String(req.headers["x-zz-client"]) } : {}),
             run: step?.run,
             // The hash of the skill text actually SERVED. Not a column: the gate refuses a
             // changed skill that kept its version, so authoring drift is caught in the repo

@@ -342,6 +342,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
           // still controls against a trace, is exactly what the skill side does. Redefining it
           // here would start a series that cannot be read beside the one already recorded.
           control: async () => {
+            // FIRST CHOICE: another plugin's run. Strongest, because the subject differs in
+            // every respect the ruler was written about.
             const other = (await p.query<{ run_id: string }>(`
               select r.id::text as run_id from zz.run r
                join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
@@ -349,8 +351,40 @@ export function registerPluginJudgeTools(server: McpServer): void {
                join zz.plugin p on p.id = pv.plugin_id
               where p.name <> $1 and exists (select 1 from zz.event e where e.run_id = r.id)
               order by r.started_at desc limit 1`, [plugin])).rows[0];
-            if (!other) throw new Error("no other plugin's run to use as a control");
-            return traceOf(p, other.run_id);
+            if (other) return traceOf(p, other.run_id);
+
+            // FALLBACK: a document THIS plugin's runs did not produce.
+            //
+            // The first choice threw on the platform that built this, and the failure mode is
+            // the worst available: one plugin has runs, so the control could never be taken,
+            // and a round with no control is a round in which nothing says whether the judge
+            // was reading or rewarding confident prose. Every number would have been recorded
+            // and none of them validated.
+            //
+            // A document from another initiative keeps the invariant that matters -- a subject
+            // this ruler was not written about, marked under it, so a high score is the judge
+            // failing to discriminate. It is weaker than another plugin's run only in that the
+            // two subjects share a house style, which makes it a HARDER control to pass, not
+            // an easier one.
+            const doc = (await p.query<{ team_slug: string; initiative: string; path: string }>(`
+              select d.team_slug, d.initiative, d.path
+                from zz.doc d
+               where d.path not like '\\_versions/%'
+                 and (d.produced_by_run_id is null
+                      or d.produced_by_run_id not in (select r.id ${RUNS_OF}))
+               order by d.created_at desc limit 1`, [plugin, version])).rows[0];
+            if (doc) {
+              const body = bodyOf(doc.team_slug, doc.initiative, doc.path);
+              if (body?.trim()) return { text: body, truncated: 0 };
+            }
+
+            // NEITHER. Said plainly rather than skipped: a round whose control could not be
+            // taken is unvalidated, and that is a fact about the round the report has to carry.
+            throw new Error(
+              "no control subject exists — this platform holds no run from another plugin and " +
+              "no document this plugin's runs did not produce. The round can still be scored, " +
+              "but nothing in it says whether the judge was reading, so report it as " +
+              "unvalidated rather than averaging its numbers into a series.");
           },
         };
         const got = await markAll(p, marking, control === true, take ?? 1, eval_id ?? null, bodyOf);

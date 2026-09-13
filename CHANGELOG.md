@@ -33,6 +33,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.32.2] — 2026-09-13
+
+Three defects, all found by running the ten tools against production rather than
+by reading them, and one of them is the worst kind.
+
+### Fixed
+- **The blind control could never be taken, so every round was unvalidated.** It
+  required another PLUGIN's run, and one plugin on this platform has runs — so
+  `plugin_judge --control` threw, `judge_on_trial` came back empty, and nothing in
+  a round said whether the judge was reading or rewarding confident prose. Every
+  number would have been recorded and none of them checked. It now falls back to a
+  document this plugin's runs did not produce — a subject the ruler was not written
+  about, which is the invariant that matters and is a HARDER control to pass, not an
+  easier one, because the two share a house style. When neither exists it refuses
+  with the reason and says the round is unvalidated rather than quietly skipping it.
+- **`plugin_conform` invented a mapping and labelled it R1–R14.** It reported R4 as
+  "8 tools named by this plugin's skills", R5 as "0 servers declared", R6 as "7
+  stages declared", R9 as "declared version". Not one is what the clause says: R4
+  asks whether the SERVER offers `list_usage_skills()`, R5 whether its tool verbs
+  state the capability, R6 whether validation errors teach the rule, R9 for
+  `get_app_url`. It produced a conformance report citing a standard it did not
+  check — the exact thing `contract.md:196-199` warns of: *"a battery that guessed
+  would hand out passes this standard never granted."* R1–R14 is a block-server
+  standard and a flow plugin serves no surface of its own, so it now returns
+  `not_measured` with that as the reason, settles R5 from tool names where a plugin
+  does serve one, and says plainly that the mechanical battery went with
+  `zz-block-eval` and is not reimplemented here.
+- **A plugin was reported as reaching no servers while naming eight tools.**
+  `manifest.servers` alone ignores the baseline: `zz` is required by every package,
+  so `zz-core` arrives whether or not a manifest mentions it — the rule the gate
+  states at `skill-tools.mjs:182-183`. `sdlc` declares no servers and its seventeen
+  skills name eight `zz-core` tools between them, so the report described a plugin
+  that is entirely fine using the "complete and unreachable" shape this platform
+  treats as most expensive.
+
+### What the first real evaluation found
+Not a defect in the platform, but the point of it. Against `sdlc 0.1.0`: eleven
+usable runs, `document depth` 4.0, `evidence discipline` 5.0, and two quantitative
+thresholds settled from facts — `tool fit` met (one tool never called, ≤ 2) and
+`recovery` NOT met (0 returns, below the required 1). The tool never called is
+`knowledge_add`: named by sdlc's own skills and not once invoked in eleven real
+runs. That is the half of 搭不搭 no static check can see, found on the first run.
+
 ## [0.32.1] — 2026-09-13
 
 ### Fixed

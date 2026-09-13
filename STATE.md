@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.29.0 (2026-09-12). What we believe, and what we have. The world as it stands at this
+Status: 0.30.0 (2026-09-13). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -351,7 +351,8 @@ the difference that matters.
 | **Read surface** | Web KB (`/app`) | nowhere — no agent | a browser | nothing; reads the record, attaches sources |
 
 `my_client_setup` builds the shelf from the registry — marketplace, plugin,
-router skill and MCP wiring — and prints how to install it; pass `email`, as a
+router skill, MCP wiring, and a command for every skill a person TYPES rather
+than a method loads — and prints how to install it; pass `email`, as a
 superadmin, to render somebody else's. The shelf itself is committed to this
 repository and cloned from GitHub rather than served from `/pkg/<client>.tgz`,
 which went with Codex and Hermes on 2026-09-12. Skills travel as files, and
@@ -394,7 +395,7 @@ around a gate.
 |---|---|---|
 | Identity & teams | one principal per person; teams; PATs (hashed, scoped, revocable); harness accounts linked by email | gateway |
 | Registry | which team runs which flow, with its manifest; which blocks they may use | gateway + `zz` schema |
-| Projections | the registry is the truth and every client READS it: `render_agent_definition` returns a team's browser agent as data, and an installable package is generated per person per client, served from `/pkg/<client>.tgz`. `install_flow` records the row and creates nothing — writing into a client is what made a product we do not control hold a copy of platform truth | gateway |
+| Projections | the registry is the truth and every client READS it: `render_agent_definition` returns a team's browser agent as data, and an installable package is generated per person and committed to this repository as the public shelf, which their client clones from GitHub — the per-client tarball at `/pkg/<client>.tgz` went with Codex and Hermes on 2026-09-12, as 5d says. `install_flow` records the row and creates nothing — writing into a client is what made a product we do not control hold a copy of platform truth | gateway |
 | Guardrails | gate chain, status vocabulary, close requirements, envelope stamping, system-file protection | zz-core |
 | Provenance | approval snapshots, immutable sources, mechanical ledger, activity telemetry | zz-core |
 | Knowledge | team store, full-text + envelope search with citations, sources, journal, OKRs | zz-core + `zz` schema |

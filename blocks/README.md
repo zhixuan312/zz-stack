@@ -21,8 +21,8 @@ authors to meet, and it is true whether or not one is connected.
 
 ## Why they are here and not in `skills/`
 
-`skills/` holds the platform's own skills — `zz-backbone`, `zz-knowledge` — which are true wherever
-the platform runs and belong to us. A usage skill is a different kind of thing: it is written
+`skills/` holds the platform's own skills — the spine and the handover a flow loads,
+and the commands a person types — which are true wherever the platform runs and belong to us. A usage skill is a different kind of thing: it is written
 **about somebody else's server**, from evidence we gathered by calling it, and it is only true
 against the version we checked. Mixed into one directory those two look identical and age
 completely differently.

@@ -157,7 +157,10 @@ Later ones come from the console, or from `issue_enrolment` on `/manage/mcp`.
 | `/core/mcp` | everyone — the platform's own tools |
 | `/manage/mcp` | everyone; **the tool list is your role**, so a tool you cannot execute is a tool you are not offered |
 | `/p/<block>/mcp` | teams granted that block |
-| `/pkg/<client>.tgz` | everyone, for their own client package |
+
+There is no package route. A person's client package is the public shelf in this
+repository, which their client clones from GitHub; `/pkg/<client>.tgz` went with Codex and
+Hermes on 2026-09-12 and answers 404.
 
 ## Developing against a checkout
 

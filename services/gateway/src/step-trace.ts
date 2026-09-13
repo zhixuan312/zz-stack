@@ -64,7 +64,7 @@ const RUN_IDLE_MS = FOLLOWS_FOR_MS;
 interface Trace {
   step: string;
   /** The initiative this caller is working on, carried forward from the last call that named
-   * one. It reached 129 of 6,225 rows as an argument, because most calls do not take it — and
+   * one. It reached 254 of 510 rows on 2026-09-13, because most calls do not take it — and
    * without it a refusal cannot be joined to the document it was made for, which is the entire
    * left-hand side of the reconciliation between prediction and outcome. */
   initiative: string;
@@ -169,7 +169,7 @@ export function stepLoaded(caller: string, skill: string, servedBody: string, wh
 
 /** A call named an initiative, so the calls that follow it are about that one too.
  *
- * Most calls do not take an initiative as an argument — it reached 129 of 6,225 rows — and
+ * Most calls do not take an initiative as an argument — 254 of 510 rows on 2026-09-13 — and
  * without it a refusal cannot be joined to the document it was made for, which is the entire
  * left-hand side of the reconciliation between what a step predicted and what happened. */
 export function initiativeSeen(caller: string, initiative: string): void {

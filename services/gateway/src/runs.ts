@@ -35,6 +35,48 @@ import { platformDb, platformDbReady } from "./db.js";
  *  never happened. It is a limit of the grain, not something to paper over. */
 const PLACEABLE = "e.detail ? 'run' and e.initiative is not null and e.initiative <> ''";
 
+/** WHICH VERSION OF A SKILL WAS RUNNING WHEN AN EVENT FIRED — answered by TIME, because the
+ * column that used to answer it is almost never set.
+ *
+ * Every one of these joins read `sv.version = e.step_version`, and `step_version` is stamped
+ * only when a skill is served WHOLE through skill_view (step-trace.ts). Claude Code reads an
+ * installed skill off disk, so in normal operation nothing stamps it at all. Measured twice, a
+ * day apart, and the pair is the proof:
+ *
+ *                        2026-09-12   2026-09-13
+ *   zz.event                    381          510
+ *   ... with a step             157          198   <- all of them resolve to a zz.skill
+ *   ... with a step_version      39           39   <- FROZEN. 129 new events, none stamped.
+ *   zz.run                      847         1791
+ *   ... skill_version_id null   843         1787   <- +944 in one day
+ *
+ * step_version is not sparse, it is dead: it did not move while the event log grew by a third.
+ * Nothing was BOTH placeable and version-resolvable on either day, so every row the first
+ * insert below has ever written was unresolvable — and a NULL skill_version_id cannot match
+ * that insert's conflict target (Postgres treats NULLs as distinct, the same trap 031
+ * documented one column over), so `do update` never fired and it appended a fresh duplicate on
+ * every pass of the timer. The linkback matched those NULLs deliberately, so each phantom had
+ * events hanging off it, which is why a table that was 99.8% junk looked entirely plausible.
+ *
+ * Making the joins inner without changing the binding does NOT fix that — it deletes the
+ * duplicates and then writes nothing, for all time. Both halves are one change.
+ *
+ * A release is the moment a version's content is fixed, and `released_at` is written then. So
+ * "which version was running" is a question about time, and this is the honest answer to it:
+ * the latest version of that skill released at or before the event. It resolves the 157 events
+ * that carry a step rather than the 23 that carry a version, and it answers for history already
+ * recorded rather than only for data collected from now on.
+ *
+ * `s` and `e` must both be in scope. In an UPDATE this cannot be a LATERAL — Postgres rejects a
+ * LATERAL in an UPDATE's FROM that references the update target — so the two linkbacks below
+ * spell the same binding as a correlated scalar subquery instead. */
+const VERSION_AT_EVENT = `
+      join lateral (
+        select v.id from zz.skill_version v
+         where v.skill_id = s.id and v.released_at <= e.ts
+         order by v.released_at desc limit 1
+      ) sv on true`;
+
 export async function reconcileRuns(): Promise<{ initiatives: number; runs: number; linked: number; docs: number }> {
   if (!platformDbReady()) return { initiatives: 0, runs: 0, linked: 0, docs: 0 };
   const db = platformDb();
@@ -56,9 +98,11 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
      group by t.id, e.initiative
     on conflict (team_id, slug) do nothing`);
   // The flow, from the documents rather than from the events. zz.doc carries the flow the
-  // platform resolved and stamped; zz.event's `flow` column is set on far fewer rows. An
-  // initiative row whose flow is blank is one the console cannot group, and the column has
-  // been empty on this deployment since the table was made.
+  // platform resolved and stamped, and zz.event's own `flow` column is thinner: 409 of 510
+  // rows on 2026-09-13. It said "far fewer rows" until this was measured, which was true when
+  // written and had drifted into implying the column is unusable — it is 80%, and the gap is
+  // the calls made before any flow was resolved. An initiative row whose flow is blank is one
+  // the console cannot group.
   await db.query(`
     update zz.initiative i set flow = d.flow
       from (select distinct on (team_slug, initiative) team_slug, initiative, flow
@@ -81,8 +125,7 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
       from zz.event e
       join zz.team t       on t.slug = e.team_slug
       join zz.initiative i on i.team_id = t.id and i.slug = e.initiative
-      left join zz.skill s          on s.name = e.step
-      left join zz.skill_version sv on sv.skill_id = s.id and sv.version = e.step_version
+      join zz.skill s on s.name = e.step${VERSION_AT_EVENT}
      where ${PLACEABLE}
      group by i.id, sv.id, e.detail->>'run'
     on conflict (initiative_id, skill_version_id, caller_session) do update
@@ -104,8 +147,7 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
            coalesce(sum((e.detail->>'bytes')::bigint), 0),
            min(e.ts), max(e.ts)
       from zz.event e
-      join zz.skill s          on s.name = e.step
-      join zz.skill_version sv on sv.skill_id = s.id and sv.version = e.step_version
+      join zz.skill s on s.name = e.step${VERSION_AT_EVENT}
      where e.detail ? 'run' and (e.initiative is null or e.initiative = '')
      group by sv.id, e.detail->>'run'
     on conflict (skill_version_id, caller_session) where initiative_id is null do update
@@ -126,7 +168,10 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
      where e.run_id is null and run.initiative_id is null
        and e.detail ? 'run' and (e.initiative is null or e.initiative = '')
        and e.detail->>'run' = run.caller_session
-       and e.step = s.name and e.step_version = sv.version`);
+       and e.step = s.name
+       and sv.id = (select v.id from zz.skill_version v
+                     where v.skill_id = s.id and v.released_at <= e.ts
+                     order by v.released_at desc limit 1)`);
 
   const l = await db.query(`
     update zz.event e set run_id = run.id
@@ -136,10 +181,16 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
      where e.run_id is null and ${PLACEABLE}
        and e.team_slug = t.slug and e.initiative = i.slug
        and e.detail->>'run' = run.caller_session
-       and run.skill_version_id is not distinct from (
-             select sv.id from zz.skill s
-              join zz.skill_version sv on sv.skill_id = s.id and sv.version = e.step_version
-             where s.name = e.step)`);
+       -- Plain equality, not IS NOT DISTINCT FROM. (No backticks in this comment: it is inside
+       -- a template literal and one would close it -- the trap this file already documents.)
+       -- The NULL tolerance was only ever needed because the insert above was writing NULLs;
+       -- now that it cannot, matching NULL to NULL would attach events to a run that does not
+       -- identify a skill at all.
+       and run.skill_version_id = (
+             select v.id from zz.skill s
+              join zz.skill_version v on v.skill_id = s.id and v.released_at <= e.ts
+             where s.name = e.step
+             order by v.released_at desc limit 1)`);
 
   // AND THE DOCUMENT SIDE, which had exactly the same hole and a worse blast radius.
   //

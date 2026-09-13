@@ -47,6 +47,32 @@ export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[numbe
   return catalogEntries().find((e) => e.flow.replace(/-flow$/, "") === plugin);
 }
 
+/** The MCP surfaces this plugin can actually reach.
+ *
+ * THE BASELINE IS NOT OPTIONAL AND IS NOT DECLARED. `zz` is required by every package, so
+ * `zz-core` arrives with every plugin whether or not a manifest mentions it — which is the rule
+ * the gate states at skill-tools.mjs:182-183: "Reachable = the baseline (/core, in every agent
+ * and the required package) plus whatever the manifest declares."
+ *
+ * Reading `manifest.servers` alone reported sdlc as reaching NOTHING while its seventeen skills
+ * name eight zz-core tools between them. A plugin that names eight tools and reaches no server
+ * is the "complete and unreachable" shape the gate exists to refuse — so the report said, of a
+ * plugin that is entirely fine, the one thing this platform treats as most expensive.
+ *
+ * `tools` is folded in beside `servers` because client-package.ts concatenates both into what
+ * a person installs: a block named there arrives as a server too. */
+function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined):
+  { name: string; path: string; baseline?: true }[] {
+  const declared = (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
+  const blocks = (entry?.manifest.tools ?? []).map((b: string) => ({ name: b, path: `/p/${b}/mcp` }));
+  const all = [...declared, ...blocks];
+  // Marked, so a reader can tell what this plugin ASKED for from what every plugin gets.
+  if (!all.some((sv) => sv.name === "zz-core")) {
+    all.unshift({ name: "zz-core", path: "/core/mcp", baseline: true } as never);
+  }
+  return all;
+}
+
 /** Every tool this plugin's own skills tell an agent to call.
  *
  * NOT "every tool on the surfaces it declares", which was the first shape and the wrong
@@ -125,7 +151,7 @@ export function registerPluginEvalTools(server: McpServer): void {
         // to be an instruction.
         mode: row.origin === "third_party" ? "assess only" : "assess, then change",
         skills,
-        servers: entry?.manifest.servers ?? [],
+        servers: serversOf(entry),
         tools_named: entry ? toolsNamedBy(entry.dir) : [],
       });
     },
@@ -213,45 +239,71 @@ export function registerPluginEvalTools(server: McpServer): void {
     {
       description:
         "This plugin against the building-block contract's R1-R14, THREE-VALUED: true, false, " +
-        "or not_measured. R1, R7, R12, R13 and R14 are always not_measured because the " +
-        "contract itself refuses to score them — 'a battery that guessed would hand out passes " +
-        "this standard never granted'. Clauses that do not apply to a flow plugin come back " +
-        "not_measured with that as the evidence, never true. Use it as a starting ruler for a " +
-        "plugin with no history of its own.",
+        "or not_measured. Most clauses come back not_measured for most plugins, and that is " +
+        "the honest answer rather than a gap: R1-R14 describes a BLOCK SERVER's tool surface, " +
+        "and settling it needs that surface read through the gateway. A flow plugin serves no " +
+        "surface of its own, so the standard does not apply to it at all. Use what does come " +
+        "back as a starting ruler for a third-party plugin with no run history.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {
       const entry = entryOf(plugin);
       if (!entry) return text(`ERROR: "${plugin}" is not in the catalog`);
-      const servers = entry.manifest.servers ?? [];
       const named = toolsNamedBy(entry.dir);
-      // The nine the contract settles mechanically, and the five it does not. Spelled out rather
-      // than looped, because which clause is measurable is a fact about the STANDARD and a
-      // reader has to be able to check this list against contract.md without running anything.
-      const clauses = [
-        { id: "R1",  holds: "not_measured", evidence: "the contract names R1 as not mechanically measured" },
-        { id: "R2",  holds: "not_measured", evidence: "a server-transport clause; this is a flow plugin" },
-        { id: "R3",  holds: "not_measured", evidence: "a server-transport clause; this is a flow plugin" },
-        { id: "R4",  holds: named.length > 0,
-          evidence: `${named.length} tool(s) named by this plugin's skills` },
-        { id: "R5",  holds: servers.length > 0,
-          evidence: `${servers.length} server(s) declared in the manifest` },
-        { id: "R6",  holds: (entry.manifest.stages ?? []).length > 0,
-          evidence: `${(entry.manifest.stages ?? []).length} stage(s) declared` },
-        { id: "R8",  holds: Boolean(entry.manifest.description),
-          evidence: entry.manifest.description ? "the manifest carries a description" : "no description" },
-        { id: "R9",  holds: Boolean(entry.manifest.version),
-          evidence: `declared version ${entry.manifest.version ?? "(none)"}` },
-        { id: "R10", holds: existsSync(join(entry.dir, "skills")),
-          evidence: "usage skills ship with the package" },
-        { id: "R11", holds: (entry.manifest.documents ?? []).some((d) => d.gate),
-          evidence: "at least one document is gated" },
-        { id: "R7",  holds: "not_measured", evidence: "the contract names R7 as not mechanically measured" },
-        { id: "R12", holds: "not_measured", evidence: "the contract names R12 as not mechanically measured" },
-        { id: "R13", holds: "not_measured", evidence: "the contract names R13 as not mechanically measured" },
-        { id: "R14", holds: "not_measured", evidence: "the contract names R14 as not mechanically measured" },
-      ];
-      return json({ plugin, version, clauses: clauses.sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1))) });
+      const servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
+
+      // WHAT THIS TOOL DOES NOT DO, said before what it does, because an earlier version of it
+      // did the opposite and that was worse than doing nothing.
+      //
+      // It reported R4 as "8 tools named by this plugin's skills", R5 as "0 servers declared",
+      // R6 as "7 stages declared", R9 as "declared version 0.1.0". Not one of those is what the
+      // clause says. R4 asks whether the SERVER offers list_usage_skills() and
+      // usage_skill_view(name); R5 asks whether its tool VERBS state the capability; R6 asks
+      // whether its validation errors are prose that teach the rule; R9 asks for get_app_url.
+      // A mapping was invented and labelled with the standard's clause numbers, which produced
+      // a conformance report citing a standard it did not check.
+      //
+      // contract.md:196-199 names the failure exactly: "R1, R7, R12, R13 and R14 are
+      // behavioural ... a battery that guessed would hand out passes this standard never
+      // granted." The invented mapping WAS the guessing battery, one level worse than the
+      // thing the contract warns about, because it guessed at the nine mechanical ones too.
+      //
+      // The mechanical battery that really settles R2-R6 and R8-R11 read each block's live tool
+      // surface through the gateway. It went with zz-block-eval and is not reimplemented here.
+      const notMeasured = (why: string) => ({ holds: "not_measured" as const, evidence: why });
+      const BEHAVIOURAL = "the contract names this clause as behavioural and not mechanically measured";
+      const NO_SURFACE =
+        "R1-R14 describes a block server's tool surface; this plugin serves none of its own, so " +
+        "the clause does not apply to it";
+      const NO_BATTERY =
+        "settling this needs the block's live tool surface read through the gateway. That " +
+        "battery went with zz-block-eval and is not reimplemented here — not_measured rather " +
+        "than a guess";
+
+      const clauses = ["R1","R2","R3","R4","R5","R6","R7","R8","R9","R10","R11","R12","R13","R14"]
+        .map((id) => {
+          if (["R1","R7","R12","R13","R14"].includes(id)) return { id, ...notMeasured(BEHAVIOURAL) };
+          if (!servesOwnSurface) return { id, ...notMeasured(NO_SURFACE) };
+          // R5 is the one mechanical clause a tool NAME can settle: honest verbs that state the
+          // capability, never do_action or submit. The rest need the live surface.
+          if (id === "R5" && named.length) {
+            const dishonest = named.filter((t) => /^(do_|submit$|submit_|perform_|handle_|process_)/.test(t));
+            return { id, holds: dishonest.length === 0,
+                     evidence: dishonest.length
+                       ? `${dishonest.join(", ")} state no capability`
+                       : `${named.length} tool name(s), every one stating a capability` };
+          }
+          return { id, ...notMeasured(NO_BATTERY) };
+        });
+
+      const settled = clauses.filter((c) => c.holds !== "not_measured").length;
+      return json({
+        plugin, version, clauses,
+        settled,
+        note: settled
+          ? `${settled} of 14 settled mechanically; the rest need a surface this plugin does not serve or a battery that is not here.`
+          : "Nothing was settled mechanically. R1-R14 is a block-server standard and this plugin serves no surface of its own — that is an answer about the standard's scope, not a gap in the plugin.",
+      });
     },
   );
 }

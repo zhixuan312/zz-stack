@@ -84,17 +84,28 @@ export async function pluginTraces(
       from zz.event e
      where e.run_id in (select r.id ${RUNS_OF})`, [plugin, version])).rows[0];
 
+  // ONE ROW PER VISIT, NOT ONE PER STEP, and the difference is the whole measurement.
+  //
+  // This grouped by (initiative, step) and took min(ts). That collapses every visit to a step
+  // into a single row at its FIRST entry -- so a stage entered, left, and entered again appears
+  // once, the sequence is monotonic by construction, and `returns` is structurally zero. It
+  // shipped that way and returned 0 against live data, which looked like an answer.
+  //
+  // The islands form below groups CONSECUTIVE runs of the same step separately: the difference
+  // between "how many events have I seen in this initiative" and "how many of this step" only
+  // stays constant while the step does not change, so it numbers each visit. Two visits to
+  // sdlc-spec with an audit between them are two rows, which is what a return is made of.
   const pathRows = (await pool.query<{ initiative: string; step: string; first_ts: string; last_ts: string }>(`
-    select e.initiative,
-           e.step,
-           min(e.ts)::text as first_ts,
-           max(e.ts)::text as last_ts
-      from zz.event e
-     where e.run_id in (select r.id ${RUNS_OF})
-       and e.initiative is not null and e.initiative <> ''
-       and e.step is not null and e.step <> ''
-     group by e.initiative, e.step
-     order by e.initiative, min(e.ts)`, [plugin, version])).rows;
+    select initiative, step, min(ts)::text as first_ts, max(ts)::text as last_ts
+      from (select e.initiative, e.step, e.ts,
+                   row_number() over (partition by e.initiative order by e.ts)
+                 - row_number() over (partition by e.initiative, e.step order by e.ts) as visit
+              from zz.event e
+             where e.run_id in (select r.id ${RUNS_OF})
+               and e.initiative is not null and e.initiative <> ''
+               and e.step is not null and e.step <> '') x
+     group by initiative, step, visit
+     order by initiative, min(ts)`, [plugin, version])).rows;
 
   const stage_paths: PluginTraces["stage_paths"] = [];
   for (const row of pathRows) {

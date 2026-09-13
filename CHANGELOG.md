@@ -33,6 +33,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.32.1] — 2026-09-13
+
+### Fixed
+- **`returns` was structurally zero and 0.32.0 shipped it that way.** The derivation grouped
+  `zz.event` by `(initiative, step)` and took `min(ts)`, which collapses every visit to a stage
+  into one row at its FIRST entry. The sequence is then monotonic by construction, so a stage
+  entered, left and entered again is invisible and no return can be detected however many there
+  are. It returned 0 against live data on the first real run, and 0 looked like an answer.
+
+  Proved rather than reasoned, on the same three planted events: the old grouping yields
+  `sdlc-spec -> sdlc-spec-audit`, two rows; the islands form now used yields
+  `sdlc-spec -> sdlc-spec-audit -> sdlc-spec`, three visits, one return.
+
+  **This is the metric the whole initiative was asked for** — *一个 skill 如果不行，能不能回到
+  前面的 step 重新 grounding* — so shipping it reading a constant zero was the worst available
+  outcome. `checks/returns-sees-a-backtrack.mjs` is the fixture the spec's own risk table asked
+  for and the plan never wrote: *"a metric whose only observation is zero has not been tested."*
+
+### Known, and not fixed here
+- **Neither evidence source can see a DISPATCHED stage.** `sdlc-method` sends an audit to a
+  subagent, which has its own caller session, so the audit leaves no `step` event under the
+  parent's initiative and no `Skill(...)` call in the parent's tool log. Both halves were bitten
+  by the same root cause independently: a case grader keyed on `Skill(sdlc-spec-audit)` scored 0
+  in all three with-arm runs, and `2026-09-12-plugin-level-eval` — an initiative that really did
+  return three times — records only `sdlc-spec` then `sdlc-plan`. So `returns` can now SEE a
+  return, and on sdlc it will still read low until a dispatched stage is attributed to the
+  initiative that caused it. That is a telemetry change, not an evaluation one.
+
 ## [0.32.0] — 2026-09-13
 
 **zz-stack 0.32.0 · zz-stack-dashboard 0.5.0**

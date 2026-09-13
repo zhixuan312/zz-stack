@@ -22,10 +22,21 @@
 #   names-the-reissue-path ~0.9 — `issue_my_access_token` / `my_access_tokens`, same reason.
 #                                Slightly weaker only because the agent may stop at the kill
 #                                and leave the replacement for a follow-up turn.
-#   kills-it-first      ~0.8 — the discriminator, and the one claim here that needs a reader
-#                              rather than a pattern. A baseline agent reliably opens with
-#                              questions, and an answer that mentions revoking somewhere in a
-#                              numbered list of six steps is not the behaviour under test.
+#   kills-it-first      0.00 — MEASURED, 3 runs per arm, 2026-09-13: with 0.67, without 0.67.
+#                              The prediction here was ~0.8 and it was wrong. A bare agent
+#                              told a credential was on screen in a forty-person channel says
+#                              "revoke it now" as readily as this plugin does; the ordering
+#                              rule is not what the plugin adds. Kept, and kept unchanged: a
+#                              grader that measures zero is a result about where this
+#                              plugin's value actually is, and rewriting it until it flatters
+#                              the plugin is the one thing an eval suite must never do. The
+#                              delta on this case (0.67) is carried entirely by the two tool
+#                              names, which is the honest account of it.
+#
+#   That leaves a question for the next round rather than a fix for this one: is there a
+#   version of this prompt where the ordering DOES separate the arms — a leak the agent has
+#   to notice is a leak, rather than one the prompt has already framed as urgent? Write it as
+#   a new case beside this one; do not edit this one into it, or the series stops comparing.
 schema_version: "1.0"
 name: revokes-a-leaked-token-before-anything-else
 execution:

@@ -100,10 +100,14 @@ skills/     platform skills, served whatever flow a team runs. Two are UNIVERSAL
             evaluation calls for is not a skill: the report SPECIFIES one change
             and its expected effect, and a repository edit plus a release applies
             it, because /catalog and /skills are read-only wherever this runs.
-            Each skill carries its own evaluation history in skills/<step>/evals/
-            — one file per VERSION, so opening a skill shows both what it says
-            and how that version scored. What a flow's evaluation found lives in
-            catalog/<owner>/<flow>/findings/, and goes when the flow does
+            A PLUGIN carries its eval CASE SUITE beside its skills — evals/
+            under the catalog package, and evals/ at the repository root for zz,
+            which has no catalog directory. One directory per case, holding a
+            case.yaml: the prompt, and the graders that read what came back. It
+            ships with the plugin, so anyone who installs it can run the same
+            ablation. What a round FOUND is not here — findings.md lives in the
+            initiative the evaluation ran as, with the scores in the platform's
+            own tables, because a finding belongs to a moment and a version
 blocks/     one directory per building block, holding everything written ON TOP
             of it — its usage skill and the tests that check our usage still
             holds. Separate from skills/ because a usage skill is written about

@@ -26,12 +26,20 @@ flow and the measurement bends toward the intervention somebody already wanted.
 
 **It is a platform capability, not a stage of anybody's delivery.** An agent in the middle of
 shipping something does not stop and evaluate the plugin it is shipping with — that is a
-separate piece of work with its own initiative. This sentence used to live in this skill's
-`when_to_use` as "a delivery agent never runs this", and putting it there cost the skill its
-front door: measured over nine runs on 2026-09-13, asked three questions this skill exists to
-answer, it fired zero times. A negation in the field a model reads to decide whether to open a
-skill reads as "do not open it". The rule is the same; it belongs in the body, where it is
-addressed to a reader who has already arrived.
+separate piece of work with its own initiative.
+
+**A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM, and that is worth knowing before you
+write a case about it.** This skill is a flow's `entry`, so the shelf renders it as the command
+`/zz-plugin-eval:flow` carrying `disable-model-invocation: true` — a model cannot invoke it at
+all, whatever its `when_to_use` says. The five stage skills beside it each say "never on its
+own", which is right: a stage that fires out of order is worse than one that does not fire.
+
+The consequence, measured on 2026-09-13 over nine runs: asked the three questions this flow
+exists to answer, in ordinary words, with the plugin installed, nothing in it engaged and the
+delta against a bare agent was zero on all three cases. That is a true measurement and it is
+not a defect in any of them — it is what "a person invokes this on purpose" costs, stated as a
+number. A case written for this plugin has to name the flow, the way a person does, or it
+measures the shelf's routing rather than this flow's content.
 
 Load `zz-backbone` first, as with every flow on this platform.
 

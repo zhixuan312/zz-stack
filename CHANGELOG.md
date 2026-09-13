@@ -33,6 +33,109 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.33.0] — 2026-09-13
+
+Every plugin on the shelf can now be evaluated, and four defects in the evaluation
+itself were found by running it rather than by reading it. Each entry below states
+what was measured; where a prediction was wrong, the measurement replaces it rather
+than sitting beside it.
+
+### Added
+- **Eight eval cases across four plugins, where there were four across one.**
+  `zz-access` and `zz-plugin-eval` had no suite at all, so neither could be
+  evaluated on any evidence: they have no run history either, and both blocks
+  empty is the one condition that stops the flow. Cases need no history — that is
+  the whole reason the case half exists — so a suite is what makes a plugin
+  evaluable the day it ships.
+
+  | plugin | cases | what they ask |
+  |---|---|---|
+  | `sdlc` | 4 | does the flow hold its gates, route back, and write into the store |
+  | `zz` | 2 | does it reach for the doctor script; does it record an approval rather than writing the envelope by hand |
+  | `zz-access` | 2 | does it kill a leaked credential first; does it refuse a shared team key nobody can create |
+  | `zz-plugin-eval` | 3 | does it refuse to score before a ruler is agreed; does it know thin history is not a blocker; does it decline to call three returns thrash |
+
+  **Every grader reads what the skill makes the agent SAY, name or decline.** A
+  plugin's MCP servers are absent from BOTH arms unless `--allow-real-servers`
+  starts them as you, outside the sandbox — so a grader on a tool actually being
+  called reads zero on both sides and measures the harness.
+- `plugin_profile`'s case block carries `errored_runs` and `partial`. A run that
+  timed out scores 0, and a 0 from a dead agent is indistinguishable in the mean
+  from a 0 the plugin earned.
+- A fourth value for a case's `discriminating`: **`harmful`**, when the arm WITH
+  the plugin did worse.
+
+### Fixed
+- **The blind control was not blind.** `plugin_judge`'s document fallback excluded
+  the round's own items and nothing else, so it reached for
+  `2026-09-13-console-brand-adoption/plan.md` — an initiative that ran `sdlc-flow`.
+  An sdlc document marked against sdlc's ruler is a second sample, not a control.
+  It scored 4.00/5.00 against the real round's 4.00/5.00 and the round was read as
+  "the ruler does not discriminate", when what had been asked was whether two sdlc
+  documents score alike. They do, and should.
+
+  The exclusion is now by INITIATIVE rather than by document, because an initiative
+  that ran this flow also holds documents the platform stamped no flow on — that
+  one carries three with `sdlc-flow` and two with nothing — and filtering on the
+  document's own flow would have let one of the two through. A plugin with no flow
+  of its own skips the fallback rather than matching the empty string and sweeping
+  in every unflowed document, which is the same defect arriving through its own
+  fix.
+- **Recording a case run would have stored nothing readable.** `parseCaseRun` read
+  `delta`, `with_score` and `with` from a case's top level. On claude 2.1.269 a
+  case carries none of those — the numbers are under `aggregates` as `score`,
+  `scoreWithout` and `delta`, and the run count is `runsPerCase` — so a suite that
+  measured perfectly came back as "carries no case this module could read a delta
+  from". Verified against the real output of two suites.
+- **A negative delta was filed as `dead`**, the label for "this case decides
+  nothing". The arm with the plugin doing worse is the most interesting result a
+  suite can produce.
+- **The evaluation flow cannot be reached by asking, and its own skill now says
+  so.** Measured over nine runs across the three questions `zz-plugin-eval` exists
+  to answer, asked in ordinary words with the plugin installed: nothing in it
+  engaged, and the delta was zero on all three cases. The cause is structural — a
+  flow's `entry` ships as a command carrying `disable-model-invocation: true`, so
+  no model can open it whatever its `when_to_use` says, and the five stage skills
+  beside it each say "never on its own", which is right. That is what "a person
+  invokes this on purpose" costs, stated as a number. Its cases now name the flow,
+  the way a person does, so they measure content rather than routing.
+- **Four files from the deleted skill-level evaluation** — two `rubric.json`, a
+  README and a `1.4.md` — were still shipping inside the `zz` plugin to every
+  account, and hashed into its digest. Gone.
+
+### Changed
+- Breaking: **`zz` no longer reports an empty tool set.** `entryOf("zz")` is
+  undefined — `zz` is not catalog-resident — and every caller of `toolsNamedBy`
+  guarded on that and fell back to `[]`. Nothing errored: `zz` reported
+  `tools_named: []`, so `reachable` was empty, so `never_called` was empty, so the
+  one finding that half exists to produce was structurally impossible for the
+  plugin every account installs, and read as a clean bill of health. It resolves
+  through `ZZ_SKILLS_DIR` now, the way `plugin-lock.ts` does.
+- **A dispatched stage leaves no trace, and now the flow says so.** Measured:
+  `zz.event` holds not one `sdlc-spec-audit` or `sdlc-plan-audit` row in its whole
+  history. A step is attributed from the last `skill_view` a caller asked for, and
+  an audit worker in Claude Code loads its skill from its own plugin directory. A
+  return is a relation BETWEEN stages, so one missing stage removes every return
+  through it and `spec → audit → spec` reads as a straight line — the single thing
+  plugin evaluation most wants to ask of this flow. `sdlc-method` now makes
+  `skill_view` the worker's first act and says why; `plugin-profile.ts` says
+  plainly that zero returns means none was recorded.
+
+  **The limit that stays** is stated in both places: subagents share the caller's
+  credential, so their calls and the main agent's interleave in one trace, and a
+  step is only ever the last one anybody loaded. The change makes a dispatched
+  stage visible; it does not make the two separable.
+- Plugin versions: `sdlc` 0.1.0 → 0.2.0, `zz-access` 2.0.0 → 2.1.0,
+  `zz-plugin-eval` 0.1.0 → 0.2.0.
+
+### Upgrade notes
+- **No migration.** Nothing in this release changes the schema.
+- Re-pull the shelf (`/zz:update`, or `claude plugin marketplace update zz-stack`)
+  to pick up the new plugin versions and their case suites.
+- **Running a suite still costs real money on your own credential** and nothing
+  runs it for you: measured on this release, $1.95 for two cases and $2.30 for
+  three, at three runs per arm.
+
 ## [0.32.3] — 2026-09-13
 
 ### Fixed

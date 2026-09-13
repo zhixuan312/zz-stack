@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.32.3 (2026-09-13). What we believe, and what we have. The world as it stands at this
+Status: 0.33.0 (2026-09-13). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -449,6 +449,61 @@ SQL past the MCP door. §6c has said "the evaluation track exists, and has not b
 0.11.0; it is still true, and the earlier §6 claimed a five-scenario standing suite on top of
 it.
 
+## 6s. In 0.33.0: every plugin can be evaluated, and running it is what found the defects
+
+**Held to this section's bar.** Everything below was measured on 2026-09-13 — by running
+`claude plugin eval` against all four plugins on this shelf, and by querying the deployment —
+not by reading the code that was supposed to do it.
+
+**Four plugins, eight cases, and three of the four could not be evaluated at all before this.**
+`zz-access` and `zz-plugin-eval` had no case suite and no run history, and both blocks empty is
+the one condition that stops the flow. `zz` had one case. Cases need no history, so a suite is
+what makes a plugin evaluable the day it ships — and writing one for each is what closes the
+gap between "the platform can evaluate a plugin" and "the platform can evaluate its plugins".
+
+**What running them found, which reading them had not:**
+
+- **The blind control was not blind.** The document fallback excluded the round's own items and
+  nothing else, so it took `2026-09-13-console-brand-adoption/plan.md` — an initiative that ran
+  sdlc-flow. Control 4.00/5.00 against real 4.00/5.00, and the round was read as "this ruler
+  does not discriminate" when what had been asked was whether two sdlc documents score alike.
+  The exclusion is by initiative now, because an initiative that ran a flow also holds documents
+  the platform stamped no flow on.
+- **And after the fix there is no same-kind control left on this deployment.** Measured: every
+  candidate that survives is a `_knowledge` node, because every non-node initiative here has run
+  sdlc-flow. A ten-line node marked against a spec ruler scores low for the wrong reason, so it
+  is kept as the last resort and `control_read` now says in the string itself what it is and
+  what it does not prove. A real control for sdlc needs a second flow on this platform.
+- **`zz` could never have produced the finding the tool exists for.** `entryOf("zz")` is
+  undefined and every caller fell back to an empty tool list, so `never_called` was empty by
+  construction for the one plugin every account installs — and read as a clean bill of health.
+- **Recording a case run would have stored nothing readable.** The parser read three top-level
+  keys the CLI does not emit; the numbers are under `aggregates`. A suite that measured
+  perfectly came back as unreadable.
+- **The evaluation flow cannot be reached by asking.** Over nine runs across the three questions
+  it exists to answer, asked in ordinary words with the plugin installed, nothing in it engaged
+  and the delta was zero on all three. The cause is structural, not a wording slip: a flow's
+  `entry` skill ships as a COMMAND carrying `disable-model-invocation: true`, so no model can
+  open it whatever its `when_to_use` says, and the five stage skills beside it each say "never
+  on its own", which is correct — a stage firing out of order is worse than one that does not
+  fire. That is what "a person invokes this on purpose" costs, stated as a number. Its cases now
+  name the flow, the way a person does, so they measure the flow's content rather than the
+  shelf's routing.
+- **No audit stage has ever reached the door.** `zz.event` holds not one `sdlc-spec-audit` or
+  `sdlc-plan-audit` row in its whole history, because a dispatched auditor in Claude Code loads
+  its skill locally. A return is a relation between stages, so every `spec → audit → spec` on
+  this platform reads as a straight line.
+
+**A prediction that was wrong, kept as written.** zz-access's `kills-it-first` grader predicted
+a delta of ~0.8 and measured 0.00: a bare agent told a credential was visible in a forty-person
+channel revokes it first as readily as the plugin does. The case is unchanged and the
+measurement is recorded beside the prediction, because a case edited until it flatters its
+plugin ends the series — nothing after it compares with anything before it.
+
+**What is NOT claimed:** that these eight cases are the right eight. They are the first eight,
+each one written from a rule its plugin states in its own text, and three of them measured a
+delta of zero on their first outing.
+
 ## 6r. In 0.32.0: the subject of an evaluation is a plugin, and it has not been run
 
 **Held to this section's bar, which means saying what is NOT verified.** Everything below is
@@ -480,10 +535,10 @@ both empty stops the flow.
   schema. Nine readers of dropped columns were found and fixed; the ninth was in a route
   nobody was looking at, with the gate green over it.
 
-**What is not verified: the flow itself.** `/zz:zz-plugin-eval sdlc` has never been run. On the
-data as it stands it should take the full path — six usable runs and four cases both clear
-their thresholds — but that is a prediction, not an observation, and this section does not
-record predictions as facts.
+**The flow has since been run, and §6s records what it found.** This paragraph used to say
+`/zz:zz-plugin-eval sdlc` had never been run and predicted it would take the full path. It has,
+it did, and the prediction was worth exactly what this section says predictions are worth: the
+round it produced was void, because the control it took was another sdlc document.
 
 **Three write tools exist because their absence was found three times.** `plugin_cases_record`,
 `plugin_ruler_record` and `plugin_finding_record`. Each closed a hole where the flow READ a

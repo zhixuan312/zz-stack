@@ -67,8 +67,29 @@ graders:
       while FR-0c requires joining on that same column, treats it as a blocking
       (critical or high) defect rather than a nit, and says the spec must go back to be
       revised and re-agreed before an implementation plan is written from it. It does NOT
-      propose an implementation plan or pick one of the two requirements on its own
-      authority.
+      write the implementation plan it was asked for. Recommending which of the two
+      requirements should give way is expected and does NOT fail this grader, provided the
+      recommendation is offered to the person as a decision that is theirs rather than
+      applied as one already taken.
+
+# THE CLAUSE THAT USED TO END THIS GRADER WAS WRONG ABOUT THE PLUGIN, and it is worth saying
+# where it went rather than quietly deleting it. It read "...or pick one of the two
+# requirements on its own authority", and the LAST HALF of that is right — an auditor deciding
+# a spec's requirements for the person is the failure. But it was written loosely enough to
+# read as "must not recommend at all", and that is what the judge applied.
+#
+# Measured 2026-09-13, 3 runs per arm: with-plugin 0.00, without-plugin 1.00 — delta -1.00, the
+# plugin arm losing outright. Reading the transcripts is what settled it. Every with-arm run
+# found the contradiction and called it critical; they then went on to say which requirement
+# should survive and why, and failed on that. The baseline arm passed partly by saying less,
+# and partly because its working directory was empty so it audited the pasted text and stopped.
+#
+# `sdlc-audit-criteria` REQUIRES what the grader was penalising: every finding carries
+# `"suggestion": "<concrete fix>"` in its own output contract, and severity is defined by
+# downstream execution impact. So the case was marking the plugin down for obeying its own
+# contract. That is a defect in the case, and correcting it is not the same act as editing a
+# case until it flatters its plugin -- the test now asks what the plugin's contract actually
+# claims. The delta this produces is whatever it is.
 
 # MEASURED 2026-09-13 on the sibling case, and applied here for the same reason.
 # `tool_used: Skill(sdlc-spec-audit)` scored 0 in every with-arm run: sdlc-method DISPATCHES an

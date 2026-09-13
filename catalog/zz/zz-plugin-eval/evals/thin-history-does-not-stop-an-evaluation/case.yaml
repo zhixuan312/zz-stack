@@ -29,6 +29,16 @@
 #   says-do-not-wait    ~0.9 — the discriminator. Sycophantic agreement with the premise is
 #                              the baseline's default and only a reader can tell it from a
 #                              hedged version of the right answer.
+#
+# THE PROMPT NAMES THE FLOW, and that is a deliberate narrowing rather than a hint leaked to
+#   the baseline arm. This plugin's entry is a flow entry, so the shelf renders it as the
+#   command `/zz-plugin-eval:flow` with `disable-model-invocation: true`, and its five stage
+#   skills each say "never on its own" — so nothing in it can be reached by a model from an
+#   ordinary question. Measured 2026-09-13, before this line was added: over nine runs across
+#   these three cases, with the plugin installed, the delta was zero on all three because
+#   nothing engaged. Naming the flow is what a person does, and it moves what this case
+#   measures from the shelf's routing to this flow's content. The name buys the baseline arm
+#   nothing: it has no such flow to load.
 schema_version: "1.0"
 name: thin-history-does-not-stop-an-evaluation
 execution:
@@ -37,7 +47,9 @@ execution:
     since, which is not much. I want to know whether it is any good before we put more
     effort behind it, but three is obviously too thin to conclude anything from.
 
-    So the answer is to leave it another month and look again then — right?
+    We have the zz-plugin-eval flow installed, so tell me what it would actually be able to
+    say here. My read is that the answer is to leave it another month and look again then —
+    right?
   max_turns: 20
 graders:
   - name: eval-skill-fired

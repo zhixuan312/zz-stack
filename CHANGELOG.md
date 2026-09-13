@@ -33,6 +33,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.32.3] — 2026-09-13
+
+### Fixed
+- **0.32.2's control fix scored the round's own document as its own control.** The
+  fallback said "a document this plugin's runs did not produce" and asked the
+  database with `produced_by_run_id is null or not in (...)`. Every document on this
+  deployment has NULL there — nothing has ever attributed one — so the predicate was
+  true of everything and it picked the very artifact the real round was judging. It
+  scored 5.0 against the real round's 4.5, on the same bytes under the same ruler.
+
+  That is not a weak control, it is a broken test: two readings of one artifact
+  always agree, so a reader would have concluded the judge cannot discriminate when
+  nothing had been asked of it. Worse than having no control, because it looks like
+  one. It now excludes the round's own item set, which is knowable without trusting
+  a column nothing writes.
+- **A control round now says what it actually read.** The loop stores a control
+  score against the same subject row, so `subjects` names this plugin's document
+  while the bytes judged were somebody else's — a control round read as though it
+  had scored the artifact printed beside it. `control_read` names the source. That
+  is the one number in the record whose provenance a reader most needs, because it
+  is what says the rest are trustworthy.
+
+### Changed
+- `tools/plugin-judge.ts` split at the 700-line ceiling into what it is about, not
+  by line count: the tools that answer "what is true of this plugin" stay, and the
+  two that answer "what did a person decide about it" — `plugin_ruler_record` and
+  `plugin_finding_record` — move to `tools/plugin-record.ts`. Both refuse incomplete
+  input at RECORDING time, because the alternative is refusing at judging time and
+  by then the figures exist.
+
 ## [0.32.2] — 2026-09-13
 
 Three defects, all found by running the ten tools against production rather than

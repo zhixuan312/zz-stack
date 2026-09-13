@@ -332,6 +332,15 @@ export function registerPluginJudgeTools(server: McpServer): void {
         const facts = !control && dims.some((d) => d.kind === "quantitative")
           ? await factSheet(p, plugin, version) : null;
 
+        // WHAT THE CONTROL ACTUALLY READ, captured so the response can name it.
+        //
+        // A control round iterates this plugin's own subjects and substitutes the control's
+        // text for each, so `subjects` labels the plugin's document while the bytes judged were
+        // somebody else's. Printing only the label let a control round read as though it had
+        // scored the artifact named beside it — which is the one number in the record whose
+        // provenance a reader most needs, because it is what says the rest are trustworthy.
+        let controlSource = "";
+
         const marking: Marking = {
           versionColumn: "plugin_version_id", versionId: dims[0].version_id, noun: "plugin",
           name: plugin, version, rubricId: dims[0].rubric_id,
@@ -351,7 +360,10 @@ export function registerPluginJudgeTools(server: McpServer): void {
                join zz.plugin p on p.id = pv.plugin_id
               where p.name <> $1 and exists (select 1 from zz.event e where e.run_id = r.id)
               order by r.started_at desc limit 1`, [plugin])).rows[0];
-            if (other) return traceOf(p, other.run_id);
+            if (other) {
+              controlSource = `run ${other.run_id} of another plugin`;
+              return traceOf(p, other.run_id);
+            }
 
             // FALLBACK: a document THIS plugin's runs did not produce.
             //
@@ -366,16 +378,35 @@ export function registerPluginJudgeTools(server: McpServer): void {
             // failing to discriminate. It is weaker than another plugin's run only in that the
             // two subjects share a house style, which makes it a HARDER control to pass, not
             // an easier one.
-            const doc = (await p.query<{ team_slug: string; initiative: string; path: string }>(`
-              select d.team_slug, d.initiative, d.path
+            // EXCLUDED BY THE ROUND'S OWN ITEM SET, not by produced_by_run_id.
+            //
+            // The first version of this fallback said "a document this plugin's runs did not
+            // produce" and asked the database with `produced_by_run_id is null or not in
+            // (...)`. Every document on this deployment has a NULL there — the column is set by
+            // a linkback that has attributed none of them — so the predicate was true of
+            // everything, and the control picked THE VERY DOCUMENT the real round was judging.
+            //
+            // It scored 5.0 against the real round's 4.5 on the same bytes under the same
+            // ruler. That is not a weak control, it is a broken test: two readings of one
+            // artifact will always agree, and a reader would have concluded the judge cannot
+            // discriminate when nothing had actually been asked of it. Worse than no control,
+            // because it looks like one.
+            //
+            // The round's items are what it is judging. A control must not be among them, and
+            // that is knowable here without trusting a column nothing writes.
+            const judging = new Set(items.map((i) => i.docId).filter(Boolean));
+            const candidates = (await p.query<{ id: string; team_slug: string; initiative: string; path: string }>(`
+              select d.id::text as id, d.team_slug, d.initiative, d.path
                 from zz.doc d
                where d.path not like '\\_versions/%'
-                 and (d.produced_by_run_id is null
-                      or d.produced_by_run_id not in (select r.id ${RUNS_OF}))
-               order by d.created_at desc limit 1`, [plugin, version])).rows[0];
+               order by d.created_at desc limit 50`)).rows;
+            const doc = candidates.find((c) => !judging.has(c.id));
             if (doc) {
               const body = bodyOf(doc.team_slug, doc.initiative, doc.path);
-              if (body?.trim()) return { text: body, truncated: 0 };
+              if (body?.trim()) {
+                controlSource = `${doc.initiative}/${doc.path}`;
+                return { text: body, truncated: 0 };
+              }
             }
 
             // NEITHER. Said plainly rather than skipped: a round whose control could not be
@@ -395,7 +426,10 @@ export function registerPluginJudgeTools(server: McpServer): void {
           user: parseCaller(requestHeaders()).email, action: "plugin_judge",
           plugin, version, eval_id: got.eval_id, control: got.control, stored: got.stored,
         });
-        return json(got);
+        // `subjects` names this plugin's documents even on a control round, because the loop
+        // stores a control score against the same subject row. So the source is reported beside
+        // it: without that, a control round reads as though it had scored the artifact named.
+        return json(control === true ? { ...got, control_read: controlSource || '(none)' } : got);
       } catch (err) {
         return text(`ERROR: ${(err as Error).message}`);
       }
@@ -501,169 +535,6 @@ export function registerPluginJudgeTools(server: McpServer): void {
           : "NO CONTROL has been run against this plugin version, so nothing establishes the " +
             "judge was reading. Treat every score above as unverified until plugin_judge has " +
             "run with control: true.",
-      });
-    },
-  );
-
-  server.registerTool(
-    "plugin_ruler_record",
-    {
-      description:
-        "Write the ruler the define stage derived into the registry, so the judge can be run " +
-        "against it. Call it once rulers.md says what good means for this plugin, BEFORE the " +
-        "stakeholder approves — approving is plugin_affirm's job and it is a separate act. " +
-        "Each dimension is qualitative (a reader scores 1-5 between two written ends) or " +
-        "quantitative (a tool computes a fact and this carries the line drawn over it, with " +
-        "the reason it was drawn there). Re-recording replaces the dimensions of the ruler at " +
-        "the same rubric version.",
-      inputSchema: {
-        plugin: z.string(),
-        version: z.string(),
-        rubric_version: z.string().describe("this ruler's own version, e.g. \"1\""),
-        subject: z.enum(["auto", "document", "trace"])
-          .describe("what the qualitative dimensions are applied to"),
-        dimensions: z.array(z.object({
-          name: z.string(),
-          kind: z.enum(["qualitative", "quantitative"]),
-          five_means: z.string().optional(),
-          one_means: z.string().optional(),
-          threshold: z.string().optional(),
-          threshold_reason: z.string().optional(),
-        })).min(1),
-      },
-    },
-    async ({ plugin, version, rubric_version, subject, dimensions }) => {
-      const p = db();
-      if (!p) return noDb();
-
-      // VALIDATED HERE AND NOT AT JUDGING TIME, because judging time is too late: by then the
-      // figures exist, and a threshold written after them is a number somebody chose knowing
-      // the answer. Nobody afterwards can tell that from one chosen before.
-      const bad: string[] = [];
-      for (const d of dimensions) {
-        if (d.kind === "quantitative") {
-          if (!d.threshold?.trim()) {
-            bad.push(`${d.name}: quantitative and carries no threshold — a tool computes the ` +
-                     "figure, and this is where the line over it is drawn");
-          }
-          if (!d.threshold_reason?.trim()) {
-            bad.push(`${d.name}: quantitative and carries no threshold_reason — a line with no ` +
-                     "stated reason is a number somebody can move later to make a result come " +
-                     "out differently, and nobody would be able to tell");
-          }
-        } else if (!d.five_means?.trim() || !d.one_means?.trim()) {
-          // Both ends, for 016_reference.sql's own reason: "a dimension a marker cannot place
-          // is a dimension that gets placed by mood."
-          bad.push(`${d.name}: qualitative and missing five_means or one_means — a dimension a ` +
-                   "marker cannot place is one that gets placed by mood");
-        }
-      }
-      if (bad.length) return text(`REFUSED: ${bad.join("; ")}`);
-
-      const pv = (await p.query<{ id: string; plugin_id: string }>(`
-        select pv.id::text as id, p.id::text as plugin_id
-          from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
-         where p.name = $1 and pv.version = $2`, [plugin, version])).rows[0];
-      if (!pv) return text(`ERROR: no released version ${version} of "${plugin}" is recorded`);
-
-      const rubricId = (await p.query<{ id: string }>(`
-        insert into zz.rubric (plugin_id, version, subject) values ($1::uuid, $2, $3)
-        on conflict (plugin_id, version) do update set subject = excluded.subject
-        returning id::text as id`, [pv.plugin_id, rubric_version, subject])).rows[0].id;
-
-      // REPLACED, not merged. A ruler is one statement about what good means; leaving a
-      // dimension behind because a later draft stopped mentioning it would score the plugin
-      // against a line nobody currently holds.
-      await p.query("delete from zz.rubric_dimension where rubric_id = $1::uuid", [rubricId]);
-      for (const [i, d] of dimensions.entries()) {
-        await p.query(`
-          insert into zz.rubric_dimension
-            (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason)
-          values ($1::uuid, $2, $3, $4, $5, $6, $7, $8)`,
-          [rubricId, d.name, d.five_means ?? "", d.one_means ?? "", i,
-           d.kind, d.threshold ?? "", d.threshold_reason ?? ""]);
-      }
-
-      const who = parseCaller(requestHeaders()).email;
-      logActivity(await userRoot(), null,
-        { user: who, action: "plugin_ruler_record", plugin, version,
-          rubric: rubric_version, dimensions: dimensions.length });
-      return json({
-        plugin, version, rubric_id: rubricId, rubric_version, subject,
-        qualitative: dimensions.filter((d) => d.kind === "qualitative").length,
-        quantitative: dimensions.filter((d) => d.kind === "quantitative").length,
-        next: "Put rulers.md to the stakeholder. Nothing is scored until plugin_affirm records " +
-              "that they agreed to it.",
-      });
-    },
-  );
-
-  server.registerTool(
-    "plugin_finding_record",
-    {
-      description:
-        "Record what this round found, as rows the NEXT round can read. Call it from the report " +
-        "stage, once the scores are in and you have decided what the pattern is. Each finding " +
-        "is generic (it recurs across unrelated work, so it is the plugin's habit and worth " +
-        "changing the plugin over) or specific (one piece of work's own problem). A finding on " +
-        "somebody else's plugin carries no proposed_change — we assess and stop. Recording is " +
-        "not deciding: a finding lands deferred, and applying or rejecting it is a separate act " +
-        "by whoever owns the plugin.",
-      inputSchema: {
-        eval_id: z.string(),
-        findings: z.array(z.object({
-          pattern: z.string().describe("what recurred, in one sentence"),
-          docs_affected: z.number().int().min(0).optional(),
-          scope: z.enum(["generic", "specific"]),
-          proposed_change: z.string().optional()
-            .describe("one change, and what you expect it to do. Omit for a third-party plugin."),
-          decision: z.enum(["applied", "rejected", "deferred"]).optional(),
-        })).min(1),
-      },
-    },
-    async ({ eval_id, findings }) => {
-      const p = db();
-      if (!p) return noDb();
-      const ev = (await p.query<{ id: string }>(
-        "select id::text as id from zz.eval where id = $1::uuid", [eval_id])).rows[0];
-      if (!ev) return text(`ERROR: no evaluation ${eval_id}`);
-
-      // A GENERIC FINDING WITH NO PROPOSED CHANGE IS AN OBSERVATION, and the distinction is
-      // load-bearing. `generic` claims the plugin has a habit worth changing it over; saying so
-      // and then naming no change leaves the next round nothing to test against, and a finding
-      // nothing can contradict reads as vindicated whatever happens next. `specific` may stand
-      // alone -- one piece of work's own problem is fixed by doing that work better, not by
-      // editing a plugin.
-      const mute = findings.filter((f) => f.scope === "generic" && !f.proposed_change?.trim());
-      if (mute.length) {
-        return text(
-          `REFUSED: ${mute.length} finding(s) are scoped generic and propose no change — ` +
-          `${mute.map((f) => JSON.stringify(f.pattern.slice(0, 60))).join(", ")}. Generic means ` +
-          "this is the plugin's habit and worth changing the plugin over; say what change, and " +
-          "what you expect it to move. If you cannot, it is an observation about one round — " +
-          "scope it specific, or leave it in the prose of findings.md where a reader can weigh " +
-          "it without the platform treating it as a claim about the plugin.");
-      }
-
-      let stored = 0;
-      for (const f of findings) {
-        await p.query(`
-          insert into zz.eval_finding (eval_id, pattern, docs_affected, scope, proposed_change, decision)
-          values ($1::uuid, $2, $3, $4, $5, $6)`,
-          [eval_id, f.pattern, f.docs_affected ?? 0, f.scope,
-           f.proposed_change ?? "", f.decision ?? "deferred"]);
-        stored++;
-      }
-      const who = parseCaller(requestHeaders()).email;
-      logActivity(await userRoot(), null,
-        { user: who, action: "plugin_finding_record", eval_id, findings: stored });
-      return json({
-        eval_id, recorded: stored,
-        generic: findings.filter((f) => f.scope === "generic").length,
-        specific: findings.filter((f) => f.scope === "specific").length,
-        next: "These are DEFERRED. Nothing here changes the plugin — the catalog is read-only " +
-              "wherever the platform runs, and a change is a repository edit and a release by " +
-              "whoever owns it.",
       });
     },
   );

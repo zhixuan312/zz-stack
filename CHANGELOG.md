@@ -33,6 +33,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.31.0] — 2026-09-13
+
+### Fixed
+- **`zz.run` was 99.8% phantom rows, and the column it keyed on is dead.** `reconcileRuns()`
+  resolved a skill version through `zz.event.step_version`, which is stamped only when a skill
+  is served WHOLE through `skill_view` — and Claude Code reads an installed skill off disk, so
+  in normal operation nothing stamps it. Measured twice a day apart it sat frozen at 39 while
+  the event log grew by a third. Every row the initiative-bearing insert wrote therefore
+  carried `skill_version_id` NULL, a NULL cannot match that insert's conflict target because
+  Postgres treats NULLs as distinct, so `do update` never fired and the timer appended a fresh
+  duplicate on every pass — roughly 950 a day. A run is now bound to the version that was
+  released at or before the event, which is what "which version was running" actually asks.
+- **The setup text told a new person the one command that updates nothing.**
+  `my_client_setup`'s refresh section was a single `claude plugin marketplace update`, which
+  refreshes the shelf and updates no plugin: each resolves against the marketplace's copy, so
+  somebody following it is told — truthfully — that everything is up to date, at the version
+  they already had. `/zz:update` now leads it, and section 3 names `/zz:doctor` and
+  `/zz:update` whether or not a flow is installed, because those are the ones that work on an
+  empty account.
+
+### Added
+- **Two guards for the run table**, because nothing offline could see it break — `tsc` cannot
+  look inside a template literal, and the gate cannot reach a database. A gate check that a run
+  is attributed by time rather than by a column nothing stamps (break-tested: planting the old
+  predicate turns it red), and a read-only doctor probe that every run names the version it
+  ran. The gate is 283 checks.
+
+### Upgrade notes
+- **A migration deletes the phantom runs on start** (`046_delete_phantom_runs.sql`) — 1808 of
+  1812 rows on this deployment. The code fix alone does not clear them: it stops new ones being
+  written, and the existing rows are what every count of `zz.run` reads. It is safe because the
+  table is DERIVED from `zz.event`; the three tables referencing a run all carry
+  `ON DELETE SET NULL`, and each linkback re-attaches on the next pass because it matches
+  `where <fk> is null`.
+- **Anything reading a run count will see it fall by three orders of magnitude.** That is the
+  honest number appearing for the first time, not a regression. On this deployment the new
+  derivation resolves six real runs across three initiatives where the old one resolved none.
+
 ## [0.30.0] — 2026-09-13
 
 ### Added

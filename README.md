@@ -41,6 +41,10 @@ packages/catalog/     the one reader of catalog/: manifests, entries, skill text
 packages/mcp-http/    session-managed streamable-HTTP MCP hosting + identity
 packages/mcp-client/  the one MCP client anything here uses to CALL an endpoint — the
                       counterpart to mcp-http, which hosts one
+packages/indexing/    the knowledge index: the row a document gets in zz.doc, the claims
+                      derived from it, and the walks that rebuild both. A package because
+                      BOTH doors index — zz-core on every document write, the gateway for
+                      knowledge_reindex — and a service cannot import another service
 packages/tools/       the platform's command-line tools: the testing engines under
                       src/testing/, day-2 ops under src/ops/, shared libraries under
                       src/lib/. Every one has an npm script, and the gate refuses a

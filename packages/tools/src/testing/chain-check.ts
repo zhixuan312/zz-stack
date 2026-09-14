@@ -130,6 +130,14 @@ const call = (tool: string, args: unknown): Promise<string> => core.call(tool, a
 const evalDoor = new Mcp(`${GW}/eval/mcp`, { pat: PAT, client: "chain-check" });
 const callEval = (tool: string, args: unknown): Promise<string> => evalDoor.call(tool, args);
 
+/** THE ACCESS DOOR IS A THIRD CLIENT, for the reason the evaluation door became a second one.
+ *
+ * `knowledge_reindex` left `/core/mcp` for `/manage/mcp` at Task I-38 — rebuilding a team's
+ * index is an administrative act on a team, not a step in anybody's flow — and this file
+ * opened no client that could reach it. The probe below would answer "tool not found" at
+ * RELEASE, because release.mjs runs this and the offline gate deliberately does not. */
+const manageDoor = new Mcp(`${GW}/manage/mcp`, { pat: PAT, client: "chain-check" });
+
 const RESULTS: { ok: boolean; name: string; got: string }[] = [];
 
 function record(ok: boolean, name: string, got: string): void {
@@ -502,14 +510,37 @@ async function main(): Promise<number> {
       `could not read an id back from knowledge_add: ${added}`);
   }
 
-  // knowledge_search and knowledge_reindex both refuse the identical way session_whoami's team
-  // lookup and knowledge_add's own team-scope guard do — no platform database, or no team —
-  // and that is ordinary on a deployment run without either, not a broken tool.
+  // knowledge_search refuses the identical way session_whoami's team lookup and knowledge_add's
+  // own team-scope guard do — no platform database, or no team — and that is ordinary on a
+  // deployment run without either, not a broken tool.
   eitherOr("knowledge_search finds the node this run just wrote",
     await call("knowledge_search", { query: "chain-check subject probe" }),
     /no platform database|no platform db|not in a team/);
-  eitherOr("knowledge_reindex rebuilds the team's index",
-    await call("knowledge_reindex", {}), /no platform database|no platform db|not in a team/);
+
+  // knowledge_reindex, ON /manage, and probed through its REFUSAL rather than its rebuild.
+  //
+  // Two reasons, and neither is squeamishness. A bare call means EVERY team on the deployment,
+  // which is real work against a live index for a probe that would learn nothing from doing
+  // it; and the refusal is the half of this tool's contract that is new — a slug no team
+  // carries has to come back NAMED, because reindexTeam deletes the rows of a team with no
+  // store directory and a typo has no directory either.
+  //
+  // THE DOOR'S OWN LIST DECIDES WHETHER IT RUNS. The tool is registered `if (sup)`, so a PAT
+  // whose role is not superadmin is not offered it — a fact about this run's token, not a
+  // defect — and `call` THROWS McpError on a tool the door does not publish, which would end
+  // the walk here rather than record anything.
+  const manageTools = new Set((await manageDoor.tools()).map((t) => t.name));
+  if (manageTools.has("knowledge_reindex")) {
+    check("knowledge_reindex refuses a team slug no team carries, by name",
+      await manageDoor.call("knowledge_reindex", { team: "chain-check-no-such-team" }),
+      true, /chain-check-no-such-team/);
+  } else {
+    // NOT `record(true, …)`. A probe that did not run is not a probe that passed, and this
+    // file's whole output is a count somebody reads at release: a green line for a
+    // measurement nobody took is the flattering direction. Said out loud, counted nowhere.
+    console.log("  skip  knowledge_reindex is on /manage behind `if (sup)` and this token's " +
+                "role is not offered it — nothing measured");
+  }
 
   // ── the plugin-eval surface: a plugin's release history, not this run's initiative ──
   //

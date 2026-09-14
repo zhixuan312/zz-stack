@@ -12,7 +12,7 @@ import { join } from "node:path";
 const fail = [];
 const SELF = "checks/eval-cost.mjs";
 
-const PARSER = "services/zz-core/dist/plugin-cases.js";
+const PARSER = "services/zz-core/dist/eval/plugin-cases.js";
 if (!existsSync(PARSER)) {
   console.error(`${PARSER} does not exist — this check runs the parser rather than reading it`);
   process.exit(1);
@@ -118,7 +118,7 @@ if (worthRecording(asRead({}))) {
 }
 
 // And the door uses it. A rule that is correct and uncalled is the defect this closes.
-const door = strip("x.ts", readFileSync("services/zz-core/src/tools/plugin-eval.ts", "utf8"));
+const door = strip("x.ts", readFileSync("services/zz-core/src/eval/plugin-eval.ts", "utf8"));
 if (!/worthRecording\s*\(/.test(door)) {
   fail.push("plugin_cases_record does not decide with worthRecording");
 }

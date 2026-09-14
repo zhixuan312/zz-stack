@@ -39,7 +39,7 @@
     },
     {
       "name": "sdlc-spec-audit",
-      "produces": "nothing"
+      "produces": "spec-audit.md"
     },
     {
       "name": "sdlc-plan",
@@ -47,7 +47,7 @@
     },
     {
       "name": "sdlc-plan-audit",
-      "produces": "nothing"
+      "produces": "plan-audit.md"
     },
     {
       "name": "sdlc-execute",
@@ -55,7 +55,7 @@
     },
     {
       "name": "sdlc-review",
-      "produces": "nothing"
+      "produces": "review.md"
     }
   ],
   "documents": [
@@ -74,7 +74,6 @@
       "role": "agreement",
       "gate": true,
       "requires": "explore.md",
-      "closing": true,
       "sections": [
         "Context",
         "Problem",
@@ -88,6 +87,12 @@
       "stage": "sdlc-spec"
     },
     {
+      "name": "spec-audit.md",
+      "role": "verification",
+      "requires": "spec.md",
+      "stage": "sdlc-spec-audit"
+    },
+    {
       "name": "plan.md",
       "role": "plan",
       "gate": true,
@@ -96,6 +101,21 @@
         "Full-suite gate"
       ],
       "stage": "sdlc-plan"
+    },
+    {
+      "name": "plan-audit.md",
+      "role": "verification",
+      "requires": "plan.md",
+      "stage": "sdlc-plan-audit"
+    },
+    {
+      "name": "review.md",
+      "role": "verification",
+      "gate": true,
+      "closing": true,
+      "requiredForClose": true,
+      "requires": "plan.md",
+      "stage": "sdlc-review"
     }
   ]
 }

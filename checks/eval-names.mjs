@@ -6,7 +6,7 @@ const fail = [];
 
 const registered = new Set();
 for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
-  const src = readFileSync(`services/zz-core/src/tools/${f}.ts`, "utf8");
+  const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
 for (const want of ["ruler_read", "ruler_record", "ruler_affirm", "round_judge",
@@ -24,7 +24,7 @@ if (registered.size !== 10) fail.push(`the eval door registers ${registered.size
 
 // AC-2.13: every description on this door says when / returns / refuses.
 for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
-  const src = readFileSync(`services/zz-core/src/tools/${f}.ts`, "utf8");
+  const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"[\s\S]{0,80}?description:\s*([\s\S]{0,1200}?)inputSchema/g)) {
     const [, tool, desc] = m;
     if (!/when\b/i.test(desc)) fail.push(`${tool}'s description does not say WHEN it is called`);

@@ -35,9 +35,9 @@
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const dist = new URL("../services/zz-core/dist/judge.js", import.meta.url);
+const dist = new URL("../services/zz-core/dist/eval/judge.js", import.meta.url);
 if (!existsSync(dist)) {
-  console.error("services/zz-core/dist/judge.js does not exist — this check runs the compiled " +
+  console.error("services/zz-core/dist/eval/judge.js does not exist — this check runs the compiled " +
                 "judge rather than reading it; run `npm run build`");
   process.exit(1);
 }

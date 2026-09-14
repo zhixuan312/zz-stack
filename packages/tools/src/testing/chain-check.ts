@@ -119,6 +119,17 @@ const core = new Mcp(`${GW}/core/mcp`, { pat: PAT, client: "chain-check" });
 /** A tool's text, refusals included — a refusal is what most checks here assert on. */
 const call = (tool: string, args: unknown): Promise<string> => core.call(tool, args);
 
+/** THE EVALUATION DOOR IS A SECOND CLIENT, not a second path on the first.
+ *
+ * The ten `plugin_*` tools left `/core/mcp` for `/eval/mcp` in Task I-19, and this file opened
+ * exactly one client. Calling them on the core door answers "tool not found" ten times — at
+ * RELEASE, because `release.mjs` runs this and the offline gate deliberately does not, so
+ * nothing before a release would have said so. `checks/chain-check-wiring.mjs` could not catch
+ * it either: it asserts every tool registered under `services/zz-core/src/tools` is exercised,
+ * one direction only, so ten tools LEAVING that directory made it quieter rather than redder. */
+const evalDoor = new Mcp(`${GW}/eval/mcp`, { pat: PAT, client: "chain-check" });
+const callEval = (tool: string, args: unknown): Promise<string> => evalDoor.call(tool, args);
+
 const RESULTS: { ok: boolean; name: string; got: string }[] = [];
 
 function record(ok: boolean, name: string, got: string): void {
@@ -515,36 +526,36 @@ async function main(): Promise<number> {
   // model is ever reached — the part of "does the tool chain still work" that a rate-limited
   // model provider cannot take down.
   eitherOr("plugin_locate answers or refuses by a named cause",
-    await call("plugin_locate", { plugin: PLUGIN }),
+    await callEval("plugin_locate", { plugin: PLUGIN }),
     /no platform database|no released version/);
   eitherOr("plugin_conform reads this plugin's own catalog entry",
-    await call("plugin_conform", { plugin: PLUGIN, version: "0" }),
+    await callEval("plugin_conform", { plugin: PLUGIN, version: "0" }),
     /is not in the catalog/);
   eitherOr("plugin_profile answers or refuses by a named cause",
-    await call("plugin_profile", { plugin: PLUGIN, version: "0" }),
+    await callEval("plugin_profile", { plugin: PLUGIN, version: "0" }),
     /no platform database/);
   eitherOr("plugin_ruler answers or refuses by a named cause",
-    await call("plugin_ruler", { plugin: PLUGIN, version: "0" }),
+    await callEval("plugin_ruler", { plugin: PLUGIN, version: "0" }),
     /no platform database/);
   eitherOr("plugin_affirm refuses a version this deployment never released",
-    await call("plugin_affirm", { plugin: PLUGIN, version: "0" }),
+    await callEval("plugin_affirm", { plugin: PLUGIN, version: "0" }),
     /no platform database|no released version/);
   eitherOr("plugin_judge refuses a version that declares no ruler",
-    await call("plugin_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
+    await callEval("plugin_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
     /no platform database|declares no ruler/);
   eitherOr("plugin_scores refuses an eval_id nothing minted",
-    await call("plugin_scores", { eval_id: randomUUID() }),
+    await callEval("plugin_scores", { eval_id: randomUUID() }),
     /no platform database|is not an evaluation/);
   eitherOr("plugin_cases_record refuses a result that is not JSON",
-    await call("plugin_cases_record", { plugin: PLUGIN, version: "0", result: "not json" }),
+    await callEval("plugin_cases_record", { plugin: PLUGIN, version: "0", result: "not json" }),
     /no platform database|that is not JSON/);
   eitherOr("plugin_ruler_record refuses a quantitative dimension with no threshold",
-    await call("plugin_ruler_record", {
+    await callEval("plugin_ruler_record", {
       plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",
       dimensions: [{ name: "chain-check probe", kind: "quantitative" }],
     }), /no platform database|carries no threshold/);
   eitherOr("plugin_finding_record refuses an eval_id nothing minted",
-    await call("plugin_finding_record", {
+    await callEval("plugin_finding_record", {
       eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
     }), /no platform database|no evaluation/);
 

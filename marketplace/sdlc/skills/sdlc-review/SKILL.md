@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.0
+version: 1.3
 description: Review what was built before it ships — sweep the change against ten release-safety failure modes, cite every finding precisely, and separate pre-existing defects from regressions this change introduced. Read-only. Dispatched, because a reviewer who did not write the code is the point.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. Dispatched by the main agent."
 ---
@@ -16,12 +16,33 @@ when_to_use: "sdlc-execute has finished and the change is about to be shipped, m
 reviewer re-reading its own reasoning finds it sound.
 
 **Read-only, by discipline.** Nothing here stops you editing; do not. **Return findings as text
-— you write no file and change nothing.** A review that fixes what it finds removes the
+— you change nothing in the code you are reviewing.** A review that fixes what it finds removes the
 maintainer's ability to judge the fix, and hides the defect rate that tells them whether the
 change is safe.
 
 **The maintainer will not re-investigate before approving.** Your output is treated as
 authoritative, so a miss ships. Cite everything.
+
+**You present nothing to the person.** A dispatched round hands its JSON envelope back to
+the main agent, and that agent decides what anybody is shown — so do not paste a document,
+or `document_present` output, into what you return. Presenting a document in full belongs
+to the gate the main agent is asking somebody to sign, and this round is not that.
+
+**Record the round in `<initiative>/review.md`.** Write your findings there with
+`document_write` before you return. The JSON block is still your FINAL text response and is
+still never written to a file: the report is how the main agent decides what happens next, and
+the document is how anyone reading the initiative later knows this round happened at all. Both,
+every round.
+
+**A round appends.** `document_read` the document first; if it is already there, send its body
+back with your round added under a new `## Round N — <date>` heading, so three rounds leave
+three rounds on the record. Send the BODY only, starting at its first heading — the platform
+writes the envelope and refuses content that opens with frontmatter.
+
+**Recording is not fixing, and read-only still holds.** The only file you write is your own
+findings; you change nothing in the material you were given. A verification stage that fixes
+what it finds removes the evidence that anything was ever wrong, and that is the whole reason
+this stage is dispatched to a reader who did not write the thing.
 
 ## Role
 
@@ -220,7 +241,7 @@ maintainer judge severity at a glance; "unchecked divisor" does not. The `sugges
 direction they will apply. Audience is a practitioner, so precise technical language is right — the bar
 is a legible failure scenario, not plain-for-a-layperson.
 
-Your FINAL text response must be exactly one JSON block (do NOT write it to a file):
+Your FINAL text response must be exactly one JSON block (the JSON itself is never written to a file — the prose findings are, as above):
 
 ```json
 {"criteriaCovered": ["verification-gap", "cross-reference-ripple", "pre-existing-vs-regression", "missing-edge-case", "ordering-concurrency", "resource-cleanup-gap", "backward-compat-break", "safety-regression", "efficiency-regression", "implicit-contract"], "findings": [{"weight": "critical|high|medium|low", "category": "<criterion-slug>", "claim": "<one sentence>", "evidence": "<quoted material>", "file": "<path>", "line": 0, "suggestion": "<fix>", "preExisting": false}]}

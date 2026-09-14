@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 1.3
+version: 1.4
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
@@ -27,7 +27,9 @@ If there is no initiative yet, create it. That is the first act of the flow, not
 
 ```
 explore → spec → audit → plan → audit → execute → review → close (an act, not a stage)
-          └ agreed by the person before audit runs
+          └ agreed       └ approved               └ approved, and it
+            before its     before its               closes the flow
+            audit          audit
 ```
 
 Not a ratchet. An audit that finds the spec rests on an unsettled decision sends you back into
@@ -37,11 +39,17 @@ Not a ratchet. An audit that finds the spec rests on an unsettled decision sends
 |---|---|---|---|
 | 1 | `sdlc-explore` | `explore.md` | **main agent** — fans out, waits, synthesises |
 | 2 | `sdlc-spec` | `spec.md` | **main agent** → the person agrees |
-| 3 | `sdlc-spec-audit` | findings on `spec.md` | subagent per round, sequential, max 3 |
+| 3 | `sdlc-spec-audit` | `spec-audit.md` — findings on `spec.md` | subagent per round, sequential, max 3 |
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
-| 5 | `sdlc-plan-audit` | findings on `plan.md` | subagent per round, sequential, max 3 |
-| 6 | `sdlc-execute` | the change | subagent per plan item |
-| 7 | `sdlc-review` | code review | subagents |
+| 5 | `sdlc-plan-audit` | `plan-audit.md` — findings on `plan.md` | subagent per round, sequential, max 3 |
+| 6 | `sdlc-execute` | the change itself, and no document | subagent per plan item |
+| 7 | `sdlc-review` | `review.md` — and it closes the initiative | subagents |
+
+Six documents, not three. The two audits leave theirs on the record ungated — an audit's value
+is that it happened and its findings are readable, which is advice to the author rather than
+an agreement with anybody. `review.md` is the exception and is gated, because shipping is a
+decision a person owns; it is also this flow's **closing** document, so nothing closes until it
+is written and approved.
 
 ### 1 · Explore fans out, waits, then synthesises
 
@@ -91,7 +99,9 @@ audits kept finding.
 Order, risk and scope are the person's judgement. Dispatch it and you get a plausible ordering
 nobody chose.
 
-**Ask for approval on `plan.md` before executing.** How they answer is entirely theirs —
+**Ask for approval on `plan.md` before the plan audit runs**, the same way the spec is agreed
+before its audit — `plan-audit.md` requires `plan.md`, which is gated, so a round dispatched
+first has its document refused at the write. How they answer is entirely theirs —
 a yes, a yes with a change, or a standing "you do not need to ask me about these". Delegating
 it to you is an ordinary answer, not a loophole.
 
@@ -117,9 +127,15 @@ every close: one `initiative_close()` call, never a block's own close. Say the o
 `initiative_close(initiative, "finished", accepted_by: "<their name>")` when somebody accepted it,
 `initiative_close(initiative, "finished", no_signoff_reason: "<one line>")` when nobody signed off, or
 `initiative_close(initiative, "abandoned")` when the work stopped short — and the platform derives
-`outcome`, writes it into `spec.md`, which this flow declares as its closing document, and
+`outcome`, writes it into `review.md`, which this flow declares as its closing document, and
 appends the team's ledger row. An initiative you do not close this way stays open forever
 and never reaches the ledger.
+
+**`review.md` must exist and be approved first.** It is the closing document AND it carries a
+gate, so the platform refuses the close until `document_approve("<initiative>/review.md")` is
+recorded — the spec used to close this flow, which meant an initiative could close on an
+agreement written before any code existed. Ask for the approval the way stage 4 asks for the
+plan's, and write it down in the same turn.
 
 One step does follow, and it is the platform's rather than this flow's: `initiative_status`
 returns `action: handover` until `handover.md` exists and is approved, and `zz-knowledge` is

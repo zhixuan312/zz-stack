@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.4
+version: 1.5
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -71,11 +71,23 @@ whole initiative, so there is nobody else to dispatch it to. `zz-knowledge` runs
 and is what turns the closed initiative into what the next one recalls; that is the
 platform's step, not this flow's.
 
-## Two gates, and they are recorded either way
+## Three gates, and they are recorded either way
 
-The person agrees to **`spec.md`** before audit runs, and approves **`plan.md`** before
-execute runs. Auditing a document nobody agreed to audits your own guess; building from an
-unapproved plan builds your own guess.
+The person agrees to **`spec.md`** before its audit runs, approves **`plan.md`** before its
+audit runs, and approves **`review.md`** before the initiative closes. Auditing a document
+nobody agreed to audits your own guess; building from an unapproved plan builds your own
+guess; and closing on an unapproved review says the work shipped on nobody's word.
+
+**Both audits come after their document's gate, and the platform enforces it.** `spec-audit.md`
+requires `spec.md` and `plan-audit.md` requires `plan.md`, and each of those targets is gated —
+so a round dispatched before the approval is recorded has its document refused at the write,
+with the approval named. Ask for the approval first; the audit is the reader's check on a
+document somebody already stood behind, not a way to decide whether to stand behind it.
+
+The third is the one that changed, and it changed because the flow was closing on the wrong
+document. `spec.md` used to carry `closing`, so the platform offered the close as soon as the
+plan was approved — before any code was written. `review.md` carries it now, which is why the
+close waits for a review that exists and is signed.
 
 **A person may delegate the decision — "auto-approve, I do not need to see it" — and that is
 theirs to say.** Delegation is an ordinary answer, and it keeps standing until they say
@@ -182,7 +194,8 @@ legitimate choice rather than a mistake: nothing is enforced on that initiative,
 **Documents** go in the initiative, written with `document_write` — never a local path. The
 initiative store is what gives a document its envelope, its version snapshot at approval, and
 its telemetry. A spec written to `./spec.md` is a file; a spec written to the initiative is a
-document someone can approve. This flow produces three: `explore.md`, `spec.md`, `plan.md`.
+document someone can approve. This flow produces six: `explore.md`, `spec.md`, `spec-audit.md`,
+`plan.md`, `plan-audit.md`, `review.md` — and `review.md` is the one it closes on.
 
 **The journal** is the ZZ knowledge base, reached through zz-core: `knowledge_search` to read,
 `knowledge_add` to write. Not a local directory, and not this flow's own store. A journal on one

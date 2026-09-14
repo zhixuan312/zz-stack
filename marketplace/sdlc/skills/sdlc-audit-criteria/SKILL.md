@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 1.0
+version: 1.1
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -25,9 +25,23 @@ changed, do not re-find it. Confirm what was fixed, say plainly what was not, an
 changes introduced. A round that re-reports the last round's findings reads to the caller as three
 independent confirmations of one problem.
 
-**Return findings as text. Change nothing** — and above all do not "helpfully" fix what you find.
-The findings are the output; an audit that edits the document destroys the caller's ability to
-decide which findings to accept.
+**Change nothing in the document you are auditing** — and above all do not "helpfully" fix what
+you find. An audit that edits the document destroys the caller's ability to decide which findings
+to accept, and removes the evidence that anything was ever wrong.
+
+**Recording your round is not fixing it.** The one file you write is your own findings, to the
+document your stage produces — `spec-audit.md` for `sdlc-spec-audit`, `plan-audit.md` for
+`sdlc-plan-audit`. Write it with `document_write` before you return. The JSON block below is
+still your FINAL text response and is still never written to a file: the report is how the main
+agent decides what happens next, and the document is how anyone reading the initiative later
+knows this round happened at all. Both, every round.
+
+**A round appends.** `document_read` the document first; if it is already there, send its body
+back with your round added under a new `## Round N — <date>` heading, so three rounds leave three
+rounds on the record. `document_write` OVERWRITES, and there is no append tool — skip the read
+and round three is the only one anybody can find. Send the BODY only, starting at its first
+heading: the platform writes the envelope and refuses content that opens with frontmatter, and
+`document_read` hands you that envelope along with the body.
 
 ## Role
 
@@ -123,7 +137,7 @@ Read the document. Do similar items in a list/table follow the same shape? If on
 Read the document. For living/revised documents: is there a "last updated" / "as of" / version stamp? When findings claim "still unfixed in version X", is there a date timeline that supports the claim? Record findings.
 
 ### Step 13: Consolidate
-Collect all findings from your working-memory notes across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — do NOT write it to a file.
+Collect all findings from your working-memory notes across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — the JSON itself is never written to a file; your findings go to the document as prose, above.
 
 ### Evidence Grounding (REQUIRED for every finding)
 
@@ -173,7 +187,7 @@ Findings that fail any check should be downgraded or dropped. However, logical-c
 
 ## Output
 
-After consolidating all failure-mode passes, your FINAL text response must be exactly one JSON block (do NOT write it to a file):
+After consolidating all failure-mode passes, your FINAL text response must be exactly one JSON block (the JSON itself is never written to a file — the prose findings are, as above):
 
 ```json
 {"criteriaCovered": ["recommendation-coherence", "internal-contradiction", "cross-item-duplication", "independence-claimed-without-evidence", "argument-soundness", "completeness-against-constraints", "fix-actionability", "drift-staleness", "scope-creep-framing", "structural-consistency", "metadata-completeness"], "findings": [{"weight": "critical|high|medium|low", "category": "<criterion-slug>", "claim": "<one sentence>", "evidence": "<quoted text or absence reference>", "suggestion": "<concrete fix>"}]}

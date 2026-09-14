@@ -29,8 +29,8 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { logActivity } from "../persist.js";
-import { pluginCases, parseCaseRun, worthRecording } from "../plugin-cases.js";
-import { pluginTraces } from "../plugin-profile.js";
+import { pluginCases, parseCaseRun, worthRecording } from "./plugin-cases.js";
+import { pluginTraces } from "./plugin-profile.js";
 import { db } from "../platform-db.js";
 import { userRoot } from "../paths.js";
 

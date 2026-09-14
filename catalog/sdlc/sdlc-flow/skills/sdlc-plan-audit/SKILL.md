@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 1.0
+version: 1.3
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, at most three rounds.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -23,6 +23,16 @@ that is different: what a plan owes, below.
 
 Do not restate those criteria here. They were written twice once already, and two
 auditors applying different standards is worse than either standard.
+
+**You present nothing to the person.** A dispatched round hands its JSON envelope back to
+the main agent, and that agent decides what anybody is shown — so do not paste a document,
+or `document_present` output, into what you return. Presenting a document in full belongs
+to the gate the main agent is asking somebody to sign, and this round is not that.
+
+**Your round is recorded in `<initiative>/plan-audit.md`.** That document is the only thing
+standing between an unread plan and `sdlc-execute` dispatching its tasks one by one, and it is
+what tells anyone later that somebody who did not write the plan read it. `sdlc-audit-criteria`
+carries how to write it.
 
 ## Twelve: the plan's own contract
 

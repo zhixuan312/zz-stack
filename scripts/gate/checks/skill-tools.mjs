@@ -150,23 +150,90 @@ check("the backbone's roster of platform tools is the tools zz-core serves", () 
   // A hand-written roster is exactly the thing that stops being true — a tool added to zz-core
   // and not to the skill is a tool the next agent is told does not belong to us. So the list is
   // checked against the registrations rather than trusted.
+  // AND WHICH DOOR EACH IS ON, not merely that zz-core serves it. `zzCoreSource()` is the whole
+  // service as one text, so this clause was blind to the thing that changed: when the ten
+  // `plugin_*` tools moved to /eval/mcp, zz-core still "served" all of them and this stayed
+  // green — while zz-backbone, which ships in the REQUIRED baseline package, went on telling
+  // every account on the platform that ten tools it cannot reach were on its list. The roster
+  // is load-bearing precisely because an agent uses it to decide whether a name is ours, and
+  // "ours" and "yours to call" stopped being the same thing the day the second door opened.
+  //
+  // So the roster now carries a door per row and this compares that column. Same derivation as
+  // the reachability check above: eval-door.ts is the factory the service mounts on the
+  // evaluation path, so the modules it imports are that door's, and everything else zz-core
+  // registers is on the core door wherever its file sits.
+  const doorOfTool = new Map();
+  const EVAL_DOOR = "services/zz-core/src/eval-door.ts";
+  if (!existsSync(join(root, EVAL_DOOR))) return `${EVAL_DOOR} is gone — the roster's door column cannot be checked against anything`;
+  const evalNames = new Set();
+  for (const m of readFileSync(join(root, EVAL_DOOR), "utf8")
+         .matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)) {
+    const mod = join(root, "services/zz-core/src", `${m[1].replace(/^\.\//, "")}.ts`);
+    if (!existsSync(mod)) return `${EVAL_DOOR} imports ${m[1]}, which is not there`;
+    for (const t of readFileSync(mod, "utf8").matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) {
+      evalNames.add(t[1]);
+    }
+  }
   const src = zzCoreSource();
   const served = new Set();
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) served.add(m[1]);
   if (served.size < 10) return null;   // the shape of the source changed; a later check says so
+  for (const t of served) doorOfTool.set(t, evalNames.has(t) ? "/eval/mcp" : "/core/mcp");
+  // The control on the split: both doors must have tools, or the column below is compared
+  // against a map that answers the same thing to everything.
+  if (!evalNames.size) return "no tool was attributed to the evaluation door, so the roster's door column is compared against a map that says /core/mcp to everything";
+  if (![...doorOfTool.values()].includes("/core/mcp")) return "no tool was attributed to the core door — the derivation put the whole service behind the evaluation door";
   const skill = readFileSync(join(root, "skills/zz-backbone/SKILL.md"), "utf8");
   const start = skill.indexOf("THE PLATFORM'S TOOLS ARE THESE");
   if (start < 0) return "zz-backbone no longer carries a roster of the platform's tools";
   const table = skill.slice(start, skill.indexOf("A tool NOT on that list", start));
-  const listed = new Set([...table.matchAll(/`([a-z_0-9]+)`/g)].map((m) => m[1]));
-  const missing = [...served].filter((t) => !listed.has(t)).sort();
-  const extra = [...listed].filter((t) => !served.has(t)).sort();
+  // ROW BY ROW, so the door column is read as the claim it is. A row is `| what | door | tools |`.
+  const listed = new Map();
+  for (const line of table.split("\n")) {
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 4) continue;
+    const door = (/^`(\/[a-z/]+)`$/.exec(cells[2]) ?? [])[1];
+    if (!door) continue;
+    for (const m of cells[3].matchAll(/`([a-z_0-9]+)`/g)) listed.set(m[1], door);
+  }
   const bad = [];
+  if (!listed.size) {
+    return "the roster's rows no longer carry a door column this check can read — every tool " +
+           "below would then be reported as omitted, so it says this instead";
+  }
+  const missing = [...served].filter((t) => !listed.has(t)).sort();
+  const extra = [...listed.keys()].filter((t) => !served.has(t)).sort();
   if (missing.length) {
     bad.push(`zz-core serves ${missing.join(", ")} and the roster omits them — an agent reading ` +
              "that skill is told they belong to a building block");
   }
   if (extra.length) bad.push(`the roster names ${extra.join(", ")}, which zz-core does not serve`);
+  // GROUPED BY THE CLAIM, not one sentence per tool: a whole row moving door is one mistake,
+  // and ten copies of the same sentence is how a reader learns to skim a failure.
+  const wrongDoor = new Map();
+  for (const [tool, door] of listed) {
+    const actual = doorOfTool.get(tool);
+    if (!actual || actual === door) continue;
+    const key = `${door}\u0000${actual}`;
+    if (!wrongDoor.has(key)) wrongDoor.set(key, []);
+    wrongDoor.get(key).push(tool);
+  }
+  for (const [key, tools] of wrongDoor) {
+    const [claimed, actual] = key.split("\u0000");
+    const many = tools.length > 1;
+    // THE TAIL DEPENDS ON THE DIRECTION, because the two mistakes cost different things and a
+    // reader acts on the sentence they are given. Claiming the baseline door for a tool that is
+    // not on it tells everybody they have something they cannot call; claiming the evaluation
+    // door for a baseline tool tells everybody to install a flow to reach what they already have.
+    bad.push(`the roster puts ${tools.sort().join(", ")} on ${claimed} and ${many ? "they are" : "it is"} ` +
+             `served on ${actual} — ` +
+             (claimed === "/core/mcp"
+               ? "zz-backbone ships in the required baseline package, which carries /core/mcp, " +
+                 `so every account on this platform is being told it can reach ${many ? "tools that are" : "a tool that is"} ` +
+                 "not on its surface"
+               : `${many ? "those are" : "that is"} on the door every account already carries, and the roster ` +
+                 "sends the reader to install a flow to reach what they have"));
+  }
   return bad.length ? bad.join("; ") : null;
 });
 
@@ -212,7 +279,34 @@ check("a skill never instructs a tool its package cannot reach", () => {
   const core = zzCoreSource();
   const gw = gatewaySource();
   const adm = readFileSync(join(root, "services/gateway/src/admin.ts"), "utf8");
-  for (const t of registered(core, 0)) surfaceOf.set(t, "/core/mcp");
+  // ZZ-CORE SERVES TWO DOORS, AND THIS FILED BOTH UNDER /core/mcp. `zzCoreSource()` is the
+  // whole of services/zz-core/src as one text, so every tool that service registers was mapped
+  // to the door every account already carries — which makes the clause below unfalsifiable for
+  // those tools: a package that declares no `servers` at all still "reaches" /core/mcp. Task
+  // I-20 moved the ten `plugin_*` tools onto /eval/mcp, which only the flow that declares it
+  // carries, so a skill of any other flow instructing one of them is now exactly the COMPLETE
+  // AND UNREACHABLE shape above — and was invisible here.
+  //
+  // DERIVED FROM THE DOOR FILE'S OWN IMPORTS, not from where the modules sit. eval-door.ts is
+  // the function the service mounts, so what it imports is that door's surface by
+  // construction; a module that moves directory again changes nothing here. Same derivation
+  // checks/eval-door.mjs uses, and for the same reason.
+  const EVAL_DOOR = "services/zz-core/src/eval-door.ts";
+  if (!existsSync(join(root, EVAL_DOOR))) return `${EVAL_DOOR} is gone — every tool zz-core registers would be filed under /core/mcp, which is the door every account already has, so this check could not find an unreachable tool on the evaluation door`;
+  const evalMods = [...readFileSync(join(root, EVAL_DOOR), "utf8")
+    .matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)]
+    .map((m) => `services/zz-core/src/${m[1].replace(/^\.\//, "")}.ts`);
+  const evalTools = new Set();
+  for (const rel of evalMods) {
+    if (!existsSync(join(root, rel))) return `${EVAL_DOOR} imports ${rel}, which is not there`;
+    for (const t of registered(readFileSync(join(root, rel), "utf8"), 0)) evalTools.add(t);
+  }
+  // BOTH CONTROLS, because either half collapsing makes this check pass on nothing. No eval
+  // tools and every zz-core tool is on /core/mcp again — the state this paragraph replaced.
+  // No core tools and the /core/mcp baseline is unrepresented, so `reach` is never exercised.
+  if (!evalTools.size) return `${EVAL_DOOR} registers no tool this check can see (${evalMods.length} module(s) imported), so zz-core's whole surface would be filed under /core/mcp`;
+  for (const t of registered(core, 0)) surfaceOf.set(t, evalTools.has(t) ? "/eval/mcp" : "/core/mcp");
+  if (![...surfaceOf.values()].includes("/core/mcp")) return "not one tool zz-core registers was attributed to /core/mcp — the split put everything on the evaluation door";
   const manageRegion = between(gw, "async function buildAccessServer", "\nserveMcp(app,");
   if (!manageRegion.text) return `the access server cannot be located: ${manageRegion.why}`;
   for (const t of registered(manageRegion.text, 0)) surfaceOf.set(t, "/manage/mcp");

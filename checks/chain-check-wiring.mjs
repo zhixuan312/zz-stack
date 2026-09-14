@@ -1,19 +1,93 @@
 // chain-check covers every registered core tool, is invoked by release, and is NOT in the gate.
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 const fail = [];
 
-// 1. Every tool the core door registers is exercised.
-const toolsDir = "services/zz-core/src/tools";
-const registered = new Set();
-for (const f of readdirSync(toolsDir).filter((f) => f.endsWith(".ts"))) {
-  const src = readFileSync(join(toolsDir, f), "utf8");
-  for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
-}
+// 1. Every tool each door registers is exercised THROUGH THAT DOOR'S CLIENT.
+//
+// This used to scan one directory and ask only "is this name mentioned". When Task I-19 moved
+// the ten plugin_* tools to /eval/mcp and Task I-20 moved their modules out of tools/, the
+// check went QUIETER RATHER THAN REDDER: the names left the directory it scanned, so it
+// stopped requiring them at all, while chain-check went on calling them on the core door — ten
+// "tool not found"s waiting at release, which is the only place this runs.
+//
+// A check that relaxes as the thing it guards changes is worse than one that is merely narrow,
+// because its silence reads as coverage. So the door is part of the assertion now: a tool is
+// covered when it is called through the client for the door that serves it, and moving a tool
+// between doors without moving its call is a failure rather than a silence.
+//
+// AND THE DOOR IS DERIVED, NOT THE DIRECTORY. The first fix for the above — a working-tree
+// edit during Task I-20, never committed in that form — keyed the two doors to `src/tools` and
+// `src/eval`, which is the SAME root cause one layer along: a check that
+// scans a DIRECTORY when the question is about a DOOR. It would have gone quiet again the next
+// time a module moved. What actually decides which door serves a tool is which factory
+// registers it, so that is what this reads — `eval-door.ts` is the function the service mounts
+// on the evaluation path, the modules it imports are that door's by construction, and every
+// other tool zz-core registers is on the core door wherever its file happens to sit.
+const SRC = "services/zz-core/src";
+const EVAL_DOOR = `${SRC}/eval-door.ts`;
 const chain = readFileSync("packages/tools/src/testing/chain-check.ts", "utf8");
-const missing = [...registered].filter((t) => !chain.includes(`"${t}"`));
-if (missing.length) fail.push(`chain-check does not exercise: ${missing.join(", ")}`);
-if (registered.size === 0) fail.push("no registrations found — the derivation itself is broken");
+
+/** Every .ts under zz-core, so a registration in a module no door imports directly still
+ *  counts — `initiative_open` is registered from `tools/initiative-open.ts`, which server.ts
+ *  does not import, and a scan of the door files alone would not have seen it. */
+const walk = (d, out = []) => {
+  for (const e of readdirSync(d)) {
+    const full = join(d, e);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (e.endsWith(".ts")) out.push(full);
+  }
+  return out;
+};
+const toolsIn = (src) => [...src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
+
+const evalTools = new Set();
+if (!existsSync(EVAL_DOOR)) {
+  fail.push(`${EVAL_DOOR} is gone — the evaluation door's surface cannot be derived, so every ` +
+            "tool on it would be required on the core door's client instead");
+} else {
+  for (const m of readFileSync(EVAL_DOOR, "utf8")
+         .matchAll(/import \{ register\w+ \} from "(\.\/[\w/-]+)\.js"/g)) {
+    const mod = `${SRC}/${m[1].replace(/^\.\//, "")}.ts`;
+    if (!existsSync(mod)) { fail.push(`${EVAL_DOOR} imports ${mod}, which is not there`); continue; }
+    for (const t of toolsIn(readFileSync(mod, "utf8"))) evalTools.add(t);
+  }
+}
+const allTools = new Set();
+for (const f of walk(SRC)) for (const t of toolsIn(readFileSync(f, "utf8"))) allTools.add(t);
+const coreTools = [...allTools].filter((t) => !evalTools.has(t));
+
+/** Which helper in chain-check reaches which door — read out of chain-check itself, so a third
+ *  client added there is picked up rather than needing this file edited to notice it. */
+const clients = new Map();
+for (const m of chain.matchAll(/const (\w+)\s*=\s*new Mcp\(`\$\{GW\}(\/[^`]*)`/g)) clients.set(m[1], m[2]);
+const helperFor = new Map();
+for (const m of chain.matchAll(/const (\w+)\s*=\s*\(tool: string[\s\S]{0,80}?=>\s*(\w+)\.call\(/g)) {
+  const door = clients.get(m[2]);
+  if (door && !helperFor.has(door)) helperFor.set(door, m[1]);
+}
+
+for (const [door, tools] of [["/core/mcp", coreTools], ["/eval/mcp", [...evalTools]]]) {
+  // THE CONTROL ON EACH HALF. An empty set is a door whose every assertion below is satisfied
+  // by a chain-check that calls nothing at all, which is what a broken derivation produces.
+  if (!tools.length) {
+    fail.push(`not one tool was attributed to ${door} — the derivation is broken, and every ` +
+              "clause about what chain-check must exercise there passed on an empty set");
+    continue;
+  }
+  const helper = helperFor.get(door);
+  if (!helper) {
+    fail.push(`chain-check opens no client on ${door}, so the ${tools.length} tools that door ` +
+              "serves cannot be reached from it at all — every call would ask the wrong door");
+    continue;
+  }
+  for (const t of tools) {
+    if (!new RegExp(`\\b${helper}\\("${t}"`).test(chain)) {
+      fail.push(`chain-check does not exercise ${t} through ${helper}() — ${door} serves it, ` +
+                "so calling it any other way asks a door that does not have it");
+    }
+  }
+}
 
 // 2. release.mjs invokes it.
 const rel = readFileSync("scripts/release.mjs", "utf8");

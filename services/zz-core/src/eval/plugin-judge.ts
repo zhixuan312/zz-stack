@@ -29,10 +29,10 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { entryOf, toolsNamedBy } from "./plugin-eval.js";
-import { Dim, MarkItem, Marking, SUBJECT_CAP, Subject, markAll, traceOf } from "../judge.js";
+import { Dim, MarkItem, Marking, SUBJECT_CAP, Subject, markAll, traceOf } from "./judge.js";
 import { logActivity } from "../persist.js";
-import { pluginCases } from "../plugin-cases.js";
-import { pluginTraces } from "../plugin-profile.js";
+import { pluginCases } from "./plugin-cases.js";
+import { pluginTraces } from "./plugin-profile.js";
 import { sanitize, userRoot } from "../paths.js";
 import { ARTIFACTS_DIR, db } from "../platform-db.js";
 

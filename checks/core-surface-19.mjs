@@ -12,12 +12,12 @@
 //
 // WHY A SET AND NOT A COUNT. The plan's own draft of this file asserted `registered.size ===
 // 19`, and 19 is the END STATE of the whole initiative rather than of this task. The door held
-// 31 before Task I-18 and holds 29 after it; it reaches 19 only once Task I-14 adds
-// `initiative_open` (+1), Tasks I-19/I-20 move the ten `plugin_*` tools to the eval door (−10),
-// and `knowledge_reindex` leaves for `/manage` (−1). Registering a check that is red for four
-// tasks is how a gate teaches people to read past it, so this pins the NAMES the door serves
-// today instead — a stronger control than a count, because a count passes when two errors
-// cancel and a name set does not.
+// 31 before Task I-18 and 29 after it; Task I-14 added `initiative_open` (+1) and Tasks
+// I-19/I-20 moved the ten `plugin_*` tools to the eval door (−10), so it holds 20 today and
+// reaches 19 only when `knowledge_reindex` leaves for `/manage` at Task I-38. Registering a
+// check that is red for four tasks is how a gate teaches people to read past it, so this pins
+// the NAMES the door serves today instead — a stronger control than a count, because a count
+// passes when two errors cancel and a name set does not.
 //
 // EVERY TASK THAT MOVES THE SURFACE EDITS THE LIST BELOW. That coupling is deliberate: the
 // surface is the thing this initiative is about, and a task that changes it silently is
@@ -72,19 +72,27 @@ const walk = (d, out = []) => {
   return out;
 };
 
-// ── 1. The core door's exact surface, as of Task I-14 ────────────────────────────────────
+// ── 1. The core door's exact surface, as of Task I-20 ────────────────────────────────────
 //
-// `initiative_open` joined it here. Registered from `registerInitiativeActTools` but defined
-// in `tools/initiative-open.ts`, because initiative-acts.ts is at the 700-line ceiling — which
-// is exactly why the scan below reads the whole tools directory rather than one file.
+// `initiative_open` joined it at Task I-14. Registered from `registerInitiativeActTools` but
+// defined in `tools/initiative-open.ts`, because initiative-acts.ts is at the 700-line ceiling
+// — which is exactly why the scan below reads the whole tools directory rather than one file.
+//
+// THE TEN `plugin_*` TOOLS LEFT AT TASK I-20, and the scan below is why this list could not be
+// edited before they did. It reads the `tools` DIRECTORY for `registerTool(`, not the factory
+// that calls it, so between I-19 (which moved the ten registrations onto `buildEvalServer`)
+// and I-20 (which moved their modules out of `tools/`) this file was GREEN AND WRONG: the ten
+// were no longer on the core door and this list still called them "the core door's exact
+// surface". Deleting them from the list then would have turned it red for the honest reason
+// that the directory still held them. They now live in `services/zz-core/src/eval/`, which the
+// evaluation door imports and this scan does not read — so the list and the directory agree
+// again, and each says the same true thing.
 const EXPECTED = [
   "document_approve", "document_list", "document_patch", "document_present", "document_read",
   "document_revise", "document_write", "initiative_close", "initiative_open",
   "initiative_status", "knowledge_add",
   "knowledge_reconcile", "knowledge_reindex", "knowledge_search", "knowledge_supersede",
-  "plugin_affirm", "plugin_cases_record", "plugin_conform", "plugin_finding_record",
-  "plugin_judge", "plugin_locate", "plugin_profile", "plugin_ruler", "plugin_ruler_record",
-  "plugin_scores", "session_whoami", "skill_list", "skill_read", "source_add", "source_list",
+  "session_whoami", "skill_list", "skill_read", "source_add", "source_list",
 ];
 
 const TOOLS_DIR = "services/zz-core/src/tools";

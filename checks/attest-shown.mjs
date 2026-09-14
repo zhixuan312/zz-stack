@@ -16,7 +16,7 @@
  *
  * Run: node checks/attest-shown.mjs   (also run by scripts/gate.mjs)
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -72,6 +72,28 @@ for (const [name, arg, want] of [
   const ok = got === want;
   if (!ok) failed += 1;
   console.log(`  ${ok ? "ok  " : "FAIL"} ${name}  (got ${got})`);
+}
+
+// ── AND THE APPROVAL PATH ACTUALLY ASKS ───────────────────────────────────────────────────
+//
+// Everything above drives `shownSinceLastChange` directly against a temporary store, which
+// proves the function is right and proves NOTHING about whether anything calls it. Task I-20
+// measured the consequence: unwire the call from `document_approve`, leave the import in place,
+// and this file still printed "8 cases passed" against an approval that had stopped asking.
+// `checks/eval-tools-moved.mjs` does not close it either — it asserts initiative-acts IMPORTS
+// attest, and an unused import is still an import.
+//
+// A function that works and a path that uses it are two claims, and a check that drives the
+// function can only ever make the first.
+const HANDLER = "services/zz-core/src/tools/initiative-acts.ts";
+const src = readFileSync(HANDLER, "utf8");
+const approve = src.slice(src.indexOf('"document_approve"'));
+const body = approve.slice(0, approve.indexOf("\n  );"));
+if (!body.includes("shownSinceLastChange(")) {
+  console.error(`\nattest-shown: ${HANDLER}'s document_approve handler never calls ` +
+    "shownSinceLastChange — so an approval is recorded without asking whether the document was " +
+    "ever shown to the person approving it, which is the one thing this file exists to attest.");
+  failed++;
 }
 
 if (failed) {

@@ -26,9 +26,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { recordingDoor } from "./door.js";
-import { registerPluginEvalTools } from "./tools/plugin-eval.js";
-import { registerPluginJudgeTools } from "./tools/plugin-judge.js";
-import { registerPluginRecordTools } from "./tools/plugin-record.js";
+import { registerPluginEvalTools } from "./eval/plugin-eval.js";
+import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
+import { registerPluginRecordTools } from "./eval/plugin-record.js";
 
 /** What this door says about itself at `initialize`, before any tool is called.
  *

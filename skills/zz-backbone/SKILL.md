@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.29
+version: 3.30
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -452,20 +452,30 @@ reading later can see one caused the other.
 
 ## Process layer vs building blocks
 
-- **THE PLATFORM'S TOOLS ARE THESE THIRTY, AND NOTHING ELSE IS ONE.** They
-  are served by `zz-core`. Whenever this skill or a flow's skill names a tool
-  without saying where it lives, it means the one on this list:
+- **THE PLATFORM'S TOOLS ARE THESE, AND NOTHING ELSE IS ONE.** They are
+  served by `zz-core`, across its two doors. Whenever this skill or a flow's
+  skill names a tool without saying where it lives, it means the one on this
+  list — and the middle column is the door it is on, which decides whether
+  YOU have it:
 
-  | | |
-  |---|---|
-  | documents | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` |
-  | initiatives | `initiative_open` `initiative_close` |
-  | gates | `document_approve` |
-  | sources | `source_add` `source_list` |
-  | knowledge | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
-  | skills | `skill_list` `skill_read` |
-  | status | `initiative_status` `knowledge_reconcile` `session_whoami` |
-  | plugin evaluation | `plugin_locate` `plugin_profile` `plugin_cases_record` `plugin_conform` `plugin_ruler` `plugin_ruler_record` `plugin_affirm` `plugin_judge` `plugin_scores` `plugin_finding_record` |
+  | | door | |
+  |---|---|---|
+  | documents | `/core/mcp` | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` |
+  | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
+  | gates | `/core/mcp` | `document_approve` |
+  | sources | `/core/mcp` | `source_add` `source_list` |
+  | knowledge | `/core/mcp` | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
+  | skills | `/core/mcp` | `skill_list` `skill_read` |
+  | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_cases_record` `plugin_conform` `plugin_ruler` `plugin_ruler_record` `plugin_affirm` `plugin_judge` `plugin_scores` `plugin_finding_record` |
+
+**THE LAST ROW IS NOT ON YOUR LIST UNLESS YOU INSTALLED THAT FLOW.** `/core/mcp` is in the
+required baseline package, so every account on this platform carries every row above the last
+one. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that flow is not
+installed, those ten tools are not on your surface at all, and calling one answers "tool not
+found" rather than refusing you. They are still the platform's tools and still zz-core's, which
+is why they are on this list and not mistaken for a building block's; what the door decides is
+who can reach them, not whose they are.
 
 The evaluation tools belong to the evaluation flow. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
@@ -485,7 +495,7 @@ make every number incomparable with every other number.
   them is a gate.
 - **Every tool in this skill and in a flow's skills is ZZ-CORE'S tool of that
   name.** Read `document_approve(path)` as *zz-core's `document_approve`*, `document_write` as
-  *zz-core's `document_write`*, and so on for all thirty. Say it to yourself that
+  *zz-core's `document_write`*, and so on for every one of them. Say it to yourself that
   way before you call it, because that is the whole question — not what the verb
   sounds like, but which server it comes from.
 - **Find it by server, not by verb.** Clients qualify tool names differently and

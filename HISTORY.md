@@ -26,6 +26,52 @@ each of which is about one platform.
 
 Newest first.
 
+## 0.34.0 — the surface is declared once, and the gate learns to notice drift
+
+**What it was for.** Every tool name, the door serving it, and the plugin shipping each skill
+were described by hand in dozens of places — skill prose, tool descriptions, check headers,
+manifests, module comments — and the descriptions had drifted from the registrations. Two
+files disagreed about how many skills sdlc ships. A check's own header printed `31 tools` as a
+literal on the file whose argument is that a number belongs where it is derived. The renames
+that make the surface legible (`<noun>_<verb>`, a door per audience) were only worth doing if
+the descriptions could not drift again, so the release is those two things together: rename the
+surface, and make the platform able to notice when a statement about itself stops being true.
+
+**What it cost.** Thirty-nine tasks, and the gate went from 296 checks to 331. That ratio is
+the honest summary: most of the work was not behaviour, it was instrumentation. A name is not
+a local fact — renaming one tool touched the door registering it, the alias map resolving its
+history, the skills teaching it, the manifest shipping them, the lock pinning the manifest, and
+the prose describing the lot.
+
+**What running it taught, which reading it had not.** Three defects were found only by
+exercising the thing rather than inspecting it:
+
+- `plugin_profile` reported `errored_runs: 0` on a suite where twelve runs had died, because
+  the module building an empty result hardcoded the field. A half-fallen-over suite read as
+  clean, which is worse than reading as broken.
+- The baseline plugin shipped 264KB of one developer's eval output to every installer.
+- A flow's required section headings were enforceable and not discoverable: `document_write`
+  refused you by name and nothing would tell you the list. You learned the rule by breaking it.
+
+**The measurement the initiative existed to make possible** was taken: 11 cases across four
+plugins, both arms on every case, zero errored runs, $15.76. The estimate beforehand was $4–9,
+and it was wrong because it anchored on a single-arm cost while both arms run.
+
+**What it cost that was not planned.** The release rolled back on a false alarm, and migrations
+are forward-only: the previous version's code went looking for `pat.scope`, which this release
+drops, and PAT authentication returned 500 for about four minutes while `/health` stayed green
+because `/health` resolves nobody. The rollback is the whole reason deploy-then-verify is a
+safe order, and for a release carrying destructive DDL that argument is simply false. It now
+refuses, names the migrations, and says to fix forward. **A safety mechanism nobody has watched
+fail is a safety mechanism nobody has tested.**
+
+**And the probe that raised the false alarm was itself the lesson.** `chain-check` reported 31
+failures against a platform that was working — one cause, cascading: it built every document
+body as a constant and sdlc-flow has declared required sections since the repository's first
+commit. It had been silently skipped for months because it is skipped when no token is
+configured, so nobody had seen it fail. It now passes 61 steps, and four of its five repairs
+were to its own fixtures.
+
 ## 0.33.0 — every plugin can be evaluated, and running it is what found the defects
 
 **Held to this section's bar.** Everything below was measured on 2026-09-13 — by running

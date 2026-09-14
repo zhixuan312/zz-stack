@@ -33,6 +33,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.37.0] — 2026-09-14
+
+### Changed
+- **BREAKING — `bug_list` and `bug_resolve` moved from `/core` to `/manage`, and are superadmin
+  only.** Filing a report stays on `/core` for everyone: anybody doing anything might hit
+  something broken, and somebody who has just hit a wall should not need a role to say so.
+  Reading every report on the deployment and deciding what came of one are operator acts — about
+  the platform rather than about the work somebody was doing when it broke — which is the rule
+  `/manage` states and the reason `knowledge_reindex` is there.
+
+  Superadmin rather than team admin, deliberately: a report is not team-scoped. The platform is
+  one deployment, a defect one team hits is one every team has, so the list is everybody's
+  reports — and showing a team's own admin every other team's is a wider reading of "admin" than
+  a team admin was given.
+
+  `/manage` is now 33 tools: 16 for a member, +4 for a lead, +13 for a superadmin.
+
+### Upgrade notes
+- **If you call `bug_list` or `bug_resolve`, they are on `/manage/mcp` now** and need a
+  superadmin token. `bug_report` is unchanged on `/core/mcp` and open to everyone.
+- No migration. `zz.bug` is unchanged; only which door reads it moved.
+
 ## [0.36.1] — 2026-09-14
 
 ### Fixed

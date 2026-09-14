@@ -172,10 +172,10 @@ export async function deleteMyCredentialFor(
 /** The caller's own access tokens, masked at the query level (only a hash is ever stored) —
  *  when each was issued, last used, and whether revoked. */
 export async function myAccessTokensFor(email: string): Promise<Array<{
-  id: string; label: string; scope: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
+  id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
 }>> {
   const r = await platformDb().query(
-    `select pat.id, pat.label, pat.scope, pat.created_at, pat.last_used_at, pat.revoked_at
+    `select pat.id, pat.label, pat.created_at, pat.last_used_at, pat.revoked_at
      from pat join principal p on p.id = pat.principal_id
      where p.email = $1 order by pat.created_at desc`, [email]);
   return r.rows;
@@ -202,8 +202,13 @@ export async function issueMyAccessTokenFor(
   }
   if (r.rows[0].status !== "active") return { ok: false, error: `${email} is deactivated` };
   const token = mintPat();
+  // NO SCOPE, AND THE LITERAL 'member' IS WHY THIS MATTERS. Self-issuing a token wrote
+  // `member` regardless of who was asking, so a superadmin who minted their own token was
+  // quietly handed one that could not administer anything — and the platform's advice for
+  // being refused was to mint a token, which produced another of the same. A token carries
+  // whatever its holder may do; migration 053 drops the column that said otherwise.
   await db.query(
-    "insert into pat (principal_id, token_hash, label, scope) values ($1,$2,$3,'member')",
+    "insert into pat (principal_id, token_hash, label) values ($1,$2,$3)",
     [r.rows[0].id, sha256(token), label ?? ""]);
   logEvent({ actor: email, kind: "pat.self_issue", subject: label ?? "", detail: extraDetail });
   return { ok: true, token, label: label ?? "", email };

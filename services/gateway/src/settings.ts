@@ -73,7 +73,7 @@ export interface SettingsDeps {
   ) => Promise<SetCredentialOutcome>;
   deleteMyCredentialFor: (email: string, platform: string, extraDetail?: Record<string, unknown>) => Promise<boolean>;
   myAccessTokensFor: (email: string) => Promise<Array<{
-    id: string; label: string; scope: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
+    id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
   }>>;
   issueMyAccessTokenFor: (
     email: string, label: string | undefined, extraDetail?: Record<string, unknown>,

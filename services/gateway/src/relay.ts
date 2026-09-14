@@ -347,7 +347,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
     // EVERY x-zz-*, by prefix rather than by name. These are stamped by this gateway's own
     // middleware and every one of them describes the caller; a block is a third party and
     // none of it is its business. Written as a list of names it was already wrong once —
-    // `x-zz-via`, `x-zz-pat-scope` and `x-zz-pat-team` were added after the list and so told
+    // `x-zz-via` and `x-zz-pat-team` were added after the list and so told
     // every third-party platform how the person authenticated and which team their token is
     // bound to. The prefix is the rule; a list is the instances somebody had thought of.
     //

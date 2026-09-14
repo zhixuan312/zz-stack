@@ -1,0 +1,13 @@
+-- zz.initiative.deleted_at is written by nothing, and it reads as an answer.
+--
+-- The same argument as 049 made for `closed_at`, one column along. Declared in 017, never
+-- written since: 13 rows on the production store and 0 of them non-null. The only mention of
+-- it anywhere in this repository is a comment in the console explaining that a predicate on
+-- it would exclude nothing while reading as though it does — which is the whole problem. A
+-- nullable column that nothing populates is indistinguishable, to every reader, from one
+-- where nothing has been deleted; the difference only shows up the day somebody trusts it.
+--
+-- NOTHING IS LOST. There is no soft-delete anywhere on this platform: initiatives are not
+-- deleted, they are closed with an outcome, and that is recorded on the flow's closing
+-- document. If soft deletion is wanted later it arrives with the code that writes it.
+alter table zz.initiative drop column if exists deleted_at;

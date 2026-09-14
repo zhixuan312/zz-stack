@@ -509,16 +509,14 @@ export function mountMcpOauth(app: Express): void {
       await platformDb().query("update zz.mcp_oauth_authz set used = true where id = $1", [code]);
 
       // THE TOKEN CARRIES THE PERSON'S OWN AUTHORITY, because that is what it is: them,
-      // signed in, at this front end. A member gets member scope and a superadmin gets admin
-      // scope, exactly as their browser session already does — issuing everyone `member`
-      // would quietly take the admin door away from the people who administer the platform,
-      // and issuing everyone `admin` would be indefensible. A deliberately reduced token
-      // remains available from `pat_issue` for automation, which is what scope is for.
-      // READ AT EXCHANGE TIME, not carried on the authorization: a demotion between signing
-      // in and redeeming takes effect, and the window is ten minutes rather than ninety days.
-      const roleRow = await platformDb().query<{ role: string }>(
-        "select role from principal where id = $1", [authz.principal_id]);
-      const scope: "member" | "admin" = roleRow.rows[0]?.role === "superadmin" ? "admin" : "member";
+      // signed in, at this front end.
+      //
+      // It used to say so by COPYING their role onto the token — superadmin got `scope:
+      // admin`, everyone else `member` — read at exchange time so a demotion in between took
+      // effect. That copy is gone with the column: a token is not a statement about what its
+      // holder may do, and every authority check now reads the principal on the call it is
+      // deciding. The demotion window this paragraph was proud of narrowing from ninety days
+      // to ten minutes is now zero, because there is nothing cached to go stale.
       // NAMED FOR THE PROTOCOL, NOT FOR ONE CLIENT. This read `librechat oauth`, which was
       // never accurate — this is the MCP OAuth exchange and any client that speaks it lands
       // here — and stopped being even approximately true when that front end was removed.
@@ -532,12 +530,12 @@ export function mountMcpOauth(app: Express): void {
       await platformDb().query(
         "delete from pat where principal_id = $1 and label = $2", [authz.principal_id, label]);
       await platformDb().query(
-        "insert into pat (principal_id, token_hash, label, scope, expires_at) values ($1,$2,$3,$4,$5)",
-        [authz.principal_id, sha256(token), label, scope, expiry.toISOString()]);
+        "insert into pat (principal_id, token_hash, label, expires_at) values ($1,$2,$3,$4)",
+        [authz.principal_id, sha256(token), label, expiry.toISOString()]);
       logEvent({
         actor: authz.email, teamSlug: null, kind: "credential.set",
         subject: `oauth:${authz.resource}`,
-        detail: { via: "mcp-oauth", scope, expires_at: expiry.toISOString() },
+        detail: { via: "mcp-oauth", expires_at: expiry.toISOString() },
       });
       res.json({
         access_token: token,

@@ -5,6 +5,7 @@
   "version": "0.3.0",
   "description": "Software delivery: explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. sdlc-flow is the entry point, sdlc-method says how every stage is executed, and each stage is its own skill.",
   "purpose": "To carry one piece of delivery work from a raw idea to a shipped, reviewed change without anybody having to remember the order — each stage a skill, each gate a document a person approves. Work belongs here when it changes a system somebody operates; a question with one answer is an investigation, not a flow.",
+  "evals": "evals",
   "license": "MIT",
   "keywords": [
     "delivery",

@@ -499,6 +499,31 @@ export const CatalogManifest = z.object({
    * somebody forgot to declare. Naming them makes "every shipped skill is declared
    * somewhere" a question a check can ask. */
   libraries: z.array(z.string().min(1)).optional(),
+  /** WHERE THIS PACKAGE'S EVAL SUITE IS AUTHORED, relative to the directory holding this
+   * manifest. `"evals"` for the three packages whose content is catalog-resident.
+   *
+   * DECLARED BECAUSE A WALK OF THE CHECKOUT CANNOT TELL A SOURCE FROM ITS OWN BUILD OUTPUT.
+   * `build-marketplace.mjs` deletes and regenerates `marketplace/` from `catalog/`, so every
+   * case exists twice on disk by construction — and a sweep pointed at the repository root
+   * found both: measured 2026-09-13, `audit-catches-an-unverified-claim` discovered once under
+   * each tree and billed for six runs of one case, every one of them failing. Any cost read off
+   * that run overstates the suite and any score double-counts it. The mirror is not the defect
+   * and is not deleted: `client-package.ts` ships it because `claude plugin eval` resolves an
+   * installed plugin to its cache directory and looks for `evals/` below it, and a run that
+   * finds none silently becomes a baseline-only one with no comparison in it. What this field
+   * fixes is which of the two trees the platform's own sweep reads.
+   *
+   * THE BASELINE IS THE EXCEPTION AND SAYS SO OUT LOUD. `zz-core` ships no file from
+   * `catalog/zz/zz-core/` at all — `baselineFiles()` walks ZZ_SKILLS_DIR and
+   * `platformOwnEvals()` walks ZZ_EVALS_DIR, both of which are this repository's root — so it
+   * declares `"../../../evals"` rather than naming a directory that does not exist beside it.
+   * Same reason `skill-homes.mjs` asserts its skills at `skills/` and absent from the catalog.
+   *
+   * NOT THE KEY `claude plugin eval` READS. That CLI defaults to `experimental.evals` on the
+   * built `plugin.json`, and the packaged layout stays `evals/` by construction — residentFiles
+   * gives the reason: "source and destination are the same word deliberately". This is the
+   * platform's own declaration about its own source tree. */
+  evals: z.string().min(1).optional(),
   servers: z.array(z.object({ name: z.string(), path: z.string() })).optional(),
   agentName: z.string().optional(),
   /** ZZ owns this and it sits on the shelf: every account already has it, so a team cannot

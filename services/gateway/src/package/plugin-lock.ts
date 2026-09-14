@@ -173,8 +173,23 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
       throw new Error(`${e.owner}/${e.flow}/flow.json declares no version — a plugin whose ` +
                       "number nobody set is a number nothing can vouch for");
     }
+    // THE SUITE IS WHERE THE MANIFEST SAYS, not where this line used to guess. `cases_digest`
+    // below is what lets a score name the suite it was taken against — "a Δ measured against
+    // four cases and a Δ measured against one are not the same measurement" — so the one thing
+    // it must not do is hash a different directory from the one the suite was run out of. A
+    // hardcoded "evals" here and a declared `evals` in the manifest are two answers to that
+    // question, and this file would have been the one that was wrong.
+    //
+    // REQUIRED, NOT DEFAULTED. `?? "evals"` would keep a plugin that declares nothing working
+    // by accident, which is the state the declaration was added to end; a plugin whose suite
+    // nobody located is a digest nothing can vouch for, exactly as the version above is.
+    const evalsDir = e.manifest.evals;
+    if (!evalsDir) {
+      throw new Error(`${e.owner}/${e.flow}/flow.json declares no evals directory — the suite a ` +
+                      "score is measured against cannot be guessed at");
+    }
     const skillFiles = walkTree(join(e.dir, "skills"), "skills");
-    const caseFiles = walkTree(join(e.dir, "evals"), "evals");
+    const caseFiles = walkTree(join(e.dir, evalsDir), "evals");
     out.push({
       name,
       version,

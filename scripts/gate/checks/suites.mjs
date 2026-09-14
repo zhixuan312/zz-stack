@@ -306,3 +306,6 @@ check("seven skills ship from the plugin that owns them, and their commands foll
 
 check("the two misnamed core skills are renamed, every caller moved, and an old step still resolves",
       runsCheck("skill-renames.mjs"));
+
+check("every eval case is discovered once, from the tree its manifest declares",
+      runsCheck("eval-suite-once.mjs"));

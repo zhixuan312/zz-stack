@@ -96,11 +96,43 @@ if (!shelf.ok) {
 }
 console.log("done.");
 
+// 1b. A PLUGIN THAT WAS RENAMED IS NOT A PLUGIN THAT LEFT.
+//
+// `claude plugin update zz@zz-stack` fails once `zz` is no longer on the shelf, and the
+// failure says only that it failed — so somebody on 0.31.0 running this after the 0.34.0
+// rename is told their update broke, with nothing pointing at the plugin that replaced it.
+// Every existing installation hits that, once, on the release that renames something.
+//
+// This platform already answers this question for tools and skills: `packages/contracts/src/
+// alias.ts` holds a frozen map per surface so an old name still RESOLVES. A plugin is the one
+// installable thing that had no such map, and this is it. Written here rather than imported
+// because this script runs on somebody else's machine, from inside the plugin directory, with
+// no workspace around it; `checks/plugin-alias.mjs` holds the two copies to each other.
+const PLUGIN_ALIAS = { zz: "zz-core" };
+
+const renamed = before.filter((p) => PLUGIN_ALIAS[p.id.split("@")[0]]);
+for (const p of renamed) {
+  const from = p.id.split("@")[0];
+  const to = `${PLUGIN_ALIAS[from]}@${MARKETPLACE}`;
+  process.stdout.write(`  ${p.id} was renamed to ${to}... `);
+  const add = claude(["plugin", "install", to]);
+  if (!add.ok) {
+    console.log("FAILED.");
+    console.error(`    ${add.out.split("\n").join("\n    ")}`);
+    console.error(`\n  ${p.id} is still installed and nothing was removed. Install ${to} by hand.`);
+    process.exit(1);
+  }
+  // Removed only after the replacement is in, so a failure leaves a working machine.
+  const rm = claude(["plugin", "uninstall", p.id]);
+  console.log(rm.ok ? "installed, old one removed." : "installed; the old one could not be removed.");
+}
+const current = renamed.length ? (installed() ?? before) : before;
+
 // 2. Then each plugin THIS person has. Not a list written here: someone with only the
 // baseline must not be told to install the flows, and someone with a flow we have never
 // heard of must still get it updated.
 let failed = 0;
-for (const p of before) {
+for (const p of current) {
   process.stdout.write(`  ${p.id}... `);
   const r = claude(["plugin", "update", p.id]);
   console.log(r.ok ? "done." : "FAILED.");
@@ -113,14 +145,14 @@ const after = installed() ?? [];
 const now = new Map(after.map((p) => [p.id, p.version]));
 console.log("");
 let moved = 0;
-for (const p of before) {
+for (const p of current) {
   const to = now.get(p.id);
   if (to === undefined) console.log(`  ${p.id}  is no longer installed — it left the shelf`);
   else if (to === p.version) console.log(`  ${p.id}  already at ${p.version}`);
   else { moved++; console.log(`  ${p.id}  ${p.version} -> ${to}`); }
 }
 for (const p of after) {
-  if (!before.some((b) => b.id === p.id)) { moved++; console.log(`  ${p.id}  newly installed at ${p.version}`); }
+  if (!current.some((b) => b.id === p.id)) { moved++; console.log(`  ${p.id}  newly installed at ${p.version}`); }
 }
 
 console.log("");

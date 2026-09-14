@@ -378,6 +378,9 @@ check("no shipped file states a count of this platform's own surface",
 check("the written record matches the delivered surface, and no document outgrew the ceiling",
       runsCheck("docs-current.mjs"));
 
+check("a renamed plugin still resolves, and the updater's copy of the map is the contract's",
+      runsCheck("plugin-alias.mjs"));
+
 // ── the two checks written as bash, unwired since the day they were written ───────────────
 //
 // Both passed every time somebody typed their name and neither was ever registered, which is

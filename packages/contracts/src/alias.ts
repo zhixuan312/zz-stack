@@ -197,3 +197,23 @@ export const NO_TOKEN_ONBOARDING: readonly string[] = Object.freeze([
   "  keys for the building blocks and prints the setup for Claude Code,",
   "  Codex or Hermes. One agent, everything about your access.",
 ]);
+
+/** OLD PLUGIN NAME → NEW, for the one installable thing that had no alias map.
+ *
+ * TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS and SKILL_ALIAS all exist so a name written down before
+ * a rename still RESOLVES. A plugin is the name a person types into
+ * `claude plugin install <name>@zz-stack` and the one recorded in their installation — and it
+ * was the one surface where a rename simply broke: `claude plugin update zz@zz-stack` fails
+ * once `zz` is off the shelf, saying only that it failed, so somebody a release behind is told
+ * their update is broken with nothing naming what replaced it.
+ *
+ * `zz` became `zz-core` in 0.34.0. The entry is frozen like the others: nothing writes an old
+ * name after the rename, and a miss means "this plugin was never renamed", not a failure.
+ *
+ * COPIED, DELIBERATELY, INTO catalog/zz/zz-access/skills/zz-update/update.mjs — that script
+ * runs on somebody else's machine from inside a plugin directory with no workspace around it,
+ * so it cannot import this. `checks/plugin-alias.mjs` holds the two to each other, which is the
+ * only thing that makes a second copy honest. */
+export const PLUGIN_ALIAS: Record<string, string> = Object.freeze({
+  zz: "zz-core",
+});

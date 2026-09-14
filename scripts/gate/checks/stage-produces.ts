@@ -12,15 +12,15 @@
  *
  * WHAT WAS ALREADY HERE, AND WHY THIS IS NOT A SECOND COPY OF IT. Two checks touch this ground
  * and both are pinned to a written-down list of packages:
- *   - `checks/sdlc-documents.mjs` asserts all three properties — presence, forward resolution
+ *   - `checks/sdlc-documents.ts` asserts all three properties — presence, forward resolution
  *     and reciprocity — for ONE manifest, `catalog/sdlc/sdlc-flow/flow.json`, named as a
  *     literal at the top of the file. Nothing it says reaches zz-plugin-eval.
- *   - `checks/manifests-conform.mjs` asserts presence only, over a hardcoded array of four
+ *   - `checks/manifests-conform.ts` asserts presence only, over a hardcoded array of four
  *     `[name, dir]` pairs. It says nothing about whether a produced document exists or about
  *     reciprocity in either direction.
  * Both happen to cover today's catalog because today's catalog is the list they were written
  * from. The fifth flow anybody adds is covered by neither, silently — which is the same
- * failure `checks/manifests-conform.mjs`'s own hardcoded list already caused once, when it
+ * failure `checks/manifests-conform.ts`'s own hardcoded list already caused once, when it
  * read `<package>/skills` for the baseline, found no directory, and exempted a whole tree from
  * the rule it existed to enforce. This walks `flows`, so the subject is the catalog.
  *
@@ -112,7 +112,7 @@ check("every stage says what it leaves behind, and the document it names names i
     }
 
     // AND THE DOCUMENTS NOTHING CLAIMS. This is not the mirror of the loop above: a document
-    // with no `stage` field of its own is invisible to `catalog-stages.mjs`'s "a document's
+    // with no `stage` field of its own is invisible to `catalog-stages.ts`'s "a document's
     // declared stage is a stage its flow has", which skips it, and invisible to the forward
     // resolution here, which only ever looks at documents some stage already named.
     const produced = new Set((m.stages ?? []).map((s: { produces?: string }) => s.produces).filter(Boolean));

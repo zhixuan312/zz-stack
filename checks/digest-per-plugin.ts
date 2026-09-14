@@ -8,7 +8,7 @@
 import { digestOf, digestOfPlugin } from "../services/gateway/dist/package/describe.js";
 
 // SYNTHETIC: these two paths are fields of an in-memory package, never opened — the digest is
-// computed over the object. `skill-renames.mjs` asserts that every skills/<name>/SKILL.md
+// computed over the object. `skill-renames.ts` asserts that every skills/<name>/SKILL.md
 // literal in a script resolves on disk, and these are the exception it makes you declare.
 interface Plugin {
   name: string; description: string; required: boolean;

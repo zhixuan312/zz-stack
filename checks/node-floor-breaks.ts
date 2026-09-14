@@ -1,4 +1,4 @@
-// A BREAK TEST. checks/node-floor.mjs passing on this machine proves nothing — this machine
+// A BREAK TEST. checks/node-floor.ts passing on this machine proves nothing — this machine
 // satisfies the floor. What has to be proven is that it FAILS, and fails informatively, when
 // the floor is not met. So the floor is temporarily raised past any plausible runtime and the
 // check is required to go red naming both versions.

@@ -60,7 +60,7 @@ check("nothing is exported that nobody imports", () => {
   const sources = [];
   sources.push(...sourceFiles(["services", "packages"], [".ts"])
     .filter((f) => !f.endsWith(".d.ts")).map((f) => join(root, f)));
-  // COMMENTS STRIPPED, or this file's own prose keeps symbols alive. gate.mjs discusses
+  // COMMENTS STRIPPED, or this file's own prose keeps symbols alive. gate.ts discusses
   // nearly every export in the repository by name, and it is one of the consumers scanned —
   // so "is this symbol mentioned anywhere else" was answered by a paragraph ABOUT it. Proven:
   // making ENVELOPE_BLOCK genuinely probe-only left this check green, because three comments
@@ -77,7 +77,7 @@ check("nothing is exported that nobody imports", () => {
   //
   // RECURSIVE, which is the correction "the configuration surface is documented" already
   // made and this one did not: scripts/probes/ is where two consumers live, and a flat
-  // readdir has never seen them. envelope-shape.mjs is the only importer of ENVELOPE_BLOCK
+  // readdir has never seen them. envelope-shape.ts is the only importer of ENVELOPE_BLOCK
   // outside the services today — it stays live here because zz-core imports it too, so the
   // gap was latent rather than firing. Latent is the wrong thing to leave: this check's
   // finding is "delete this", and a probe-only export would have been reported as dead code
@@ -176,14 +176,14 @@ check("the platform model is one name, however many places name it", () => {
 check("the MCP protocol is written once", () => {
   // Six Python scripts each carried their own MCP client — the smoke harness, the conformance
   // measurer, the chain probe, the block probe, the credential batcher and the provisioner —
-  // and a seventh copy sat in release.mjs. They had already drifted: FOUR protocol versions
+  // and a seventh copy sat in release.ts. They had already drifted: FOUR protocol versions
   // between them (2025-06-18, 2025-03-26, 2024-11-05 twice) and three ways of reading a
   // streamable-HTTP answer. Nothing had broken, because the gateway accepts all of them; the
   // day it stops accepting the oldest, the failure lands in whichever copy nobody remembered.
   //
   // TWO things must not be duplicated, and they are different:
   //
-  //   the VERSION — one string, wherever a handshake is built. release.mjs still builds one,
+  //   the VERSION — one string, wherever a handshake is built. release.ts still builds one,
   //   deliberately: its probes use curl to assert a status code over real HTTPS from outside,
   //   which is a stronger claim than "our own client can talk to it". What it may not do is
   //   name the version itself, and it now reads it from the client's source.
@@ -409,7 +409,7 @@ check("imports run node, then packages, then this directory", () => {
   // adopted. A check must enforce the practice, not a tidier one it would prefer.
   const rank = (spec: string): number => (spec.startsWith("node:") ? 0 : spec.startsWith(".") ? 2 : 1);
   const findings = [];
-  // scripts/ TOO, and it is where the one violation was: this file imported ./manifests.mjs
+  // scripts/ TOO, and it is where the one violation was: this file imported ./manifests.ts
   // above node:url — the gate breaking the rule the gate enforces, invisible because the walk
   // stopped at packages/ and services/. Five of the six .mjs files here already followed it,
   // which is the same majority the paragraph above cites for the TypeScript.

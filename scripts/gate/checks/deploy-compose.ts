@@ -250,7 +250,7 @@ check("a compose container is addressed as a service, never by a name we built",
   // from its own directory, got `deploy` on production, and from 2026-08-26 ran `docker exec
   // deploy-postgres-1` into "No such container": four nights of 20-byte database dumps, no
   // artifacts archive and no credential archive, into a log nobody reads, while the script
-  // exited non-zero to cron. release.mjs had the same literal pointing the other way,
+  // exited non-zero to cron. release.ts had the same literal pointing the other way,
   // `zz-postgres-1` under `|| true`, so its migration probe could only ever work against the
   // one host a release touches. reset-smoke-store.sh had `deploy-zz-core-1`, correct on UAT
   // and wrong on production, in a script whose whole job is deleting things.

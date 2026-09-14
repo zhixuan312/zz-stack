@@ -3,7 +3,7 @@
  *
  * It used to own eleven, and that is how they rotted: they ran for forty seconds during a
  * release and at no other time, so nothing exercised them between releases and nothing noticed
- * when the release.mjs split left three of them calling names they never imported. The first
+ * when the release.ts split left three of them calling names they never imported. The first
  * attempt at 0.26.1 deployed, reported six failures that were all ReferenceErrors from inside
  * this file, and rolled a healthy platform back. A list that runs once per release is a list
  * that is wrong at the moment it matters and right at no other.
@@ -20,7 +20,7 @@
  * probe that could not run. A probe that dies on an unreachable host, a missing token or its
  * own bug has told you nothing about the deployment — rolling back on it undoes a good release
  * for a reason that was never about the release. That is exactly what happened here, and the
- * three-verdict split in doctor/run.mjs is what prevents it. Unknowns are still printed, and
+ * three-verdict split in doctor/run.ts is what prevents it. Unknowns are still printed, and
  * still worth somebody's attention; they are just not evidence.
  */
 import "../doctor/layers/host.ts";

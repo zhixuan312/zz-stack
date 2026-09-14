@@ -43,7 +43,7 @@
 // oversight. /manage WAS not noun-first: it served list_catalog, connect_block,
 // set_my_credential and a dozen more verb-first names until Task I-22 renamed them. Holding
 // its paragraph to those prefixes would have pinned the exact vocabulary I-22 removed, and the
-// clause stays off this door now because manage-surface.mjs owns that door's shape and put a
+// clause stays off this door now because manage-surface.ts owns that door's shape and put a
 // second copy of it in that task's path. So its instructions are held to everything else —
 // length, a self-contained first 512 naming its own orientation skill, a `NOT FOR:` line —
 // and its tool list is left to speak for itself. Each door's orientation skill is DERIVED and
@@ -96,7 +96,7 @@ const listDir = (d: string) => { try { return readdirSync(d); } catch { blind.pu
  *  the code used to do, and a comment describing a property must never be able to stand in
  *  for the property.
  *
- *  A CHARACTER SCANNER, not the line-wise stripper core-surface-19.mjs uses, and the
+ *  A CHARACTER SCANNER, not the line-wise stripper core-surface-19.ts uses, and the
  *  difference is not fussiness. That one looks for `/*` before it removes `//`, so
  *  services/gateway/src/server.ts:266 — a LINE comment ending "…/auth/*" — opened a block
  *  comment that never closed and blanked the last 28 lines of the file, including the
@@ -163,7 +163,7 @@ try {
 // ONE IMPORT AND NO MODULE SCAN, unlike the core door above, because eval-door.ts exports the
 // whole builder: it constructs its server, declares its own instructions and registers its own
 // tools, so the function this runs is the function `serveMcp` is handed. What that door SERVES
-// is checks/eval-door.mjs's subject; what it SAYS is this file's.
+// is checks/eval-door.ts's subject; what it SAYS is this file's.
 let evalClient: Client | null = null;
 try {
   const { buildEvalServer } = await import("../services/zz-core/dist/eval-door.js");
@@ -325,7 +325,7 @@ const DOORS = [
     // NOT noun-first when this clause was written: it served list_catalog, connect_block,
     // set_my_credential and a dozen more verb-first names until Task I-22 renamed them.
     // Demanding its paragraph name `list_*` and `connect_*` would have pinned exactly the
-    // vocabulary that task removed; manage-surface.mjs owns this door's shape, and would put
+    // vocabulary that task removed; manage-surface.ts owns this door's shape, and would put
     // a second copy of every one of those names in its path.
     nouns: false, skill: entrySkillFor("/manage/mcp"),
     skillAt: (s: string) => catalogSkillPaths(s),
@@ -382,7 +382,7 @@ for (const { name: door, client, tools, nouns, skill, skillAt, mustName } of DOO
   // So each door names a small number of things a useful paragraph cannot omit, and every one
   // is chosen to SURVIVE Task I-22's rename rather than fight it: the tool a caller starts
   // with (`whoami` is that door's one exception to the noun-first shape — checks/
-  // manage-surface.mjs asserts it is kept under exactly that name), the OTHER door, so
+  // manage-surface.ts asserts it is kept under exactly that name), the OTHER door, so
   // "not for this" has somewhere to send you, and its own mount path, so the two paragraphs
   // are not interchangeable.
   for (const anchor of mustName) {
@@ -416,7 +416,7 @@ for (const { name: door, client, tools, nouns, skill, skillAt, mustName } of DOO
 // The one seam a handshake cannot close. Everything above ran `coreServer` and
 // `buildAccessServer`; nothing above proves the SERVICES run them.
 //
-// THE EVALUATION DOOR'S HALF OF THIS SEAM IS checks/eval-door.mjs's, and deliberately not
+// THE EVALUATION DOOR'S HALF OF THIS SEAM IS checks/eval-door.ts's, and deliberately not
 // repeated here: that file already compares zz-core's `serveMcp(app, "…", buildEvalServer)`
 // mount against the path the gateway's own `EVAL_URL` fetches, which is the same assertion
 // with a second half this file has no use for. Two files red for one cause teaches nothing. Swapping either mount back

@@ -108,9 +108,9 @@ for (const [door, tools] of [["/core/mcp", coreTools], ["/eval/mcp", [...evalToo
   }
 }
 
-// 2. release.mjs invokes it.
+// 2. release.ts invokes it.
 const rel = readFileSync("scripts/release.ts", "utf8");
-if (!/chain-check/.test(rel)) fail.push("release.mjs does not invoke chain-check");
+if (!/chain-check/.test(rel)) fail.push("release.ts does not invoke chain-check");
 
 // 3. Control: the OFFLINE gate must NOT invoke it. This check fails in both directions.
 const gate = readFileSync("scripts/gate.ts", "utf8");
@@ -118,10 +118,10 @@ const gateChecks = readdirSync("scripts/gate/checks")
   .map((f) => readFileSync(join("scripts/gate/checks", f), "utf8")).join("\n");
 // WHAT THIS FORBIDS IS EXECUTION, not mention. Two earlier spellings of this control were
 // both wrong in the same direction — too coarse — and each was found only by being wired:
-//   `run.*chain-check`      matched `runsCheck("chain-check-wiring.mjs")`, the registration of
+//   `run.*chain-check`      matched `runsCheck("chain-check-wiring.ts")`, the registration of
 //                           THIS check, so the check accused the gate of running the very tool
 //                           it exists to keep out.
-//   `chain-check(?![-\w])`  matched `build.mjs` READING `chain-check.ts` to lint its source —
+//   `chain-check(?![-\w])`  matched `build.ts` READING `chain-check.ts` to lint its source —
 //                           a static analysis, which is exactly what the gate should be doing.
 // So: the runnable artifact by name, or a chain-check argument inside a process-spawning call.
 // Prose about chain-check is free, and five gate checks legitimately carry it.

@@ -144,7 +144,7 @@ check("a deployment's database is asked for its own role and name", () => {
   // `docker compose exec -T postgres psql -U zz -d zz` addresses THIS deployment's database
   // and then types two values the deployment configures. POSTGRES_USER and POSTGRES_DB are
   // settable and .env.example documents them as such, so on any host that sets either, the
-  // command fails — and the places it appears are the expensive ones: release.mjs's migration
+  // command fails — and the places it appears are the expensive ones: release.ts's migration
   // probe is step 5, and step 5 rolls a release back. A good version undone by a name the
   // script guessed.
   //
@@ -156,7 +156,7 @@ check("a deployment's database is asked for its own role and name", () => {
   //
   // `docker compose exec` is the distinguishing mark and it is the true one: it means a
   // deployment whose configuration lives in its own .env. A `docker exec` into a container
-  // the caller just started with `-e POSTGRES_USER=…` — release.mjs's throwaway postgres for
+  // the caller just started with `-e POSTGRES_USER=…` — release.ts's throwaway postgres for
   // sql-check — configured that value itself and is right to repeat it.
   const bad = [];
   // THE GATE'S OWN SOURCE IS EXCLUDED, and the paragraphs above are why: they quote the
@@ -181,7 +181,7 @@ check("a deployment's database is asked for its own role and name", () => {
       .map((l) => (/^\s*(#|\/\/|\*)/.test(l) ? " ".repeat(l.length) : l)).join("\n");
     const src = original.split("\n")
       .filter((l) => !/^\s*(#|\/\/|\*)/.test(l)).join("\n")
-      // ADJACENT TEMPLATE LITERALS JOINED FIRST. release.mjs builds its ssh commands as
+      // ADJACENT TEMPLATE LITERALS JOINED FIRST. release.ts builds its ssh commands as
       // `…` + `…` across several lines, so `docker compose exec` and the `psql` it runs sit
       // on different source lines — and the first version of this check, which required both
       // on one line, could not see the migration probe at all. That probe is the site the

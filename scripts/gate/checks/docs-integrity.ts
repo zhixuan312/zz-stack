@@ -52,7 +52,7 @@ check("the README's map names every package, flow and script, and no others", ()
 
   // Searched inside the map's `scripts/` paragraph, not the whole README.
   //
-  // `readme.includes(stem)` was a substring match over the entire file, and manifests.mjs
+  // `readme.includes(stem)` was a substring match over the entire file, and manifests.ts
   // passed it on the word "manifests" in the sentence describing packages/catalog — a file
   // absent from the map, reported as present, by prose two dozen lines above it. The fourth
   // check in this file to be fooled by prose it was never meant to read.
@@ -158,7 +158,7 @@ check("no document is older than the code it describes", () => {
 // indistinguishable from a clean repository.
 check("the gate reads the files it says it reads", () => {
   // EVERY MODULE, not the entry file. The checks moved into gate/checks/ on 2026-09-11 and
-  // gate.mjs became sixty-seven lines of imports — so this check went on reading one file,
+  // gate.ts became sixty-seven lines of imports — so this check went on reading one file,
   // found no `for (const … of sourceFiles(` in it, and passed. It was the paragraph above
   // this one, happening to the check that wrote it, within the same commit.
   const bad: string[] = [];

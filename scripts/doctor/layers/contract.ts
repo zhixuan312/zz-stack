@@ -128,7 +128,7 @@ probe("every tool the source registers is on the live door", () => {
   // blind spot is empty rather than merely unlikely — but it is a property of the code, not of
   // the check, and the day somebody writes a one-tool door is the day this stops covering it.
   // Nor can it see WHICH of zz-core's two doors a tool is on: the lists are unioned, so a tool
-  // that moved from one to the other reads as present. checks/eval-door.mjs holds that offline,
+  // that moved from one to the other reads as present. checks/eval-door.ts holds that offline,
   // against the builders themselves.
   const wholeFiles = [...byFile].filter(([file, ns]) =>
     ns.length === declared.filter((t) => t.file === file).length && ns.length > 1);

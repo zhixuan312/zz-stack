@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * set-version.mjs — the one place this repo's version is set.
+ * set-version.ts — the one place this repo's version is set.
  *
  * The version lives in every package.json. Keeping them in step by hand is a step
  * that can be half-done, and half-done is invisible: the build passes, the deploy
  * succeeds, and the wrong number ships. One input produces every location, so there is
  * no ordering to remember and no subset to get wrong.
  *
- *   node scripts/set-version.mjs 0.2.0
+ *   node scripts/set-version.ts 0.2.0
  *
  * The gateway's version is the one that escapes: PLATFORM_VERSION reads it at runtime
  * and it becomes the prefix of every client package (`0.2.0+<digest>`). The digest
@@ -23,7 +23,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const version = process.argv[2];
 if (!version) {
-  console.error("usage: node scripts/set-version.mjs <version>");
+  console.error("usage: node scripts/set-version.ts <version>");
   process.exit(2);
 }
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {

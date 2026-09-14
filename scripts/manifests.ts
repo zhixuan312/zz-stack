@@ -1,8 +1,8 @@
 /**
  * Every package manifest in this repo, discovered rather than listed.
  *
- * There were two hardcoded copies of this list — one in set-version.mjs, exported and
- * imported by nobody, and a second in gate.mjs. Both happened to be complete, and neither
+ * There were two hardcoded copies of this list — one in set-version.ts, exported and
+ * imported by nobody, and a second in gate.ts. Both happened to be complete, and neither
  * could stay that way on its own: a new package under packages/ or services/ would have
  * kept its old version through a release while the gate confirmed everything was in step,
  * because the gate was reading the same stale list the release wrote.

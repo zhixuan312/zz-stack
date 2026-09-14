@@ -1,7 +1,7 @@
 /**
  * Every name shipped prose spells out, against what this repository actually serves.
  *
- * Not what a SKILL says — that is skill-prose.mjs and skill-tools.mjs, and both stop at the
+ * Not what a SKILL says — that is skill-prose.ts and skill-tools.ts, and both stop at the
  * skill trees. This is wider on purpose, because the third stale self-description this
  * initiative found was not in a skill at all. A pair of team-wide credential tools, deleted
  * outright along with the shared-credential tier, were registered nowhere and still named in
@@ -12,11 +12,11 @@
  * COMMENTS COUNT AS PROSE. A comment naming a tool nobody registers misleads the next person
  * exactly as a skill misleads the next agent — worse, in a gate check, where the comment is
  * the only statement of what the rule below it is for. Five of the eight occurrences were
- * comments in this directory — three in security-secrets.mjs, two in skill-tools.mjs.
+ * comments in this directory — three in security-secrets.ts, two in skill-tools.ts.
  *
  * WHY IT IS A MODULE OF ITS OWN. Its subject is not a skill: it sweeps every `.md` under
  * catalog/, marketplace/ and skills/, and the comments under scripts/gate/.
- * skill-prose.mjs was 664 lines when this was written, against a 700-line ceiling this
+ * skill-prose.ts was 664 lines when this was written, against a 700-line ceiling this
  * repository measures and enforces, so there was no room to put it there and no reason to —
  * "what a skill's text may say" and "what any shipped prose may name" are two subjects.
  */
@@ -34,9 +34,9 @@ import { catalogPackages, claimsOurs, claimsPreRename, everyShippedSkill, platfo
 const PROSE = ["catalog", "marketplace", "skills"];
 
 /** And the gate's own source, comments only. WHY THE WHOLE OF `scripts/gate/` and not just its
- *  `checks/` directory: `facts.mjs` and `read.mjs` carry the derivations these rules are built
+ *  `checks/` directory: `facts.ts` and `read.ts` carry the derivations these rules are built
  *  out of, and their comments are where a name is EXPLAINED rather than merely used — the
- *  longest prose about the platform's namespace in this repository is a docstring in facts.mjs.
+ *  longest prose about the platform's namespace in this repository is a docstring in facts.ts.
  *  A dead name is most misleading exactly there. Measured: widening from `checks/` to the whole
  *  directory adds no finding of its own. */
 const GATE = "scripts/gate";
@@ -55,7 +55,7 @@ const CALL = /`([a-z][a-z0-9_]{3,40})[`(]|"([a-z][a-z0-9_]{3,40})"/g;
  * predicates below already require one. What the call shape WOULD cost is the occurrences
  * that actually exist: of the five dead-name occurrences in this directory, four are written
  * bare in running comment prose and only one is backticked, so a call-shape rule reaches
- * skill-tools.mjs and walks straight past security-secrets.mjs entirely.
+ * skill-tools.ts and walks straight past security-secrets.ts entirely.
  *
  * Measured across all 61 `.md` files under the trees above and every comment under
  * scripts/gate/: bare snake words add no finding of their own beyond the dead names

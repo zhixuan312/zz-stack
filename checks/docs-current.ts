@@ -36,7 +36,7 @@ const walk = (d: string): string[] => readdirSync(d).flatMap((f) => {
 // been removed in favour of the changelog; the discovery is what survived, and it is the part
 // that was worth keeping.
 //
-// CHANGELOG.md IS THE ONE EXEMPTION, and it is the same one `deploy-release.mjs` already
+// CHANGELOG.md IS THE ONE EXEMPTION, and it is the same one `deploy-release.ts` already
 // grants it for the same reason: it is an append-only transaction log, so a ceiling on it
 // would be a standing instruction to rewrite history, which is the one thing a changelog must
 // never have done to it. Every other root document describes the present and can be split.
@@ -66,7 +66,7 @@ for (const p of touched) {
 // AC-3.7: the fit-for-purpose review is a real step in the only release procedure that exists.
 const rel = readFileSync("scripts/release.ts", "utf8");
 if (!/fit[- ]for[- ]purpose|surface.*deliver.*purpose/i.test(rel)) {
-  fail.push("release.mjs has no fit-for-purpose review step");
+  fail.push("release.ts has no fit-for-purpose review step");
 }
 // And it is a step that STOPS — PROVEN BY RUNNING IT, not by reading it.
 //
@@ -98,7 +98,7 @@ const drive = (attested: boolean) => {
   }
 };
 if (!existsSync("scripts/release/fit-for-purpose.ts")) {
-  fail.push("scripts/release/fit-for-purpose.mjs is gone — the release has no fit-for-purpose step");
+  fail.push("scripts/release/fit-for-purpose.ts is gone — the release has no fit-for-purpose step");
 } else {
   if (drive(false) === 0) fail.push("the fit-for-purpose step does not stop a release nobody reviewed");
   if (drive(true) !== 0) fail.push("the fit-for-purpose step refuses a release that WAS reviewed");

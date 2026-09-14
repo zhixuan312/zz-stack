@@ -10,10 +10,11 @@
 // check it. The file is resolved by scanning the tree at runtime, never hardcoded, so the check
 // cannot outlive the file it names. Until Task I-4 converts anything, the scan finds nothing and
 // this assertion is skipped rather than held red for a corpus that cannot exist yet.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { root, sourceFiles } from "../scripts/gate/read.ts";
+import { root } from "../scripts/gate/read.ts";
 
 const WHY = "this repository runs its scripts and checks as native TypeScript, and a Node " +
   "below the floor cannot strip that syntax at all.";
@@ -53,10 +54,22 @@ if (runningMajor < requiredMajor) {
   process.exit(1);
 }
 
-const converted = sourceFiles(["scripts", "checks", "testing", "catalog"], [".ts"]);
-if (converted.length === 0) process.exit(0);
+// A NAMED, SIDE-EFFECT-FREE MODULE — never `converted[0]`. That picked whichever file sorted
+// first across scripts/, checks/, testing/ and catalog/, which resolved deterministically to
+// catalog/zz/zz-access/skills/zz-doctor/doctor.ts: a CLI that reads ~/.zz/token, spawns
+// `claude plugin list`, fetches a production URL and calls process.exit(1) on failure. Importing
+// it made this check reach the network — breaking the gate's offline rule — and process.exit
+// cannot be caught, so the gate failed with the DOCTOR's diagnostic attributed to the Node floor.
+//
+// What this assertion needs is a converted file whose import does nothing but define things,
+// AND which this check does not already import — importing a module twice hits the module cache
+// and re-exercises nothing, so the assertion would prove itself vacuously.
+// scripts/deployment.ts qualifies: verified to import cleanly with no side effect, and nothing
+// above pulls it in.
+const SAMPLE = "scripts/deployment.ts";
+if (!existsSync(join(root, SAMPLE))) process.exit(0);
 
-const sample = converted[0];
+const sample = SAMPLE;
 try {
   await import(pathToFileURL(`${root}/${sample}`).href);
 } catch (err) {

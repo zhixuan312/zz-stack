@@ -100,7 +100,7 @@ export function fitForPurpose(attested: boolean): void {
     for (const path of doors) {
       const tools = toolsBehind(path);
       if (!tools) {
-        die(`${owner}/${pkg} declares the door ${path} and scripts/release/fit-for-purpose.mjs ` +
+        die(`${owner}/${pkg} declares the door ${path} and scripts/release/fit-for-purpose.ts ` +
             "does not know what registers it. Add it to DOORS there — a reviewer handed an " +
             "empty tool list would read it as a plugin that ships none.");
       }

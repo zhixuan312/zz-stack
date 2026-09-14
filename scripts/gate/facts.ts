@@ -36,7 +36,7 @@ function errMessage(err: unknown): string {
  * Written out three times in this file — twice as a regex alternation and once as a string —
  * plus the envelope's own field list a fourth time. That is the same second-copy problem this
  * gate refuses everywhere else, and it could not see it: "the envelope vocabulary is defined
- * once" scans `.ts`, and this file is `.mjs`.
+ * once" scans `.ts`, and this file is one of them.
  */
 export function ownedFields() {
   const src = contractsSource();
@@ -202,7 +202,7 @@ export const flows = catalogPackages.filter((p) => p.hasManifest);
  * `catalog/zz/zz-core/` carries the manifest and nothing else: the baseline's skills are the
  * tree at `skills/`, beside the catalog rather than in it, because one of them is generated per
  * person and none can be read from a catalog shared by everyone. Two checks in
- * catalog-manifest.mjs need that fact — the one that asks whether a manifest names skills it
+ * catalog-manifest.ts need that fact — the one that asks whether a manifest names skills it
  * ships, and the one that asks whether the lock's membership matches what is on disk — and each
  * had its own literal for it. A fact spelled twice is a fact one of the two eventually gets
  * wrong, which is this file's whole reason for existing. */

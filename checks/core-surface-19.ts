@@ -134,7 +134,7 @@ for (const got of core) {
 // else: no registration anywhere, and no skill, grader or allowlist still naming it.
 //
 // NEITHER IS AN ENGLISH WORD, which is why a plain word-boundary match is enough here and
-// core-names.mjs needed a shape. A comment recording what a tool USED to be is history and
+// core-names.ts needed a shape. A comment recording what a tool USED to be is history and
 // every one of these files legitimately carries some, so comments are stripped from source and
 // left alone in markdown — prose in a skill is the instruction, and that is the whole point.
 const GONE = ["encode_base64", "block_skills"];

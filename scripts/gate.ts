@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gate.mjs — everything that must be true before a release leaves this machine.
+ * gate.ts — everything that must be true before a release leaves this machine.
  *
  * WHY THIS EXISTS. Until now the only gate between "I edited a file" and "every user's
  * platform is down" was `tsc -b`. That is not hypothetical: a duplicate MCP tool
@@ -12,12 +12,12 @@
  * The checks are the ones that would have. Most were written as throwaway scripts during a
  * loop test and found four real defects in five rounds; this is them, promoted to blocking.
  *
- *   node scripts/gate.mjs            # all checks
- *   node scripts/gate.mjs --quiet    # only failures
+ *   node scripts/gate.ts            # all checks
+ *   node scripts/gate.ts --quiet    # only failures
  *
  * Exit 0 = safe to release. Non-zero = do not.
  *
- * THIS FILE IS AN ORDER, NOT A LIST. Every check lives in `gate/checks/<subject>.mjs`,
+ * THIS FILE IS AN ORDER, NOT A LIST. Every check lives in `gate/checks/<subject>.ts`,
  * grouped by what it is about, and each module registers its own checks when it is
  * imported — so the imports below are the gate, and an import missing here is a module
  * that does not run. `build` is first because several of its checks RUN something and
@@ -25,7 +25,7 @@
  *
  * It was one 11,428-line file until 2026-09-11, with 273 checks and nine shared helpers
  * interleaved between them. Splitting it changed no check's logic; what it changed is that
- * a person looking for the rule about backups now opens `deploy-ops.mjs` instead of
+ * a person looking for the rule about backups now opens `deploy-ops.ts` instead of
  * scrolling a file where §5 alone ran for 9,550 lines.
  */
 import "./gate/checks/build.ts";

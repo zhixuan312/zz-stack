@@ -10,10 +10,10 @@
  *
  * WHAT WAS ACTUALLY UNCOVERED BEFORE IT. Three rules already touched parts of this and none of
  * them closed it:
- *   - `catalog-manifest.mjs` asks whether `entry`, `commands` and `stages` name something
+ *   - `catalog-manifest.ts` asks whether `entry`, `commands` and `stages` name something
  *     shipped. That is one direction, and it never reads `libraries` — so a library named in a
  *     manifest and absent from disk was nobody's business.
- *   - `checks/manifests-conform.mjs` asks the other direction, from a hardcoded list of four
+ *   - `checks/manifests-conform.ts` asks the other direction, from a hardcoded list of four
  *     packages, and reads `<package>/skills` for each. The baseline keeps its skills BESIDE the
  *     catalog rather than inside it, so that read finds no directory, reports an empty set, and
  *     has been silently exempting the baseline's whole tree from the rule it exists to enforce.

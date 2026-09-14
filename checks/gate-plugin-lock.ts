@@ -12,7 +12,7 @@ type Lock = Record<string, LockEntry>;
 const gate = () => spawnSync("node", ["scripts/gate.ts", "--quiet"], { encoding: "utf8" });
 function fail(m: string): never { console.error("FAIL: " + m); process.exit(1); }
 const LOCK = "plugins.lock.json";
-if (!existsSync(LOCK)) fail(`${LOCK} does not exist — run plugin-versions.mjs --write first`);
+if (!existsSync(LOCK)) fail(`${LOCK} does not exist — run plugin-versions.ts --write first`);
 
 const VICTIM = "catalog/sdlc/sdlc-flow/skills/sdlc-method/SKILL.md";
 if (!existsSync(VICTIM)) fail(`${VICTIM} is gone — repoint this break-test`);
@@ -20,7 +20,7 @@ if (gate().status !== 0) fail("the gate is already red before planting anything"
 
 // 1 — content moves, the declared version does not.
 const body = readFileSync(VICTIM, "utf8");
-writeFileSync(VICTIM, body + "\n<!-- planted by checks/gate-plugin-lock.mjs -->\n");
+writeFileSync(VICTIM, body + "\n<!-- planted by checks/gate-plugin-lock.ts -->\n");
 const redContent = gate().status !== 0;
 writeFileSync(VICTIM, body);
 if (!redContent) {
@@ -77,7 +77,7 @@ if (!redGhost) {
 // it could only fire when content moved and the version did NOT -- the moment a version moved,
 // the conjunction collapsed and a lock a release out of date passed silently. 0.33.0 went out
 // that way: plugins.lock.json still said sdlc 0.1.0 while the catalog declared 0.2.0, and
-// because release.mjs registers zz.plugin_version FROM that file and never regenerates it, the
+// because release.ts registers zz.plugin_version FROM that file and never regenerates it, the
 // database ended up describing 0.32.3. Every one of the release's 17 live probes was green,
 // because each asks whether the deployment matches the CHECKOUT and the stale lock was part of
 // the checkout. It agreed with itself.

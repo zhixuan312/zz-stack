@@ -2,15 +2,15 @@
 /**
  * The version each PLUGIN declares, beside the hash of what it actually ships.
  *
- *   node scripts/plugin-versions.mjs            # print the table
- *   node scripts/plugin-versions.mjs --write    # record the current state as the baseline
+ *   node scripts/plugin-versions.ts            # print the table
+ *   node scripts/plugin-versions.ts --write    # record the current state as the baseline
  *
- * WHY THIS EXISTS, one level up from skill-versions.mjs. A plugin is what a person installs —
+ * WHY THIS EXISTS, one level up from skill-versions.ts. A plugin is what a person installs —
  * `claude plugin install sdlc@zz-stack` — and its version is declared in flow.json by hand.
- * Nothing checked it: `set-version.mjs` bumps every manifest in the workspace and never touches
+ * Nothing checked it: `set-version.ts` bumps every manifest in the workspace and never touches
  * `catalog/`, so a plugin's content could move under a frozen number forever.
  *
- * The argument is skill-versions.mjs's own, and it is worth repeating rather than referring to:
+ * The argument is skill-versions.ts's own, and it is worth repeating rather than referring to:
  * the hash is not an alternative to the version. A declared version is what a person CITES —
  * "sdlc 0.2 fixed it" — and it is the only form that is orderable and arguable. It is also a
  * CLAIM. The hash is what makes the claim true: this file records both, the gate compares them,
@@ -35,7 +35,7 @@ const LOCK = join(root, "plugins.lock.json");
 
 // SET BEFORE THE DYNAMIC IMPORT BELOW, not after. `@zz/catalog` reads ZZ_CATALOG_DIR into a
 // module-level `const` at load time and plugin-lock.js does the same with ZZ_SKILLS_DIR and
-// ZZ_EVALS_DIR, so a value assigned afterwards is a value nothing reads. build-marketplace.mjs
+// ZZ_EVALS_DIR, so a value assigned afterwards is a value nothing reads. build-marketplace.ts
 // carries the same three lines and the same warning; this is that convention, not a new one.
 //
 // The defaults are the absolute paths the IMAGE has. On a laptop none of them exists, and a
@@ -57,7 +57,7 @@ const entries = pluginLock(root);
 // A LOUD EMPTY, because the quiet one is worse than useless. If a directory override is wrong
 // the enumeration finds nothing, --write records an empty object, and the gate then compares
 // nothing to nothing and passes — a green tick over a lock file that vouches for no plugin at
-// all. build-marketplace.mjs guards the same failure the same way, for the same reason.
+// all. build-marketplace.ts guards the same failure the same way, for the same reason.
 if (!entries.length) {
   console.error(
     `no plugins found. ZZ_CATALOG_DIR is '${process.env.ZZ_CATALOG_DIR}' and ZZ_SKILLS_DIR is ` +

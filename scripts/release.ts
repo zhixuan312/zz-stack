@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * release.mjs — cut a release of the whole platform and deploy it, with a way back.
+ * release.ts — cut a release of the whole platform and deploy it, with a way back.
  *
  * TWO COMPONENTS, one release: zz-stack (this repo) and zz-stack-dashboard (the console).
  * They are two repositories with two version numbers, and this script is the only thing
  * that ships either of them.
  *
- *   node scripts/release.mjs 0.2.0             # the whole thing
- *   node scripts/release.mjs 0.2.0 --dry-run   # gate + build + verify locally, touch nothing remote
- *   node scripts/release.mjs --preflight       # read-only: every fact about this release, changing nothing
- *   node scripts/release.mjs --preflight --export   # the same, as shell `export` lines to eval
- *   node scripts/release.mjs --verify-only     # probe the LIVE deployment, deploy nothing
- *   node scripts/release.mjs --rollback        # back to the previously released tag
+ *   node scripts/release.ts 0.2.0             # the whole thing
+ *   node scripts/release.ts 0.2.0 --dry-run   # gate + build + verify locally, touch nothing remote
+ *   node scripts/release.ts --preflight       # read-only: every fact about this release, changing nothing
+ *   node scripts/release.ts --preflight --export   # the same, as shell `export` lines to eval
+ *   node scripts/release.ts --verify-only     # probe the LIVE deployment, deploy nothing
+ *   node scripts/release.ts --rollback        # back to the previously released tag
  *
  * ONE DEPLOYMENT, and `--env` is gone with the second one. There were two hosts, a `--env`
  * to choose between them, a default chosen so that forgetting was safe, and a whole tail
@@ -92,7 +92,7 @@ import { verifyLive } from "./release/verify.ts";
 
 /**
  * chain-check.ts, run against the LIVE deployment, right here rather than from
- * scripts/gate.mjs.
+ * scripts/gate.ts.
  *
  * verifyLive()'s `doors` and `contract` layers prove a tool answers and the surface matches
  * source; neither proves a tool actually COMPLETES what it claims to. chain-check.ts writes a
@@ -102,7 +102,7 @@ import { verifyLive } from "./release/verify.ts";
  * week. It needs a running deployment and a real token, which is exactly why it is not in the
  * gate: the gate is offline and proves things about the source.
  *
- * Same three-verdict rule the doctor's own probes hold to (scripts/doctor/run.mjs): a missing
+ * Same three-verdict rule the doctor's own probes hold to (scripts/doctor/run.ts): a missing
  * credential is `unknown` — this checker could not look, which is not a claim about the
  * deployment — and only a run that actually happened and disagreed is `wrong`, the one a
  * release may roll back on.
@@ -158,11 +158,11 @@ if (rollbackMode) {
   const prev = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_PREVIOUS_VERSION=).*' .env || true`);
   if (!prev) die("no ZZ_PREVIOUS_VERSION recorded on the host — nothing to roll back to");
   rollback(prev);
-  log("\n  Rolled back. Verify with: node scripts/release.mjs --verify-only");
+  log("\n  Rolled back. Verify with: node scripts/release.ts --verify-only");
   process.exit(0);
 }
 
-if (!version) die("usage: node scripts/release.mjs <version> [--dry-run]  |  --rollback");
+if (!version) die("usage: node scripts/release.ts <version> [--dry-run]  |  --rollback");
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) die(`"${version}" is not a semver version`);
 
 /* ── 1 · gate ─────────────────────────────────────────────────────────────── */
@@ -171,7 +171,7 @@ const manifestVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf
 if (manifestVersion !== version) {
   die(`package.json is ${manifestVersion}, not ${version}.\n` +
       `        The bump is judgement work and belongs in a reviewed commit, not in this script.\n` +
-      `        Run: node scripts/set-version.mjs ${version} && git commit`);
+      `        Run: node scripts/set-version.ts ${version} && git commit`);
 }
 // AND ITS CHANGELOG SECTION, refused here for the same reason and at the same moment.
 //
@@ -192,7 +192,7 @@ try {
 /* ── 1a · fit-for-purpose review ──────────────────────────────────────────── */
 // The gate proves a plugin DECLARES a purpose. Whether its tool surface DELIVERS that purpose
 // is a judgement, so this step prints both sides and refuses to go on until somebody says they
-// read them. See scripts/release/fit-for-purpose.mjs for why it stops rather than warns.
+// read them. See scripts/release/fit-for-purpose.ts for why it stops rather than warns.
 step("1a", "fit-for-purpose review");
 fitForPurpose(args.includes(ATTEST));
 
@@ -559,7 +559,7 @@ try {
   if (unresolved) {
     log(`  \x1b[33mWARNING: ${unresolved} plugin member(s) UNRESOLVED — plugins.lock.json is ` +
         `describing a different catalog than the one being released, so zz.plugin_version now ` +
-        `holds the PREVIOUS release's versions. Run \`node scripts/plugin-versions.mjs ` +
+        `holds the PREVIOUS release's versions. Run \`node scripts/plugin-versions.ts ` +
         `--write\`, commit it, then re-run register-plugins. Nothing about the deployment is ` +
         `wrong; what is wrong is which version its work will be attributed to.\x1b[0m`);
   } else {
@@ -598,8 +598,8 @@ if (!problems.length && verdict.unknown.length) {
   verdict.unknown.forEach((u) => log(`    - ${u}`));
   die(`${version} is LIVE on ${HOST} and could not be verified. It is not rolled back — ` +
       `nothing here says it is broken — and it is NOT TAGGED, because nothing here says it ` +
-      `works either.\n        Run: node scripts/release.mjs --verify-only  (once the probes ` +
-      `can reach what they ask about)\n        Or:  node scripts/release.mjs --rollback`);
+      `works either.\n        Run: node scripts/release.ts --verify-only  (once the probes ` +
+      `can reach what they ask about)\n        Or:  node scripts/release.ts --rollback`);
 }
 
 /* ── 6 · roll back if verification failed ─────────────────────────────────── */
@@ -693,4 +693,4 @@ if (dashVersion) {
 }
 
 log(`\n\x1b[32m  RELEASED ${version} to ${HOST}\x1b[0m  (from ${commit}, previous ${previous || "none"})`);
-log(`  Roll back with: node scripts/release.mjs --rollback`);
+log(`  Roll back with: node scripts/release.ts --rollback`);

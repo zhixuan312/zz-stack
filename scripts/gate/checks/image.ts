@@ -1,7 +1,7 @@
 /**
  * The image, and what may enter it.
  *
- * Split out of build.mjs, which had grown to hold two subjects: whether this workspace COMPILES
+ * Split out of build.ts, which had grown to hold two subjects: whether this workspace COMPILES
  * — tsc, the manifests, the lockfile, what a package may import — and what the Docker build
  * actually puts in the artefact people run. The two fail for different reasons and are read by
  * different people: one by whoever broke the build, the other by whoever is about to ship.
@@ -76,7 +76,7 @@ check("the image installs from the manifests, then copies the source", () => {
   // no glob for "every package.json two levels down", so the members are listed by hand — and
   // a member left off that list does NOT fail loudly. npm's workspace glob simply matches
   // fewer directories, installs less, and the image ships missing a package's dependencies.
-  // manifestPaths() is where tsconfig.json's references and set-version.mjs already get this
+  // manifestPaths() is where tsconfig.json's references and set-version.ts already get this
   // same list, so there is one answer to "what are this repository's packages" and three
   // readers of it.
   const src = readFileSync(join(root, "Dockerfile"), "utf8");
@@ -139,7 +139,7 @@ check("a store the team can walk away with has git in the image", () => {
 check("one image, one recipe", () => {
   // There were two Dockerfiles building the same image: the root one, which
   // docker-compose.build.yml uses for development, and deploy/ts.Dockerfile, which
-  // scripts/release.mjs used for the RELEASE. They had drifted where it mattered most — the
+  // scripts/release.ts used for the RELEASE. They had drifted where it mattered most — the
   // root installs git and says why (commitStore never throws, so without it every document
   // write succeeds, logs `git_failed`, and leaves a team's store with no history), and
   // ts.Dockerfile did not. Verified: node:22-alpine ships no git.

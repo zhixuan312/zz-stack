@@ -4,9 +4,9 @@
  * WHY THESE ARE A MODULE. Every function here answers a question about a file or a string —
  * which files git tracks, what a source says with its comments removed, where one function's
  * body ends. None of them knows what a check is, none holds state beyond one cache, and
- * `scripts/gate.mjs` was carrying all of them.
+ * `scripts/gate.ts` was carrying all of them.
  *
- * `check` lives in `run.mjs`, not here and no longer in the entry file. This paragraph used
+ * `check` lives in `run.ts`, not here and no longer in the entry file. This paragraph used
  * to say it deliberately stayed behind, because the check keeping STATE.md's declared total
  * honest counted `^check(` in the entry file — which was true until every check moved into
  * `gate/checks/` and the count had to be taken across the modules instead. `gateCheckNames`
@@ -71,11 +71,11 @@ export const gatewaySource = subjectSource(["services/gateway/src"], [".ts"]);
 export const contractsSource = subjectSource(["packages/contracts/src"], [".ts"]);
 export const consoleSource = subjectSource(["services/gateway/src/console"], [".ts"],
   ["services/gateway/src/console.ts"]);
-// THE RELEASE INCLUDES THE DEPLOYMENT DESCRIPTION IT IS BUILT ON. scripts/deployment.mjs holds
+// THE RELEASE INCLUDES THE DEPLOYMENT DESCRIPTION IT IS BUILT ON. scripts/deployment.ts holds
 // the address, the image names and the protocol reader — facts the release both uses and is
 // judged on ("does the release pin a build platform", "can it read the protocol it announces").
-// When they moved out of scripts/release/config.mjs, two checks here went red and one of them
-// said "release.mjs no longer defines mcpProtocol — this check cannot run" rather than passing,
+// When they moved out of scripts/release/config.ts, two checks here went red and one of them
+// said "release.ts no longer defines mcpProtocol — this check cannot run" rather than passing,
 // which is the only reason the move was safe to make.
 export const releaseSource = subjectSource(["scripts/release"], [".ts"],
   ["scripts/release.ts", "scripts/deployment.ts"]);
@@ -92,7 +92,7 @@ export const doctorSource = subjectSource(["scripts/doctor"], [".ts"],
  * Every check has to SPELL the pattern it hunts for — the credential path, the IPv4-mapped
  * fold, the envelope's own vocabulary — so a check that walks this repository finds its own
  * text and reports the gate for the thing the gate exists to forbid. Seven checks carried
- * `f === "scripts/gate.mjs"` for exactly that reason, one copy each, which is the
+ * `f === "scripts/gate.ts"` for exactly that reason, one copy each, which is the
  * duplication this gate refuses everywhere else. When the checks moved into modules all
  * seven went red at once and not one of them was about a real defect.
  *
@@ -108,7 +108,7 @@ export const gateOwnSource = (rel: string): boolean =>
  * Two checks and the report ask about the gate's own inventory — how many checks it has,
  * what they are called, and whether every module that wrote one is actually imported. All
  * three could read a single file until 2026-09-11; none of them can now, and a check that
- * kept reading `scripts/gate.mjs` would find nothing there and pass on an empty set, which
+ * kept reading `scripts/gate.ts` would find nothing there and pass on an empty set, which
  * is the quietest way a self-referential check can stop working.
  */
 export const gateCheckNames = (): string[] =>

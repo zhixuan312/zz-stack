@@ -2,7 +2,7 @@
  * Running the gate: the counters, the one function every check registers through, and the
  * report that ends it.
  *
- * WHY THIS IS NOT IN `gate.mjs`. The checks live in modules now, and a module importing
+ * WHY THIS IS NOT IN `gate.ts`. The checks live in modules now, and a module importing
  * `check` from the entry file while the entry file imports that module is a cycle. `check`
  * is a function declaration and hoists, so the import resolves — but `failures` is a `const`
  * in the entry file's own body, still inside its temporal dead zone when the first module
@@ -11,7 +11,7 @@
  * instead and there is no cycle left to reason about.
  *
  * `quiet` is read here rather than passed, for the same reason `root` is computed in
- * `read.mjs`: a flag threaded through twenty-six modules is twenty-six chances for one of
+ * `read.ts`: a flag threaded through twenty-six modules is twenty-six chances for one of
  * them to disagree about what quiet means.
  */
 import { gateCheckNames } from "./read.ts";
@@ -46,12 +46,12 @@ export function note(message: string): void {
   if (!quiet) console.log(message);
 }
 
-/** Print the verdict and exit. Called by `gate.mjs` after every module has been imported —
+/** Print the verdict and exit. Called by `gate.ts` after every module has been imported —
  *  at the bottom of the entry file, because an ES module's imports all run first. */
 export function report() {
   // EVERY CHECK ON DISK ACTUALLY RAN, and this is the only place that can know it.
   //
-  // A module under gate/checks/ that nobody imports from gate.mjs keeps its `check(` lines
+  // A module under gate/checks/ that nobody imports from gate.ts keeps its `check(` lines
   // where STATE.md's count can find them and registers nothing — the declared total stays
   // right, the gate stays green, and the checks are gone. That failure did not exist while
   // every check lived in one file; it arrived with the split, so its guard did too. It is
@@ -60,7 +60,7 @@ export function report() {
   const ran = passed + failures.length;
   if (written !== ran) {
     console.error(`\n  GATE INCOMPLETE — ${written} checks are written under ` +
-      `scripts/gate/checks/ and ${ran} ran. A module is missing from gate.mjs's imports.`);
+      `scripts/gate/checks/ and ${ran} ran. A module is missing from gate.ts's imports.`);
     process.exit(1);
   }
   console.log(`\n  ${"─".repeat(56)}`);

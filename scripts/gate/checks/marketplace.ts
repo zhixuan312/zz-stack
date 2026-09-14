@@ -19,7 +19,7 @@ import { check } from "../run.ts";
 check("the committed marketplace is what the catalog renders", () => {
   // REBUILT, then compared — not compared against a second renderer. A check that computed
   // the expected shelf its own way would be exactly the duplicate of `buildClientPackage`
-  // that build-marketplace.mjs exists to avoid, and the two would eventually disagree about
+  // that build-marketplace.ts exists to avoid, and the two would eventually disagree about
   // which one is right.
   //
   // This writes to the working tree, deliberately. Regenerating is idempotent and the result
@@ -29,7 +29,7 @@ check("the committed marketplace is what the catalog renders", () => {
   } catch (err) {
     const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
     const stderr = e.stderr !== undefined && e.stderr !== null ? String(e.stderr).trim() : "";
-    return `build-marketplace.mjs failed: ${stderr || String(e.message ?? err)}`;
+    return `build-marketplace.ts failed: ${stderr || String(e.message ?? err)}`;
   }
 
   // `status --porcelain`, not `diff`: a newly shipped plugin is an UNTRACKED directory, and

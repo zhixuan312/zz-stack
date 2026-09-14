@@ -1,6 +1,6 @@
 // Each case is discovered once, and the manifest says from where.
 //
-// THE DUPLICATION IS ON DISK ON PURPOSE AND IS NOT THE DEFECT. `build-marketplace.mjs:89`
+// THE DUPLICATION IS ON DISK ON PURPOSE AND IS NOT THE DEFECT. `build-marketplace.ts:89`
 // opens by deleting `marketplace/` and regenerating it from `catalog/`, so every case exists
 // twice by construction, and the copy has to keep travelling: `client-package.ts:203-216` says
 // `claude plugin eval` resolves an installed plugin to its cache directory and looks for
@@ -47,7 +47,7 @@ const caseDirs = (root: string): string[] => {
 // The two AUTHORED trees. `catalog/` holds the three catalog-resident packages; the repository
 // root's `evals/` is the baseline's, because zz-core ships no file from `catalog/zz/zz-core/` —
 // `platformOwnEvals()` walks ZZ_EVALS_DIR and `baselineFiles()` walks ZZ_SKILLS_DIR, both of
-// which are this repository's root. `skill-homes.mjs` carries the same exception for skills.
+// which are this repository's root. `skill-homes.ts` carries the same exception for skills.
 const authored = ["catalog", "evals"].flatMap(caseDirs);
 const mirrored = caseDirs("marketplace");
 

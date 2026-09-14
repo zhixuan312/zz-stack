@@ -80,7 +80,7 @@ check("every server a manifest declares is a door the gateway mounts", () => {
     try {
       m = JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8"));
     } catch {
-      continue;   // catalog-manifest.mjs owns "it parses"; one failure, one check
+      continue;   // catalog-manifest.ts owns "it parses"; one failure, one check
     }
     for (const sv of m.servers ?? []) {
       if (!sv?.path) { bad.push(`${f.flow}: a server with no path`); continue; }

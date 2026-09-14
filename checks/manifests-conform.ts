@@ -35,7 +35,7 @@ for (const [name, dir] of plugins) {
   // NO HAND-WRITTEN `produces` LOOP HERE. `CatalogManifest.safeParse` above is the same rule
   // applied by the contract that defines it — `produces` is required on FlowStage — so a
   // second copy fifteen lines down could only ever agree with it or be wrong. The generic
-  // form, over every flow rather than these four names, is scripts/gate/checks/stage-produces.mjs.
+  // form, over every flow rather than these four names, is scripts/gate/checks/stage-produces.ts.
 }
 // Control: zz-core must declare NO documents, or it has been wrongly made a flow.
 //

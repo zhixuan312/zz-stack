@@ -11,7 +11,7 @@
  * that is two-thirds green before the work starts is measuring prose — every one of those
  * assertions could have been made true by a sentence in a comment.
  *
- * So this one RUNS the code, the way `checks/attest-shown.mjs` does:
+ * So this one RUNS the code, the way `checks/attest-shown.ts` does:
  *   - the real zod schemas, harvested by handing `registerArtifactTools` a stub server and
  *     parsing values through them. `path` accepting `["a","b"]` is a fact about a schema, not
  *     a word in a file;
@@ -24,7 +24,7 @@
  *
  * The two assertions that stay source-level are named as such below, with what each catches.
  *
- * Run: node checks/document-reads.mjs   (also run by scripts/gate.mjs)
+ * Run: node checks/document-reads.ts   (also run by scripts/gate.ts)
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

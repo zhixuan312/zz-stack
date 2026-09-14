@@ -2,7 +2,7 @@
  * The evaluation modules live on the evaluation side, only the evaluation side reaches them,
  * and nothing compiled still answers at the address they left.
  *
- * WHAT THIS OWNS, AND WHAT IT DELIBERATELY DOES NOT. `checks/eval-door.mjs` opens a real
+ * WHAT THIS OWNS, AND WHAT IT DELIBERATELY DOES NOT. `checks/eval-door.ts` opens a real
  * client against `buildEvalServer` and reads the tool list back: which tools each door SERVES,
  * that no tool is on both, that the core door serves no `plugin_*`, that the flow's skills can
  * reach what they instruct. Not one of those is asserted again here. Two checks going red for
@@ -11,8 +11,8 @@
  * This file's subject is the MODULE GRAPH and WHERE THE FILES SIT — the half a client cannot
  * see. A door serving exactly the right ten tools, out of modules still sitting in
  * `src/tools/` beside the core door's, with `tools/artifacts.ts` importing the judge, is green
- * on every clause eval-door.mjs has. It is also the state Task I-20 exists to end: the core
- * door's surface is scanned OUT OF THAT DIRECTORY by checks/core-surface-19.mjs, so a
+ * on every clause eval-door.ts has. It is also the state Task I-20 exists to end: the core
+ * door's surface is scanned OUT OF THAT DIRECTORY by checks/core-surface-19.ts, so a
  * `plugin_*` registration left in it makes that scan describe a door that no longer exists.
  *
  * THE PLAN'S OWN DRAFT OF THIS FILE COULD NOT PASS, and was measured saying so before a line
@@ -84,7 +84,7 @@ const read = (p: string) => { try { return readFileSync(p, "utf8"); } catch { bl
 
 /** Source with its comments taken out, tracking strings so a quoted `/*` cannot open one.
  *
- * THE CHARACTER SCANNER, not the line-wise stripper core-surface-19.mjs carries, and the
+ * THE CHARACTER SCANNER, not the line-wise stripper core-surface-19.ts carries, and the
  * difference has already cost this repository a false green: a LINE comment ending "…/auth/*"
  * opens a block comment a line-wise stripper never closes, blanking the rest of the file —
  * and a stripper that silently empties the region it is asked about turns every assertion over
@@ -181,7 +181,7 @@ for (const f of files) {
 //
 // THE POINT OF THE MOVE. Those tools are one flow's instrument; a core tool that imports the
 // judge puts that flow's machinery back into every account's process and back into the
-// directory checks/core-surface-19.mjs scans for the core door's surface. `eval-door.ts` is
+// directory checks/core-surface-19.ts scans for the core door's surface. `eval-door.ts` is
 // the single exception and is named rather than pattern-matched: it is the function the
 // service mounts, and a door that could not import its own tools would not be a door.
 for (const { from, to } of edges) {
@@ -210,7 +210,7 @@ if (!edges.some(({ from, to }) => from.startsWith(`${EVAL}/`) && to.startsWith(`
 // import into `document_approve`, so the gate every account depends on would need a door only
 // the evaluation flow installs.
 //
-// WHAT IT ATTESTS IS checks/attest-shown.mjs's SUBJECT — that check drives the real function.
+// WHAT IT ATTESTS IS checks/attest-shown.ts's SUBJECT — that check drives the real function.
 // This one asserts only where the file lives and who is allowed to reach it.
 if (!existsSync(join(SRC, "attest.ts"))) {
   fail.push(`${SRC}/attest.ts is not there — it stays on the core side, next to the gate it ` +
@@ -221,7 +221,7 @@ const attestImporters = edges.filter(({ to }) => to === "attest.ts").map(({ from
 // THE NAMED IMPORTER, NOT A COUNT, and a mutation of this file is why. Unwiring
 // `shownSinceLastChange` from `document_approve` was caught here only because initiative-acts
 // happens to be attest's SOLE importer — a threshold of "at least one" that discriminates
-// today and stops the day a second core module imports it. `checks/attest-shown.mjs` does not
+// today and stops the day a second core module imports it. `checks/attest-shown.ts` does not
 // close that: it drives the function directly against a temporary store and never asserts
 // that the approval path calls it, so it printed "8 cases passed" against an approval that had
 // stopped asking. What the contract says is that attest stays on core BECAUSE this file needs
@@ -302,6 +302,6 @@ console.log(
   `is imported by ${attestImporters.join(", ") || "nothing"}, none of it on the evaluation ` +
   `side; all ${imported.length} compiled modules import from ${DIST}/${EVAL}/ and none of the ` +
   `${ABANDONED.length} old addresses resolves.\n` +
-  `           NOT COVERED: what either door SERVES. That is checks/eval-door.mjs, which opens ` +
-  `a real client against both; and what attest.ts attests is checks/attest-shown.mjs, which ` +
+  `           NOT COVERED: what either door SERVES. That is checks/eval-door.ts, which opens ` +
+  `a real client against both; and what attest.ts attests is checks/attest-shown.ts, which ` +
   `drives the function. This check passing says where the code lives, not what it does.`);

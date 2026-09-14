@@ -14,7 +14,7 @@
  * where the gap was found — four of that initiative's six approvals had no fetch since the
  * content last moved.
  *
- * Run: node checks/attest-shown.mjs   (also run by scripts/gate.mjs)
+ * Run: node checks/attest-shown.ts   (also run by scripts/gate.ts)
  */
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -80,7 +80,7 @@ for (const [name, arg, want] of [
 // proves the function is right and proves NOTHING about whether anything calls it. Task I-20
 // measured the consequence: unwire the call from `document_approve`, leave the import in place,
 // and this file still printed "8 cases passed" against an approval that had stopped asking.
-// `checks/eval-tools-moved.mjs` does not close it either — it asserts initiative-acts IMPORTS
+// `checks/eval-tools-moved.ts` does not close it either — it asserts initiative-acts IMPORTS
 // attest, and an unused import is still an import.
 //
 // A function that works and a path that uses it are two claims, and a check that drives the

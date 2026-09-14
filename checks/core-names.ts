@@ -2,7 +2,7 @@
 //
 // WHAT THIS IS NOT. An earlier draft of this file also asserted that the core door holds
 // exactly 19 tools, and that every description says when/returns/refuses. Neither is this
-// task's: `checks/core-surface-19.mjs` already owns the count — asserting it twice means two
+// task's: `checks/core-surface-19.ts` already owns the count — asserting it twice means two
 // files go red for one cause and the second one teaches nothing — and the description contract
 // (AC-2.13) is a different change that this rename does not make true. Both were dropped
 // rather than left failing, because a check registered in the gate and known to be red is a
@@ -22,7 +22,7 @@ const NOUNS = ["session", "skill", "initiative", "document", "source", "knowledg
 
 // `block_skills` IS THE ONE KEY THAT IS NOT A RENAME. It has an alias entry so its telemetry
 // history resolves, but the spec's table counts it as a MERGE into `skill_list` — it keeps its
-// own registration until that merge lands, and core-surface-19.mjs is the check that asserts
+// own registration until that merge lands, and core-surface-19.ts is the check that asserts
 // it is gone. Excluded by name rather than by a rule, because nothing in the map's shape
 // distinguishes a merge from a rename.
 const MERGED = "block_skills";
@@ -33,7 +33,7 @@ const RENAMES = Object.entries(TOOL_ALIAS).filter(([old]) => old !== MERGED);
 // EVERY SERVICE, not just `services/zz-core/src/tools`. `knowledge_reindex` is renamed here
 // and MOVED to `/manage` by a later task, so a check that demanded it on the core door would
 // go red the day that move lands and would be reporting a success. What this asserts is that
-// the name exists somewhere a client can reach; where it lives is core-surface-19.mjs's
+// the name exists somewhere a client can reach; where it lives is core-surface-19.ts's
 // question.
 const walk = (d: string, out: string[] = []) => {
   for (const e of readdirSync(d)) {
@@ -72,11 +72,11 @@ for (const [old, neu] of RENAMES) {
 // `reconcile` are ordinary English and `res.on("close")` is an HTTP event; matching the word
 // put 69 files under `close` alone, most of them prose and socket teardown. So: backticked,
 // quoted, or in call form with no space before the paren — the same convention
-// `skill-tools.mjs` settled on for "a skill names a TOOL", reused rather than reinvented.
+// `skill-tools.ts` settled on for "a skill names a TOOL", reused rather than reinvented.
 //
 // AND THE ESCAPED PAREN, which is the form this task nearly shipped past twice. A tool name
 // inside a regex — `/^(write_file|…)$/` in tool-telemetry.ts, `approve\(` in an eval grader's
-// `pattern:`, `/close\(\s*(initiative/` in the gate's own knowledge.mjs — is a live matcher
+// `pattern:`, `/close\(\s*(initiative/` in the gate's own knowledge.ts — is a live matcher
 // against a name a client sends, and it goes stale silently: the regex still compiles, still
 // runs, and matches nothing. Three of those were found by reading rather than by any check.
 const SHAPE = (old: string) =>
@@ -89,7 +89,7 @@ const EXEMPT = new Set([
   "checks/pre-rename-literals.ts", "checks/core-surface-19.ts", "checks/core-names.ts",
 ]);
 
-// A WORD THAT IS NOT THE TOOL DECLARES ITSELF, the way `pre-rename-literals.mjs` makes a
+// A WORD THAT IS NOT THE TOOL DECLARES ITSELF, the way `pre-rename-literals.ts` makes a
 // deliberate pre-rename literal declare itself with `RAW NAME:`. A marker forces the author to
 // write down why — a socket event, a flow stage, a `next_move` verb, a grader's word list —
 // where a central allowlist would be a list nobody prunes and nobody reads.
@@ -122,7 +122,7 @@ for (const p of TREES.flatMap((t) => walk(t))) {
     // An event name is categorically not a tool name — `res.on("close", …)` collides with the
     // tool purely as a word. Skipping the listener call is narrower than exempting `close`,
     // which would blind this to a real skill naming the tool. The optional backslash catches
-    // the same call written inside a regex literal, which is how security-boundary.mjs asserts
+    // the same call written inside a regex literal, which is how security-boundary.ts asserts
     // that relayBody wires one.
     if (/\.(on|once|off|emit|addEventListener|removeEventListener)\\?\s*\(/.test(code)) continue;
 

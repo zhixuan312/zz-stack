@@ -26,7 +26,7 @@ export function preflight(): void {
   const composeVer = (/ZZ_VERSION:-([0-9][^}]*)\}/.exec(composeTxt) || [])[1] || "?";
   say("\n  versions on disk");
   row(pkg === composeVer, `manifests ${pkg}, compose literal ${composeVer}`,
-      pkg === composeVer ? null : "they must move together — run set-version.mjs");
+      pkg === composeVer ? null : "they must move together — run set-version.ts");
   const dashPkg = safe(() => JSON.parse(readFileSync(join(DASH_SRC, "package.json"), "utf8")).version, "?");
   const dashComposeTxt = safe(() => readFileSync(join(DASH_SRC, "docker-compose.yml"), "utf8"), "");
   const dashComposeVer = (/ZZ_DASHBOARD_VERSION:-([0-9][^}]*)\}/.exec(dashComposeTxt) || [])[1] || "?";

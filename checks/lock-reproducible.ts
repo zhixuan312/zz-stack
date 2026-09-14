@@ -35,7 +35,7 @@ try {
   const out = execFileSync("node", ["scripts/plugin-versions.ts"],
     { encoding: "utf8", env: { ...process.env, ZZ_EVALS_DIR: evals } });
 
-  // `plugin-versions.mjs` prints a state per plugin; anything but "unchanged" means the value in
+  // `plugin-versions.ts` prints a state per plugin; anything but "unchanged" means the value in
   // the lock cannot be rebuilt from tracked inputs.
   for (const line of out.split("\n")) {
     const m = /^\s{2}(\S+)\s+\S+\s+\S+\s+\S+\s+(.*)$/.exec(line);

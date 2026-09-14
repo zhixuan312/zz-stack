@@ -296,7 +296,7 @@ check("a claim that states no verdict says so, rather than stating an empty one"
   // broken rather than as four readers of which only two produce a verdict at all.
   //
   // THE SAME RULE THIS CONSOLE ALREADY HOLDS FOR NUMBERS. An unmeasured average is reported
-  // as null and never as a confident zero (console/skills.ts, and checks/console-nulls.mjs,
+  // as null and never as a confident zero (console/skills.ts, and checks/console-nulls.ts,
   // which opens by recording what happened the last time this property was left uncovered:
   // a `git checkout` reverted it and nothing went red). "" is the text-shaped version of the
   // same confident value, and it was the uncovered one.
@@ -350,7 +350,7 @@ check("the console\'s version and its compose literal move together", () => {
   // host on its own — so a version that moved in package.json and not in the literal ships
   // an image nobody asked for, under a number that says otherwise.
   //
-  // release.mjs bumps both together and refuses when its substitution matches nothing, so
+  // release.ts bumps both together and refuses when its substitution matches nothing, so
   // the only way they can disagree is a hand edit. This is what catches the hand edit
   // BEFORE the release builds anything, which is the whole reason a gate runs first.
   const dash = join(root, "..", "zz-stack-dashboard");
@@ -535,7 +535,7 @@ check("every route this gateway serves has a caller", () => {
       // deleted route left it green. The whole gate tree is excluded, not just the entry
       // file: after the split any module's prose could name a route and vouch for it.
       hits(root, p, ["--", ":(glob)services/gateway/app/**", ":(glob)scripts/**",
-                     ":(exclude)scripts/gate.mjs", ":(exclude,glob)scripts/gate/**",
+                     ":(exclude)scripts/gate.ts", ":(exclude,glob)scripts/gate/**",
                      ":(glob)deploy/**", ":(glob)packages/**",
                      ":(glob)services/gateway/src/client-package.ts"]);
     if (!called) bad.push(`${r.file.replace("services/gateway/src/", "")}:${r.line} serves ${r.path} and nothing calls it`);

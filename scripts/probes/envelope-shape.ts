@@ -18,7 +18,7 @@
  * checked that both markers EXIST and are ordered, which they are, while the region between
  * them was already a third of the file.
  *
- * And a regex over source tests the spelling, not the rule. gate.mjs records the same lesson
+ * And a regex over source tests the spelling, not the rule. gate.ts records the same lesson
  * about the acting-team check: "the earlier version tested for the literal
  * `every.includes(stored)` and failed the moment the rule moved, while the property it names
  * still held perfectly."

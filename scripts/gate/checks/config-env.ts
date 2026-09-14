@@ -175,7 +175,7 @@ check("the configuration surface is documented", () => {
   if (existsSync(readme)) {
     for (const m of readFileSync(readme, "utf8").matchAll(/`([A-Z][A-Z_0-9]{3,})`/g)) named.add(m[1]);
   }
-  // Written by scripts/release.mjs onto the host, never by an operator, so it is documented
+  // Written by scripts/release.ts onto the host, never by an operator, so it is documented
   // rather than read from compose.
   named.delete("ZZ_PREVIOUS_VERSION");
   for (const v of opsVars) named.delete(v);
@@ -433,7 +433,7 @@ check("a configuration the operator wrote fails with a sentence", () => {
 
 check("an environment variable's default is one value, wherever it is spelled", () => {
   // Thirteen variables carry a default in more than one file, and the format refuses a single
-  // declaration for most of them: compose cannot read release.mjs, a bash script cannot import
+  // declaration for most of them: compose cannot read release.ts, a bash script cannot import
   // a node constant, and one compose file names the same image on two services. "The platform
   // model is one name, however many places name it" already answers this shape — where one
   // declaration is impossible, the gate enforces one VALUE — and this is that rule applied to
@@ -442,7 +442,7 @@ check("an environment variable's default is one value, wherever it is spelled", 
   // The sharp one was ZZ_DEPLOY_HOST. sync.sh used to refuse to rsync --delete onto production by
   // comparing HOST against `${ZZ_DEPLOY_HOST:-<host>}`, and its comment claims it "asks that
   // script's question rather than inventing a second answer to it". It is a second answer: the
-  // variable is shared and the default is retyped. Change release.mjs's and the refusal guards
+  // variable is shared and the default is retyped. Change release.ts's and the refusal guards
   // the wrong host — and that script's own header records the accident it exists to prevent,
   // an rsync --delete that removed a host's four secrets, "recoverable only because every
   // container was still running with the values in its own environment".

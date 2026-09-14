@@ -4,7 +4,7 @@
  *
  * This is the half of a diagnosis a person otherwise does from memory, badly: "what did we
  * change" is answered by scrolling a log that is ordered by time rather than by relevance. A
- * layer already declares the paths its claim is made of — `owns` in run.mjs — so the answer is
+ * layer already declares the paths its claim is made of — `owns` in run.ts — so the answer is
  * a path-filtered log, which is deterministic and needs no judgement about what "related"
  * means.
  *

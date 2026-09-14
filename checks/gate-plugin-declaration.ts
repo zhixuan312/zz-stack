@@ -15,7 +15,7 @@
  * WITHOUT --quiet on purpose: a passing check prints a line too, and that is the only way to
  * tell "this check passed" from "the gate died before reaching it".
  *
- * THE SECOND CASE IS THE ONE THAT MATTERS. checks/manifests-conform.mjs already catches an
+ * THE SECOND CASE IS THE ONE THAT MATTERS. checks/manifests-conform.ts already catches an
  * undeclared skill inside a catalog package, so case 1 alone would prove nothing new. Case 2
  * plants the same defect in the baseline's tree, which sits beside the catalog rather than
  * inside it and which that older rule reads as an empty directory — and it asserts the older

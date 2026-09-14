@@ -51,7 +51,7 @@ import { readFileSync } from "node:fs";
 const fail: string[] = [];
 const skillPath = (name: string) => `catalog/sdlc/sdlc-flow/skills/${name}/SKILL.md`;
 
-// FROM THE MANIFEST, not from a list retyped here. This check and `sdlc-documents.mjs` would
+// FROM THE MANIFEST, not from a list retyped here. This check and `sdlc-documents.ts` would
 // otherwise be two copies of one fact, and a rename in flow.json would leave this one testing
 // a document name nothing produces any more.
 interface Stage { name: string; produces?: string }

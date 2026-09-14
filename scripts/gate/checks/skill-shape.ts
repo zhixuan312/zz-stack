@@ -141,11 +141,11 @@ check("a skill that changed says so in its version", () => {
   const bad = [];
   for (const skill of skills) {
     const state = stateOf(skill, prev);
-    if (state.bad) bad.push(`${skill.name} ${state.bad} — bump the minor for a reliability change, the major for a change to what the skill is FOR, then re-run \`node scripts/skill-versions.mjs --write\``);
+    if (state.bad) bad.push(`${skill.name} ${state.bad} — bump the minor for a reliability change, the major for a change to what the skill is FOR, then re-run \`node scripts/skill-versions.ts --write\``);
   }
   const names = new Set(skills.map((s) => s.name));
   for (const name of Object.keys(prev)) {
-    if (!names.has(name)) bad.push(`skills.lock.json still lists ${name}, which no SKILL.md declares — re-run \`node scripts/skill-versions.mjs --write\``);
+    if (!names.has(name)) bad.push(`skills.lock.json still lists ${name}, which no SKILL.md declares — re-run \`node scripts/skill-versions.ts --write\``);
   }
   return bad.length ? bad.join("; ") : null;
 });

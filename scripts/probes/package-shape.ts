@@ -72,7 +72,7 @@ if (!paths.some((f) => /(^|\/)commands\//.test(f))) bad.push("the package carrie
 // A promoted skill's ASSETS still travel — only its SKILL.md moves into commands/.
 // zz-deck resolves its chassis relative to the plugin root, and a deck built without the
 // chassis is the one failure that skill says to stop on. The guidebook travels too: it's the
-// reference material a person reaches for, and gate.mjs reads it directly.
+// reference material a person reaches for, and gate.ts reads it directly.
 //
 // EVERY PATH IS PLUGIN-QUALIFIED, and that is the half this probe was missing. The deck moved
 // from sdlc-flow to the baseline on 2026-09-14, and the baseline is built from a DIFFERENT

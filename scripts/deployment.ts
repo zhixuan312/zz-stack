@@ -3,9 +3,9 @@
  * speak to it. Imported by the release and by the doctor, which is the whole reason it is a
  * file rather than two agreeing copies.
  *
- * It was inside scripts/release/config.mjs, mixed in with that script's own flags. The doctor
+ * It was inside scripts/release/config.ts, mixed in with that script's own flags. The doctor
  * cannot import that: `version` there is "the first argv entry that is not a flag", so the
- * doctor's own arguments would have been read as a release version, and config.mjs dies at
+ * doctor's own arguments would have been read as a release version, and config.ts dies at
  * import when it cannot resolve a public URL — which would make a doctor unable to run its
  * offline layers on a laptop that cannot reach the host. Exactly the case a doctor is for.
  *
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// ONE LEVEL UP: this file is scripts/deployment.mjs. Anything that moves it deeper must move
+// ONE LEVEL UP: this file is scripts/deployment.ts. Anything that moves it deeper must move
 // this with it — a relocated file re-roots every path derived from it, in silence, and the
 // only reason that was ever caught here was a preflight row printing "?" instead of failing.
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -97,7 +97,7 @@ export const envToken = () => cfg(process.env.ZZ_TOKEN, DOTENV.get("ZZ_TOKEN"));
  * import time in every process that imports this file for something else entirely. The
  * doctor's offline layers must work on a laptop that cannot reach the host at all; a module
  * that resolves an address eagerly, or dies when it cannot, takes that away. Callers that
- * genuinely require an address refuse for themselves — see scripts/release/config.mjs. */
+ * genuinely require an address refuse for themselves — see scripts/release/config.ts. */
 let resolved: string | null = null;
 export function publicUrl({ quiet = false }: { quiet?: boolean } = {}): string {
   if (resolved !== null) return resolved;
@@ -123,7 +123,7 @@ export const published = (ref: string): boolean => {
 
 /** The MCP protocol version this platform speaks, from the one place that defines it.
  *
- * Parsed from source rather than imported, the same way gate.mjs reads blocks.ts and for the
+ * Parsed from source rather than imported, the same way gate.ts reads blocks.ts and for the
  * same reason: this must run before a build has necessarily produced any JavaScript, and a
  * check that needs the build to pass cannot be what tells you the build is wrong.
  *

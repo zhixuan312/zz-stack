@@ -9,7 +9,7 @@
 //
 //   - It read raw source with the comments in. `app.all("/eval/mcp"` inside a comment — inside
 //     THIS sentence, had it been in server.ts — satisfied it. The sibling check
-//     `eval-tools-moved.mjs` fails exactly this way today: its `coreFactory.includes("plugin-eval")`
+//     `eval-tools-moved.ts` fails exactly this way today: its `coreFactory.includes("plugin-eval")`
 //     matches the words "zz-plugin-eval" in a comment saying those tools have LEFT the core door.
 //   - Its whole test of what the door serves was that two `serveMcp` calls named two different
 //     identifiers. `function buildEvalServer() { return new McpServer(...) }` — a door mounted
@@ -45,7 +45,7 @@
 // tools are missing from the record entirely rather than present without a door — and no clause
 // in this file speaks to it.
 //
-// WHAT IT LEAVES TO checks/orientation.mjs. That file owns every door's PARAGRAPH — the
+// WHAT IT LEAVES TO checks/orientation.ts. That file owns every door's PARAGRAPH — the
 // `instructions` a client is handed at `initialize`, its length, the skill it points at, its
 // `NOT FOR:` line, and the nouns it claims against the nouns it serves. The eval door is a row
 // in its table. Asserting the same property in two files means two go red for one cause and

@@ -15,7 +15,7 @@
  *   contract  is the live surface the one the source declares
  *   data      are the migrations and the registry the shape this checkout expects
  *
- * THIS FILE IS AN ORDER, NOT A LIST — the same rule as scripts/gate.mjs. A layer missing from
+ * THIS FILE IS AN ORDER, NOT A LIST — the same rule as scripts/gate.ts. A layer missing from
  * the imports below is a layer that does not run, and the order of the imports is the order of
  * the diagnosis. `repo` is first because every later comparison is against what it settles.
  *
@@ -23,10 +23,10 @@
  * it is what makes it safe to run while something is broken, which is the only time anybody
  * will.
  *
- *   node scripts/doctor.mjs                      every layer
- *   node scripts/doctor.mjs --layer repo,image   offline only; no host needed
- *   node scripts/doctor.mjs --since 0.26.0       and what changed since that version
- *   node scripts/doctor.mjs --json               for the console, or for an agent
+ *   node scripts/doctor.ts                      every layer
+ *   node scripts/doctor.ts --layer repo,image   offline only; no host needed
+ *   node scripts/doctor.ts --since 0.26.0       and what changed since that version
+ *   node scripts/doctor.ts --json               for the console, or for an agent
  */
 import "./doctor/layers/repo.ts";
 import "./doctor/layers/image.ts";

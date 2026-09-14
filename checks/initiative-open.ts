@@ -25,7 +25,7 @@
  * necessarily writes — while the code did the exact opposite of it. That is the argument for
  * driving the code rather than reading it, in its most concrete form available.
  *
- * So this one RUNS the code, the way `checks/document-reads.mjs` and `checks/attest-shown.mjs`
+ * So this one RUNS the code, the way `checks/document-reads.ts` and `checks/attest-shown.ts`
  * do:
  *   - `initiativeState`, exported from initiative-status.ts and taking `root` explicitly, is
  *     driven over a fixture store. IN BOTH DIRECTIONS, which is the half a null-only check
@@ -49,7 +49,7 @@
  * section 7, and each is written to fail on the specific defect the contract names rather
  * than on the absence of a word.
  *
- * Run: node checks/initiative-open.mjs   (also run by scripts/gate.mjs)
+ * Run: node checks/initiative-open.ts   (also run by scripts/gate.ts)
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,7 +81,7 @@ const is = (cond: unknown, why: string) => { if (!cond) fail.push(why); };
  * this initiative have had unreachable failure paths, and the shape is always the same: a
  * file moves or a directory is renamed, the read yields nothing, and every assertion over it
  * passes on the empty string. Recorded FIRST, because a missing path invalidates everything
- * below it rather than adding one more line to a list. Copied from checks/core-surface-19.mjs,
+ * below it rather than adding one more line to a list. Copied from checks/core-surface-19.ts,
  * which arrived at it the same way. */
 const blind: string[] = [];
 const readSrc = (p: string) => {

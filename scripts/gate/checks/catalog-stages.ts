@@ -216,7 +216,7 @@ check("every flow that declares stages ships scenarios, or says why not", () => 
   // exists nowhere. The loop below matches an entry to a flow it is iterating, so a stale entry
   // is never consulted and never fails: exactly the "exists and tests nothing" shape this check
   // refuses in a scenarios file, arriving through its own allowlist. The same guard
-  // `notRegistered` carries in suites.mjs, for the same reason.
+  // `notRegistered` carries in suites.ts, for the same reason.
   const shipped = new Set(flows.map((f) => f.flow));
   for (const a of ALLOW) {
     if (!shipped.has(a.flow)) {
@@ -401,7 +401,7 @@ check("no evaluation tool is wired to one flow", () => {
   // removed its subject. A list of paths is a check that stops looking the day one moves.
   //
   // SO THE SUBJECT IS DERIVED. The evaluation side is `services/zz-core/src/eval/` — the
-  // modules `eval-door.ts` mounts, which checks/eval-tools-moved.mjs pins there — plus the
+  // modules `eval-door.ts` mounts, which checks/eval-tools-moved.ts pins there — plus the
   // testing tools in `packages/tools`, which is where the deleted three lived and where a
   // replacement would land. A tool added to either is covered without this file being edited.
   //

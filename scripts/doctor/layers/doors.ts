@@ -12,7 +12,7 @@
  * doors and offered to roll back a deployment that was live, correct and serving.
  *
  * Here that cannot happen the same way: a missing token is a probe that DID NOT RUN, which is
- * never a verdict about the platform. See run.mjs.
+ * never a verdict about the platform. See run.ts.
  */
 import { DASH_REMOTE, HOST, REMOTE, asExecError, envToken, initFrame, publicUrl, run, ssh } from "../../deployment.ts";
 import { layer, probe } from "../run.ts";

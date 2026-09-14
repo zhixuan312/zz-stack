@@ -8,8 +8,8 @@
 //     `KNOWLEDGE_TEAM` in `services/zz-core/src/paths.ts:53` — a directory under
 //     `ARTIFACTS_DIR/teams/`, which `admin/teams.ts:101` reserves so no tenant can claim it.
 //     It held the name first and most of the tree's occurrences are it;
-//   - the RETIRED MARKETPLACE name, in `zz-doctor/doctor.mjs` and `scripts/probes/
-//     package-shape.mjs` as `p.id.endsWith("@zz-platform")` — see `package/describe.ts:147`.
+//   - the RETIRED MARKETPLACE name, in `zz-doctor/doctor.ts` and `scripts/probes/
+//     package-shape.ts` as `p.id.endsWith("@zz-platform")` — see `package/describe.ts:147`.
 //
 // The namespaces do not meet: a team is only ever reached by joining its slug under `teams/`,
 // a skill only by `allSkillRoots()` over `<root>/skills/<name>/SKILL.md`, and nothing takes a
@@ -30,7 +30,7 @@
 //
 //   Error: ENOENT: no such file or directory,
 //     open 'catalog/zz/zz-core/skills/zz-platform/SKILL.md'
-//     at checks/skill-renames.mjs:10  (exit 1)
+//     at checks/skill-renames.ts:10  (exit 1)
 //
 // and it would have crashed identically AFTER the rename, because the baseline plugin's skills
 // are not read from the catalog at all. `client-package.ts`'s `baselineFiles()` walks
@@ -38,7 +38,7 @@
 // does read a catalog entry's `skills/`, is never called for `zz-core`. So the plan's check was
 // anchored to a path the packager never reads: red before, red after, for the same irrelevant
 // reason, and a hedged implementation that created BOTH trees would have satisfied it while
-// shipping the rename in no plugin. `checks/skill-homes.mjs` established the same thing for the
+// shipping the rename in no plugin. `checks/skill-homes.ts` established the same thing for the
 // four skills that moved in task I-25, and its comment records it.
 //
 // Everything below is anchored at `skills/`, and the catalog path is asserted EMPTY rather than
@@ -52,7 +52,7 @@
 //      not just over the two trees the rename touched;
 //   3. EVERY `skills/<name>/SKILL.md` literal in a script or a check resolves to a directory
 //      that exists. This is the property the plan's site table could not be, because
-//      `build-marketplace.mjs` ASSEMBLES its path — `join(market, "zz-core/skills/…")` — so a
+//      `build-marketplace.ts` ASSEMBLES its path — `join(market, "zz-core/skills/…")` — so a
 //      grep for the whole path finds nothing and the failure arrives at BUILD time, as a thrown
 //      Error, rather than as a red check. The build is therefore also run, for real;
 //   4. an old `zz.event.step` value still resolves, and resolves to a skill that EXISTS. A
@@ -61,7 +61,7 @@
 //
 // ── WHY COMMENTS ARE STRIPPED FROM SOURCE, AND FROM SOURCE ONLY ──────────────────────────
 //
-// `checks/pre-rename-literals.mjs` already settled this for the tool renames and states the
+// `checks/pre-rename-literals.ts` already settled this for the tool renames and states the
 // reason: "prose recording an old name is history, not a comparison". Eight comments in this
 // tree are dated measurements or past incidents that name a version string which only ever
 // existed under the old name — `zz-knowledge 2.0` was never called `zz-handover 2.0`, and
@@ -168,7 +168,7 @@ if (!seen.size) fail.push("the sweep read no files at all, so finding nothing pr
 // ── 3. every skill path a script names is a skill that is there ──────────────────────────
 //
 // Four gate checks hold `skills/<name>/SKILL.md` as a literal and throw ENOENT when it moves;
-// `build-marketplace.mjs` holds only the SUFFIX and joins the rest, so no grep for the whole
+// `build-marketplace.ts` holds only the SUFFIX and joins the rest, so no grep for the whole
 // path finds it. Both shapes are covered by matching the suffix wherever it appears.
 //
 // THE LITERAL IS READ WHOLE, from its opening quote, and resolved against the three bases these
@@ -176,9 +176,9 @@ if (!seen.size) fail.push("the sweep read no files at all, so finding nothing pr
 // the `skills/<name>/SKILL.md` tail instead reported five failures against a correct tree, every
 // one of them the tail of a longer catalog path that resolves perfectly.
 //
-// A path that is a FIELD rather than a file — `digest-per-plugin.mjs` hashes an in-memory
+// A path that is a FIELD rather than a file — `digest-per-plugin.ts` hashes an in-memory
 // package whose `files[].path` is `skills/a/SKILL.md` — declares itself `SYNTHETIC:` on the line
-// or the line above, the same convention `pre-rename-literals.mjs` uses for `RAW NAME:`, and for
+// or the line above, the same convention `pre-rename-literals.ts` uses for `RAW NAME:`, and for
 // the same reason: an author saying why beats a central allowlist nobody prunes.
 const BASES = ["", "catalog/", "marketplace/"];
 const scripts = [...walk("scripts"), ...walk("checks")].filter((p) => /\.(ts|js)$/.test(p));

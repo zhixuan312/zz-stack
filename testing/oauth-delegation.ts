@@ -15,7 +15,7 @@
 //     "delete from zz.block_token t using zz.principal p \
 //       where p.id=t.principal_id and p.email='<you>' and t.block in ('bookit','rulemill')"
 //
-// Usage: ZZ_URL=... ZZ_TOKEN=... node testing/oauth-delegation.mjs <block> [block ...]
+// Usage: ZZ_URL=... ZZ_TOKEN=... node testing/oauth-delegation.ts <block> [block ...]
 
 const { Mcp } = await import("../packages/mcp-client/dist/index.js");
 
@@ -32,7 +32,7 @@ const SUB = process.env.OAUTH_TEST_SUBJECT || "person@example.com";
 const BLOCKS = process.argv.slice(2);
 if (!BASE || !PAT) { console.error("set ZZ_URL and ZZ_TOKEN"); process.exit(2); }
 if (!BLOCKS.length) {
-  console.error("name the block(s) to drive: ./testing/oauth-delegation.mjs <block> [block...]");
+  console.error("name the block(s) to drive: ./testing/oauth-delegation.ts <block> [block...]");
   console.error("  this deployment registers blocks through PLATFORMS; there is no default.");
   process.exit(2);
 }

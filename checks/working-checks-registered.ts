@@ -1,7 +1,7 @@
 // A check that WORKS and is not wired is a check nobody runs.
 //
 // This has happened three times in this initiative, and the gate was green each time. The
-// existing guard in suites.mjs enforces the other direction — every REGISTERED check is a file
+// existing guard in suites.ts enforces the other direction — every REGISTERED check is a file
 // git will carry — which cannot see a check that was written, passes, and was never registered.
 // Both directions are needed: unwired is inert, unregistered-but-working is worse, because the
 // author has evidence it passes and reasonably believes the gate is holding it.
@@ -28,21 +28,21 @@ const registered = new Set([
   ...[...suites.matchAll(/["'`]checks\/([A-Za-z0-9._-]+\.ts)["'`]/g)].map((m) => m[1]),
 ]);
 
-// `gate-*.mjs` SPAWN scripts/gate.mjs to prove a planted defect turns it red. Running one here
+// `gate-*.mjs` SPAWN scripts/gate.ts to prove a planted defect turns it red. Running one here
 // would run the whole gate inside the gate, and registering one would make the gate invoke
 // itself forever. The prefix is the marker for that class and is checked, not assumed.
 const SELF = "working-checks-registered.ts";
 
-// A DECLARED EXEMPTION COUNTS AS REGISTRATION, and reading it from suites.mjs rather than
+// A DECLARED EXEMPTION COUNTS AS REGISTRATION, and reading it from suites.ts rather than
 // keeping a second list here is the whole point. Task I-34 added `notRegistered` — a map of
 // check file to the reason it is deliberately not wired — and this file did not know it
 // existed, so the two checks came to disagree about one rule: I-34's accepted a declared
 // exemption, this one still demanded a registration line, and a check that is honestly
 // declared was reported as green-by-absence.
 //
-// `eval-readable.mjs` is the case that surfaced it. It reads `evals/results/latest/`, which
+// `eval-readable.ts` is the case that surfaced it. It reads `evals/results/latest/`, which
 // costs real money to produce and which `.gitignore` deliberately excludes — a suite's output
-// is not part of what a checkout carries, which is the rule `lock-reproducible.mjs` enforces
+// is not part of what a checkout carries, which is the rule `lock-reproducible.ts` enforces
 // one layer down. Registering it would turn the gate red for everyone who has not just paid
 // for a run. Leaving it undeclared would make it dormant. Declaring it is the third answer,
 // and both checks have to honour the declaration or the declaration is decoration.
@@ -64,7 +64,7 @@ for (const f of readdirSync("checks").filter((f) => f.endsWith(".ts"))) {
 
   const r = spawnSync("node", [`checks/${f}`], { encoding: "utf8", timeout: 60_000 });
   if (r.status === 0) {
-    fail.push(`checks/${f} passes and is not registered in suites.mjs — the gate does not run ` +
+    fail.push(`checks/${f} passes and is not registered in suites.ts — the gate does not run ` +
               `it, so it is green by absence. Add one top-level check(...) line via runsCheck.`);
   }
 }

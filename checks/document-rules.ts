@@ -10,7 +10,7 @@
  * Cases are chosen for the property, not for coverage: the shape that would be wrong in the
  * FLATTERING direction — a refusal that lets something through, an escape that does not escape.
  *
- * Run: node checks/document-rules.mjs   (also run by scripts/gate.mjs)
+ * Run: node checks/document-rules.ts   (also run by scripts/gate.ts)
  */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

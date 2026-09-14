@@ -421,22 +421,22 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
   // WHAT A PLUGIN VERSION IS WORTH, and it was worth nothing until this.
   //
   // A plugin is what a person installs. Its version is declared by hand in flow.json, and
-  // `set-version.mjs` bumps every manifest in the workspace while never touching catalog/ — so
+  // `set-version.ts` bumps every manifest in the workspace while never touching catalog/ — so
   // the one number a person cites when they say "sdlc 0.2 fixed it" was the one number nothing
   // checked. Content could move under it forever.
   //
-  // This is skill-shape.mjs's lock check one level up, and its reasoning transfers whole: the
+  // This is skill-shape.ts's lock check one level up, and its reasoning transfers whole: the
   // hash is not an alternative to the version, it is what makes the version true.
   //
   // THE RULE IS IMPORTED FROM THE TOOL THAT FIXES IT. pluginLock() is the same function
-  // plugin-versions.mjs calls, which is the same enumeration the packager ships from. A second
+  // plugin-versions.ts calls, which is the same enumeration the packager ships from. A second
   // implementation of "what does this plugin contain" would drift, and then the digest would
   // vouch for something nobody installs. Run in a subprocess because the enumeration reads
   // three directories that are absolute in the image and relative here — the shape
   // catalog-manifest already uses above, for the same reason.
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) {
-    return "plugins.lock.json does not exist — run `node scripts/plugin-versions.mjs --write`";
+    return "plugins.lock.json does not exist — run `node scripts/plugin-versions.ts --write`";
   }
   const probe = `
     const { pluginLock } = await import(${JSON.stringify(join(root, "services/gateway/dist/package/plugin-lock.js"))});
@@ -465,20 +465,20 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
     const was = recorded[p.name];
     if (!was) {
       bad.push(`${p.name} ships and plugins.lock.json has never heard of it — run ` +
-               "`node scripts/plugin-versions.mjs --write`");
+               "`node scripts/plugin-versions.ts --write`");
       continue;
     }
     if (was.version === p.version && was.digest !== p.digest) {
       bad.push(`${p.name} still declares ${p.version} and its content moved ` +
                `(${was.digest} -> ${p.digest}) — bump the version in its flow.json, or re-run ` +
-               "`node scripts/plugin-versions.mjs --write` if the change is deliberate");
+               "`node scripts/plugin-versions.ts --write` if the change is deliberate");
     } else if (was.version !== p.version) {
       // THE LOCK BEING BEHIND THE CATALOG WAS CHECKED BY NOTHING, and the branch above is why:
       // it reads `content moved AND the version did not`, so the moment a version moves the
       // conjunction collapses and a lock a whole release out of date passes silently.
       //
       // That is not a tidiness failure, because plugins.lock.json is not a record — it is an
-      // INPUT. release.mjs:496 registers zz.plugin_version from it and never regenerates it,
+      // INPUT. release.ts:496 registers zz.plugin_version from it and never regenerates it,
       // so a stale lock makes a release write the PREVIOUS release's plugin versions into the
       // database. It happened on 0.33.0: the deployment was correct and every one of its 17
       // live probes was green, because each of them asks whether the deployment matches the
@@ -487,7 +487,7 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
       // resolves its subject through that table and refused every recording against a version
       // the release plainly contained.
       bad.push(`plugins.lock.json records ${p.name} at ${was.version} and the catalog now ` +
-               `declares ${p.version} — run \`node scripts/plugin-versions.mjs --write\`. The ` +
+               `declares ${p.version} — run \`node scripts/plugin-versions.ts --write\`. The ` +
                "release registers zz.plugin_version FROM this file and never regenerates it, " +
                "so a stale entry here registers the previous release's version.");
     }
@@ -495,7 +495,7 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
   for (const name of Object.keys(recorded)) {
     if (!live.some((p: { name: string }) => p.name === name)) {
       bad.push(`plugins.lock.json still lists ${name}, which the catalog no longer ships — ` +
-               "re-run `node scripts/plugin-versions.mjs --write`");
+               "re-run `node scripts/plugin-versions.ts --write`");
     }
   }
   return bad.length ? firstOf(bad) : null;
@@ -539,6 +539,6 @@ check("a plugin's recorded membership is the one it ships", () => {
     }
   }
   return bad.length
-    ? `${firstOf(bad)} — re-run \`node scripts/plugin-versions.mjs --write\``
+    ? `${firstOf(bad)} — re-run \`node scripts/plugin-versions.ts --write\``
     : null;
 });

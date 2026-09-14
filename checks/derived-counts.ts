@@ -74,7 +74,7 @@
 // about the rule; it is recorded because a rule shaped by what its author was allowed to edit
 // should say so out loud.
 //
-// Closing them found a third site nothing had been looking at: `checks/manage-surface.mjs`
+// Closing them found a third site nothing had been looking at: `checks/manage-surface.ts`
 // opened with "The /manage door: 31 tools, cut by role into 16 / +4 / +11" — three hand-kept
 // numbers in the header of the file that derives them. THAT ONE IS STILL OUT OF REACH and was
 // fixed by hand: the count follows a colon, and admitting a colon as a sentence boundary is what
@@ -302,7 +302,7 @@ for (const rel of [...(tracked ?? [])].sort()) {
 // and left the thing the number was about — a hand-written list of 30 tool names in a skill
 // every agent on this platform is told to read — free to say whatever it likes. So the
 // assertion is the set, not the size: a count passes when two errors cancel and a name set
-// does not, which is the argument core-surface-19.mjs already makes for itself.
+// does not, which is the argument core-surface-19.ts already makes for itself.
 //
 // DERIVED FROM ONE PLACE. `zzCoreTools()` is the registration scan `platformSurface()` is
 // built on; this reads the same function rather than growing a second one.

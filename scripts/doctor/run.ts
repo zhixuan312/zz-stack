@@ -5,7 +5,7 @@
  * verification reported six failures — "gateway /health: PUBLIC is not defined", "MCP
  * initialize /core/mcp: envToken is not defined" — so the release rolled a perfectly healthy
  * platform back to 0.26.0. Those messages are ReferenceErrors from INSIDE the verifier: the
- * split of release.mjs had left verify.mjs using three names it never imported. The platform
+ * split of release.ts had left verify.ts using three names it never imported. The platform
  * was serving correctly the entire time. The thing checking it was not.
  *
  * The old runner had one `catch`, and everything it caught became a problem attributed to the
@@ -98,7 +98,7 @@ export function probe(name: string, fn: ProbeFn): void {
  * own code, because no amount of platform misbehaviour produces one.
  *
  * This is a backstop, not the fix. The fix is that a probe never lets live data throw at all:
- * a precondition may throw, an answer must be returned. See doors.mjs and contract.mjs. */
+ * a precondition may throw, an answer must be returned. See doors.ts and contract.ts. */
 const MINE = new Set(["ReferenceError"]);
 
 /** Run one layer's probes and record what each of them turned out to be. */

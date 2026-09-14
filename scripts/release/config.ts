@@ -2,11 +2,11 @@
  * WHAT THIS RELEASE IS AIMED AT — the flags, and nothing else.
  *
  * The deployment's own facts — its address, its paths, its images, how to speak to it — are
- * scripts/deployment.mjs, because the doctor needs every one of them and a second copy here
+ * scripts/deployment.ts, because the doctor needs every one of them and a second copy here
  * is a second copy that drifts. What is left is what only a release has: which version, which
  * console version, and which of the modes this script runs in.
  *
- * The address is resolved HERE rather than in deployment.mjs, and refused here too. A release
+ * The address is resolved HERE rather than in deployment.ts, and refused here too. A release
  * sends a bearer token to it, so there is no default and an unresolvable address must stop the
  * run before anything is built — but the doctor must still work on a laptop that cannot reach
  * the host at all, which a module that dies at import takes away from it.

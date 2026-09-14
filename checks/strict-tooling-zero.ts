@@ -6,7 +6,7 @@ const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
 const errors = out.split("\n").filter((l) => /error TS\d+:/.test(l));
 if (errors.length) {
   console.error(`${errors.length} strict error(s) remain in the tooling project ` +
-                `(was 909 before the conversion):\n` + errors.slice(0, 30).join("\n"));
+                `(was 1145 before the conversion):\n` + errors.slice(0, 30).join("\n"));
   process.exit(1);
 }
 if (r.status !== 0) {

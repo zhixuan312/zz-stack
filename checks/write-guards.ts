@@ -12,7 +12,7 @@
  * — a fabricated approver, a second `status:` line, a close on a gate nobody passed — so what
  * is pinned here is mostly that the refusals FIRE, not that they stay quiet.
  *
- * Run: node checks/write-guards.mjs   (also run by scripts/gate.mjs)
+ * Run: node checks/write-guards.ts   (also run by scripts/gate.ts)
  */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

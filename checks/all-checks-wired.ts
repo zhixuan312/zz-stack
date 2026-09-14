@@ -1,14 +1,14 @@
 // A check that arrives in this directory cannot hide from the gate — proved by planting one.
 //
 // WHY THIS IS A BREAK-TEST AND NOT A READING. The first version of this file asked whether
-// `suites.mjs` contained the text `readdirSync("checks")`, which is a spelling test: it passes
+// `suites.ts` contained the text `readdirSync("checks")`, which is a spelling test: it passes
 // on a file that reads the directory and throws the answer away, and it fails on a correct
 // implementation that spells the read any other way. The property is about what the GATE DOES
 // when a file appears, and the only honest way to ask that is to make one appear.
 //
 // WHAT WAS MEASURED. `checks/zz-temp-wiring-probe.mjs`, two lines, `process.exit(1)`, dropped
-// into this directory left the gate GREEN. suites.mjs registered by hand and never looked at
-// the directory, and `working-checks-registered.mjs` — the one rule that runs an unregistered
+// into this directory left the gate GREEN. suites.ts registered by hand and never looked at
+// the directory, and `working-checks-registered.ts` — the one rule that runs an unregistered
 // check — reports it only when it PASSES, so a check that arrives broken was the single case
 // neither half covered. Every check arrives broken on its first day.
 //
@@ -79,7 +79,7 @@ const planted = (file: string, body: string) => {
 // The exact file that was green before. Nothing else in the repository is touched: no
 // registration is added, no list is edited, the file simply exists.
 {
-  const r = planted(PROBE, "// planted by checks/all-checks-wired.mjs\nprocess.exit(1);\n");
+  const r = planted(PROBE, "// planted by checks/all-checks-wired.ts\nprocess.exit(1);\n");
   if (!r.names.has(WIRED)) {
     fail.push(`a newly added FAILING check did not turn the gate red — it added ` +
               `${JSON.stringify(r.added)} and none of it is the wiring check`);
@@ -95,7 +95,7 @@ const planted = (file: string, body: string) => {
 // registered is the worse case of the two, because its author has evidence it passes and
 // reasonably believes the gate is holding it. Same path, same absence of any list edit, exit 0.
 {
-  const r = planted(PROBE, "// planted by checks/all-checks-wired.mjs\nprocess.exit(0);\n");
+  const r = planted(PROBE, "// planted by checks/all-checks-wired.ts\nprocess.exit(0);\n");
   if (!r.names.has(WIRED)) {
     fail.push(`a newly added PASSING check did not turn the gate red — it added ` +
               `${JSON.stringify(r.added)} and none of it is the wiring check`);
@@ -107,23 +107,23 @@ const planted = (file: string, body: string) => {
 // ── 3. THE OFFLINE GATE STILL REFUSES A CHECK THAT NEEDS A DEPLOYMENT ────────────────────
 //
 // This rule had to be made NARROWER to stop it reporting the scanners that enforce it —
-// `working-checks-registered.mjs` carries the literal ZZ_GATEWAY inside its own exclusion
+// `working-checks-registered.ts` carries the literal ZZ_GATEWAY inside its own exclusion
 // regex, and a rule grepping for the bare name reported it as needing the deployment it exists
 // to keep out. Narrowing a rule is how a rule quietly stops working, so the narrowing is proved
 // here rather than asserted: a check that GENUINELY reads the variable, and is registered, is
 // still caught.
 //
 // It has to be registered as well as present, because an unregistered host-dependent check is
-// legitimate — `returns-sees-a-backtrack.mjs` is one, and it reaches the live database over
+// legitimate — `returns-sees-a-backtrack.ts` is one, and it reaches the live database over
 // ssh for the release to run. The defect is the offline gate acquiring an online dependency.
 const registerIn = (file: string) => writeFileSync(SUITES,
-  `${original}\ncheck("planted by all-checks-wired.mjs", runsCheck("${file.slice("checks/".length)}"));\n`);
+  `${original}\ncheck("planted by all-checks-wired.ts", runsCheck("${file.slice("checks/".length)}"));\n`);
 
 const REACHES = `${ONLINE} is registered in this gate and reaches a deployment`;
 {
   registerIn(ONLINE);
   const r = planted(ONLINE,
-    "// planted by checks/all-checks-wired.mjs\n" +
+    "// planted by checks/all-checks-wired.ts\n" +
     "const where = process.env.ZZ_GATEWAY;\nif (!where) process.exit(0);\nprocess.exit(0);\n");
   writeFileSync(SUITES, original);
   if (!r.out.includes(REACHES)) {
@@ -138,7 +138,7 @@ const REACHES = `${ONLINE} is registered in this gate and reaches a deployment`;
 // the check above would pass however narrow the rule became, including if it never read a file.
 {
   registerIn(ONLINE);
-  const r = planted(ONLINE, "// planted by checks/all-checks-wired.mjs\nprocess.exit(0);\n");
+  const r = planted(ONLINE, "// planted by checks/all-checks-wired.ts\nprocess.exit(0);\n");
   writeFileSync(SUITES, original);
   if (r.out.includes(REACHES)) {
     fail.push("a registered check that reads no deployment variable was reported as reaching a " +

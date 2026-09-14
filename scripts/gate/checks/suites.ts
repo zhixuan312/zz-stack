@@ -54,19 +54,19 @@ const runsClean = (tool: string) => (): string | null => {
  * WHY THIS EXISTS. Everything in `checks/` was invoked by hand and nothing else: the gate
  * registered three of them and the other forty-one ran only when somebody typed their name.
  * Five checks this initiative wrote were mutation-tested, reported green, and were never once
- * executed by `scripts/gate.mjs` — so "the gate passes" and "the checks pass" were two
+ * executed by `scripts/gate.ts` — so "the gate passes" and "the checks pass" were two
  * separate claims that sounded like one. A check nobody runs automatically is documentation.
  *
  * NOT EVERY FILE IN `checks/` BELONGS HERE. Three kinds live in that directory:
  *   - plain checks, which assert a property by reading or importing — these, registered below;
- *   - break-tests, which plant a defect and SPAWN `scripts/gate.mjs` to prove it goes red —
+ *   - break-tests, which plant a defect and SPAWN `scripts/gate.ts` to prove it goes red —
  *     registering one of those here makes the gate invoke itself, forever;
- *   - host-dependent checks (`returns-sees-a-backtrack.mjs` reaches the live database over
+ *   - host-dependent checks (`returns-sees-a-backtrack.ts` reaches the live database over
  *     ssh) — those belong to the release, which has a deployment to reach.
  *
  * SPAWNING THE GATE IS THE MARKER for the second kind, and the `gate-` prefix is a naming
  * convention over it rather than the test itself. This paragraph said the prefix WAS the
- * marker, and the file that would have caught an unwired check — `all-checks-wired.mjs` —
+ * marker, and the file that would have caught an unwired check — `all-checks-wired.ts` —
  * spawns the gate and carries no prefix, so a rule reading the name would have registered it
  * and the gate would have invoked itself until something ran out. The check at the bottom of
  * this file reads the file's own text instead, and reports a `gate-` prefix on a file that
@@ -157,7 +157,7 @@ check("the record knows whether a document was fetched before its gate", () => {
   } catch (err) {
     const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
     return out.split("\n").filter((l) => /FAIL|failed/.test(l)).join("; ")
-      || `checks/attest-shown.mjs exited non-zero: ${out.slice(-300)}`;
+      || `checks/attest-shown.ts exited non-zero: ${out.slice(-300)}`;
   }
 });
 
@@ -194,7 +194,7 @@ check("scope and authority refuse what they say they refuse", runsClean("scope-c
 /* A RELEASED VERSION WHOSE CHANGELOG ENTRY STILL SAYS "Unreleased".
  *
  * Stamping the section is a judgement step done by hand on a release branch — nothing in
- * release.mjs touches CHANGELOG.md, deliberately, because deciding what a release SAYS is not
+ * release.ts touches CHANGELOG.md, deliberately, because deciding what a release SAYS is not
  * something a script should do. But nothing checked it either, and 0.25.0 shipped, deployed and
  * tagged with its entry still under `## [Unreleased]`. The next release then wrote its own
  * sections beside it and the "one list per kind of change" check went red — which is how this
@@ -242,7 +242,7 @@ check("an unsupported Node fails naming both versions and why, as a runtime prob
 check("the node floor check fails, and fails informatively, when the floor is not met",
       runsCheck("node-floor-breaks.ts"));
 
-check("the tooling project is wired into tsc -b, and its strictness is inherited rather than softened locally",
+check("the tooling project runs standalone through typecheck:tooling, is deliberately absent from tsc -b's reference graph, and inherits its strictness rather than softening it locally",
       runsCheck("tooling-project.ts"));
 
 check("no file this rename touched went missing, and every sibling that imports one now names it by its .ts extension",
@@ -303,8 +303,8 @@ check("an aggregate nothing measured renders as null, never a confident zero",
       runsCheck("console-nulls.ts"));
 
 check("every check this gate registers is a file git will carry", () => {
-  // suites.mjs is TRACKED and the files it names were not. Eight registered checks existed only
-  // in the working tree, so `scripts/gate.mjs` was green here and would have failed on a fresh
+  // suites.ts is TRACKED and the files it names were not. Eight registered checks existed only
+  // in the working tree, so `scripts/gate.ts` was green here and would have failed on a fresh
   // clone with "cannot find module" — eight times. Wiring a tracked runner to an untracked file
   // is a worse failure than leaving the check unwired: unwired is merely inert, this is a gate
   // that passes for the author and breaks for everybody else.
@@ -322,15 +322,15 @@ check("every check this gate registers is a file git will carry", () => {
     .map((m) => m[1]).filter((f) => !known.has(f));
   // AND THE MODULES THE GATE IMPORTS, which this did not cover and had to. The rule above reads
   // a runsCheck registration against `checks/`, so it sees a registered SUITE and is blind to a gate
-  // MODULE — and a module is wired by an `import` in scripts/gate.mjs, one directory over.
-  // Measured on this tree: `plugin-declaration.mjs` and `prose-names.mjs` were imported by a
-  // tracked gate.mjs while untracked themselves, four checks rode on them, and this check was
+  // MODULE — and a module is wired by an `import` in scripts/gate.ts, one directory over.
+  // Measured on this tree: `plugin-declaration.ts` and `prose-names.ts` were imported by a
+  // tracked gate.ts while untracked themselves, four checks rode on them, and this check was
   // green. The consequence is worse than the one the comment above describes, not equal to it:
   // an unresolvable `import` does not fail the gate, it throws before a single check runs, so a
   // fresh clone gets no verdict at all rather than a red one.
   //
-  // Every relative import under scripts/gate is followed, not just gate.mjs's own, because
-  // facts.mjs and read.mjs are imported by the modules and would take the whole gate down the
+  // Every relative import under scripts/gate is followed, not just gate.ts's own, because
+  // facts.ts and read.ts are imported by the modules and would take the whole gate down the
   // same way.
   const sources = ["scripts/gate.ts", ...execFileSync("git", ["ls-files", "scripts/gate/"],
     { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)];
@@ -467,7 +467,7 @@ check("the deck chassis carries no slides and the guidebook carries all of them"
  * broken, which is precisely the file the check below exists to catch — the probe that proved
  * this gate blind exits 1 and nothing else.
  *
- * NOT A PARKING SPACE. `working-checks-registered.mjs` runs every unregistered check and goes
+ * NOT A PARKING SPACE. `working-checks-registered.ts` runs every unregistered check and goes
  * red the moment one of them PASSES, and it is deliberately not taught about this map: a name
  * here buys silence only for as long as the check cannot pass, and the day it can, the other
  * rule demands a registration. Neither rule is weakened by the other's existence.
@@ -479,15 +479,15 @@ const notRegistered = new Map([
 
 check("every check in checks/ is registered here, or named here with a reason", () => {
   // WHY A CROSS-VALIDATOR AND NOT A LOOP. Registering the directory with a `for` would be one
-  // textual `check(` line however many files it visited, and `report()` in run.mjs compares the
+  // textual `check(` line however many files it visited, and `report()` in run.ts compares the
   // names written under gate/checks/ against the number that ran — so a loop registering
   // twelve would end the gate with GATE INCOMPLETE and no verdict at all. The list stays
   // explicit and this makes forgetting a line impossible, which is the property that matters:
   // adding a check still costs one line, and NOT adding it costs a red gate naming the file.
   //
   // THE MEASURED HOLE. `checks/zz-temp-wiring-probe.mjs`, two lines, `process.exit(1)`, could
-  // be dropped in this directory and the gate stayed green — suites.mjs registered by hand and
-  // never read the directory, and `working-checks-registered.mjs` runs an unregistered check
+  // be dropped in this directory and the gate stayed green — suites.ts registered by hand and
+  // never read the directory, and `working-checks-registered.ts` runs an unregistered check
   // and reports it only when it PASSES. A check that arrives broken was the one case neither
   // half covered, and a check that arrives broken is what every new check is on its first day.
   const declared = withoutComments(
@@ -504,20 +504,20 @@ check("every check in checks/ is registered here, or named here with a reason", 
 
   // ── THE TWO EXEMPT CATEGORIES, READ OFF THE FILE RATHER THAN OFF ITS NAME ───────────────
   //
-  // A break-test spawns `scripts/gate.mjs`; registering one makes the gate invoke itself. A
+  // A break-test spawns `scripts/gate.ts`; registering one makes the gate invoke itself. A
   // host-dependent check reaches a deployment; the offline gate has none, so it belongs to the
   // release's live step. Both are decided by what the file DOES, because the `gate-` prefix
   // that used to stand for the first is carried by six files and missing from a seventh.
   // THE PATH IS INSIDE THE SPAWN CALL, not merely somewhere in the same file, and the first
   // spelling of this — the path anywhere AND a spawner anywhere — reported
-  // `chain-check-wiring.mjs` as a break-test on its first run. That check READS
-  // `scripts/gate.mjs` to ask what the gate is wired to and names the spawners in a regex, so
+  // `chain-check-wiring.ts` as a break-test on its first run. That check READS
+  // `scripts/gate.ts` to ask what the gate is wired to and names the spawners in a regex, so
   // both halves were true of a file that spawns nothing. Exempting it would have taken a
   // registered, working check out of the gate on the strength of a coincidence.
   const spawnsGate = (code: string): boolean =>
     /(?:execFileSync|spawnSync|execSync)\s*\([^;]{0,200}["'`]scripts\/gate\.ts["'`]/.test(code);
   // A READ OF THE VARIABLE, NOT A MENTION OF ITS NAME, and the distinction is not academic:
-  // `working-checks-registered.mjs` and the break-test for this check both carry the literal
+  // `working-checks-registered.ts` and the break-test for this check both carry the literal
   // ZZ_GATEWAY inside their own exclusion regex, and a rule that grepped for the bare name
   // reported each scanner as needing the deployment it exists to keep out. `envNamesIn` reads
   // `process.env.X` and `envRequired("X")` over source whose string literals are blanked, so a
@@ -542,10 +542,10 @@ check("every check in checks/ is registered here, or named here with a reason", 
       }
       if (host) {
         problems.push(`checks/${f} is registered in this gate and reaches a deployment — it ` +
-                      "belongs to release.mjs's live step, which has one to reach");
+                      "belongs to release.ts's live step, which has one to reach");
       }
       if (gate) {
-        problems.push(`checks/${f} is registered in this gate and spawns scripts/gate.mjs — ` +
+        problems.push(`checks/${f} is registered in this gate and spawns scripts/gate.ts — ` +
                       "the gate would invoke itself");
       }
       continue;

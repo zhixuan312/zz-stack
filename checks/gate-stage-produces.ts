@@ -16,7 +16,7 @@
  * the only way to tell "this check passed" from "the gate died before reaching it".
  *
  * WHY THE MUTATIONS ARE IN zz-plugin-eval AND NOT IN sdlc-flow. When this plant was written,
- * `checks/sdlc-documents.mjs` asserted all three properties — presence, forward resolution,
+ * `checks/sdlc-documents.ts` asserted all three properties — presence, forward resolution,
  * reciprocity — for `catalog/sdlc/sdlc-flow/flow.json`, named as a literal. A plant that broke
  * sdlc-flow would have turned two checks red and proved nothing about the new one: every case
  * would have been satisfiable by the rule that was already there. So each case below mutates
@@ -32,7 +32,7 @@
  * the document exists — passes a manifest where a document points at a stage that points
  * somewhere else. Case 4 is exactly that manifest: every stage's `produces` resolves, every
  * document is produced by some stage, and only the reciprocity fails. It also asserts
- * `catalog-stages.mjs`'s "a document's declared stage is a stage its flow has" stays QUIET,
+ * `catalog-stages.ts`'s "a document's declared stage is a stage its flow has" stays QUIET,
  * because the stage it names is real — which is the difference between the two rules, measured.
  */
 import { execFileSync } from "node:child_process";
@@ -158,7 +158,7 @@ function measure(what: string, { fires = [], quiet = [] }: { fires?: string[]; q
 try {
   // 1. A STAGE WITH NO produces. Planted on zz-plugin-locate, whose produces is "nothing", so
   //    removing it orphans no document and this case tests presence and nothing else.
-  //    `manifests-conform.mjs` fires too — it hardcodes zz-plugin-eval in a list of four — and
+  //    `manifests-conform.ts` fires too — it hardcodes zz-plugin-eval in a list of four — and
   //    that is named here rather than hidden: presence is the one property already covered for
   //    today's four packages, and the fifth flow anybody adds is covered only by MINE.
   mutate(EVAL, (m) => { delete (m.stages ?? []).find((s) => s.name === "zz-plugin-locate")!.produces; });
@@ -173,7 +173,7 @@ try {
   restore();
 
   // 3. A DECLARED DOCUMENT PRODUCED BY NO STAGE. No `stage` field on it, which is what makes it
-  //    invisible to catalog-stages.mjs — that check skips a document with no stage — and the
+  //    invisible to catalog-stages.ts — that check skips a document with no stage — and the
   //    reason this is a separate loop in the check rather than the mirror of the first one.
   mutate(EVAL, (m) => { m.documents!.push({ name: "orphan.md", role: "ground" }); });
   measure("a declared document produced by no stage",
@@ -182,7 +182,7 @@ try {
 
   // 4. THE ONE-WAY CASE. findings.md keeps pointing at a REAL stage — zz-plugin-judge, which
   //    produces "record" — while zz-plugin-report goes on producing findings.md. Forward
-  //    resolution passes, no document is orphaned, and catalog-stages.mjs's "a document's
+  //    resolution passes, no document is orphaned, and catalog-stages.ts's "a document's
   //    declared stage is a stage its flow has" passes because the stage exists. Only reciprocity
   //    breaks, and only a two-way check can see it.
   mutate(EVAL, (m) => { (m.documents ?? []).find((d) => d.name === "findings.md")!.stage = "zz-plugin-judge"; });

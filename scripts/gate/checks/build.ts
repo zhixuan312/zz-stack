@@ -56,10 +56,10 @@ check("tsc -b", () => {
  *
  * `scripts/` is plain ESM and outside every tsconfig, so a name used but never imported is a
  * ReferenceError that waits for the line to be REACHED. That is not a hypothetical: splitting
- * release.mjs left `verify.mjs` using PUBLIC, die and envToken without importing them and
- * `build.mjs` using die and dryRun the same way. The dry run was green both times — build.mjs's
+ * release.ts left `verify.ts` using PUBLIC, die and envToken without importing them and
+ * `build.ts` using die and dryRun the same way. The dry run was green both times — build.ts's
  * eleven sit inside a branch that is skipped when the console is already at its target version,
- * and verify.mjs's are in step 5, which does not run in a dry run at all. So 0.26.1 deployed,
+ * and verify.ts's are in step 5, which does not run in a dry run at all. So 0.26.1 deployed,
  * failed six of eleven verifications with "PUBLIC is not defined", and rolled itself back. The
  * platform was healthy the whole time; the thing checking it was not.
  *
@@ -93,7 +93,7 @@ check("nothing in testing/ computes — it drives, and the computing lives in pa
   // no database is not driving anything: it is a program, it belongs where programs are
   // compiled and tested, and in testing/ nothing imports it and no test reaches it.
   //
-  // oauth-delegation.mjs stands: it drives a live deployment end to end.
+  // oauth-delegation.ts stands: it drives a live deployment end to end.
   const dir = join(root, "testing");
   const bad: string[] = [];
   for (const f of readdirSync(dir)) {
@@ -137,7 +137,7 @@ check("no version is written as a literal in the source", () => {
 });
 
 check("the lockfile records the version this release ships", () => {
-  // set-version.mjs calls itself "the one place this repo's version is set" and argues the
+  // set-version.ts calls itself "the one place this repo's version is set" and argues the
   // case in its own first paragraph: "keeping them in step by hand is a step that can be
   // half-done, and half-done is invisible: the build passes, the deploy succeeds, and the
   // wrong number ships". It rewrote seven manifests and the compose file and left the
@@ -191,7 +191,7 @@ check("the lockfile records the version this release ships", () => {
 
 check("the workspace build covers every package", () => {
   // `npm run build` is `tsc -b`, which builds the project REFERENCES in tsconfig.json —
-  // another hand-kept list of the same packages that set-version.mjs and this file's first
+  // another hand-kept list of the same packages that set-version.ts and this file's first
   // check used to keep by hand. A package added under packages/ or services/ and not added
   // here compiles when you point tsc at it directly and is silently absent from the build
   // the image runs, the gate runs, and the release ships.
@@ -390,7 +390,7 @@ check("a package that imports a workspace package declares it", () => {
   const bad: string[] = [];
   // THE ROOT IS A PACKAGE TOO, and it was the one left out. Its own code is scripts/ — nothing
   // else at the top level is TypeScript or JavaScript we build — and scripts/probes/
-  // envelope-shape.mjs imports @zz/contracts, which resolved for exactly the reason the
+  // envelope-shape.ts imports @zz/contracts, which resolved for exactly the reason the
   // paragraph above refuses everywhere else: npm hoists every workspace member into the root's
   // node_modules whether the root asked for it or not.
   //

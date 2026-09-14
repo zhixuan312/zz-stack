@@ -217,7 +217,7 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
   // zz-access's subject, and are deliberately not demanded here.
   //
   // PARSED FROM SOURCE, not imported: this gate runs before `tsc -b` has necessarily produced
-  // any JavaScript, which is the rule facts.mjs states for every answer that lives in
+  // any JavaScript, which is the rule facts.ts states for every answer that lives in
   // TypeScript.
   const aliasFile = "packages/contracts/src/alias.ts";
   if (!existsSync(join(root, aliasFile))) return `${aliasFile} is gone — the roster's /manage rows cannot be told from tools that were never on /core`;
@@ -346,7 +346,7 @@ check("a skill never instructs a tool its package cannot reach", () => {
   // DERIVED FROM THE DOOR FILE'S OWN IMPORTS, not from where the modules sit. eval-door.ts is
   // the function the service mounts, so what it imports is that door's surface by
   // construction; a module that moves directory again changes nothing here. Same derivation
-  // checks/eval-door.mjs uses, and for the same reason.
+  // checks/eval-door.ts uses, and for the same reason.
   const EVAL_DOOR = "services/zz-core/src/eval-door.ts";
   if (!existsSync(join(root, EVAL_DOOR))) return `${EVAL_DOOR} is gone — every tool zz-core registers would be filed under /core/mcp, which is the door every account already has, so this check could not find an unreachable tool on the evaluation door`;
   const evalMods = [...readFileSync(join(root, EVAL_DOOR), "utf8")

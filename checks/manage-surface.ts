@@ -47,7 +47,7 @@
 //
 // WHAT THIS FILE DELIBERATELY DOES NOT CHECK ABOUT IT. Its argument contract — `team?`,
 // `force?`, omitted meaning every team, an unknown slug refused by name — and the proof that
-// exactly one indexer exists both live in checks/core-surface-19.mjs, section 4, which is the
+// exactly one indexer exists both live in checks/core-surface-19.ts, section 4, which is the
 // file that tracked the tool's departure from /core. Two files asserting the same thing is
 // two files to edit the day it changes.
 //
@@ -255,7 +255,7 @@ for (const n of registered.keys()) {
 // NO HAND-MAINTAINED COUNT OF THIS DOOR, AND IT IS NO LONGER ASSERTED HERE. This file carried
 // its own rule for it — a list of the number-words that happened to be wrong, held against
 // three named files — which is the same hand-maintained thing it was refusing, one level up.
-// checks/derived-counts.mjs asks the question once, of everything git carries, by grammar
+// checks/derived-counts.ts asks the question once, of everything git carries, by grammar
 // rather than by a list. The numbers this door has live BELOW, where they are measured.
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

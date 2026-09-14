@@ -26,27 +26,27 @@ function errMessage(err: unknown): string {
 /* THE DOCTOR AND THE RELEASE READ ONE LIST OF PROBES.
  *
  * Step 5 used to own eleven live checks of its own, which ran for forty seconds during a
- * release and at no other time. Nothing exercised them in between, so when the release.mjs
+ * release and at no other time. Nothing exercised them in between, so when the release.ts
  * split left three of them calling names they never imported, nothing found out until 0.26.1
  * deployed, reported six ReferenceErrors as deployment failures, and rolled a healthy platform
  * back. A second list is not a duplication problem here; it is a list that is only ever read
  * at the moment it is most expensive to be wrong about.
  *
- * So verify.mjs selects layers and defines no probe, and this is what keeps it that way. */
+ * So verify.ts selects layers and defines no probe, and this is what keeps it that way. */
 check("the release verifies through the doctor's probes, not a second list", () => {
   const rel = readFileSync(join(root, "scripts/release/verify.ts"), "utf8");
   const bad = [];
   // `probe(` appearing here at all means a probe defined outside the doctor.
   if (/^\s*probe\(/m.test(withoutComments(rel))) {
-    bad.push("scripts/release/verify.mjs defines a probe of its own — probes belong in scripts/doctor/layers/");
+    bad.push("scripts/release/verify.ts defines a probe of its own — probes belong in scripts/doctor/layers/");
   }
   if (!/from "\.\.\/doctor\/run\.ts"/.test(rel)) {
-    bad.push("scripts/release/verify.mjs no longer runs the doctor — this check cannot confirm the two share a list");
+    bad.push("scripts/release/verify.ts no longer runs the doctor — this check cannot confirm the two share a list");
   }
   // Every layer it names must exist as a module, or a release silently verifies fewer layers
   // than it says it does.
   const named = [...(/RELEASE_LAYERS = \[([^\]]*)\]/.exec(rel)?.[1] ?? "").matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
-  if (!named.length) bad.push("scripts/release/verify.mjs declares no RELEASE_LAYERS — this check is reading nothing");
+  if (!named.length) bad.push("scripts/release/verify.ts declares no RELEASE_LAYERS — this check is reading nothing");
   for (const n of named) {
     if (!existsSync(join(root, `scripts/doctor/layers/${n}.ts`))) {
       bad.push(`the release verifies layer "${n}", and scripts/doctor/layers/${n}.ts does not exist`);
@@ -108,16 +108,16 @@ check("the doctor changes nothing", () => {
     : null;
 });
 
-/* A LAYER MISSING FROM doctor.mjs IS A LAYER THAT DOES NOT RUN, and the diagnosis it would
+/* A LAYER MISSING FROM doctor.ts IS A LAYER THAT DOES NOT RUN, and the diagnosis it would
  * have given is simply absent — which reads exactly like agreement. Same rule, same reason, as
- * gate.mjs's own import list and the completeness guard in gate/run.mjs. */
+ * gate.ts's own import list and the completeness guard in gate/run.ts. */
 check("the doctor runs every layer that is written", () => {
   const entry = readFileSync(join(root, "scripts/doctor.ts"), "utf8");
   const written = readdirSync(join(root, "scripts/doctor/layers")).filter((f) => f.endsWith(".ts")).sort();
   if (!written.length) return "scripts/doctor/layers/ holds no modules — this check is reading nothing";
   const missing = written.filter((f) => !entry.includes(`./doctor/layers/${f}`));
   if (missing.length) {
-    return `scripts/doctor.mjs does not import ${missing.join(", ")} — a layer that is not ` +
+    return `scripts/doctor.ts does not import ${missing.join(", ")} — a layer that is not ` +
            `imported does not run, and a diagnosis it would have given is indistinguishable from agreement`;
   }
   // And every one of them must declare what it owns, or `--since` cannot correlate it.
@@ -144,7 +144,7 @@ check("the deploy stops what this release no longer defines", () => {
     .filter((l) => !/^\s*(\*|\/\/)/.test(l))
     .flatMap((l) => [...l.matchAll(/docker compose up -d([^;`"']*)/g)].map((m) => m[1]));
   const bare = ups.filter((tail) => !tail.includes("--remove-orphans"));
-  if (ups.length === 0) return "release.mjs no longer brings the stack up — this check needs rewriting";
+  if (ups.length === 0) return "release.ts no longer brings the stack up — this check needs rewriting";
   return bare.length ? `${bare.length} of ${ups.length} deploy commands omit --remove-orphans` : null;
 });
 
@@ -193,11 +193,11 @@ check("the deploy bundle carries everything the install steps use", () => {
   // and the two scripts an operator runs by hand.
   const rel = releaseSource();
   const tar = rel.indexOf("tar czf");
-  if (tar === -1) return "release.mjs no longer packages a bundle — this check needs rewriting";
+  if (tar === -1) return "release.ts no longer packages a bundle — this check needs rewriting";
   const line = rel.slice(tar, rel.indexOf("\n", tar));
   const bad = [];
   // The files the INSTALL ITSELF names, which is what this check is called and was not doing.
-  // It retyped the same five names release.mjs retypes, so the two agreed by construction and
+  // It retyped the same five names release.ts retypes, so the two agreed by construction and
   // the question "does the bundle carry what an operator is told to run" was never asked.
   //
   // It was wrong. deploy/README.md's Day-2 section opens "Every command below runs from
@@ -220,7 +220,7 @@ check("the deploy bundle carries everything the install steps use", () => {
   //
   // DERIVED FROM THE SCRIPT, not from a list here. A list would have to be kept in step by
   // hand, which is the failure this check's own history is made of — it once retyped the five
-  // names release.mjs retypes, so the two agreed by construction and the question was never
+  // names release.ts retypes, so the two agreed by construction and the question was never
   // asked. A script that invokes `ssh` on a line that is not a comment runs against a host;
   // one that does not runs on it. Comments are excluded because zz-tool's explain `ssh` at
   // length and invoke it never.
@@ -257,12 +257,12 @@ check("a dry run cannot write git history", () => {
   // A rehearsal that mutates what it is rehearsing is not one.
   // THE ENTRY FILE SPECIFICALLY, and this is the one release check where that is right.
   // It is about ORDER — what runs before the dry-run exit — and the steps and that exit
-  // are both in release.mjs. Asked of the concatenated service, "before" means "in
+  // are both in release.ts. Asked of the concatenated service, "before" means "in
   // whichever module sorted first", which is not a fact about the release at all.
   const src = readFileSync(join(root, "scripts/release.ts"), "utf8");
   const lines = src.split("\n");
   const exitLine = lines.findIndex((l) => l.includes("DRY RUN OK"));
-  if (exitLine < 0) return "release.mjs has no dry-run exit";
+  if (exitLine < 0) return "release.ts has no dry-run exit";
   const bad = [];
   for (let i = 0; i < exitLine; i++) {
     // Writes only. `git tag -l` lists, `git rev-parse` reads — neither changes anything.
@@ -313,10 +313,10 @@ check("the deployed image can be rebuilt from this repo", () => {
     const relPlatform = /process\.env\.ZZ_PLATFORM \|\| "([^"]+)"/
       .exec(releaseSource())?.[1];
     if (!shPlatform || !relPlatform) {
-      bad.push("one of build-image.sh and release.mjs does not pin a build platform — the "
+      bad.push("one of build-image.sh and release.ts does not pin a build platform — the "
                + "other does, so one of them builds for whatever machine it runs on");
     } else if (shPlatform !== relPlatform) {
-      bad.push(`build-image.sh builds ${shPlatform} and release.mjs builds ${relPlatform} — `
+      bad.push(`build-image.sh builds ${shPlatform} and release.ts builds ${relPlatform} — `
                + "one tag, two architectures");
     }
   }
@@ -389,7 +389,7 @@ check("a breaking change says what to do about it", () => {
 });
 
 check("the release script can read every fact it parses out of source", () => {
-  // release.mjs reads the MCP protocol version out of @zz/mcp-client's source rather than
+  // release.ts reads the MCP protocol version out of @zz/mcp-client's source rather than
   // importing it, deliberately: "this script must run before a build has necessarily produced
   // any JavaScript, and a release check that needs the build to pass cannot be what tells you
   // the build is wrong". A reader keyed to source is right here and is also a coupling that
@@ -403,10 +403,10 @@ check("the release script can read every fact it parses out of source", () => {
   // which is the single thing that script's ordering exists to prevent.
   //
   // RUN the reader, with its collaborators injected, and require it to return what the client
-  // actually declares. A regex over release.mjs would only re-check the spelling that broke.
+  // actually declares. A regex over release.ts would only re-check the spelling that broke.
   const rel = releaseSource();
   const body = functionBody(rel, "mcpProtocol");
-  if (!body) return "release.mjs no longer defines mcpProtocol — this check cannot run";
+  if (!body) return "release.ts no longer defines mcpProtocol — this check cannot run";
   let readProtocol: Function;
   try {
     readProtocol = new Function("readFileSync", "join", "root", "die", body)

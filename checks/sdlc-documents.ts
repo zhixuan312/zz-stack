@@ -1,6 +1,6 @@
 // sdlc's own shape: which document closes it, which one carries the gate, and that an audit
 // is recorded rather than approved. What every flow's manifest owes is checked for every flow,
-// in scripts/gate/checks/stage-produces.mjs — not again here for one of them.
+// in scripts/gate/checks/stage-produces.ts — not again here for one of them.
 import { readFileSync } from "node:fs";
 
 interface Doc {
@@ -43,7 +43,7 @@ if (order.length && closing !== order[order.length - 1]) {
 // THE TWO HALVES OF THE MANIFEST NAMING EACH OTHER IS NOT THIS FILE'S RULE ANY MORE.
 //
 // It was written here first, hardcoded to catalog/sdlc/sdlc-flow/flow.json, and Task I-31
-// generalised it: scripts/gate/checks/stage-produces.mjs walks every package the catalog
+// generalised it: scripts/gate/checks/stage-produces.ts walks every package the catalog
 // classifies as a flow and asserts all three directions — a stage's `produces` resolves to a
 // declared document, that document's `stage` names the stage back, and no declared document
 // is produced by nothing. sdlc-flow is one of the flows it walks, so keeping a copy here

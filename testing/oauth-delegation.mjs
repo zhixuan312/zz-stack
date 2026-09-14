@@ -1,4 +1,4 @@
-// The delegated-access loop, end to end against a live deployment: connect_block mints a
+// The delegated-access loop, end to end against a live deployment: block_connect mints a
 // consent URL, the person approves, the callback stores the grant, and a later tool call goes
 // out carrying THEIR token instead of the shared key.
 //
@@ -56,9 +56,9 @@ for (const block of BLOCKS) {
   }
 
   const manage = new Mcp(`${BASE}/manage/mcp`, { pat: PAT, client: "zz-oauth-test" });
-  const out = String(await manage.call("connect_block", { block }));
+  const out = String(await manage.call("block_connect", { block }));
   const url = (out.match(/https?:\/\/\S*?authorize\S*/) || [])[0]?.replace(/[)"'\s]+$/, "");
-  ok(!!url, "connect_block returns a consent URL");
+  ok(!!url, "block_connect returns a consent URL");
   if (!url) { console.log("        " + out.slice(0, 300)); continue; }
 
   const page = await (await fetch(url)).text();

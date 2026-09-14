@@ -13,8 +13,8 @@ import { principalId, superOnly, teamId } from "./authority.js";
 
 // -------------------------------------------------------------- shared platform-write logic
 //
-// The guarded bodies behind list_people, add_person, deactivate_person, create_team,
-// archive_team, grant_tool and revoke_tool — extracted (Task I-15) for the same reason the
+// The guarded bodies behind person_list, person_add, person_deactivate, team_create,
+// team_archive, tool_grant and tool_revoke — extracted (Task I-15) for the same reason the
 // team-write functions above were (Task I-14): the admin tools and settings.ts's
 // `/api/console/settings/platform/*` routes call the SAME function, guarded by the SAME
 // `superOnly` check, rather than a second copy of it drifting from the first. `superOnly` is
@@ -28,7 +28,7 @@ export async function listPeople(
   id: Identity | null,
 ): Promise<{ ok: true; rows: unknown[] } | { ok: false; status: 403; error: string }> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
-  // See the `list_people` tool's own former comment: `membership.added_by` is written on
+  // See the `person_list` tool's own former comment: `membership.added_by` is written on
   // every row and was selected nowhere, so "who put this person in this team" — the one
   // question an access review asks — had no answer on the platform that recorded it.
   const r = await platformDb().query(
@@ -79,7 +79,7 @@ export async function deactivatePerson(
     "NOT removed: any building-block keys stored under that address. They cannot be used " +
     "by anyone now (the person can no longer authenticate), but they are live credentials " +
     "at a third party for somebody who has left. Ask the ZZ Access agent to run " +
-    `admin_delete_credential for ${email} on each block they had a key for.` };
+    `credential_admin_delete for ${email} on each block they had a key for.` };
 }
 /** Mint an enrolment link so somebody can register a passkey.
  *
@@ -88,7 +88,7 @@ export async function deactivatePerson(
  * name its own account would be open self-registration. The link names the principal instead,
  * and the principal was created here, by a superadmin, before the link existed.
  *
- * Superadmin-only, like every other write in this tier — and unlike `add_person` it hands
+ * Superadmin-only, like every other write in this tier — and unlike `person_add` it hands
  * back a live credential, so the refusal matters more than usual. It is the same `superOnly`
  * every function beside it calls rather than a comparison written out again here.
  *
@@ -104,7 +104,7 @@ export async function issueEnrolmentLink(
     "select id, status from principal where email = $1", [email.toLowerCase()]);
   if (!r.rows.length) {
     return { ok: false, status: 400, error:
-      `no principal for ${email} — add_person first. A passkey attaches to an account that ` +
+      `no principal for ${email} — person_add first. A passkey attaches to an account that ` +
       "already exists; it cannot create one." };
   }
   if (r.rows[0].status !== "active") {
@@ -139,7 +139,7 @@ export async function grantTool(
   const tid = await teamId(db, team);
   if (!tid) {
     return { ok: false, status: 400,
-      error: `no active team '${team}' — create_team on the same slug restores an archived one` };
+      error: `no active team '${team}' — team_create on the same slug restores an archived one` };
   }
   const actorId = await principalId(db, id.email);
   await db.query(
@@ -158,7 +158,7 @@ export async function revokeTool(
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
   if (confirm !== block) return { ok: false, status: 400, error: `confirm must repeat the block id exactly ('${block}')` };
-  // Same reason as uninstall_flow above, and it bites harder here: revoking a block the
+  // Same reason as flow_uninstall above, and it bites harder here: revoking a block the
   // team never had reported success, so an operator taking away the WRONG block id walked
   // away believing access was gone while the real grant stood.
   const gone = await platformDb().query(
@@ -169,7 +169,7 @@ export async function revokeTool(
   if (!gone.rowCount) {
     return { ok: false, status: 400, error:
       `${team} has no grant for '${block}' — nothing was revoked. ` +
-      "list_installs shows their grants; revoking a block they never had would " +
+      "install_list shows their grants; revoking a block they never had would " +
       "have left the one you meant in place." };
   }
   auditAdmin(id, "revoke_tool", `${team}:${block}`, { ...extraDetail }, team);

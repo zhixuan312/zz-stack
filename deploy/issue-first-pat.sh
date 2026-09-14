@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Mint the FIRST platform token, for the superadmin, on a fresh deployment.
 #
-# Why this exists: every other way to get a token needs one already. `issue_pat` and
-# `issue_my_access_token` both resolve the caller before they will mint anything, and the
+# Why this exists: every other way to get a token needs one already. `pat_issue` and
+# `pat_issue` both resolve the caller before they will mint anything, and the
 # identity a browser carries is forwarded by the front end for somebody it has already
 # authenticated. On a fresh install nobody has been, so there is no first identity and the
 # platform could authenticate nobody — a closed loop with no door into it.

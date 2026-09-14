@@ -187,10 +187,14 @@ function cap(s: string): string {
  * without the words, and that belongs in the tool's own result, not in a guess made here.
  */
 const IDENTIFIER_ARGS = new Set([
-  "team", "initiative", "flow", "platform", "block", "path", "name", "type", "id",
+  "team", "initiative", "flow", "platform", "block", "path", "name", "type",
   // `harness` left with render_harness_config, then `client` and `clients` left with Codex
-  // and Hermes: my_client_setup takes no client any more, because there is one, and
-  // install_flow no longer asks a team to choose between them.
+  // and Hermes: client_setup takes no client any more, because there is one, and
+  // flow_install no longer asks a team to choose between them.
+  // `id` LEFT WITH revoke_my_access_token, which was the only tool on the platform that ever
+  // declared it — a bare `id` at the top level, where every survivor names what the id is OF
+  // (`pat_id`, `old_id`, `new_id`). That tool was a duplicate of pat_revoke and was deleted,
+  // so the entry became unreachable in the same change.
   "old_id", "new_id", "slug", "role",
   "scope", "status", "prefix", "version", "agent_name", "limit",
   "include_superseded",
@@ -209,7 +213,7 @@ const IDENTIFIER_ARGS = new Set([
   // that cannot be reached is a decision that reads as considered and is only debris.
   // `confirm` was here, and it was the one entry that let content in through the front door.
   // Every tool that takes it defines it as an ECHO of another argument, and admin's
-  // deactivate_person defines it as an echo of the email: `if (confirm !== email) return ...`.
+  // person_deactivate defines it as an echo of the email: `if (confirm !== email) return ...`.
   // So the one value the list most deliberately excludes arrived under a name that looked
   // like an enum. A confirmation is a yes; whether it matched is already in `ok`.
 ]);
@@ -252,11 +256,38 @@ function shapes(args: Record<string, unknown>): Record<string, string> {
   return out;
 }
 
+/** Which door a request came through, from the URL it arrived on.
+ *
+ * A FUNCTION WITH A NAME, and that is the whole reason it is not the inline lambda it used to
+ * be. Its answer decides three things a wrong label does not begin to describe: the subject a
+ * row is filed under (`<surface>:<tool>`), whether `blockOf` in step-trace calls this the
+ * platform's own traffic or a BUILDING BLOCK's, and which map a tool name resolves through —
+ * `TOOL_ALIAS` is keyed by surface, so a call labelled with the wrong door has its name folded
+ * through the wrong door's aliases and lands in a different series.
+ *
+ * IT FALLS THROUGH TO `core`, WHICH IS WHY EVERY NEW DOOR HAS TO BE NAMED HERE. That default
+ * is safe for exactly one reason — the mount list beside it is short and every entry appears
+ * below. Add a door to that list and not to this function and its calls are recorded as core:
+ * nothing fails, nothing is empty, and the numbers are wrong in a way no report can show.
+ * Written as an exported function of the URL so `checks/eval-door.mjs` CALLS it, per door,
+ * rather than reading a lambda out of server.ts and hoping the branch it found is the one that
+ * runs.
+ *
+ * `originalUrl`, not `baseUrl`: under `app.use` with a path array `baseUrl` is not the matched
+ * entry, and every surface was once recorded as "core" for precisely that reason. */
+export function doorSurface(url: string): string {
+  const block = /^\/p\/([^/]+)\/mcp/.exec(url)?.[1];
+  if (block) return block;
+  if (url.startsWith("/eval")) return "eval";
+  if (url.startsWith("/manage")) return "manage";
+  return "core";
+}
+
 /** Express middleware. Mount AFTER identity (it reads the resolved caller) and BEFORE the
  * MCP routes (it wraps the response they write to).
  *
- * `surface` names which door this is — `core`, `manage`, `admin`, or the block's own name —
- * so one subject format, `<surface>:<tool>`, spans all of them. */
+ * `surface` names which door this is — `core`, `eval`, `manage`, `admin`, or the block's own
+ * name — so one subject format, `<surface>:<tool>`, spans all of them. */
 export function toolCallTelemetry(surface: (req: Request) => string) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const body = req.body as RpcBody | RpcBody[] | undefined;

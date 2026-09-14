@@ -73,7 +73,7 @@ Then mint the one token that opens the platform:
 ```
 
 **Why a script mints the first token.** Every other way to get one needs one already —
-`issue_pat` and `issue_my_access_token` both resolve the caller before they will mint
+`pat_issue` and `pat_issue` both resolve the caller before they will mint
 anything. A fresh install can therefore authenticate nobody, which is a closed loop with no
 door into it. `issue-first-pat.sh` is that door, and it is deliberately the operator's: it
 runs on the host, against the database, by someone who already has root.
@@ -111,7 +111,7 @@ repository checks documented-against-read by finding the literal name in the sou
 compose's `environment:` is an explicit list, so a name it does not carry never reaches the
 container: `deploy/.env`, `deploy/docker-compose.yml`, and the two client maps at the top of
 `services/gateway/src/block-oauth.ts`. Both are EMPTY today, because this
-deployment ships no block; until a pair is added, `connect_block` refuses by name and the
+deployment ships no block; until a pair is added, `block_connect` refuses by name and the
 block keeps using a stored key through cred-proxy.
 
 **The block's `authorize`, `token`, `.well-known/` and `userinfo` paths must be reachable from
@@ -148,7 +148,7 @@ to mint it with:
 ./issue-enrolment.sh someone@example.com      # from deploy/, where the bundle unpacks
 ```
 
-Later ones come from the console, or from `issue_enrolment` on `/manage/mcp`.
+Later ones come from the console, or from `enrolment_issue` on `/manage/mcp`.
 
 ## The doors
 
@@ -188,7 +188,7 @@ at all, which is the point of the split.
   approved spec to a caller who supplied nothing but an email header.
 - The catalog and the platform skills ship INSIDE the image, so a released version describes
   the method as well as the code. They are live-editable only under the build override above.
-- Adding a real block is a `PLATFORMS` entry plus a `grant_tool` per team — not a database
+- Adding a real block is a `PLATFORMS` entry plus a `tool_grant` per team — not a database
   edit. See **Building blocks** below.
 - **Air-gapped install:** `docker save ghcr.io/zhixuan312/zz-stack:<version> | gzip >
   zz-images.tgz`, ship it, `docker load` on the server, then use the bundle as above.
@@ -211,8 +211,8 @@ Then, once it answers with the tools they described:
 | | Where | What it decides |
 |---|---|---|
 | 1 | `PLATFORMS` in `deploy/.env` | its url and its credential header |
-| 2 | `grant_tool <team> <block>` (superadmin) | which teams may reach it |
-| 3 | the flow's `flow.json` `tools` | which agents receive it, applied by `install_flow` |
+| 2 | `tool_grant <team> <block>` (superadmin) | which teams may reach it |
+| 3 | the flow's `flow.json` `tools` | which agents receive it, applied by `flow_install` |
 
 Each caller authenticates with their OWN key — see **Credentials** below; nothing is shared.
 
@@ -237,12 +237,12 @@ Three-column rows carry their own; anything else needs `--platform`.
 Flows are installed per team over MCP, not from this directory:
 
 ```bash
-./zz-tool call /manage/mcp install_flow '{"team":"<slug>","flow":"sdlc-flow"}'
+./zz-tool call /manage/mcp flow_install '{"team":"<slug>","flow":"sdlc-flow"}'
 ```
 
 There is one door. `/manage/mcp` serves everybody and registers the tools the caller's role can
-execute, so `install_flow` is there if your token administers a team and absent if it does not
-— `whoami` on the same door says which. `list_catalog` says what is available to install. What
+execute, so `flow_install` is there if your token administers a team and absent if it does not
+— `whoami` on the same door says which. `catalog_list` says what is available to install. What
 a person then gets is a client package.
 
 ## Interfaces
@@ -268,12 +268,12 @@ baseline, the access tools and one plugin per flow — everything the catalog ho
 than a set chosen per person, because what a person may actually *use* is decided by their
 role and their team's installs at the door, not by what their shelf lists.
 
-`my_client_setup` on `/manage/mcp` prints these steps with the person's own values.
+`client_setup` on `/manage/mcp` prints these steps with the person's own values.
 
 Claude Code is the only client. Codex and Hermes were served until 2026-09-12 — nobody ran
 either, and `/pkg/<client>.tgz` went with them.
 
-People authenticate with a PAT (`issue_my_access_token`), and get the same identity, the same
+People authenticate with a PAT (`pat_issue`), and get the same identity, the same
 team knowledge store and the same gates — enforced in zz-core, so no client can bypass them.
 
 The team's knowledge is readable in a browser at `<gateway>/app` (PAT login): documents,
@@ -307,7 +307,7 @@ gateway injects THAT user's stored key and streams the call through to the real 
 Solves both problems at once: no shared key, and each person works in their own platform app.
 
 - Users self-serve **in chat with the ZZ Access agent**: "store my CaseBox key: ..." →
-  `set_my_credential` (per-user, masked, never echoed back). That agent carries the access
+  `credential_set` (per-user, masked, never echoed back). That agent carries the access
   tools and no other does, so a delivery agent asked for a key sends them there rather than
   collecting one it cannot store.
 - Operators batch-import or revoke with `./zz-tool set-credential`, as above.

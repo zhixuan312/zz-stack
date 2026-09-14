@@ -157,7 +157,7 @@ export function registerPluginEvalTools(server: McpServer): void {
         return text(
           `ERROR: no released version of "${plugin}" is recorded. A plugin version is written ` +
           "at release, so either the name is wrong or this plugin has not been released since " +
-          "versions began being recorded. `list_catalog` shows what exists.");
+          "versions began being recorded. `catalog_list` shows what exists.");
       }
       const skills = (await pool.query<{ name: string; version: string }>(`
         select s.name, sv.version

@@ -50,7 +50,6 @@ const CORE_INSTRUCTIONS =
   "  document_*    write, revise, read, present and approve a flow's documents\n" +
   "  initiative_*  open a piece of work, ask where it stands, close it with an outcome\n" +
   "  knowledge_*   search what earlier initiatives settled, and add to it — search first\n" +
-  "  plugin_*      evaluate an installed plugin's tool surface and record what was found\n" +
   "  session_*     who you are, which team you act for, and today's date\n" +
   "  skill_*       which skills are installed, who owns each, and what each one is for\n" +
   "  source_*      register the material a document cites, so a reader can follow it\n\n" +

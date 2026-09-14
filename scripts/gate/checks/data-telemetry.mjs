@@ -18,9 +18,9 @@ check("a tool that changes something records that it did", () => {
   // produced mechanically. A mutation nobody recorded is a fact about the platform that can
   // only be recovered by reading the state it changed.
   //
-  // set_my_credential and delete_my_credential were the gap, and the shape of it is what
-  // makes it worth a check: their OPERATOR twins — admin_set_credential,
-  // admin_delete_credential — both logged an event, so the same change to the same store was
+  // credential_set and credential_delete were the gap, and the shape of it is what
+  // makes it worth a check: their OPERATOR twins — credential_admin_set,
+  // credential_admin_delete — both logged an event, so the same change to the same store was
   // recorded when an operator made it and invisible when the person made it themselves. The
   // audited path was the rare one; the unaudited path is how almost every key is stored. So
   // "who holds a key for casebox, and since when" could only be answered by opening a file that
@@ -218,7 +218,7 @@ check("telemetry keeps identifiers and never the team's own words", () => {
   // team's own words about their own work, and they stay out of a table people read.
   //
   // The list has been wrong once already, in the way that matters: `confirm` sat in it
-  // looking like an enum, and deactivate_person defines confirm as an ECHO OF THE EMAIL —
+  // looking like an enum, and person_deactivate defines confirm as an ECHO OF THE EMAIL —
   // so the one value the list most deliberately excludes arrived under a safe-looking name.
   // Nothing stopped that but somebody noticing.
   //
@@ -572,10 +572,33 @@ check("the platform records its own surface, the way it records everybody else's
     bad.push("the surface row is not per-version-and-once — rewriting it makes the history agree with today by construction, which is the one thing a history must not do");
   }
   // Recorded at boot, AFTER a server has been built: the doors are stateless, so nothing has
-  // run buildServer by then and the set of names would be empty.
+  // run a builder by then and the set of names would be empty.
+  //
+  // EVERY DOOR, AND THE LIST IS DERIVED FROM THE MOUNTS. This named `buildServer` when that was
+  // the only factory there was. zz-core now serves two doors — `/mcp` and `/eval-mcp`, one
+  // process, two tool sets — and building only the first would record a platform that serves
+  // ten fewer tools than it does. That is worse than recording nothing: `eval_block_surface`
+  // diffs a version against the one before it, so the release that merely MOVED those tools
+  // would report them deleted, and a diff that invents a finding is the one failure this
+  // instrument cannot have. So the factories come out of the `serveMcp` calls themselves, and
+  // a third door added tomorrow is covered by this check on the day it is mounted.
   const boot = src.slice(src.indexOf("app.listen(8000"));
-  if (!/buildServer\(\);\s*await recordOwnSurface\(\)/.test(boot)) {
-    bad.push("boot does not build a server before recording the surface — the doors are stateless, so nothing else has, and the recorded surface would be empty");
+  // Everything boot runs BEFORE the record is written. A builder called after it has filled
+  // nothing by the time the names are read, so "called at boot" is not the property — "called
+  // first" is, and an empty slice here makes every clause below fire rather than pass.
+  const at = boot.indexOf("await recordOwnSurface()");
+  const built = at < 0 ? "" : boot.slice(0, at);
+  const factories = [...src.matchAll(/serveMcp\(app,\s*"[^"]+",\s*(\w+)\)/g)].map((m) => m[1]);
+  if (!factories.length) {
+    bad.push("no serveMcp(app, \"path\", factory) call found in zz-core — this clause cannot see which doors exist, so it asserted nothing about what the recorded surface covers");
+  }
+  if (at < 0) {
+    bad.push("boot never awaits recordOwnSurface — nothing records the surface at all");
+  }
+  for (const factory of factories) {
+    if (!new RegExp(`\\b${factory}\\(\\)`).test(built)) {
+      bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
+    }
   }
   return bad.length ? bad.join("; ") : null;
 });

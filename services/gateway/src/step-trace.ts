@@ -297,7 +297,11 @@ export async function pluginFor(step: string | undefined): Promise<{ plugin: str
 
 /** The surfaces that are the platform's own. Anything else is a building block, and the
  * surface name IS the block — that is how `/p/<block>/mcp` is routed. */
-const PLATFORM_SURFACES = new Set(["core", "manage", "admin"]);
+// `eval` IS OURS. Every door this platform serves itself belongs in here, and the cost of
+// forgetting one is not a mislabelled row: `blockOf` below answers "this call went to a
+// building block called eval", so the evaluation door's own traffic would be recorded as a
+// third party's, against a block nobody granted and no registry has ever heard of.
+const PLATFORM_SURFACES = new Set(["core", "eval", "manage", "admin"]);
 
 export const blockOf = (surface: string): string | undefined =>
   surface && !PLATFORM_SURFACES.has(surface) ? surface : undefined;

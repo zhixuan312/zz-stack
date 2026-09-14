@@ -14,7 +14,7 @@ import { check } from "../run.mjs";
 
 check("authority is decided by one function, never by comparing the role", () => {
   // "A superadmin is every team" is a real rule and a correct one. It was also written out
-  // by hand in four places — list_teams, list_catalog, list_installs and the knowledge
+  // by hand in four places — team_list, catalog_list, install_list and the knowledge
   // store's team check — in a form that compares platformRole directly and therefore cannot
   // see anything else about how the caller authenticated. So a token deliberately bound to
   // one team listed every team on the platform, and one of those four even declared a local
@@ -86,12 +86,12 @@ check("the team a person acts for is stored, not asserted", () => {
     bad.push(`the acting-team rule could not be run: ${String(err.stderr ?? err).slice(-200)}`);
   }
   const srv = gatewaySource();
-  if (!/"switch_team"/.test(srv)) bad.push("there is no way for a person to switch team");
+  if (!/"team_switch"/.test(srv)) bad.push("there is no way for a person to switch team");
   // And nothing may quietly pick a different one. `teams[0]` is a membership row in whatever
   // order a query returned it, and it was standing in for the acting team in three places:
   // credential resolution (so a block call could spend one team's quota while documents
   // landed in another's), the web knowledge base (so the browser showed one team and the
-  // agent wrote to the other), and list_catalog (so "what does my team run" answered about
+  // agent wrote to the other), and catalog_list (so "what does my team run" answered about
   // a team they were not working in). None of them failed; they were just about a different
   // team than the person was.
   // The three files it was found in are the three it was named for. It is a mistake anyone
@@ -100,7 +100,7 @@ check("the team a person acts for is stored, not asserted", () => {
     const src = readFileSync(join(root, f), "utf8");
     for (const [i, line] of src.split("\n").entries()) {
       if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
-      // Any local that holds the list, not the name `teams` alone. list_catalog aliased it
+      // Any local that holds the list, not the name `teams` alone. catalog_list aliased it
       // to `myTeams` and then took `myTeams[0]`, one line below a comment refusing exactly
       // that — and `\bteams\[0\]` cannot match it, because `y` and `t` are both word
       // characters so there is no boundary to anchor on.
@@ -110,7 +110,7 @@ check("the team a person acts for is stored, not asserted", () => {
     }
   }
   // Switching is a state change on who did what, and this platform records those.
-  const zone = srv.slice(srv.indexOf('"switch_team"'));
+  const zone = srv.slice(srv.indexOf('"team_switch"'));
   if (!/team\.switch/.test(zone.slice(0, 3000))) {
     bad.push("switching team is not recorded as an event");
   }
@@ -124,14 +124,14 @@ check("a tool picks the caller's team the platform's way", () => {
   // once took the first row of a differently ordered query and put documents in one team's
   // store while the block call spent another's.
   //
-  // my_teams was still doing it, in the one tool whose entire job is to answer the question:
+  // team_mine was still doing it, in the one tool whose entire job is to answer the question:
   // `order by t.slug`, then `rows.find(r => r.active) ?? rows[0]`. A person who is a member
   // of 'alpha' and an admin of 'beta' and has never switched was told alpha while every call
   // acted for beta, and no other check saw it because both answers are a team the person is
   // really in. Fixing that instance is not the point — the query is easy to write again.
   //
   // So: a tool that reads memberships and SELECTS one of them is choosing a caller's team,
-  // and must choose it the one way. Listing them all (switch_team's "yours:" line) is not
+  // and must choose it the one way. Listing them all (team_switch's "yours:" line) is not
   // selecting, and neither is acting on a team named in an argument.
   const bad = [];
   for (const f of sourceFiles(["services"], [".ts"])) {
@@ -209,7 +209,7 @@ check("a caller's email is normalised at the boundary, never at the call site", 
   //
   // Each of those three then compared a lowercased value against a raw one, which is never
   // equal for an address with a capital in it: initiativeNameTaken read a person's own draft
-  // as somebody else's and told them to open a second initiative, and issue_pat and
+  // as somebody else's and told them to open a second initiative, and pat_issue and
   // client_setup refused a person their own token. All three were invisible because the
   // database happens to hold lowercase — the bug waited on the one identity that does not
   // come from it, the forwarded caller a gateway with no platform database passes straight
@@ -402,7 +402,7 @@ check("nothing picks a team by taking the first membership row", () => {
   // Which team a person acts as is `actingTeam` in @zz/contracts and nothing else: a bound
   // token wins or resolves to nothing, else the team they chose while it is still live, else
   // admin-role then alphabetical. Three places took the first row of a differently-ordered
-  // list instead — the gateway, `list_catalog`, and the knowledge web app — and the failure
+  // list instead — the gateway, `catalog_list`, and the knowledge web app — and the failure
   // is always the same shape: one team's documents on screen, another team's name beside
   // them, or a block call spending a team's key that never authorised it.
   //

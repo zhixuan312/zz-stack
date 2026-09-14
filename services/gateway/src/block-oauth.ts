@@ -24,7 +24,7 @@
  *
  * ── THE TWO ROUTES ──────────────────────────────────────────────────────────
  *
- *   connect_block(block)          an MCP tool, NOT a link. The person must be known before the
+ *   block_connect(block)          an MCP tool, NOT a link. The person must be known before the
  *                                 result can be bound to them, and a browser arriving from the
  *                                 open internet carries no platform identity — the forwarded
  *                                 header is only trusted from inside the compose network. So the
@@ -133,7 +133,7 @@ const b64 = (b: Buffer): string => b.toString("base64url");
 // built-in registry and a deployment's blocks come entirely from `PLATFORMS`, which this one
 // does not set. These two maps named `casebox`, `bookit` and `rulemill` — three mock blocks that
 // moved to their own repository — so `clientFor` returned null for every block a person could
-// actually configure, and `connect_block`, a registered tool, could not succeed for any of
+// actually configure, and `block_connect`, a registered tool, could not succeed for any of
 // them. Three names that resolve to nothing read, to an operator, exactly like a feature that
 // is simply not set up yet.
 //
@@ -149,7 +149,7 @@ const b64 = (b: Buffer): string => b.toString("base64url");
 //   1. a line here, and one in OAUTH_SCOPES below, naming `<BLOCK>_OAUTH_CLIENT_ID` literally
 //   2. the matching pair in deploy/docker-compose.yml's `environment:`
 //   3. the same names offered in deploy/.env.example
-// Until then `connect_block` refuses by name — "no OAuth client is configured for '<block>' on
+// Until then `block_connect` refuses by name — "no OAuth client is configured for '<block>' on
 // this gateway" — which is the truth, and the shared-key path through cred-proxy is unaffected.
 const OAUTH_SCOPES: Record<string, string> = {};
 
@@ -441,7 +441,7 @@ export async function myBlockConnectionsFor(email: string): Promise<Array<{
  *  the settings.ts route marks this `via: "web"` (← Task I-13) without a second, duplicate
  *  logEvent call at the route — see settings.ts's own header for why the marker has to be
  *  added by the caller rather than assumed here: this function has no other caller today,
- *  but a future agent-facing `disconnect_block` MCP tool must not inherit a browser's door.
+ *  but a future agent-facing `block_disconnect` MCP tool must not inherit a browser's door.
  *  Deletes unconditionally; a caller who was never connected sees the same `false` a caller
  *  whose connection already expired would — there is nothing to undo either way. No
  *  `platformDbReady()` guard here either, for the same reason `myBlockConnectionsFor` has

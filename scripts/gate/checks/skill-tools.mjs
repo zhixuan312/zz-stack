@@ -71,7 +71,7 @@ check("no skill calls a tool the platform does not register", () => {
 
 check("a skill never names a platform tool that does not exist", () => {
   // zz-access told people to store a key with `set_credential`. The tools are
-  // `set_my_credential` and `set_team_credential`; nothing has ever been called `set_credential`.
+  // `credential_set` and `set_team_credential`; nothing has ever been called `set_credential`.
   // An agent following that goes looking for a tool the platform does not have, and this
   // repository has spent a day on what happens next — it reaches for a block's tool whose name
   // is close, then reports that the platform cannot do the thing.
@@ -94,7 +94,22 @@ check("a skill never names a platform tool that does not exist", () => {
   // been reported as a platform tool that does not exist. The two names they covered are
   // spelled out instead — the same coverage, and no stem staking a claim on a word we no
   // longer own.
-  const OURS = /^(journal_|okr_|document_revise|knowledge_reindex|initiative_|render_|connect_block$|issue_pat|revoke_pat|skill_read$|skill_list$|document_write|document_read|document_patch|document_list|source_add|source_list|knowledge_search|my_credential|admin_|set_[a-z_]*credential|delete_[a-z_]*credential)/;
+  //
+  // THE SAME THING HAPPENED AGAIN TO /manage, one rename later. `my_credential`, `admin_`,
+  // `set_[a-z_]*credential` and `delete_[a-z_]*credential` were this door's stems, and after
+  // Task I-22 not one of them matched a tool that exists — so a skill naming a dead /manage
+  // tool would have been waved through by the check whose whole job is to catch that. The
+  // thirty names are written out for the same reason the two above are: a closed set we own
+  // outright, with no stem claiming `set_`, `admin_` or `my_` on behalf of a door that no
+  // longer speaks that way. They are exactly `Object.values(MANAGE_ALIAS)` plus `whoami`;
+  // checks/manage-surface.mjs is what keeps the door itself matching that list.
+  const MANAGE = ["whoami", "person_add", "person_deactivate", "person_list", "team_create",
+    "team_archive", "team_list", "team_switch", "team_mine", "member_add", "member_remove",
+    "pat_issue", "pat_revoke", "pat_list", "flow_install", "flow_uninstall", "install_list",
+    "tool_grant", "tool_revoke", "enrolment_issue", "block_connect", "block_disconnect",
+    "platform_list", "credential_set", "credential_list", "credential_delete",
+    "credential_admin_set", "credential_admin_delete", "client_setup", "catalog_list"];
+  const OURS = new RegExp(`^(journal_|okr_|document_revise|knowledge_reindex|initiative_|render_|skill_read$|skill_list$|document_write|document_read|document_patch|document_list|source_add|source_list|knowledge_search|${MANAGE.map((n) => `${n}$`).join("|")})`);
   const served = new Set();
   // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
   // spread across modules, so a list of its files goes short the moment a door is added.
@@ -179,10 +194,10 @@ check("a skill never instructs a tool its package cannot reach", () => {
   // The tool exists, the skill is well written, the agent is provisioned, and the call the
   // method depends on is simply not on any surface that agent carries.
   //
-  // It has happened twice. list_catalog was member-safe and mounted only on /admin/mcp while
+  // It has happened twice. catalog_list was member-safe and mounted only on /admin/mcp while
   // zz-access, the agent every account gets, carries /manage alone. Then zz-flow-builder —
   // "flow creation as a service: interview, draft, confirm, install" — instructed
-  // install_flow, render_agent_definition, grant_tool and render_harness_config, all on
+  // flow_install, render_agent_definition, tool_grant and render_harness_config, all on
   // /admin/mcp, with `tools: []` and no `servers`, so its agent carried zz-core and nothing
   // else. Every account gets that agent, and every one of them was told to perform an install
   // it had no way to perform.

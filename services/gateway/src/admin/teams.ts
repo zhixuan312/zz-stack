@@ -12,7 +12,7 @@ import { type PlatformWriteOutcome } from "./people.js";
 
 // ---------------------------------------------------------------- shared team-write logic
 //
-// The guarded bodies behind add_member, remove_member, install_flow and uninstall_flow —
+// The guarded bodies behind member_add, member_remove, flow_install and flow_uninstall —
 // extracted once (Task I-14) so the admin tools (below) and settings.ts's browser routes
 // call the SAME function rather than a second copy of the authority check and the query
 // drifting apart. settings.ts imports these as VALUES: unlike server.ts, this module never
@@ -45,9 +45,9 @@ export async function addMember(
   const pid = await principalId(db, email);
   if (!tid) {
     return { ok: false, status: 400,
-      error: `no active team '${team}' — create_team on the same slug restores an archived one` };
+      error: `no active team '${team}' — team_create on the same slug restores an archived one` };
   }
-  if (!pid) return { ok: false, status: 400, error: `no principal '${email}' — add_person first` };
+  if (!pid) return { ok: false, status: 400, error: `no principal '${email}' — person_add first` };
   const actorId = await principalId(db, id.email);
   await db.query(
     `insert into membership (team_id, principal_id, role, added_by) values ($1,$2,$3,$4)
@@ -69,7 +69,7 @@ export async function removeMember(
   //
   // This reported "removed" whatever happened, so a mistyped address — the ordinary way to
   // get this wrong — read as done while the person it was meant for stayed a member. Its
-  // destructive siblings all check: archive_team refuses an inactive team, revoke_pat
+  // destructive siblings all check: team_archive refuses an inactive team, pat_revoke
   // refuses an id that is not there. An access-control tool that cannot fail is the worst
   // place for that gap.
   const r = await db.query(
@@ -80,7 +80,7 @@ export async function removeMember(
   );
   if (!r.rowCount) {
     return { ok: false, status: 400, error:
-      `${email} is not a member of ${team} — nothing was removed. Check the address and the team with list_teams.` };
+      `${email} is not a member of ${team} — nothing was removed. Check the address and the team with team_list.` };
   }
   auditAdmin(id, "remove_member", `${team}:${email}`, { ...extraDetail }, team);
   return { ok: true, message: `${email} removed from ${team}. ` +
@@ -104,7 +104,7 @@ export async function createTeam(
   }
   // `do nothing` reported "team X active" for a slug that already existed — true when it
   // was already active, a lie when it was archived, which is the case where someone types
-  // create_team precisely BECAUSE they want it back. Reactivate and say which happened.
+  // team_create precisely BECAUSE they want it back. Reactivate and say which happened.
   const r = await db.query<{ status: string; existed: boolean }>(
     `insert into team (slug, name, created_by) values ($1,$2,$3)
      on conflict (slug) do update set status = 'active', name = excluded.name
@@ -133,5 +133,5 @@ export async function archiveTeam(
   // fail, while telling a reader that archiving a team still has a second half somewhere.
   auditAdmin(id, "archive_team", team, { ...extraDetail }, team);
   return { ok: true, message: `team ${team} archived.\n` +
-    "Its flow installs and block grants are kept, so create_team on the same slug restores it." };
+    "Its flow installs and block grants are kept, so team_create on the same slug restores it." };
 }

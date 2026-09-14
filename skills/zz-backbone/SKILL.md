@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.28
+version: 3.29
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -279,10 +279,10 @@ you can see from inside the chat.
 - **To find out: `session_whoami`,** which answers `team`. Never infer it from the agent's
   name, from what you were told earlier in the conversation, or from which documents
   you happen to be able to read.
-- **To change it: `switch_team(team)`,** which is on the ACCESS door — the same place as
-  `connect_block` and a person's own keys. Not every agent carries that door.
+- **To change it: `team_switch(team)`,** which is on the ACCESS door — the same place as
+  `block_connect` and a person's own keys. Not every agent carries that door.
 
-**If you do not have `switch_team`, say exactly that and name where it lives.** You are
+**If you do not have `team_switch`, say exactly that and name where it lives.** You are
 not carrying the access tools; the person opens the agent that does — ZZ Access — and
 asks there. One sentence, and they are done.
 
@@ -516,7 +516,7 @@ make every number incomparable with every other number.
 - **Access is not your job.** Personal keys for the blocks, platform
   tokens and client setup all belong to the **ZZ Access** agent — one
   place, so a person always knows where to go. A person signing in to a
-  block AS THEMSELVES (`connect_block`) is better than a stored key and is
+  block AS THEMSELVES (`block_connect`) is better than a stored key and is
   what to suggest first: the block then records them rather than the
   platform, and there is no secret for anyone to hold. If a block call fails
   for a missing key, or someone asks how to connect Claude Code, Codex or

@@ -72,7 +72,7 @@ check("every state the schema allows can actually be reached", () => {
       const v = lit[1];
       if (v === "") continue;   // the empty default is not a state anyone sets
       // Deliberately loose: the value must merely be NAMED somewhere in the source. Writes
-      // are not always literals — issue_pat sets scope from a bound parameter fed by a
+      // are not always literals — pat_issue sets scope from a bound parameter fed by a
       // z.enum, and demanding `scope = 'admin'` reported that as unreachable when it is the
       // normal way to write a state. What cannot be argued with is the other direction: a
       // value the code never names cannot be written by it. 'archived' appeared nowhere in

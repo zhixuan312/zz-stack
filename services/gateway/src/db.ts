@@ -129,7 +129,7 @@ async function seed(): Promise<void> {
   // `flow:sdlc-flow`, `provider:…`, `interface:…` — which is a vocabulary the platform
   // already closed.
   //
-  // Seeded rather than created through create_team, and reserved there, because a tenant
+  // Seeded rather than created through team_create, and reserved there, because a tenant
   // taking this slug would be writing into the platform's own record.
   await db.query(
     `insert into team (slug, name, created_by) values ($1, $2, $3)

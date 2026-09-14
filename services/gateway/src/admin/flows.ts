@@ -126,7 +126,7 @@ const publicBase = (): string => {
   return base;
 };
 /** Build a person's client package. One implementation for both doors —
- * my_client_setup on /manage (your own, a personal act) and
+ * client_setup on /manage (your own, a personal act) and
  * render_harness_config on /admin (someone else's, an admin act) — because a
  * config that drifts between doors is a support case waiting to happen. */
 async function clientPackageFor(target: string): Promise<ClientPackage> {
@@ -155,7 +155,7 @@ export async function renderClientSetup(target: string): Promise<string> {
 }
 /** The shelf, on the door the reader actually has.
  *
- * `list_catalog` answers "what could my team use?", and its own authorisation has always
+ * `catalog_list` answers "what could my team use?", and its own authorisation has always
  * been membership — seeing your own team's shelf is not an administrative act. It was once
  * mounted on the admin door, which `zz-access` did not carry: the flow whose whole job is a
  * person's own access could not tell them what they could install. The mechanism was
@@ -164,17 +164,19 @@ export async function renderClientSetup(target: string): Promise<string> {
  *
  * Registered for everyone, unconditionally — a member's shelf is a member's business. */
 export function registerShelf(server: McpServer): void {
-  server.registerTool("list_catalog", {
+  server.registerTool("catalog_list", {
     // What it does and when to reach for it. It also carried a sentence of this platform's
     // own history — "until now the only way to discover a flow was to guess its name at
-    // install_flow and read the error" — which is true, belongs in the changelog, and in a
+    // flow_install and read the error" — which is true, belongs in the changelog, and in a
     // tool description is prompt real estate teaching the model nothing it can act on. This
     // repository has measured what descriptions cost: a large tool surface's descriptions alone
     // can take most of a context window before a single message.
     description:
-      "The shelf: every flow this platform has, whether you already run it, and where it can " +
-      "run. Use this to answer 'what could my team use?' rather than only 'what do we " +
-      "already have?'.",
+      "WHEN the question is 'what could my team use?' rather than only 'what do we already " +
+      "have?' — the call before flow_install, since installing needs a name this returns. " +
+      "RETURNS the shelf: every flow this platform has, whether your team already runs it, " +
+      "and where it can run. REFUSES a team you are not a member of, by name; membership is " +
+      "enough, because seeing your own team's shelf is not an administrative act.",
     inputSchema: { team: z.string().optional().describe("Mark what this team has installed. Omit for your own.") },
   }, async ({ team }) => {
     const id = await caller();
@@ -228,7 +230,7 @@ export function registerShelf(server: McpServer): void {
     return text(JSON.stringify({ team: slug ?? null, catalog: lines }, null, 2));
   });
 }
-/** Install a catalog flow for a team — see the `install_flow` tool below for the shape of
+/** Install a catalog flow for a team — see the `flow_install` tool below for the shape of
  * what it records and why. */
 export async function installFlow(
   id: Identity | null, team: string, flow: string, version: string | undefined,
@@ -240,7 +242,7 @@ export async function installFlow(
   const tid = await teamId(db, team);
   if (!tid) {
     return { ok: false, status: 400,
-      error: `no active team '${team}' — create_team on the same slug restores an archived one` };
+      error: `no active team '${team}' — team_create on the same slug restores an archived one` };
   }
   const manifest = catalogManifest(flow);
   if (!manifest) {
@@ -271,13 +273,13 @@ export async function installFlow(
   // team runs the same way every other client does — over MCP, as the caller.
   const report: string[] = [`registry recorded — '${flow}' is now on this team's shelf.`];
   const blocks = manifest.tools ?? [];
-  if (blocks.length) report.push(`manifest declares blocks [${blocks.join(", ")}] — grant_tool each one (superadmin) if not already granted`);
+  if (blocks.length) report.push(`manifest declares blocks [${blocks.join(", ")}] — tool_grant each one (superadmin) if not already granted`);
   auditAdmin(id, "install_flow", `${team}:${flow}`, { version: version ?? "", agent: agentName, report, ...extraDetail }, team);
   // Say where this install actually shows up. There is one client, and it reads the shelf
   // from GitHub rather than fetching a package — so the sentence that used to name the
   // team's chosen clients, and the one before it that named LibreChat, are both gone.
   const tail = "\nTeam members see it once they run `claude plugin marketplace update "
-    + "zz-stack`; `my_client_setup` prints how.";
+    + "zz-stack`; `client_setup` prints how.";
   return { ok: true, message: `${flow} installed for ${team}.\n` + report.join("\n") + tail };
 }
 /** Remove a team's flow install. `confirm` must repeat the flow name exactly. */
@@ -298,13 +300,13 @@ export async function uninstallFlow(
   );
   if (!gone.rowCount) {
     // A flow the team has AUTOMATICALLY has no row to delete and is not theirs to remove,
-    // which is a different answer from "you never had it" — and list_installs shows both
+    // which is a different answer from "you never had it" — and install_list shows both
     // kinds now, so a reader sent there would find it listed and be none the wiser.
     const automatic = autoFlows().some((a) => a.flow === flow);
     return { ok: false, status: 400, error: automatic
       ? `'${flow}' is an automatic flow — every team has it, and no team installed it, so ` +
         "there is nothing to uninstall. Its `install` field in the catalog is what decides that."
-      : `${team} does not have '${flow}' installed — nothing was removed. list_installs shows what they do have.` };
+      : `${team} does not have '${flow}' installed — nothing was removed. install_list shows what they do have.` };
   }
   auditAdmin(id, "uninstall_flow", `${team}:${flow}`, { ...extraDetail }, team);
   return { ok: true, message: `${flow} uninstalled from ${team}` };

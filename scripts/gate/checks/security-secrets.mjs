@@ -334,7 +334,7 @@ check("deleting the last key deletes the person too", () => {
   // a subject with no keys is not a subject. Three tools delete from it, and each has to
   // uphold that separately, which is the arrangement that guarantees one of them will not.
   //
-  // delete_my_credential was the one that did not. admin_delete_credential and
+  // credential_delete was the one that did not. credential_admin_delete and
   // delete_team_credential both dropped the emptied subject; the tool a person uses on their
   // own key left their address behind, so the store kept a standing list of everyone who had
   // ever stored one — in the tool you reach for when a key has leaked. The asymmetry is the
@@ -397,7 +397,7 @@ check("a block key resolves to the person, and to nobody else", () => {
 });
 
 check("anything that stores a credential can also remove it", () => {
-  // Twice now. admin_set_credential shipped without a delete, so an operator could put a key
+  // Twice now. credential_admin_set shipped without a delete, so an operator could put a key
   // into the store on somebody's behalf and nothing could ever take it out — deactivating
   // the principal stops them authenticating and leaves the platform injecting their key.
   // set_team_credential then shipped the same way in this release, and it matters more for a
@@ -411,7 +411,7 @@ check("anything that stores a credential can also remove it", () => {
   const setters = [...tools].filter((t) => /(^|_)set_/.test(t) && t.includes("credential"));
   const bad = [];
   for (const setter of setters) {
-    // set_my_credential -> delete_my_credential, admin_set_credential -> admin_delete_credential,
+    // credential_set -> credential_delete, credential_admin_set -> credential_admin_delete,
     // set_team_credential -> delete_team_credential.
     const deleter = setter.replace(/set_/, "delete_");
     if (!tools.has(deleter)) {
@@ -446,7 +446,7 @@ check("no deployment ships with a password we chose", () => {
 check("a platform token is one shape, whoever writes or reads it", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
-  // Four sites decided independently what a `zzp_` token is. `issue_pat` and `client_setup`
+  // Four sites decided independently what a `zzp_` token is. `pat_issue` and `client_setup`
   // each wrote `"zzp_" + randomBytes(24).toString("hex")`; deploy/issue-first-pat.sh writes
   // the same shape in shell, because it mints the first token on a host with no toolchain;
   // and provision-librechat READ one back with `/zzp_[0-9a-f]{48}/` — a length nobody

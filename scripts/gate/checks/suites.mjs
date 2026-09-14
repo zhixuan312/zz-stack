@@ -282,3 +282,9 @@ check("the core door introduces itself to a client that reads nothing else, and 
 
 check("opening is explicit and dated by the platform, and freeform gets no next move",
       runsCheck("initiative-open.mjs"));
+
+check("the /manage door is cut by role, the duplicates are gone, and the exception is kept",
+      runsCheck("manage-surface.mjs"));
+
+check("the evaluation door serves its own tools, and the gateway reaches that door and not the other",
+      runsCheck("eval-door.mjs"));

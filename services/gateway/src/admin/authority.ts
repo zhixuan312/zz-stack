@@ -13,7 +13,7 @@ import { isSuper, isTeamAdmin, type Identity } from "../identity.js";
 // The scope-aware checks in identity.ts, not a second pair that ignores it. These were
 // local copies reading only platformRole, so a token issued deliberately as member-scope
 // carried its owner's whole superadmin authority — proven with a self-issued member token
-// that successfully called grant_tool, which is superadmin-only.
+// that successfully called tool_grant, which is superadmin-only.
 // Exported for Task I-15: settings.ts's `/api/console/settings/platform/*` routes and
 // scope-check.ts's authority matrix both drive this SAME function rather than a copy of the
 // comparison — the same reason `teamAuthority` just below is exported.
@@ -31,11 +31,11 @@ export async function principalId(db: pg.Pool, email: string): Promise<string | 
 }
 /** The id of an ACTIVE team, or null.
  *
- * This returned any team, archived included, and every caller then acted on it. install_flow
+ * This returned any team, archived included, and every caller then acted on it. flow_install
  * was the worst of them: projecting a preset re-created the front end's own group, so
- * installing a flow for an archived team handed the browser back the access archive_team had
+ * installing a flow for an archived team handed the browser back the access team_archive had
  * just taken away. That projection is gone with the front end that needed it, and the rule it
- * broke is the reason this filters. add_member and issue_pat wrote
+ * broke is the reason this filters. member_add and pat_issue wrote
  * rows that resolve to nothing, because every identity query filters on status — so the tool
  * reported success and the person got no team, and a token that carries none. */
 export async function teamId(db: pg.Pool, slug: string): Promise<string | null> {

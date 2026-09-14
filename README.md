@@ -216,7 +216,7 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
 ```
 
 The interface is a projection, not the platform: Claude Code, installing from the
-public shelf this repository publishes (`my_client_setup` prints the steps, with
+public shelf this repository publishes (`client_setup` prints the steps, with
 `email` to render somebody else's). Codex and Hermes were served too until
 2026-09-12; nobody ran either, and between them they carried a tarball route, an
 archive writer and a client matrix threaded through the database. One client is

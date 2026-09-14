@@ -17,7 +17,7 @@
  *
  * Auth: an ADMIN-SCOPE platform token, from $ZZ_TOKEN or ~/.zz/token-admin. A member-scope
  * token is refused by the gateway — acting on another person's behalf is exactly what a
- * terminal token is scoped down to prevent. Ask the ZZ Access agent, or issue_pat with
+ * terminal token is scoped down to prevent. Ask the ZZ Access agent, or pat_issue with
  * scope=admin.
  *
  * --url, or $ZZ_URL, and there is NO DEFAULT on purpose. It used to fall back to the gateway
@@ -35,7 +35,7 @@
  * person storing their own key would have dropped a write, and a crash mid-write would have
  * truncated the file and lost every stored key on the platform.
  *
- * People can always do their own with the ZZ Access agent (set_my_credential). This is for
+ * People can always do their own with the ZZ Access agent (credential_set). This is for
  * onboarding several at once.
  */
 import { readFileSync } from "node:fs";
@@ -151,8 +151,8 @@ async function main(argv: string[]): Promise<number> {
     let out: string;
     try {
       out = remove
-        ? await mcp.call("admin_delete_credential", { user_email: who, platform })
-        : await mcp.call("admin_set_credential", { user_email: who, platform, api_key: key });
+        ? await mcp.call("credential_admin_delete", { user_email: who, platform })
+        : await mcp.call("credential_admin_set", { user_email: who, platform, api_key: key });
     } catch (err) {
       // Transport and protocol failures stop the batch. Unlike a refusal, they say nothing
       // about THIS row — carrying on would print N identical failures and bury the one

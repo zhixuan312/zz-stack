@@ -513,7 +513,7 @@ export function mountMcpOauth(app: Express): void {
       // scope, exactly as their browser session already does — issuing everyone `member`
       // would quietly take the admin door away from the people who administer the platform,
       // and issuing everyone `admin` would be indefensible. A deliberately reduced token
-      // remains available from `issue_pat` for automation, which is what scope is for.
+      // remains available from `pat_issue` for automation, which is what scope is for.
       // READ AT EXCHANGE TIME, not carried on the authorization: a demotion between signing
       // in and redeeming takes effect, and the window is ten minutes rather than ninety days.
       const roleRow = await platformDb().query<{ role: string }>(

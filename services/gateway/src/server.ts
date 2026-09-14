@@ -29,11 +29,11 @@ import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
 import { mountMcpOauth } from "./mcp-oauth.js";
 import { mountPasskey, sweepSessions } from "./passkey.js";
-import { CORE_URL, HOP_HEADERS, NEVER_FORWARD, STRIP_RESPONSE, mcpRefusal, relayBody } from "./relay.js";
+import { CORE_URL, EVAL_URL, mcpRefusal, passThrough } from "./relay.js";
 import { proxy } from "./relay.js";
 import { reconcileRuns } from "./runs.js";
 import { mountSettings } from "./settings.js";
-import { toolCallTelemetry } from "./tool-telemetry.js";
+import { doorSurface, toolCallTelemetry } from "./tool-telemetry.js";
 
 
 
@@ -171,6 +171,9 @@ const DOORS = [
   { path: "/manage/mcp", name: "access (behind the ZZ Access agent)", who: "everyone; the tool list is your role",
     what: "Access, yours and everybody's: your own building-block keys, your platform token and your client setup \u2014 and, if your role carries them, people, teams, the flow registry, block grants and the projections into every client the platform serves. The tools you are offered are the ones your role can execute, so a tool you cannot see is a fact about you, not about the platform; whoami says which. Each tool still authorises per call, because a tool you can run for one team is not one you can run for another.",
     auth: "Bearer <your token>" },
+  { path: "/eval/mcp", name: "zz-plugin-eval", who: "teams that installed the zz-plugin-eval flow",
+    what: "Evaluating a plugin: what its real runs did, what a recorded ablation says installing it is worth, and the ruler both are scored against. Separate from /core/mcp because it is one flow's instrument rather than everybody's process layer — it is on the door you get by installing that flow, and on no other.",
+    auth: "Bearer <your token>" },
   { path: "/p/<block>/mcp", name: "building blocks", who: "teams granted that block",
     what: "A third-party platform, called with YOUR OWN key. Store the key first via /manage.",
     auth: "Bearer <your token>" },
@@ -280,46 +283,32 @@ mountSettings(app, {
 // response they write to) — and because these four paths are the whole tool surface, so
 // one mount is the whole implementation. See tool-telemetry.ts for what it does and does
 // not record.
-app.use(["/core/mcp", "/manage/mcp", "/p/:platform/mcp"],
-        toolCallTelemetry((req) => {
-          // originalUrl, not baseUrl: under app.use with a path array baseUrl is not the
-          // matched entry, and every surface was recorded as "core" — telemetry that names
-          // the wrong door is worse than none, because it reads as an answer.
-          const url = req.originalUrl;
-          const block = /^\/p\/([^/]+)\/mcp/.exec(url)?.[1];
-          if (block) return block;
-          return url.startsWith("/manage") ? "manage" : "core";
-        }));
+// THE PATH LIST AND `doorSurface` MOVE TOGETHER. A door added here and not there is recorded
+// as `core` — nothing fails, nothing is empty, and every number about it is wrong. See
+// doorSurface's own paragraph for what rides on the answer; checks/eval-door.mjs calls it per
+// door rather than reading this line.
+app.use(["/core/mcp", "/eval/mcp", "/manage/mcp", "/p/:platform/mcp"],
+        toolCallTelemetry((req) => doorSurface(req.originalUrl)));
 
 serveMcp(app, "/manage/mcp", buildAccessServer);
 
 
-app.all("/core/mcp", (req, res) => {
-  void (async () => {
-    const headers: Record<string, string> = {};
-    for (const [k, v] of Object.entries(req.headers)) {
-      const lk = k.toLowerCase();
-      if (HOP_HEADERS.has(lk) || NEVER_FORWARD.has(lk)) continue;
-      if (typeof v === "string") headers[k] = v;
-      else if (Array.isArray(v)) headers[k] = v.join(", ");
-    }
-    const hasBody = req.method !== "GET" && req.method !== "DELETE";
-    const upstream = await fetch(CORE_URL, {
-      method: req.method, headers,
-      body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
-      signal: req.method === "GET" ? undefined : AbortSignal.timeout(120_000),
-    });
-    res.status(upstream.status);
-    upstream.headers.forEach((v, k) => {
-      if (!STRIP_RESPONSE.has(k.toLowerCase())) res.setHeader(k, v);
-    });
-    relayBody(upstream.body, res, "core proxy");
-  })().catch((err: unknown) => {
-    console.error("core proxy failed:", err);
-    mcpRefusal(req, res, "The ZZ platform service is not reachable right now. Nothing about " +
-      "your access has changed and nothing needs reconnecting — retry the call.");
-  });
-});
+app.all("/core/mcp", passThrough(CORE_URL, "core proxy",
+  "The ZZ platform service is not reachable right now. Nothing about " +
+  "your access has changed and nothing needs reconnecting — retry the call."));
+
+// THE EVALUATION DOOR. The same process behind it as /core/mcp — zz-core mounts a second MCP
+// endpoint rather than running a second service — and the same authentication in front of it,
+// because it is authenticated by the identity gate above, which every path that is not in
+// PUBLIC_PATHS or PUBLIC_PREFIXES passes through.
+//
+// It exists so the ten `plugin_*` tools are carried by the plugin that owns them instead of by
+// everybody: the core door is in the required baseline plugin, so a tool on it is on every
+// account on the platform whether or not that person evaluates anything.
+app.all("/eval/mcp", passThrough(EVAL_URL, "eval proxy",
+  "The ZZ evaluation door is not reachable right now. The platform's other doors are " +
+  "unaffected, nothing about your access has changed and nothing needs reconnecting — retry " +
+  "the call."));
 
 app.all("/p/:platform/mcp", (req, res) => {
   void proxy(req, res).catch((err: unknown) => {

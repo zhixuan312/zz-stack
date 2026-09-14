@@ -15,7 +15,7 @@ import { z } from "zod";
 import { registerAdminTools } from "./admin.js";
 import { beginAuthorization, disconnectBlock } from "./block-oauth.js";
 import { PLATFORMS } from "./blocks.js";
-import { caller, deleteMyCredentialFor, implausibleKey, issueMyAccessTokenFor, myAccessTokensFor, myCredentialsFor, operatorOnly, revokeMyAccessTokenFor, setMyCredentialFor, withCredentials } from "./credentials.js";
+import { caller, deleteMyCredentialFor, implausibleKey, myCredentialsFor, operatorOnly, setMyCredentialFor, withCredentials } from "./credentials.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
 import { callerIdentity, isSuper } from "./identity.js";
@@ -35,10 +35,12 @@ import { registerShelf, renderClientSetup } from "./admin/flows.js";
  *
  * NO TOOL NAMES BELOW, deliberately, and it is the one place this text differs in shape from
  * zz-core's. That door is noun-first and its paragraph names every prefix it serves, checked
- * both ways. This one is not: it serves list_catalog, connect_block, set_my_credential and a
- * dozen more verb-first names that Task I-22 renames. Naming them here would put a second
- * copy of that vocabulary in I-22's path and would rot silently in the meantime, so this says
- * what the door is FOR, a capability to a line, and lets the tool list speak for itself. */
+ * both ways. This one is not, and the reason survived the rename that gave it noun-first
+ * names: this door's list is CUT BY ROLE, so a member and a superadmin read the same
+ * paragraph against different lists. A paragraph naming every prefix would name several this
+ * reader has not been offered — which reads as a missing feature rather than as a fact about
+ * their access. So this says what the door is FOR, a capability to a line, and lets the tool
+ * list speak for itself. `whoami` is named because it is the tool that explains the cut. */
 const ACCESS_INSTRUCTIONS =
   "This is /manage: your own access to the ZZ platform — and, if your role carries them, the " +
   "people, teams and installs behind it. Every tool here acts on YOU, the caller, rather " +
@@ -63,19 +65,21 @@ const ACCESS_INSTRUCTIONS =
  *
  * There were two: /manage for your own access and /admin for administering the platform.
  * The second authorised nothing — its own entry in the door index said "any member; each
- * tool authorises per call" — so a member could open it, list twenty tools, and be refused
- * by every one. The split bought a shorter tool list and nothing else, and it leaked:
- * `admin_set_credential` is an operator tool and it lives here, on the member door, because
+ * tool authorises per call" — so a member could open it, list every tool on it, and be
+ * refused by every one. The split bought a shorter tool list and nothing else, and it leaked:
+ * `credential_admin_set` is an operator tool and it lives here, on the member door, because
  * that is where the credential store is.
  *
  * So there is one door, and the list is shortened by the thing that was doing the work all
  * along — the caller's role. `registerAdminTools` reads it once and registers what that role
- * can execute. A member sees twenty tools they can all use; a superadmin sees thirty-four.
+ * can execute: a member is offered only tools a member can use, and every extra tool a lead
+ * or a superadmin sees is one their role can actually execute. No count is written here —
+ * checks/manage-surface.mjs holds the numbers, where they are measured rather than restated.
  *
  * This is why the builder is async, and why `serveMcp` awaits it: resolving who is calling
  * is a database read, and it has to finish before the first tool is registered.
  *
- * WHAT A MEMBER LOSES, stated plainly: calling `list_people` used to answer "ERROR:
+ * WHAT A MEMBER LOSES, stated plainly: calling `person_list` used to answer "ERROR:
  * superadmin required", and now answers "tool not found", which explains less. Two things
  * carry that explanation instead — `whoami`, registered for everyone precisely so the
  * question "why can I not see it" has a tool, and the zz-access skill, which says a tool
@@ -96,14 +100,15 @@ export async function buildAccessServer(): Promise<McpServer> {
   registerShelf(server);
 
   server.registerTool(
-    "connect_block",
+    "block_connect",
     {
       description:
-        "Start signing in to a building block AS YOURSELF, so that block records you rather " +
-        "than the platform. Returns a link to open: you sign in there, choose which " +
-        "permissions to grant, and come back. Afterwards your calls to that block use your " +
-        "own access — no key to create, copy or keep. Only for blocks that support it; the " +
-        "rest still need a key stored with set_credential.",
+        "WHEN somebody wants to use a building block as themselves rather than through a " +
+        "shared key. RETURNS a single-use consent link: they sign in at the block, choose " +
+        "what to grant, and come back — afterwards their calls to that block carry their own " +
+        "access, with no key to create, copy or keep. REFUSES a block this platform does not " +
+        "know, and a block with no sign-in configured, naming it either way; for those, a " +
+        "key stored with credential_set is the only route.",
       inputSchema: { block: z.string().describe("which building block, e.g. bookit") },
     },
     async ({ block }) => {
@@ -123,7 +128,7 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   server.registerTool(
-    "disconnect_block",
+    "block_disconnect",
     {
       // THE OTHER HALF, and it had no agent-facing door until now.
       //
@@ -136,11 +141,12 @@ export async function buildAccessServer(): Promise<McpServer> {
       // mcp-oauth.ts), so this is not needed to RECONNECT. It is needed to actually stop
       // being connected.
       description:
-        "Stop being connected to a building block: deletes YOUR OWN delegated access to it, " +
-        "so the platform can no longer act as you there. Use it when someone says they want " +
-        "to revoke a block, or before re-connecting as a different account. The front end's " +
-        "own Revoke button does not do this — it only clears the front end's copy. " +
-        "Reconnect any time with connect_block.",
+        "WHEN someone says they want to revoke a block, or before re-connecting as a " +
+        "different account: deletes YOUR OWN delegated access, so the platform can no longer " +
+        "act as you there. RETURNS whether there was a connection to remove — the front " +
+        "end's own Revoke button does NOT do this, it only clears the front end's copy. " +
+        "REFUSES a block this platform does not know, and it never touches anybody else's " +
+        "connection or a stored key. Reconnect any time with block_connect.",
       inputSchema: { block: z.string().describe("which building block, e.g. casebox") },
     },
     async ({ block }) => {
@@ -153,16 +159,20 @@ export async function buildAccessServer(): Promise<McpServer> {
       return text(removed
         ? `Disconnected from ${block}. The platform no longer holds any access to it as you, ` +
           "and calls to that block will refuse until you connect again — from the MCP " +
-          "settings in the front end, or with connect_block."
+          "settings in the front end, or with block_connect."
         : `You had no connection to ${block} to remove. If calls to it are working, they are ` +
           "using a stored key rather than your own sign-in.");
     },
   );
 
   server.registerTool(
-    "list_platforms",
+    "platform_list",
     {
-      description: "The building-block platforms a personal API key can be stored for.",
+      description:
+        "WHEN you need to know what to name in credential_set or block_connect. RETURNS " +
+        "every building-block platform this gateway knows, id to display name. Takes no " +
+        "arguments and REFUSES nothing — it reads the gateway's own configuration and says " +
+        "nothing about which of them your team has been granted.",
       inputSchema: {},
     },
     async () =>
@@ -170,7 +180,7 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   server.registerTool(
-    "my_teams",
+    "team_mine",
     {
       // What ONLY this tool says. Three tools answer some form of "who am I" and they are
       // deliberately not merged — see the note over `whoami` in admin.ts, which was written
@@ -181,14 +191,18 @@ export async function buildAccessServer(): Promise<McpServer> {
       //
       // It is the only one that lists the teams you are NOT acting for, which is the answer
       // to "why can I not see that team's documents" and the call that has to come before
-      // switch_team.
+      // team_switch.
       description:
-        "EVERY team you belong to, and which one you are ACTING FOR right now — the only " +
-        "tool that names the others, and the one to call before switch_team. Everything you " +
-        "do — documents, gates, the knowledge store, every agent — happens inside the team " +
-        "you are acting for. For your platform role, how this request authenticated, or why " +
-        "a tool is missing from your list, call whoami; for today's date and the team you " +
-        "are acting for while doing work, call session_whoami on /core.",
+        "WHEN you need to know which teams are open to you before moving between them — the " +
+        "call that comes before team_switch. RETURNS EVERY team you belong to and which one " +
+        "you are ACTING FOR right now; it is the only tool that names the others, and " +
+        "everything you do — documents, gates, the knowledge store, every agent — happens " +
+        "inside the team you are acting for. REFUSES a request it cannot identify, and it " +
+        "never invents a team you are not in: a bound token naming a team its owner has left " +
+        "comes back as acting for no team rather than as that team. For your platform role, " +
+        "how this request authenticated, or why a tool is missing from your list, call " +
+        "whoami; for today's date and the team you are acting for while doing work, call " +
+        "session_whoami on /core.",
       inputSchema: {},
     },
     async () => {
@@ -209,12 +223,15 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   server.registerTool(
-    "switch_team",
+    "team_switch",
     {
       description:
-        "Change which team you are ACTING FOR. You work in one team at a time: after this, " +
-        "your documents, knowledge store and agents are that team's, everywhere. Work you " +
-        "left unfinished stays with the team you left it in, where its members can pick it up.",
+        "WHEN the work belongs to a different team than the one you are acting for. RETURNS " +
+        "confirmation that you now act for that team: your documents, knowledge store and " +
+        "agents are that team's everywhere from here, and work you left unfinished stays " +
+        "with the team you left it in, where its members can pick it up. REFUSES any team " +
+        "you are not a member of and any archived team, and names the ones you do have " +
+        "instead — call team_mine first if you are not sure.",
       inputSchema: { team: z.string() },
     },
     async ({ team }) => {
@@ -255,11 +272,15 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   server.registerTool(
-    "set_my_credential",
+    "credential_set",
     {
       description:
-        "Store YOUR personal API key for a platform (see list_platforms). " +
-        "From then on, your calls to that platform authenticate as you.",
+        "WHEN a building block needs a key and it should be YOURS rather than a shared one — " +
+        "the route for blocks that cannot do block_connect. RETURNS the key masked, and says " +
+        "so when it REPLACED one you already had, because that one is then gone. REFUSES a " +
+        "platform this gateway does not know (see platform_list) and a key too short or too " +
+        "plain to be real; it never reads back a stored key and never touches anybody " +
+        "else's.",
       inputSchema: { platform: z.string(), api_key: z.string() },
     },
     async ({ platform, api_key }) => {
@@ -275,9 +296,13 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   server.registerTool(
-    "my_credentials",
+    "credential_list",
     {
-      description: "Which platforms you have stored a personal key for (keys are masked).",
+      description:
+        "WHEN you need to know whether a block will authenticate as you before calling it. " +
+        "RETURNS which platforms you have stored a personal key for, every key masked. " +
+        "REFUSES to show a key's value — masked is all there is, here or anywhere — and it " +
+        "answers only about you, never about another person's keys.",
       inputSchema: {},
     },
     async () => {
@@ -289,16 +314,20 @@ export async function buildAccessServer(): Promise<McpServer> {
         JSON.stringify(
           Object.keys(masked).length
             ? masked
-            : { status: "no credentials stored yet — use set_my_credential" },
+            : { status: "no credentials stored yet — use credential_set" },
         ),
       );
     },
   );
 
   server.registerTool(
-    "delete_my_credential",
+    "credential_delete",
     {
-      description: "Remove your stored key for a platform.",
+      description:
+        "WHEN a key of yours has leaked, or you no longer want this platform authenticating " +
+        "as you. RETURNS whether there was a key to remove. REFUSES a request it cannot " +
+        "identify, and it reaches only your own keys: removing somebody else's is " +
+        "credential_admin_delete, which needs an operator.",
       inputSchema: { platform: z.string() },
     },
     async ({ platform }) => {
@@ -311,79 +340,20 @@ export async function buildAccessServer(): Promise<McpServer> {
     },
   );
 
-  // Your own platform access belongs beside your own platform keys. Getting
-  // a token must not require the admin surface: every delivery agent has
-  // /manage, so anyone can self-serve from the chat they are already in.
   server.registerTool(
-    "issue_my_access_token",
-    {
-      description:
-        "Issue YOUR OWN personal access token for connecting Claude Code, Codex, Hermes or any " +
-        "other MCP client to this platform. The token is shown ONCE and cannot be retrieved " +
-        "again — tell the person to store it now. It carries their own identity and their own " +
-        "team access, nothing more. Pair it with `my_client_setup` for the client's setup.",
-      inputSchema: { label: z.string().optional().describe("What it is for, e.g. 'laptop — Claude Code'.") },
-    },
-    async ({ label }) => {
-      const email = caller().email;
-      if (!email) return text("ERROR: no identity on this request");
-      if (!platformDbReady()) return text("ERROR: platform db unavailable");
-      const result = await issueMyAccessTokenFor(email, label);
-      if (!result.ok) return text(`ERROR: ${result.error}`);
-      return text(
-        `Personal access token for ${result.email}${result.label ? " (" + result.label + ")" : ""}:\n\n${result.token}\n\n` +
-        "SHOWN ONCE — store it now; it cannot be shown again.\n" +
-        "Use it as `Authorization: Bearer <token>`. It acts as you, with your team's access.\n" +
-        "If it ever leaks, say so and it will be revoked immediately.",
-      );
-    },
-  );
-
-  server.registerTool(
-    "my_access_tokens",
-    {
-      description: "Your own access tokens, masked — when each was issued, last used, and whether revoked.",
-      inputSchema: {},
-    },
-    async () => {
-      const email = caller().email;
-      if (!email) return text("ERROR: no identity on this request");
-      if (!platformDbReady()) return text("ERROR: platform db unavailable");
-      return text(JSON.stringify(await myAccessTokensFor(email)));
-    },
-  );
-
-  server.registerTool(
-    "revoke_my_access_token",
-    {
-      description: "Revoke one of your own tokens (see my_access_tokens). Takes effect immediately.",
-      inputSchema: { id: z.string().uuid() },
-    },
-    async ({ id }) => {
-      const email = caller().email;
-      // Every sibling refuses an unidentified caller. This one went on to look up the
-      // empty-string principal, matched nothing, and answered "no such active token of
-      // yours" — a claim about their tokens, to somebody the platform cannot identify.
-      if (!email) return text("ERROR: no identity on this request");
-      if (!platformDbReady()) return text("ERROR: platform db unavailable");
-      const ok = await revokeMyAccessTokenFor(email, id);
-      return ok ? text(`token ${id} revoked`) : text("ERROR: no such active token of yours");
-    },
-  );
-
-  server.registerTool(
-    "my_client_setup",
+    "client_setup",
     {
       // `email` came from render_harness_config, which was this tool on the other door and
       // existed only because there was another door. Onboarding somebody means rendering
       // THEIR setup, so the capability had to survive the merge; it is the same superadmin
       // check that tool made.
       description:
-        "The setup for connecting Claude Code to this platform: which marketplace to add, " +
-        "which plugins to install, and where to put your token — carrying only the blocks " +
-        "the team's installed flows declare. Yours by default — pair it with " +
-        "issue_my_access_token, since the setup needs a token and it is shown " +
-        "once. Pass email to render somebody else's, for onboarding them (superadmin only).",
+        "WHEN somebody is connecting Claude Code to this platform for the first time, or " +
+        "being onboarded. RETURNS their setup: which marketplace to add, which plugins to " +
+        "install, and where the token goes — carrying only the blocks their team's installed " +
+        "flows declare. Yours by default; pair it with pat_issue, since the setup needs a " +
+        "token and that token is shown once. REFUSES another person's setup unless you are " +
+        "superadmin, and refuses a request it cannot identify.",
       inputSchema: {
         email: z.string().email().optional().describe("Whose setup. Omit for your own; anyone else needs superadmin."),
       },
@@ -404,11 +374,15 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   if (sup) server.registerTool(
-    "admin_set_credential",
+    "credential_admin_set",
     {
       description:
-        "Operators only (admin role): store a key on another user's behalf — " +
-        "used for onboarding batches.",
+        "WHEN onboarding somebody, or a batch of people, who cannot store their own key yet. " +
+        "RETURNS the key masked, and says loudly when it REPLACED that person's working key, " +
+        "because on a batch run that line scrolls past. REFUSES anyone but an operator, an " +
+        "unknown platform, a key too short or too plain to be real, and — the one that bit — " +
+        "an address that is not an active principal, since a key filed under an address " +
+        "nobody has can never be injected for anyone.",
       inputSchema: { user_email: z.string(), platform: z.string(), api_key: z.string() },
     },
     async ({ user_email, platform, api_key }) => {
@@ -425,7 +399,7 @@ export async function buildAccessServer(): Promise<McpServer> {
         const known = await platformDb().query(
           "select 1 from principal where email = $1 and status = 'active'", [addr]);
         if (!known.rowCount) {
-          return text(`ERROR: '${addr}' is not an active platform member — add_person first. ` +
+          return text(`ERROR: '${addr}' is not an active platform member — person_add first. ` +
                       "A key stored under an address nobody has cannot be injected for anyone.");
         }
       }
@@ -441,7 +415,7 @@ export async function buildAccessServer(): Promise<McpServer> {
       });
       logEvent({ actor: caller().email, kind: "credential.admin_set",
                  subject: `${addr}:${platform}`, detail: { replaced: !!replaced } });
-      // Whether it replaced one, for the same reason set_my_credential says it — and more
+      // Whether it replaced one, for the same reason credential_set says it — and more
       // sharply here, because this is the batch path and the key being overwritten is
       // somebody else's working credential, on a run of many where one line scrolls past.
       return text(`stored ${platform} key for ${addr} (${mask(key)})` +
@@ -450,16 +424,19 @@ export async function buildAccessServer(): Promise<McpServer> {
   );
 
   if (sup) server.registerTool(
-    "admin_delete_credential",
+    "credential_admin_delete",
     {
       description:
-        "Operators only: remove another person's stored key for a block. Use when someone " +
-        "leaves, or when a key has leaked and must stop working now.",
+        "WHEN someone leaves, or a key has leaked and must stop working now. RETURNS whether " +
+        "that person had a key to remove; if they did, their calls to that block stop " +
+        "authenticating immediately. REFUSES anyone but an operator. Deactivating a " +
+        "principal does NOT do this — it stops them authenticating while the platform goes " +
+        "on injecting the key on their behalf.",
       inputSchema: { user_email: z.string(), platform: z.string() },
     },
-    // The other half of admin_set_credential, which had none. An operator could put a key
+    // The other half of credential_admin_set, which had none. An operator could put a key
     // into the store on someone's behalf and nothing could ever take it out again: only the
-    // person themselves could, through delete_my_credential, which is no use once they have
+    // person themselves could, through credential_delete, which is no use once they have
     // left — and deactivating a principal stops them authenticating without touching the key
     // the platform goes on injecting on their behalf.
     async ({ user_email, platform }) => {

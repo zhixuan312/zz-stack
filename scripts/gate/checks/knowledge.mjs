@@ -111,7 +111,7 @@ check("the platform's own knowledge has a home, and it is reserved", () => {
   //
   // The platform is a tenant. It gets an ordinary team with the ordinary store and the same
   // _knowledge/ every tenant has — zero new mechanism, which is the point. Two things have
-  // to be true together: the bootstrap creates it, and create_team refuses it. Seeded but
+  // to be true together: the bootstrap creates it, and team_create refuses it. Seeded but
   // claimable means a tenant can end up reading and writing the platform's own record;
   // reserved but never seeded means the home is a name with nothing behind it.
   const identity = readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8");
@@ -147,7 +147,7 @@ check("the platform's own knowledge has a home, and it is reserved", () => {
                "leaves that empty returns first, and the platform's own team is never created");
     }
     if (!/===\s*PLATFORM_TEAM|PLATFORM_TEAM\s*===/.test(admin)) {
-      bad.push("create_team does not reserve the platform team — a tenant could claim it");
+      bad.push("team_create does not reserve the platform team — a tenant could claim it");
     }
   }
   return bad.length ? bad.join("; ") : null;
@@ -185,8 +185,8 @@ check("the second distillation exists and is reachable", () => {
 
 check("the shelf is on the door everyone has, and installing is not", () => {
   // Seeing what your team COULD run and deciding what it DOES run are different acts, and
-  // they are separated by ROLE. list_catalog is registered for everybody — a person's own
-  // access, and browsing is nobody's privilege; install_flow is registered only for a caller
+  // they are separated by ROLE. catalog_list is registered for everybody — a person's own
+  // access, and browsing is nobody's privilege; flow_install is registered only for a caller
   // who administers a team, because it changes what a whole team runs.
   //
   // This used to be a separation by DOOR, /manage against /admin, and the door was retired
@@ -197,7 +197,7 @@ check("the shelf is on the door everyone has, and installing is not", () => {
   // The failure this refuses is quiet in both directions. Gate the shelf behind `sup` or
   // `lead` and discovery disappears for everyone else, with no error anywhere — the tool
   // simply is not there, and the only way left to find a flow is to guess its name at
-  // install_flow and read the refusal. Register install_flow unconditionally and any member
+  // flow_install and read the refusal. Register flow_install unconditionally and any member
   // is offered a tool that changes what their whole team runs.
   //
   // Comments stripped first. Testing the raw text passed on `// registerShelf(server)` —
@@ -223,13 +223,13 @@ check("the shelf is on the door everyone has, and installing is not", () => {
     return m ? (m[2] ?? "everyone") : null;
   };
   for (const [name, want, why] of [
-    ["list_catalog", "everyone", "browsing what your team could run is not a privilege"],
+    ["catalog_list", "everyone", "browsing what your team could run is not a privilege"],
     ["whoami", "everyone", "it is the tool that explains a refusal, so a refused caller must have it"],
-    ["install_flow", "lead", "installing changes what a whole team runs"],
-    ["add_member", "lead", "team membership is a team admin's act"],
-    ["add_person", "sup", "creating a principal is a platform act"],
-    ["grant_tool", "sup", "block access is a platform decision"],
-    ["admin_set_credential", "sup", "storing a key for somebody else is an operator's act"],
+    ["flow_install", "lead", "installing changes what a whole team runs"],
+    ["member_add", "lead", "team membership is a team admin's act"],
+    ["person_add", "sup", "creating a principal is a platform act"],
+    ["tool_grant", "sup", "block access is a platform decision"],
+    ["credential_admin_set", "sup", "storing a key for somebody else is an operator's act"],
   ]) {
     const got = tierOf(name);
     if (got === null) bad.push(`${name} is not registered anywhere`);
@@ -247,8 +247,8 @@ check("the shelf is on the door everyone has, and installing is not", () => {
   }
   // And the skill has to say so, or the tool exists and nobody is told to use it.
   const access = join(catalogRoot, "zz/zz-access/skills/zz-access/SKILL.md");
-  if (existsSync(access) && !readFileSync(access, "utf8").includes("list_catalog")) {
-    bad.push("zz-access never mentions list_catalog — the shelf is reachable and unmentioned");
+  if (existsSync(access) && !readFileSync(access, "utf8").includes("catalog_list")) {
+    bad.push("zz-access never mentions catalog_list — the shelf is reachable and unmentioned");
   }
   return bad.length ? bad.join("; ") : null;
 });

@@ -124,7 +124,7 @@ export function mountPlatformSettings(app: Express): void {
       const slug = typeof body.slug === "string" ? body.slug.trim() : "";
       const name = typeof body.name === "string" ? body.name.trim() : "";
       if (!slug) { res.status(400).json({ error: "slug is required" }); return; }
-      // `create_team`'s own MCP schema rejects a malformed slug before the handler runs
+      // `team_create`'s own MCP schema rejects a malformed slug before the handler runs
       // (zod's `.regex(TEAM_SLUG)`); this route has no zod in front of it, so the same rule
       // is checked here instead of relying on the query below to fail some other way.
       if (!TEAM_SLUG.test(slug)) { res.status(400).json({ error: "slug must be lowercase letters, digits, - or _" }); return; }

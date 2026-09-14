@@ -1,8 +1,9 @@
 /**
  * call — one platform tool, from a terminal, and print what it said.
  *
- *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /manage/mcp grant_tool '{"team":"x","block":"casebox"}'
+ *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /manage/mcp tool_grant '{"team":"x","block":"casebox"}'
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp initiative_status
+ *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /eval/mcp plugin_locate
  *   ZZ_URL=… ZZ_TOKEN=… npm run call -- /core/mcp --list
  *
  * WHY THIS EXISTS. Every other tool here answers one question and is shaped around it —
@@ -12,7 +13,7 @@
  * would be a second MCP client. The gate refuses the third by name.
  *
  * That gap is felt hardest at exactly two moments, and both are ones where nothing else can
- * help: setting a deployment up (`grant_tool`, `install_flow`, `add_member` — the calls that
+ * help: setting a deployment up (`tool_grant`, `flow_install`, `member_add` — the calls that
  * come BEFORE anybody has a working client), and reading the record back after an evaluation
  * (`initiative_status`, `source_list`) without asking the agent under test what it thinks
  * happened. A harness that scores a run by asking the run is not a harness.
@@ -32,7 +33,7 @@ import { Mcp, McpError } from "@zz/mcp-client";
 import { die, envRequired, optional, parseArgs } from "../lib/cli.js";
 
 /** A door on the gateway. `/p/<block>/mcp` is a block; the other three are the platform's. */
-const DOOR = /^\/(core|manage|admin|p\/[a-z0-9-]+)\/mcp$/;
+const DOOR = /^\/(core|eval|manage|admin|p\/[a-z0-9-]+)\/mcp$/;
 
 async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv, ["list", "strict", "json"]);
@@ -42,11 +43,11 @@ async function main(argv: string[]): Promise<number> {
 
   if (!door || (!tool && !listing)) {
     die("usage: call <door> <tool> ['<json args>']   |   call <door> --list\n" +
-        "       doors: /core/mcp  /manage/mcp  /p/<block>/mcp");
+        "       doors: /core/mcp  /eval/mcp  /manage/mcp  /p/<block>/mcp");
   }
   if (!DOOR.test(door)) {
     die(`${JSON.stringify(door)} is not a door on this gateway — ` +
-        "expected /core/mcp, /manage/mcp or /p/<block>/mcp");
+        "expected /core/mcp, /eval/mcp, /manage/mcp or /p/<block>/mcp");
   }
 
   // PARSED BEFORE THE NETWORK CALL. A mistyped argument object should cost nothing, and the

@@ -1,7 +1,7 @@
 # Provenance — skills/zz-access/SKILL.md, which states the order as a rule rather than as
 #   advice, because getting it wrong costs the window in which the token is still live:
 #     "If they think a token leaked, do not discuss it — revoke it first with
-#     `revoke_my_access_token`, confirm it is dead, then issue a replacement."
+#     `pat_revoke`, confirm it is dead, then issue a replacement."
 #   It also says what a token IS, which is why the order matters: "It acts as them — their
 #   identity, their teams". A leaked platform token is somebody else acting as this person
 #   until it is dead.
@@ -17,9 +17,12 @@
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   access-skill-fired  n/a  — with-only indicator, not scored. It says the plugin engaged.
-#   names-the-revoke-tool ~1.0 — `revoke_my_access_token` is a tool name that exists only
+#   names-the-revoke-tool ~1.0 — `pat_revoke` is a tool name that exists only
 #                                inside this plugin. The baseline arm cannot produce it.
-#   names-the-reissue-path ~0.9 — `issue_my_access_token` / `my_access_tokens`, same reason.
+#                                It was `revoke_my_access_token` until the /manage rename;
+#                                that tool was a duplicate of this one and was deleted, so
+#                                grading for it graded a tool no door registers.
+#   names-the-reissue-path ~0.9 — `pat_issue` / `pat_list`, same reason.
 #                                Slightly weaker only because the agent may stop at the kill
 #                                and leave the replacement for a follow-up turn.
 #   kills-it-first      0.00 — MEASURED, 3 runs per arm, 2026-09-13: with 0.67, without 0.67.
@@ -53,10 +56,10 @@ graders:
     tool: Skill
   - name: names-the-revoke-tool
     type: regex
-    pattern: 'revoke_my_access_token'
+    pattern: 'pat_revoke'
   - name: names-the-reissue-path
     type: regex
-    pattern: 'issue_my_access_token|my_access_tokens'
+    pattern: 'pat_issue|pat_list'
   - name: kills-it-first
     type: llm
     criteria: >

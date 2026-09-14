@@ -72,12 +72,12 @@
     "sha": "2469c2720bad"
   },
   "zz-access": {
-    "version": "2.1",
-    "sha": "08caf5051cdb"
+    "version": "2.2",
+    "sha": "29467f7264e8"
   },
   "zz-admin": {
-    "version": "2.1",
-    "sha": "6fd5f6827f61"
+    "version": "2.2",
+    "sha": "aee3c7a0c3f2"
   },
   "zz-plugin-define": {
     "version": "0.2",
@@ -104,8 +104,8 @@
     "sha": "17a22d12a50c"
   },
   "zz-backbone": {
-    "version": "3.28",
-    "sha": "0cf61db87967"
+    "version": "3.29",
+    "sha": "a1f5c0eb70bd"
   },
   "zz-doctor": {
     "version": "1.2",

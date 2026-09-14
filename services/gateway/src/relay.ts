@@ -20,7 +20,7 @@ import { requestBase } from "./identity.js";
 import { denialResponse, stageDenial } from "./stage-access.js";
 import { callerKey } from "./step-trace.js";
 
-export const HOP_HEADERS = new Set([
+const HOP_HEADERS = new Set([
   "host", "content-length", "connection", "keep-alive",
   "transfer-encoding", "upgrade", "proxy-authorization",
 ]);
@@ -45,7 +45,7 @@ export const NEVER_FORWARD = new Set(["authorization", "cookie", "proxy-authoriz
  * a THIRD PARTY, and its response is streamed to a browser session on our origin. A
  * compromised or merely careless block could set a cookie in the caller's context. Nothing
  * a block returns has any business establishing state with our client. */
-export const STRIP_RESPONSE = new Set([
+const STRIP_RESPONSE = new Set([
   "content-length", "transfer-encoding", "content-encoding", "connection",
   "set-cookie", "set-cookie2",
 ]);
@@ -84,7 +84,7 @@ export function relayBody(body: unknown, res: express.Response, what: string): v
 // blocked attempts count as further failures and it never closes.
 //
 // So a refusal we wrote to be READ — "you are acting for team 'x', which is not granted block
-// 'casebox' — your team 'y' is: switch_team to it" — never reached the agent at all. It arrived as a
+// 'casebox' — your team 'y' is: team_switch to it" — never reached the agent at all. It arrived as a
 // dead socket, the agent concluded the block was unreachable, and it told the person to
 // reconnect their credentials. That is the loop this platform has been stuck in: our clearest,
 // most actionable sentences were the ones most reliably converted into "please re-authenticate".
@@ -115,6 +115,61 @@ export function mcpRefusal(req: express.Request, res: express.Response, message:
 // /core/mcp — streaming pass-through to zz-core with the canonical
 // identity headers the middleware just rewrote. One host serves it all.
 export const CORE_URL = process.env.CORE_MCP_URL || "http://zz-core:8000/mcp";
+/** /eval/mcp — the evaluation door's upstream. THE SAME PROCESS, A SECOND PATH.
+ *
+ * zz-core mounts two MCP endpoints on one port: `/mcp` and `/eval-mcp`. So this is a second
+ * URL on the same host rather than a second service — no new container, no second copy of
+ * the "zz-core has no authentication of its own" premise, and one credential. A third
+ * service remains possible later; nothing here blocks it.
+ *
+ * Its own environment variable, because the two doors can be pointed at different hosts the
+ * day they stop being one process, and a caller that could only override both together would
+ * make that a code change rather than a deployment one. */
+export const EVAL_URL = process.env.EVAL_MCP_URL || "http://zz-core:8000/eval-mcp";
+
+/** Stream one MCP request through to zz-core, and answer a dead upstream with a SENTENCE.
+ *
+ * ONE FUNCTION, TWO DOORS. This was written inline for `/core/mcp`: header filtering, the
+ * two-minute timeout, the response-header strip and the guarded body relay. A second door
+ * written the same way is exactly the shape NEVER_FORWARD's comment above records — "the
+ * /core proxy remembered and the block proxy forgot, and there was nothing to notice the
+ * difference" — where one of two hand-maintained copies leaked the caller's PAT to a third
+ * party for however long it took somebody to look. Two doors, one body.
+ *
+ * `refusal` is per door and is not optional: a door that cannot say WHICH door failed sends
+ * the agent looking in the wrong place, and mcpRefusal exists because that sentence is the
+ * only thing the model ever receives — an HTTP error status reaches it as a dead transport
+ * and comes out as "please reconnect your credentials". */
+export function passThrough(
+  url: string, what: string, refusal: string,
+): (req: express.Request, res: express.Response) => void {
+  return (req, res) => {
+    void (async () => {
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(req.headers)) {
+        const lk = k.toLowerCase();
+        if (HOP_HEADERS.has(lk) || NEVER_FORWARD.has(lk)) continue;
+        if (typeof v === "string") headers[k] = v;
+        else if (Array.isArray(v)) headers[k] = v.join(", ");
+      }
+      const hasBody = req.method !== "GET" && req.method !== "DELETE";
+      const upstream = await fetch(url, {
+        method: req.method, headers,
+        body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
+        signal: req.method === "GET" ? undefined : AbortSignal.timeout(120_000),
+      });
+      res.status(upstream.status);
+      upstream.headers.forEach((v, k) => {
+        if (!STRIP_RESPONSE.has(k.toLowerCase())) res.setHeader(k, v);
+      });
+      relayBody(upstream.body, res, what);
+    })().catch((err: unknown) => {
+      console.error(`${what} failed:`, err);
+      mcpRefusal(req, res, refusal);
+    });
+  };
+}
+
 export async function proxy(req: express.Request, res: express.Response): Promise<void> {
   const platform = req.params.platform as string;
   const conf = PLATFORMS[platform];
@@ -200,8 +255,8 @@ export async function proxy(req: express.Request, res: express.Response): Promis
       mcpRefusal(req, res,
         `You are acting for team '${acting}', which is not granted block '${platform}'` +
         (elsewhere.length
-          ? ` — your team ${elsewhere.join(" or ")} is: switch_team to it, or a platform admin can grant_tool it to '${acting}'.`
-          : ` — a platform admin can grant_tool it.`) +
+          ? ` — your team ${elsewhere.join(" or ")} is: team_switch to it, or a platform admin can tool_grant it to '${acting}'.`
+          : ` — a platform admin can tool_grant it.`) +
         " Your credential is fine; this is a grant, not a sign-in.");
       return;
     }

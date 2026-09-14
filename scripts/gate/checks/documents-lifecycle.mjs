@@ -70,7 +70,7 @@ check("document_present returns a document, not a rendering or a summary", () =>
 
 check("an act and the act that undoes it are recorded the same way", () => {
   // auditAdmin takes an optional team, and the activity feed a team admin reads is scoped by
-  // it. issue_pat passed the bound team; revoke_pat did not — so a team saw a token appear
+  // it. pat_issue passed the bound team; pat_revoke did not — so a team saw a token appear
   // for them and never saw it withdrawn, with the gap falling on the half somebody checks
   // AFTER a leak. Every other paired act already recorded both halves the same way, which is
   // what made the one exception invisible: nothing was wrong anywhere else to compare it to.

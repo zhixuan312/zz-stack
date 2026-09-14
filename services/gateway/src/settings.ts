@@ -10,8 +10,8 @@
  * skipped, but a parameter that was never given a place to exist.
  *
  * SHARED FUNCTIONS, NOT REIMPLEMENTED ONES. The credential and access-token logic below
- * already exists as `/manage/mcp` tools in server.ts — `my_credentials`, `set_my_credential`,
- * `delete_my_credential`, `my_access_tokens`, `issue_my_access_token`, `revoke_my_access_token`
+ * already exists as `/manage/mcp` tools — `credential_list`, `credential_set`,
+ * `credential_delete`, `pat_list`, `pat_issue`, `pat_revoke`
  * — written for a caller that was always an agent holding a PAT. Rather than copy their
  * queries here (and have the two drift), server.ts hands this file the SAME functions
  * through `SettingsDeps`, passed into `mountSettings` as an argument rather than imported as
@@ -36,7 +36,7 @@
  * TASK I-14's team routes import `addMember`, `removeMember`, `installFlow` and
  * `uninstallFlow` from admin.js AS VALUES, unlike the `my_*` functions above — admin.ts
  * never imports this file, so there is no cycle here for dependency injection to avoid. Its
- * `teamAuthority` is imported the same way, so this file's team routes and add_member's own
+ * `teamAuthority` is imported the same way, so this file's team routes and member_add's own
  * `on conflict` insert both drive the identical check identity.ts computes; a re-implemented
  * comparison here would still pass the gate's own cases while quietly drifting from the real
  * rule. `set_team_credential`/`delete_team_credential`, though, live in server.ts — the
@@ -83,7 +83,7 @@ export interface SettingsDeps {
   revokeMyAccessTokenFor: (email: string, id: string, extraDetail?: Record<string, unknown>) => Promise<boolean>;
 }
 
-/** The caller's teams, and which one they act for — the same rule `my_teams` (server.ts)
+/** The caller's teams, and which one they act for — the same rule `team_mine` (server.ts)
  *  answers over MCP, pure enough (it only reads the `Identity` the middleware already
  *  resolved) to live here and be imported by server.ts rather than the other way round. */
 export function myTeamsSummary(id: Identity):
@@ -103,10 +103,10 @@ export function myTeamsSummary(id: Identity):
     actingFor: id.activeTeam,
     teams: teams.map((t) => ({ team: t.slug, role: t.role, active: t.slug === id.activeTeam })),
     ...(bound
-      ? { note: `Your token is BOUND to ${id.activeTeam}, so switch_team cannot move it. ` +
+      ? { note: `Your token is BOUND to ${id.activeTeam}, so team_switch cannot move it. ` +
                 `A token bound to a team is what makes it safe to leave running.` }
       : teams.length > 1
-      ? { note: `switch_team moves you to another one. You act for exactly one team at a ` +
+      ? { note: `team_switch moves you to another one. You act for exactly one team at a ` +
                 `time, so switching changes what every client shows you — including which ` +
                 `agents you have.` }
       : {}),
@@ -116,7 +116,7 @@ export function myTeamsSummary(id: Identity):
 export function mountSettings(app: Express, deps: SettingsDeps): void {
   /** Which platforms the caller has stored a personal key for — never the value, not even
    *  masked. `myCredentialsFor` returns the RAW keys (an agent-facing caller masks them;
-   *  server.ts's own `my_credentials` tool does exactly that) — this route instead reshapes
+   *  server.ts's own `credential_list` tool does exactly that) — this route instead reshapes
    *  them into `{ platform, api_key }` rows and lets `redact()` do the hiding, so the
    *  guarantee that a browser never sees a fragment of a key comes from the same field-name
    *  rule every other secret in this console goes through, rather than a second masking

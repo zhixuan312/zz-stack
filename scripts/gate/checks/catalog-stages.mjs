@@ -255,12 +255,12 @@ check("every door that asks what a team runs counts the flows they did not insta
   //   calls exactly this for each flow it is given, so the browser agent every account is
   //   meant to get could not be rendered at all.
   //
-  //   list_installs listed the flows a team CHOSE, while render_agent_definition's own
-  //   refusal pointed the reader at it: "list_installs shows what they do have". It showed
+  //   install_list listed the flows a team CHOSE, while render_agent_definition's own
+  //   refusal pointed the reader at it: "install_list shows what they do have". It showed
   //   what they picked. A silently partial answer is worse than a refusal, because the
   //   reader has no reason to look further.
   //
-  // flowsFor and list_catalog merge both sources and always did. The check is that every
+  // flowsFor and catalog_list merge both sources and always did. The check is that every
   // reader of flow_install does — autoFlows() is the merge, so a function that queries the
   // table for a team and never calls it is answering half the question.
   const src = readFileSync(join(root, "services/gateway/src/admin.ts"), "utf8");

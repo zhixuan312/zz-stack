@@ -57,7 +57,10 @@ probe("gateway /health", () => {
 // The one that catches the outage that has actually happened here. The MCP server is built per
 // request, so a throw at construction — a duplicate tool registration, a bad import — 500s
 // EVERY endpoint while /health stays perfectly green.
-for (const path of ["/core/mcp", "/manage/mcp"]) {
+// EVERY DOOR THIS GATEWAY SERVES, including the one added last. A door left out of this list
+// is a door whose failure to mount looks exactly like a healthy deployment: /health is green,
+// every other probe is green, and the only symptom is that one plugin's tools answer nothing.
+for (const path of ["/core/mcp", "/eval/mcp", "/manage/mcp"]) {
   probe(`MCP initialize ${path}`, () => {
     const c = code(["-H", `Authorization: Bearer ${token()}`, "-H", "content-type: application/json",
       "-H", "accept: application/json, text/event-stream", "-d", initFrame("doctor"), `${url()}${path}`]);

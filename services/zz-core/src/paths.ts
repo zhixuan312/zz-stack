@@ -41,7 +41,7 @@ export function titleSlug(title: string, fallback: string): string {
  * showed both. That is what `scope: "platform"` is for.
  *
  * The team that owns platform-scoped knowledge is the platform's own team, which
- * already exists and is already reserved: create_team refuses this slug precisely
+ * already exists and is already reserved: team_create refuses this slug precisely
  * so no tenant can claim it.
  *
  * Team-level knowledge is no longer a later decision: `scope: "team"` files a

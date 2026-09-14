@@ -268,7 +268,7 @@ export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): 
     // validating the input.
     `name: ${JSON.stringify(cmd)}`,
     // QUOTED WITH JSON.stringify, like the standalone command forty lines down. `agentName`
-    // is free text an admin types at install_flow — "what the team sees" — and it went into
+    // is free text an admin types at flow_install — "what the team sees" — and it went into
     // a hand-quoted YAML string. An agent called `My "Special" Agent` closed the quote early
     // and produced frontmatter the client cannot parse, so the command silently does not
     // exist and nothing says why.

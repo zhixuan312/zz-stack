@@ -173,12 +173,12 @@ check("every console write route records the door it came through", () => {
     "setMyCredentialFor", "deleteMyCredentialFor",
     "issueMyAccessTokenFor", "revokeMyAccessTokenFor",
     "disconnectBlock",
-    // Task I-14: team settings — add_member/remove_member/install_flow/uninstall_flow's own
+    // Task I-14: team settings — member_add/member_remove/flow_install/flow_uninstall's own
     // guarded bodies (admin.ts) and the *_team_credential tools' (server.ts), shared with
     // settings.ts's /team/* routes the same way the my_* functions above are.
     "addMember", "removeMember", "installFlow", "uninstallFlow",
-    // Task I-15: platform settings — add_person/deactivate_person/create_team/archive_team/
-    // grant_tool/revoke_tool's own guarded bodies (admin.ts), shared with settings.ts's
+    // Task I-15: platform settings — person_add/person_deactivate/team_create/team_archive/
+    // tool_grant/tool_revoke's own guarded bodies (admin.ts), shared with settings.ts's
     // /platform/* routes the same way the team-tier functions above are. `listPeople` is not
     // here — it is a read, and this check exists for writes that need a door recorded.
     "addPerson", "deactivatePerson", "createTeam", "archiveTeam", "grantTool", "revokeTool",

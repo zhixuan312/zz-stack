@@ -71,26 +71,40 @@ probe("every tool the source registers is on the live door", () => {
   // The initialize handshake first: the doors are stateless, but a server that throws at
   // construction answers the handshake with an error rather than a tool list, and "0 tools"
   // and "the server would not start" are different diagnoses.
-  const hello = mcp("/core/mcp", initFrame("doctor"));
-  if (hello.unreachable) return hello.unreachable;
-  if (hello.error) return `the door refused initialize: ${JSON.stringify(hello.error).slice(0, 200)}`;
+  // BOTH OF ZZ-CORE'S DOORS, AND THE UNION OF WHAT THEY SERVE. The service mounts two MCP
+  // endpoints — the gateway publishes them as /core/mcp and /eval/mcp — and `zzCoreTools()`
+  // below reads the whole of services/zz-core/src, so it declares the tools of both. Asking
+  // only the core door would therefore report the ten `plugin_*` tools as missing on every
+  // healthy deployment: three whole files at once, which is exactly the shape this probe
+  // treats as a dropped register call. A monitor that cries wolf on a correct release is worse
+  // than no monitor, because the next real one is read past.
+  const DOORS = ["/core/mcp", "/eval/mcp"];
+  const names = [];
+  for (const door of DOORS) {
+    const hello = mcp(door, initFrame("doctor"));
+    if (hello.unreachable) return `${door}: ${hello.unreachable}`;
+    if (hello.error) return `${door} refused initialize: ${JSON.stringify(hello.error).slice(0, 200)}`;
 
-  const live = mcp("/core/mcp", JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
-  if (live.unreachable) return live.unreachable;
-  const names = (live?.result?.tools ?? []).map((t) => t.name);
-  if (!names.length) return "the live door lists no tools at all — a door that failed to mount answers 200 with an empty list";
+    const live = mcp(door, JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
+    if (live.unreachable) return `${door}: ${live.unreachable}`;
+    const served = (live?.result?.tools ?? []).map((t) => t.name);
+    // Per door, not on the union: one door mounting empty is invisible in a union the other
+    // door fills, and an empty door is the failure this whole probe exists to catch.
+    if (!served.length) return `${door} lists no tools at all — a door that failed to mount answers 200 with an empty list`;
+    names.push(...served);
+  }
 
   // The source side, file by file, so the ANSWER names the module a missing tool came from —
-  // which is the whole diagnosis when a register<Door>Tools call is dropped from buildServer.
+  // which is the whole diagnosis when a register<Door>Tools call is dropped from a builder.
   const declared = zzCoreTools();
   const coreDoor = new Set(names);
-  // Only the tools this door is supposed to carry: /manage/mcp holds the rest, and its list is
+  // Only the tools zz-core is supposed to carry: /manage/mcp holds the rest, and its list is
   // the caller's role rather than a fixed set, so it is not comparable this way.
   const missing = declared.filter((t) => !coreDoor.has(t.name));
   const byFile = new Map();
   for (const t of missing) byFile.set(t.file, [...(byFile.get(t.file) ?? []), t.name]);
-  // A tool declared in source and absent from /core/mcp is normal — it may be a /manage door
-  // tool. What is NOT normal is a whole file's worth going missing at once, which is what a
+  // A tool declared in source and absent from BOTH zz-core doors is normal — it may be a
+  // /manage door tool. What is NOT normal is a whole file's worth going missing at once, which is what a
   // dropped register call looks like and what a per-tool comparison would drown in noise.
   //
   // WHAT THIS CANNOT SEE, said plainly because a proxy presented as a judge is the failure the
@@ -98,12 +112,17 @@ probe("every tool the source registers is on the live door", () => {
   // be dropped from buildServer and pass here. Every door module today holds several, so the
   // blind spot is empty rather than merely unlikely — but it is a property of the code, not of
   // the check, and the day somebody writes a one-tool door is the day this stops covering it.
+  // Nor can it see WHICH of zz-core's two doors a tool is on: the lists are unioned, so a tool
+  // that moved from one to the other reads as present. checks/eval-door.mjs holds that offline,
+  // against the builders themselves.
   const wholeFiles = [...byFile].filter(([file, ns]) =>
     ns.length === declared.filter((t) => t.file === file).length && ns.length > 1);
   return wholeFiles.length
-    ? `the live /core/mcp door carries ${names.length} tools and is missing EVERY tool from ` +
+    ? `zz-core's doors (${DOORS.join(", ")}) carry ${names.length} tools between them and are ` +
+      "missing EVERY tool from " +
       wholeFiles.map(([f, ns]) => `${f} (${ns.join(", ")})`).join("; ") +
-      " — that is the shape of a register call dropped from buildServer, not of a tool moved between doors"
+      " — that is the shape of a register call dropped from a builder. A tool MOVED between " +
+      "these two doors is invisible here, because both are asked and their lists are unioned."
     : null;
 });
 

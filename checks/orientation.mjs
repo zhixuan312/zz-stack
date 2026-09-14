@@ -22,10 +22,10 @@
 //   - Its identity-tool section asserted that three names appear somewhere in three files.
 //     All three already did before this task started. That clause could never have gone red.
 //
-// So instead: `coreServer` and `buildAccessServer` are the same functions the two services
-// mount, they are imported from dist and run, an `InMemoryTransport` pair carries a real
-// `initialize` and a real `tools/list` between a real `Client` and them, and every assertion
-// below is made against what that client received. `session_whoami` is CALLED, not read, so
+// So instead: `coreServer`, `buildEvalServer` and `buildAccessServer` are the same functions
+// the services mount, they are imported from dist and run, an `InMemoryTransport` pair carries
+// a real `initialize` and a real `tools/list` between a real `Client` and them, and every
+// assertion below is made against what that client received. `session_whoami` is CALLED, not read, so
 // the surviving pointer is asserted in the payload a client gets rather than in a word that
 // also appears in the comment explaining why the payload has it.
 //
@@ -36,10 +36,12 @@
 // our surface, it IS our surface, and it cannot drift from what we serve" — true of the
 // paragraph that describes it as well as of the row that records it.
 //
-// THAT CLAUSE IS THE CORE DOOR'S ONLY, and the asymmetry is deliberate rather than an
-// oversight. /manage is not noun-first: it serves list_catalog, connect_block,
-// set_my_credential and a dozen more verb-first names that Task I-22 renames. Holding its
-// paragraph to those prefixes would pin the exact vocabulary I-22 exists to remove and put a
+// THAT CLAUSE IS THE NOUN-FIRST DOORS' — the core door and the evaluation door — and the
+// asymmetry is deliberate rather than an
+// oversight. /manage WAS not noun-first: it served list_catalog, connect_block,
+// set_my_credential and a dozen more verb-first names until Task I-22 renamed them. Holding
+// its paragraph to those prefixes would have pinned the exact vocabulary I-22 removed, and the
+// clause stays off this door now because manage-surface.mjs owns that door's shape and put a
 // second copy of it in that task's path. So its instructions are held to everything else —
 // length, a self-contained first 512 naming its own orientation skill, a `NOT FOR:` line —
 // and its tool list is left to speak for itself. Each door's orientation skill is DERIVED and
@@ -131,6 +133,20 @@ try {
   fail.push(`the core door could not be built or connected: ${err?.message ?? err}`);
 }
 
+// ── The evaluation door, built the way zz-core mounts it ─────────────────────────────────
+//
+// ONE IMPORT AND NO MODULE SCAN, unlike the core door above, because eval-door.ts exports the
+// whole builder: it constructs its server, declares its own instructions and registers its own
+// tools, so the function this runs is the function `serveMcp` is handed. What that door SERVES
+// is checks/eval-door.mjs's subject; what it SAYS is this file's.
+let evalClient = null;
+try {
+  const { buildEvalServer } = await import("../services/zz-core/dist/eval-door.js");
+  evalClient = await connectTo(buildEvalServer());
+} catch (err) {
+  fail.push(`the evaluation door could not be built or connected: ${err?.message ?? err}`);
+}
+
 // ── The access door, built the way the gateway mounts it ─────────────────────────────────
 let manageClient = null;
 try {
@@ -140,16 +156,28 @@ try {
   fail.push(`the access door could not be built or connected: ${err?.message ?? err}`);
 }
 
-/** The tools a door actually serves, name -> description, as a client sees them. */
+/** The tools a door actually serves, name -> description, as a client sees them.
+ *
+ * GUARDED, BECAUSE A DOOR THAT SERVES NOTHING IS A STATE THIS FILE HAS A CONTROL FOR. A server
+ * with no tool registered never declares the `tools` capability, so the SDK answers
+ * `tools/list` with `-32601 Method not found` and the client THROWS — ending this check in a
+ * stack trace out of module scope instead of in the "served no tools — this scan is blind"
+ * line written for exactly that case. Measured while mutation-testing the evaluation door. */
 async function surfaceOf(client) {
-  const { tools } = await client.listTools();
-  return new Map(tools.map((t) => [t.name, t.description ?? ""]));
+  try {
+    const { tools } = await client.listTools();
+    return new Map(tools.map((t) => [t.name, t.description ?? ""]));
+  } catch {
+    return new Map();
+  }
 }
 const coreTools = coreClient ? await surfaceOf(coreClient) : new Map();
+const evalTools = evalClient ? await surfaceOf(evalClient) : new Map();
 const manageTools = manageClient ? await surfaceOf(manageClient) : new Map();
 // THE CONTROL. Every assertion below reads as satisfied against a door that serves nothing,
 // which is exactly the state a broken import produces.
 if (coreClient && coreTools.size === 0) fail.push("the core door served no tools — this scan is blind");
+if (evalClient && evalTools.size === 0) fail.push("the evaluation door served no tools — this scan is blind");
 if (manageClient && manageTools.size === 0) fail.push("the access door served no tools — this scan is blind");
 
 // ── 1. The pointer survives, in the payload rather than in the prose ─────────────────────
@@ -253,10 +281,25 @@ const DOORS = [
     // Noun-first, and its paragraph is held to the surface in both directions below.
     nouns: true, skill: pointsAt, skillAt: (s) => [`skills/${s}/SKILL.md`],
     mustName: ["session_whoami"] },
+  { name: "evaluation (/eval/mcp)", client: evalClient, tools: evalTools,
+    // Noun-first, like the core door and unlike /manage: every tool on it is `plugin_*`, so
+    // holding its paragraph to the prefixes it serves pins nothing that Task I-22's rename
+    // touches. It serves ONE noun today, which is exactly why the clause is worth keeping —
+    // the day an eleventh tool arrives under a second prefix, this paragraph goes red rather
+    // than quietly describing the door it used to be.
+    nouns: true, skill: entrySkillFor("/eval/mcp"),
+    // A SHELVED FLOW'S SKILLS ARE NOT IN `skills/`: this door's orientation skill ships inside
+    // the catalog entry of the flow that declares the door.
+    skillAt: (s) => catalogSkillPaths(s),
+    // Its own mount path, so the paragraph cannot be read as any door's; the OTHER door, since
+    // everyone holding this one also holds that one and "not here" needs somewhere to send
+    // them; and the tool that answers who is asking, which lives over there.
+    mustName: ["/eval", "/core", "session_whoami"] },
   { name: "access (/manage/mcp)", client: manageClient, tools: manageTools,
-    // NOT noun-first. It serves list_catalog, connect_block, set_my_credential and a dozen
-    // more verb-first names that Task I-22 renames; demanding its paragraph name `list_*` and
-    // `connect_*` would pin exactly the vocabulary that task exists to remove, and would put
+    // NOT noun-first when this clause was written: it served list_catalog, connect_block,
+    // set_my_credential and a dozen more verb-first names until Task I-22 renamed them.
+    // Demanding its paragraph name `list_*` and `connect_*` would have pinned exactly the
+    // vocabulary that task removed; manage-surface.mjs owns this door's shape, and would put
     // a second copy of every one of those names in its path.
     nouns: false, skill: entrySkillFor("/manage/mcp"),
     skillAt: (s) => catalogSkillPaths(s),
@@ -341,10 +384,15 @@ for (const { name: door, client, tools, nouns, skill, skillAt, mustName } of DOO
   }
 }
 
-// ── 3. The two doors are built by the functions this check built ─────────────────────────
+// ── 3. The doors are built by the functions this check built ─────────────────────────────
 //
 // The one seam a handshake cannot close. Everything above ran `coreServer` and
-// `buildAccessServer`; nothing above proves the SERVICES run them. Swapping either mount back
+// `buildAccessServer`; nothing above proves the SERVICES run them.
+//
+// THE EVALUATION DOOR'S HALF OF THIS SEAM IS checks/eval-door.mjs's, and deliberately not
+// repeated here: that file already compares zz-core's `serveMcp(app, "…", buildEvalServer)`
+// mount against the path the gateway's own `EVAL_URL` fetches, which is the same assertion
+// with a second half this file has no use for. Two files red for one cause teaches nothing. Swapping either mount back
 // to a bare `new McpServer(...)` would leave every assertion here green and every real client
 // with no instructions, so it is asserted on comment-stripped source — the whole reason
 // orientation.ts exists is that server.ts binds :8000 at module scope and cannot be imported.
@@ -378,9 +426,9 @@ if (gatewayCode && !/serveMcp\(app, "\/manage\/mcp", buildAccessServer\)/.test(g
 // not merged" is the half of this criterion that can be lost by accident, by a later task
 // tidying away what looks like a duplicate.
 const TRIO = [
-  ["session_whoami", coreTools, ["whoami", "my_teams", "today"]],
-  ["whoami", manageTools, ["session_whoami", "my_teams"]],
-  ["my_teams", manageTools, ["session_whoami", "whoami"]],
+  ["session_whoami", coreTools, ["whoami", "team_mine", "today"]],
+  ["whoami", manageTools, ["session_whoami", "team_mine"]],
+  ["team_mine", manageTools, ["session_whoami", "whoami"]],
 ];
 const descriptions = new Map();
 for (const [tool, tools, mustName] of TRIO) {
@@ -413,14 +461,16 @@ for (const p of new Set(blind)) {
                "passed on nothing. Point it at where it went.");
 }
 
-for (const c of [coreClient, manageClient]) { try { await c?.close(); } catch { /* closing is not the assertion */ } }
+for (const c of [coreClient, evalClient, manageClient]) { try { await c?.close(); } catch { /* closing is not the assertion */ } }
 
 if (fail.length) { console.error([...new Set(fail)].join("\n")); process.exit(1); }
 // WHAT WAS ACTUALLY ASSERTED, ON THE GREEN LINE — the doors by the tool counts a client saw,
-// and the two orientation skills by name, so a reader can tell at a glance whether this ran
+// and the three orientation skills by name, so a reader can tell at a glance whether this ran
 // against the surface they think it did.
-console.log(`orientation: ok — both doors introduce themselves at initialize: /core ` +
-            `(${coreTools.size} tools, names every noun it serves, points at ${pointsAt}) and ` +
+console.log(`orientation: ok — all three doors introduce themselves at initialize: /core ` +
+            `(${coreTools.size} tools, names every noun it serves, points at ${pointsAt}), ` +
+            `/eval (${evalTools.size} tools, names every noun it serves, points at ` +
+            `${entrySkillFor("/eval/mcp")}) and ` +
             `/manage (${manageTools.size} tools, points at ${entrySkillFor("/manage/mcp")}); ` +
             "the pointer survives in session_whoami's payload; and session_whoami, whoami " +
-            "and my_teams each name the other two.");
+            "and team_mine each name the other two.");

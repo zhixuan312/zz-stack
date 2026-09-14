@@ -107,7 +107,7 @@ export function operatorOnly(): string | null {
  * Returns the refusal, or null to proceed.
  *
  * The two person-facing setters each carried their own `key.length < 8`, and
- * admin_set_credential — the ONBOARDING BATCH path, the one that runs many at once with a
+ * credential_admin_set — the ONBOARDING BATCH path, the one that runs many at once with a
  * blank field scrolling past — had none. A blank key stores as "", and the resolver reads ""
  * as absent: the operator is told it worked and the person has no key at all, with nothing
  * anywhere saying so. When shared keys existed this was worse still — they fell through to
@@ -118,7 +118,7 @@ export function implausibleKey(key: string): string | null {
   return key.length < 8 ? "ERROR: that does not look like a valid key" : null;
 }
 /** Which platforms the caller has stored a personal key for — the raw values, keyed by
- *  platform. Never masked or redacted here: `my_credentials` (below) masks for an agent
+ *  platform. Never masked or redacted here: `credential_list` (below) masks for an agent
  *  that already holds the key; settings.ts's route redacts fully for a browser that must
  *  never see even a fragment of it. Presentation is the caller's job, not this function's. */
 export function myCredentialsFor(email: string): Record<string, string> {
@@ -134,7 +134,7 @@ export async function setMyCredentialFor(
   email: string, platform: string, apiKey: string, extraDetail: Record<string, unknown> = {},
 ): Promise<SetCredentialOutcome> {
   const conf = PLATFORMS[platform];
-  if (!conf) return { ok: false, error: `unknown platform '${platform}' — see list_platforms` };
+  if (!conf) return { ok: false, error: `unknown platform '${platform}' — see platform_list` };
   const key = apiKey.trim();
   const weak = implausibleKey(key);
   if (weak) return { ok: false, error: weak.replace(/^ERROR: /, "") };
@@ -198,7 +198,7 @@ export async function issueMyAccessTokenFor(
   if (!r.rows[0]) {
     return { ok: false, error:
       `${email} is not a platform member yet. Ask a platform admin to add you ` +
-      "(add_person, then add_member for your team) — a token can only carry access you have." };
+      "(person_add, then member_add for your team) — a token can only carry access you have." };
   }
   if (r.rows[0].status !== "active") return { ok: false, error: `${email} is deactivated` };
   const token = mintPat();

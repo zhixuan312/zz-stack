@@ -158,7 +158,7 @@ async function chainForTeam(team: string | null): Promise<Chain | null> {
       // off for a live team, with nothing anywhere saying so.
       //
       // Keeping the snapshot sounds like the safer half of the trade, and it is not: what it
-      // preserves is the shape of a flow as it was on the day somebody ran install_flow, and
+      // preserves is the shape of a flow as it was on the day somebody ran flow_install, and
       // what it costs is every rule added since. The registry row still records what was
       // installed and when; it is simply not the thing a write is judged against.
       // isFlow here too, and for the same reason as chainForFlow: an installed manifest

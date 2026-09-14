@@ -456,7 +456,7 @@ check("an MCP door is stateless, and never answers with an HTTP error status", (
   // Rule 2 — no HTTP error statuses on the doors. Measured on production over seven days:
   // 52 "Error POSTing", 28 "Failed to open SSE stream: Not Found", 12 "Bad Gateway", against
   // TEN credential_required calls in a fortnight. The gateway's 403s were the worst of it:
-  // "you are acting for team 'x', which is not granted block 'casebox' — switch_team to it" is an
+  // "you are acting for team 'x', which is not granted block 'casebox' — team_switch to it" is an
   // instruction the agent can follow, and it was being delivered as a transport failure, so
   // the agent told the person to reconnect their credentials instead.
   //

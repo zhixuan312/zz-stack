@@ -115,9 +115,9 @@ function boundMemberships<T extends { slug: string }>(
   if (!patTeam) return narrowed;
   // BOUND AND NOT A MEMBER IS REFUSED, whether or not they are in some OTHER team. This
   // asked `teams.length > 0` as well, so a person whose only team was the bound one — the
-  // exact state remove_member leaves behind — kept a working token that simply carried no
+  // exact state member_remove leaves behind — kept a working token that simply carried no
   // team. Every team-scoped door then refuses it and blocks answer 403, so it could do
-  // nothing; but remove_member tells the administrator the token "stops working now", and
+  // nothing; but member_remove tells the administrator the token "stops working now", and
   // for that person it did not. A token naming a team its holder is not in is a mistake in
   // both shapes, and the cheaper reading was the one that made the tool's own message false.
   return narrowed.length === 0 ? null : narrowed;
@@ -191,7 +191,7 @@ async function resolvePat(token: string): Promise<Identity | null> {
 
   // A team-bound token acts INSIDE that team and nowhere else.
   //
-  // The binding was recorded, reported by issue_pat as "(scope admin, team X)", and then
+  // The binding was recorded, reported by pat_issue as "(scope admin, team X)", and then
   // consulted in exactly one place: isTeamAdmin refused a mismatched team. Everything that
   // READS — the catalog listing, the installs, the knowledge store, which blocks are
   // granted — is scoped by `teams`, which came from the principal's full membership and had
@@ -550,7 +550,7 @@ export function auditAdmin(
 /** The one team-slug rule.
  *
  * A slug names a row in `team` AND a directory under the artifact store, so every reader
- * has to agree on it. There were three derivations of it: create_team's zod regex, kb.ts's
+ * has to agree on it. There were three derivations of it: team_create's zod regex, kb.ts's
  * TEAM_SLUG guarding the path, and a third inside the Open WebUI import that agreed with
  * neither. */
 export const TEAM_SLUG = /^[a-z0-9][a-z0-9_-]{1,63}$/;
@@ -558,7 +558,7 @@ export const TEAM_SLUG = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 /** The platform's own team — a tenant like any other, holding what the platform learns
  * about its own registry entries rather than about anybody's delivery.
  *
- * Reserved, not merely conventional: create_team refuses it, because a tenant holding this
+ * Reserved, not merely conventional: team_create refuses it, because a tenant holding this
  * slug would be writing into the platform's record and reading it. Seeded by the bootstrap
  * with the superadmin as its admin. */
 export const PLATFORM_TEAM = "zz-platform";

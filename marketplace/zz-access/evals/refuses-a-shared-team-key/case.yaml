@@ -4,7 +4,7 @@
 #     that is deliberate rather than missing."
 #     "Never tell somebody to wait for an admin to store a key for the team. Nobody can, and
 #     saying so leaves them waiting for something that is not coming."
-#   And the answer it offers instead: "Offer `connect_block`, which returns a link they open.
+#   And the answer it offers instead: "Offer `block_connect`, which returns a link they open.
 #   It takes one click, the block ends up holding a token that names them, and no secret
 #   passes through anybody's hands."
 #
@@ -21,10 +21,14 @@
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   access-skill-fired  n/a  — with-only indicator, not scored.
-#   offers-block-signin ~1.0 — `connect_block` is a tool name carried only by this plugin.
-#   names-the-per-person-tools ~0.8 — `set_my_credential` / `my_credentials`. The `my_`
-#                                prefix is the whole point and is plugin vocabulary; a
-#                                baseline agent inventing a name lands elsewhere.
+#   offers-block-signin ~1.0 — `block_connect` is a tool name carried only by this plugin.
+#   names-the-per-person-tools ~0.8 — `credential_set` / `credential_list`. That these are
+#                                PER-PERSON is the whole point, and the names are plugin
+#                                vocabulary; a baseline agent inventing a name lands
+#                                elsewhere. They were `set_my_credential` / `my_credentials`
+#                                until Task I-22, where the `my_` prefix that used to carry
+#                                "per-person" went with the noun-first rename — the fact the
+#                                grader measures is unchanged, the spelling is not.
 #   declines-the-shared-key ~0.9 — the discriminator. A baseline agent's default is to
 #                                explain how to provision a team service account and name an
 #                                admin. The plugin arm has to say plainly that nobody can do
@@ -46,10 +50,10 @@ graders:
     tool: Skill
   - name: offers-block-signin
     type: regex
-    pattern: 'connect_block'
+    pattern: 'block_connect'
   - name: names-the-per-person-tools
     type: regex
-    pattern: 'set_my_credential|my_credentials|list_platforms'
+    pattern: 'credential_set|credential_list|platform_list'
   - name: declines-the-shared-key
     type: llm
     criteria: >

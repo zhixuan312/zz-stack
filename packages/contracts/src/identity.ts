@@ -48,7 +48,7 @@ const one = (v: string | string[] | undefined): string =>
  * each carried `.trim().toLowerCase()` as a ritual and three forgot it — each of them then
  * comparing a lowercased value against this raw one, which is never equal for a caller whose
  * address has a capital in it. `initiativeNameTaken` read a person's own draft as somebody
- * else's and told them to open a second initiative; issue_pat and client_setup refused a
+ * else's and told them to open a second initiative; pat_issue and client_setup refused a
  * person their own token. All three were invisible because the database happens to hold
  * lowercase, so the defect waited on the one identity that does not come from it: the
  * forwarded caller a gateway with no platform database passes straight through, which is
@@ -103,7 +103,7 @@ export function actingTeam(
 /**
  * The platform's own credential: what a token IS, in one place.
  *
- * Four sites decided this independently. `issue_pat` and `client_setup` each wrote
+ * Four sites decided this independently. `pat_issue` and `client_setup` each wrote
  * `"zzp_" + randomBytes(24).toString("hex")`; deploy/issue-first-pat.sh writes the same
  * shape in shell, because it runs on a host with no toolchain and mints the very first
  * token there is; and provision-librechat READ one back out of an MCP answer with

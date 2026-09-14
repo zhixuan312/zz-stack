@@ -23,7 +23,8 @@ in front of you.
 
 ## Their platform access token
 
-`issue_my_access_token(label?)` mints it. Say these three things every time,
+`pat_issue(label?)` mints it — called with nothing but a label it issues YOUR
+own token, which is always allowed. Say these three things every time,
 because people learn them the hard way otherwise:
 
 1. **It is shown once.** It cannot be retrieved later; a lost token is
@@ -31,24 +32,31 @@ because people learn them the hard way otherwise:
 2. **It acts as them** — their identity, their teams, nothing more. It is
    not a shared key and must not be pasted into a shared place.
 3. **They can revoke it themselves**, immediately, with
-   `revoke_my_access_token`.
+   `pat_revoke(pat_id, confirm)`, where `confirm` repeats the id exactly.
 
-`issue_my_access_token` takes no expiry, and that is right for a person: their everyday
+Leave `expires_in_days` off for a person: their everyday
 token is open-ended and revoked when they no longer want it, which they can do themselves.
 
 **A token for automation is a different question.** Those can be issued to expire on their
 own, which matters because nobody is watching for the day a service account's token should
-have been revoked. That is `issue_pat`, an administrator's act — see `zz-admin`. If it is not
+have been revoked. That is `pat_issue`, an administrator's act — see `zz-admin`. If it is not
 in your list, say plainly that it needs an administrator rather than offering a personal
 token as a substitute: an open-ended token in a script is the thing that rule exists to
 prevent.
 
 Ask for a label that will still mean something in six months ("laptop —
-Claude Code" beats "test"). `my_access_tokens` lists theirs, masked, with
-when each was issued and last used.
+Claude Code" beats "test"). `pat_list()` lists theirs, masked, with
+when each was issued and last used — and it is where the id for a revocation
+comes from.
 
-**If they think a token leaked**, do not discuss it — revoke it first with
-`revoke_my_access_token`, confirm it is dead, then issue a replacement.
+**A label REPLACES.** Issuing a second token under a label somebody already
+has retires the first one. That is deliberate — a label names a purpose and a
+purpose has one current credential — but say so, because the token they were
+using stops working the moment you mint the replacement.
+
+**If they think a token leaked**, do not discuss it — find the id with
+`pat_list()`, revoke it first with `pat_revoke`, confirm it is dead, then
+issue a replacement.
 
 If they are not a platform member yet, the tool says so plainly. Tell them
 which admin to ask, and do not pretend a token could carry access they do
@@ -57,9 +65,9 @@ not have.
 ## Their keys for the building blocks
 
 Each block platform is called with the person's **own** key, never a shared
-service key. `list_platforms` shows which ones the platform can hold a key
-for; `set_my_credential` stores one; `my_credentials` confirms what is
-stored (masked); `delete_my_credential` removes it.
+service key. `platform_list` shows which ones the platform can hold a key
+for; `credential_set` stores one; `credential_list` confirms what is
+stored (masked); `credential_delete` removes it.
 
 **Never print a stored key back**, not even partially, not even when asked.
 If a key looks wrong, delete and re-store it rather than reading it out.
@@ -75,7 +83,7 @@ anyone who had never signed in. It also made "am I connected?" unanswerable — 
 no credential of their own looked connected because a colleague's key was carrying them.
 
 **So when somebody is blocked on a block they cannot reach, there is one answer and it is a
-better one: they sign in to that block as themselves.** Offer `connect_block`, which returns
+better one: they sign in to that block as themselves.** Offer `block_connect`, which returns
 a link they open. It takes one click, the block ends up holding a token that names them, and
 no secret passes through anybody's hands. Storing their own key stays available for a block
 that cannot offer sign-in.
@@ -89,8 +97,8 @@ Almost nothing on this platform takes a team argument: the store is per team, a 
 be per team, and the tools simply act. So a person in more than one team is always acting as
 exactly ONE of them, and they should be able to see which.
 
-- `my_teams` lists their teams and marks the active one.
-- `switch_team(team)` changes it, and only to a team they are actually in.
+- `team_mine` lists their teams and marks the active one.
+- `team_switch(team)` changes it, and only to a team they are actually in.
 
 **Say which team is active before they start work**, whenever they belong to more than one.
 Their documents land in that team's store and their block calls can spend that team's shared
@@ -102,8 +110,8 @@ ignored, check whether they are using one.
 
 ## For operators: acting on somebody else's behalf
 
-`admin_set_credential(user_email, platform, api_key)` stores a key for another person, and
-`admin_delete_credential(user_email, platform)` removes it. Superadmin only — if they are not
+`credential_admin_set(user_email, platform, api_key)` stores a key for another person, and
+`credential_admin_delete(user_email, platform)` removes it. Superadmin only — if they are not
 in your list, this section is not yours and you should say so rather than improvise. Both are
 recorded against the operator who ran them.
 
@@ -114,12 +122,12 @@ too, and say plainly that you have.
 
 ## Their client setup
 
-`my_client_setup(client)` prints the install for `claude-code`, `codex` or
+`client_setup(client)` prints the install for `claude-code`, `codex` or
 `hermes`: a few commands that fetch a small package built for that person —
 their MCP endpoints, one router skill, and (on Claude Code) one command per
 flow they have. It carries only the blocks their installed flows declare.
 
-Pair it with `issue_my_access_token`: the token is exported once as
+Pair it with `pat_issue`: the token is exported once as
 `ZZ_TOKEN` and the install writes it to `~/.zz/token`, mode 600. On Claude
 Code the plugin reads it at connect time, so **the token never enters a file
 they might commit**. Say that plainly — it is the reason we stopped handing
@@ -133,7 +141,7 @@ Three things to be clear about when they ask:
   platform while it runs — so a fix here is live on their next message. A
   flow their team runs ONLY in a terminal ships its skills as files, and a
   fix reaches them when they update that plugin and not before; nothing
-  warns them, because the old files go on working. `my_client_setup` names
+  warns them, because the old files go on working. `client_setup` names
   which of their flows are which and prints the update command for the ones
   that need it. Read it back to them rather than promising either one.
 - **`CLAUDE.md`, `AGENTS.md` and `SOUL.md` are not touched.** Those change
@@ -144,13 +152,13 @@ Three things to be clear about when they ask:
 
 ## What their team could run
 
-`list_catalog()` is the shelf: every flow this platform ships, what each one is
+`catalog_list()` is the shelf: every flow this platform ships, what each one is
 for, where it runs, and which ones this team already has. Show it when somebody
 asks "what else could we use?" — or when they describe a kind of work and there
 is a flow for it.
 
 **Browsing is theirs; installing is not.** Anyone may look; the act of installing
-belongs to a team admin, because it changes what a whole team runs. `install_flow`
+belongs to a team admin, because it changes what a whole team runs. `flow_install`
 is in your list only if you administer a team — and even then it is per team, so
 holding it says nothing about the team they are asking about. Answer the question,
 name the flow, and say who can turn it on.
@@ -172,21 +180,21 @@ reading the skill: those tools act on people who are not in the room.
 
 ## Connecting a block as yourself, instead of storing a key
 
-Some building blocks let a person sign in directly. When one does, `connect_block` with that
+Some building blocks let a person sign in directly. When one does, `block_connect` with that
 block's name returns a link: they open it, sign in to that block, choose which permissions to
 grant, and come back. After that their calls to that block are made **as them** — the block's own
 audit log names them, their own limits apply, and there is no key to create, paste or keep.
 
 Offer this first for a block that supports it. A stored key remains for the blocks that do not,
-and for unattended work, which has no person to delegate from — `set_my_credential`, and that is
+and for unattended work, which has no person to delegate from — `credential_set`, and that is
 the only one. Spell it exactly: this skill named a shorter form for a while that has never
 existed, which is how an agent comes to hunt for a tool the platform does not have and then
 reports that the platform cannot do it.
 
-If `connect_block` answers that the block publishes no authorization server, that is the honest
+If `block_connect` answers that the block publishes no authorization server, that is the honest
 answer rather than a fault: that block needs a stored key.
 
-**`disconnect_block(block)` is the other half, and it is the only thing that really revokes.**
+**`block_disconnect(block)` is the other half, and it is the only thing that really revokes.**
 It deletes that person's own delegated access, so the platform can no longer act as them at
 the block.
 
@@ -200,4 +208,4 @@ they haven't.
 They do not need it in order to RECONNECT. Connecting the block again from their client's MCP
 settings re-runs the block's own sign-in every time, so a fresh consent replaces whatever was
 stored.
-`disconnect_block` is for stopping, not for starting again.
+`block_disconnect` is for stopping, not for starting again.

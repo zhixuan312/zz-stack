@@ -213,7 +213,7 @@ const TEAM_AUTHORITY_CASES: TeamAuthorityCase[] = [
   {
     name: "a team admin on their own team",
     id: teamAdminOfP1, team: "team_one", expect: true,
-    why: "an admin of the team named is exactly who add_member, install_flow and their " +
+    why: "an admin of the team named is exactly who member_add, flow_install and their " +
          "console-side routes exist for",
   },
   {
@@ -266,7 +266,7 @@ const PLATFORM_AUTHORITY_CASES: PlatformAuthorityCase[] = [
   {
     name: "a superadmin",
     id: superadmin, expect: true,
-    why: "add_person, create_team and grant_tool all exist for exactly this caller",
+    why: "person_add, team_create and tool_grant all exist for exactly this caller",
   },
   {
     name: "a team admin",

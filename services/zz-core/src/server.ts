@@ -17,17 +17,15 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { addressResolver, peerAddress } from "@zz/contracts";
-import { serveMcp, serviceVersion, text } from "@zz/mcp-http";
+import { serveMcp, serviceVersion } from "@zz/mcp-http";
 import express from "express";
 
+import { OWN_TOOLS, recordingDoor } from "./door.js";
+import { buildEvalServer } from "./eval-door.js";
 import { reindexAllTeams } from "./indexing.js";
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
-import { Refusal } from "./refusal.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
-import { registerPluginEvalTools } from "./tools/plugin-eval.js";
-import { registerPluginJudgeTools } from "./tools/plugin-judge.js";
-import { registerPluginRecordTools } from "./tools/plugin-record.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
 import { registerInitiativeStatusTools } from "./tools/initiative-status.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
@@ -130,8 +128,22 @@ import { registerSkillTools } from "./tools/skills.js";
  * surface could be pointed at everybody except us.
  *
  * Every other block is measured by probing it, because its surface is somebody else's to
- * declare. Ours is declared right here, by the registerTool calls above — so this is not an
- * estimate of our surface, it IS our surface, and it cannot drift from what we serve.
+ * declare. Ours is declared by the registerTool calls themselves, on EVERY door this service
+ * serves: `recordingDoor` in door.ts is what both builders wrap their server in, and it adds
+ * each name to OWN_TOOLS at the moment that tool is declared. So this is not an estimate of
+ * our surface, it IS our surface, and it cannot drift from what we serve.
+ *
+ * TWO DOORS, ONE RECORD, AND THE LIMIT SAID OUT LOUD — IT IS WORSE THAN A GAP. Both doors are
+ * built below before this runs, so the set of NAMES is complete. What the record cannot express
+ * is which door a name is on: `zz.block_tool` is `(id, block_version_id, name, verdict, …)` and
+ * has no column for a door. `eval_block_surface` diffs a version's surface against the one
+ * before it — so when ten tools move from this door to the evaluation door, the recorded name
+ * set is IDENTICAL and the diff reports NO CHANGE across the largest surface change this
+ * platform has had. An instrument that answers "nothing moved" about the thing that moved is
+ * not merely silent, it is wrong in the direction nobody checks. Closing it needs a migration
+ * and a change to how the surface is recorded, it has to land after the doors stop moving, and
+ * it is TASK I-39. Written here rather than left implied, because the sentence above this one
+ * is a claim about accuracy and a claim like that has to carry its own exception.
  *
  * Recorded per SERVICE VERSION, which is what makes "what moved" answerable: two releases
  * leave two rows, and `eval_block_surface` diffs the newest against the one before. A version
@@ -165,60 +177,25 @@ async function recordOwnSurface(): Promise<void> {
   }
 }
 
-const OWN_TOOLS = new Set<string>();
-
 function buildServer(): McpServer {
   // WHAT THIS DOOR SAYS ABOUT ITSELF, from orientation.ts — the `instructions` a client is
   // handed at `initialize`, before it has called anything. It is constructed there rather
   // than inline here so that a check can build the same server and read the handshake back
   // through a real client; this file cannot be imported, because it binds :8000 below.
-  const server = coreServer(serviceVersion(import.meta.url));
-
-  // A THROWN `Refusal` BECOMES `text(message)`, FOR EVERY TOOL, IN ONE PLACE.
   //
-  // The SDK already catches whatever a handler throws and answers `isError: true` with the
-  // raw `Error#message` — so this is not a rescue from a crash, it is the difference between
-  // that generic shape and this file's own "ERROR: …" refusal shape, which is what every
-  // OTHER refusal in this file already returns and what the gateway's own refusal-counting
-  // (tool-telemetry's `/^ERROR\b/` check, knowledge_reconcile()'s comment about counting by refusal
-  // TEXT) already expects to see.
-  //
-  // Patched on the INSTANCE, not renamed at each of the 28 call sites below: a gate check
-  // (`a path is resolved before the document at it is judged`, scripts/gate.mjs) splits this
-  // file's source on the literal string `server.registerTool(` to find each tool's body, so
-  // every one of those call sites has to keep reading exactly that. The cast is confined to
-  // this one assignment; every `server.registerTool(name, config, cb)` call below is still
-  // checked against the SDK's own generic signature, because TypeScript resolves the call
-  // against the declared type of the property, not the value assigned to it at runtime.
-  type RegisterTool = typeof server.registerTool;
-  const rawRegisterTool: RegisterTool = server.registerTool.bind(server);
-  (server as unknown as { registerTool: RegisterTool }).registerTool = ((
-    name: string, config: unknown, cb: (...a: unknown[]) => unknown,
-  ) => {
-    // OUR OWN SURFACE, RECORDED AS IT IS DECLARED. Every other block is measured by probing
-    // it — we do not have to guess at ours, because this is the line that creates it.
-    OWN_TOOLS.add(name);
-    return rawRegisterTool(name, config as never, (async (...args: unknown[]) => {
-      try {
-        return await cb(...args);
-      } catch (err) {
-        if (err instanceof Refusal) return text(err.message);
-        throw err; // not ours to soften — a genuine bug stays exactly as loud as it is today
-      }
-    }) as never);
-  }) as RegisterTool;
-  // THE DOORS, in the order their tools are registered.
-  registerPluginEvalTools(server);
-  registerPluginJudgeTools(server);
-  registerPluginRecordTools(server);
+  // `recordingDoor` is what makes a thrown `Refusal` arrive in our refusal shape and what
+  // fills OWN_TOOLS as each tool is declared. It lives in door.ts because the evaluation
+  // door needs exactly the same thing and a second copy of it would drift — see that file.
+  const server = recordingDoor(coreServer(serviceVersion(import.meta.url)));
+  // THE TOOL MODULES THIS DOOR SERVES, in the order they are registered. The ten `plugin_*`
+  // tools are NOT among them any more: they are the zz-plugin-eval flow's own instrument and
+  // they are served by eval-door.ts, on the door that flow declares. This door is what every
+  // account on the platform carries, so what is registered here is what everybody gets.
   registerSkillTools(server);
   registerArtifactTools(server);
   registerKnowledgeTools(server);
   registerInitiativeStatusTools(server);
   registerInitiativeActTools(server);
-
-
-
   return server;
 }
 
@@ -284,16 +261,25 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "20mb" }));
 
 serveMcp(app, "/mcp", buildServer);
+// THE SECOND DOOR, on the same port and in the same process. The gateway publishes it as
+// /eval/mcp and forwards here; see eval-door.ts for why the ten `plugin_*` tools are behind a
+// door of their own rather than on the one every account carries.
+serveMcp(app, "/eval-mcp", buildEvalServer);
 app.listen(8000, "0.0.0.0", () => {
-  console.log("zz-core (TS) listening on :8000 (/mcp)");
+  console.log("zz-core (TS) listening on :8000 (/mcp /eval-mcp)");
   // The files are the truth and this index is derived, so it is rebuilt from them at boot.
   // Not awaited: the service serves while it runs, and a partial index beats a dead port.
   void reindexAllTeams().catch((err: unknown) => console.error("boot reindex failed:", err));
-  // ONE THROWAWAY SERVER, TO LEARN OUR OWN SURFACE. The doors are stateless, so buildServer
-  // runs per request and nothing had ever run it by the time the process was ready — leaving
-  // the set of registered names empty at exactly the moment we want to record it. Building one
-  // here fills it from the same code path every request uses, so what we record is what we
-  // serve rather than a second list that could disagree.
-  void (async () => { buildServer(); await recordOwnSurface(); })()
+  // ONE THROWAWAY SERVER PER DOOR, TO LEARN OUR OWN SURFACE. The doors are stateless, so a
+  // builder runs per request and nothing had ever run one by the time the process was ready —
+  // leaving the set of registered names empty at exactly the moment we want to record it.
+  // Building one of each here fills it from the same code path every request uses, so what we
+  // record is what we serve rather than a second list that could disagree.
+  //
+  // BOTH, NOT JUST THE FIRST. Our recorded surface is the whole platform's, and building only
+  // the core door would have recorded a platform that serves ten fewer tools than it does —
+  // `eval_block_surface('platform')` would then report ten tools DELETED in the release that
+  // merely moved them, which is worse than no measurement because it reads as a finding.
+  void (async () => { buildServer(); buildEvalServer(); await recordOwnSurface(); })()
     .catch((err: unknown) => console.error("surface record failed:", err));
 });

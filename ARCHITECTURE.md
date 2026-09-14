@@ -261,7 +261,7 @@ flow; all three evaluation-track packages declare both, so one field cannot carr
 
 ### The generated router assumes a flow
 
-`install_flow` writes a system prompt: the package's own `agents/<name>/system-prompt.md` if it
+`flow_install` writes a system prompt: the package's own `agents/<name>/system-prompt.md` if it
 has one, otherwise a generated router. The generated router ends every agent with
 `skill_read("<entry>")` and describes running a flow for a team.
 

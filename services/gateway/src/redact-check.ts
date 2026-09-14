@@ -7,8 +7,8 @@
  *   npm run check:redaction      # exits non-zero on failure, like every engine here
  *
  * Every CASE below is a settings shape modelled on a REAL tool response in server.ts —
- * my_credentials, set_my_credential, set_team_credential, admin_set_credential,
- * delete_my_credential, my_access_tokens, issue_my_access_token, my_client_setup. Each
+ * credential_list, credential_set, credential_admin_set, credential_delete,
+ * pat_list, pat_issue, client_setup. Each
  * case names the secret values it plants and the metadata it expects
  * back untouched, and `check()` asserts both against the REAL `redact`, driven through the
  * REAL `looksSecret`/`SECRET_NAME_PARTS` field rule exported from redact.ts — never a copy
@@ -64,7 +64,7 @@ const ROOT = "root@example.com";
 
 const CASES: Case[] = [
   {
-    name: "my_credentials — a list of platforms, each with a live personal key",
+    name: "credential_list — a list of platforms, each with a live personal key",
     build: () => [
       { platform: "github", api_key: "ghp_1234567890abcdefGHJK", set_at: "2026-01-01T00:00:00Z", set_by: ALICE },
       { platform: "gitlab", api_key: "glpat-zzzzzzzzzzzzzzzzzzzz", set_at: "2026-02-02T00:00:00Z", set_by: ALICE },
@@ -76,7 +76,7 @@ const CASES: Case[] = [
          "show; the key itself is exactly what it must never receive",
   },
   {
-    name: "set_my_credential — echoes the key just stored and the one it replaced",
+    name: "credential_set — echoes the key just stored and the one it replaced",
     build: () => ({
       platform: "github", stored: true,
       key: "ghp_brandnewvalue00000001", replaced_key: "ghp_oldvalue000000000002",
@@ -85,12 +85,12 @@ const CASES: Case[] = [
     secrets: ["ghp_brandnewvalue00000001", "ghp_oldvalue000000000002"],
     metadataPaths: ["platform", "stored", "set_by", "set_at"],
     redactedPaths: [{ path: "key", present: true }, { path: "replaced_key", present: true }],
-    why: "server.ts's own set_my_credential answer names the replaced key so an overwrite " +
+    why: "credential_set's own answer names the replaced key so an overwrite " +
          "is not silent — both the new and the replaced value must be caught, not only the " +
          "field literally named 'key'",
   },
   {
-    name: "set_team_credential / admin_set_credential — team-scoped, admin-set",
+    name: "credential_admin_set — a key stored on somebody else's behalf",
     build: () => ({
       team: "team_one", platform: "openai", api_key: "sk-liveabcdefghijklmno",
       set_by: ROOT, set_at: "2026-03-02T00:00:00Z",
@@ -102,7 +102,7 @@ const CASES: Case[] = [
          "operator identity are metadata regardless of who made the call",
   },
   {
-    name: "delete_my_credential — no secret in the response at all",
+    name: "credential_delete — no secret in the response at all",
     build: () => ({ platform: "github", deleted: true, deleted_by: ALICE, deleted_at: "2026-03-03T00:00:00Z" }),
     secrets: [],
     metadataPaths: ["platform", "deleted", "deleted_by", "deleted_at"],
@@ -111,14 +111,14 @@ const CASES: Case[] = [
          "that leaks — this proves the pass-through path changes nothing",
   },
   {
-    name: "my_access_tokens / list_pats — PAT rows, plus a field nobody named yet",
+    name: "pat_list — PAT rows, plus a field nobody named yet",
     build: () => [
       { id: "11111111-1111-1111-1111-111111111111", label: "laptop", scope: "member",
         team: null, created_at: "2026-01-01T00:00:00Z", last_used_at: null, revoked_at: null },
       { id: "22222222-2222-2222-2222-222222222222", label: "ci", scope: "member",
         team: "team_one", created_at: "2026-01-02T00:00:00Z",
         last_used_at: "2026-02-01T00:00:00Z", revoked_at: "2026-02-15T00:00:00Z",
-        // list_pats's real query never selects this — but nothing in the TYPE SYSTEM stops
+        // pat_list's real query never selects this — but nothing in the TYPE SYSTEM stops
         // a future column from being added to the select list without anyone deciding
         // whether it is safe to show. That is exactly the case this file exists to prove:
         // the field rule catches it on NAME alone, with no update to redact.ts required.
@@ -130,12 +130,12 @@ const CASES: Case[] = [
       "1.id", "1.label", "1.scope", "1.team", "1.created_at", "1.last_used_at", "1.revoked_at",
     ],
     redactedPaths: [{ path: "1.token_hash", present: true }],
-    why: "list_pats and my_access_tokens never select a hash today, but a check that only " +
+    why: "pat_list never selects a hash today, but a check that only " +
          "drove today's exact query would still pass the day someone adds one without " +
          "deciding — this is the fail-closed property, exercised rather than asserted",
   },
   {
-    name: "issue_my_access_token's shape, run through redact anyway",
+    name: "pat_issue's shape, run through redact anyway",
     build: () => ({ token: "zzpat_live_abcdefghijklmnopqrstuvwxyz", label: "laptop", email: ALICE }),
     secrets: ["zzpat_live_abcdefghijklmnopqrstuvwxyz"],
     metadataPaths: ["label", "email"],
@@ -148,7 +148,7 @@ const CASES: Case[] = [
          "for it to have used instead",
   },
   {
-    name: "my_client_setup — a live bearer token nested three levels deep in client config",
+    name: "client_setup — a live bearer token nested three levels deep in client config",
     build: () => ({
       mcpServers: {
         "zz-gateway": {

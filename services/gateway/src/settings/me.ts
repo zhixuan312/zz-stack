@@ -85,7 +85,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
     });
   });
 
-  /** Change which of the caller's own teams they act for (← the console's own switch_team).
+  /** Change which of the caller's own teams they act for (← the console's own team_switch).
    *
    * IT IS THE SAME SWITCH, not a second notion of one. `principal.active_team_id` is what
    * `chosenTeam` (identity.ts) reads on every request, so moving it here moves the browser,
@@ -102,7 +102,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
    * different claim that nothing on this console needs to make.
    *
    * A BOUND TOKEN IS REFUSED RATHER THAN SILENTLY IGNORED. `myTeamsSummary` already tells
-   * the caller their token is bound and that switch_team cannot move it; writing
+   * the caller their token is bound and that team_switch cannot move it; writing
    * active_team_id under a bound token would succeed in the database and change nothing
    * they can see, which is worse than saying no.
    */
@@ -236,7 +236,7 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
   });
 
   /** Start signing in to a building block AS the caller — the browser counterpart of
-   *  `connect_block` (server.ts). Not logged with `via: "web"`: `connect_block` itself logs
+   *  `block_connect` (server.ts). Not logged with `via: "web"`: `block_connect` itself logs
    *  nothing either, because nothing has actually happened to the caller's access yet — the
    *  block only records them once they finish the flow at its own consent screen, and that
    *  happens at `block-oauth.ts`'s public `/oauth/:block/callback`, outside this console

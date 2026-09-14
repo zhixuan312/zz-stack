@@ -1,40 +1,242 @@
-// 30 tools, 16 for a member, three duplicates gone, one exception kept.
-import { readFileSync } from "node:fs";
+// The /manage door: 30 tools, cut by role into 16 / +4 / +10, three duplicates gone,
+// one exception kept.
+//
+// WHAT THE PLAN'S DRAFT OF THIS FILE COULD NOT SEE, measured against untouched code before a
+// line was changed. Three holes, all of which let a wrong implementation pass:
+//
+//  1. Its description scan was `registerTool\(\s*\n?\s*"name"[\s\S]{0,80}?description:`, and 80
+//     characters cannot span the comment block that sits between the name and `description:`
+//     on this door — which is most of the interesting tools, because a tool with a subtle
+//     reason to exist is exactly the one whose registration carries a note. Six of the 33 were
+//     never scanned at all: disconnect_block, my_teams, whoami, deactivate_person,
+//     list_catalog and my_client_setup. my_teams' text contained no "when", no "return" and no
+//     "refus" and would have produced three failures; it produced none. A CHECK THAT SILENTLY
+//     SKIPS IS WORSE THAN ONE THAT IS MERELY WEAK: a weak check fails honestly on what it
+//     examines, while a silent-skip reports success on what it never looked at. So the rule
+//     here is that the set of tools with a captured description must EQUAL the set of
+//     registrations, and the difference is named.
+//
+//  2. Its header said "16 for a member" and it asserted nothing whatever about visibility. The
+//     role split is the substance of AC-2.29 — it is what "a member sees exactly the 16 the
+//     spec froze" means — and it was the one property the check did not look at. Every
+//     registration's gate is parsed here and pinned per tier, in BOTH directions: a member must
+//     not see the other fourteen, and a superadmin must still see all thirty.
+//
+//  3. Its deletion test asked whether three names appear among the registrations IN THESE THREE
+//     FILES. An implementation that moved `issue_my_access_token` into settings.ts, or left it
+//     registered on another door, passes that. Absence is asserted here over every service and
+//     package, with comments stripped, because a comment recording what a tool used to be is
+//     history and this repository's files legitimately carry a lot of it.
+//
+// THE COUNT IS 30 AND NOT THE 31 THE PLAN ASKED FOR. The 31st was `knowledge_reindex`
+// "arriving from the core door", which the plan assigns to Task I-18, not to I-22. I-18
+// delivered two of its three tools and left `knowledge_reindex` on /core, because moving it
+// needs `reindexTeam` and `indexDoc` extracted into a package the gateway can depend on, and
+// the gateway has no indexer. That extraction is TASK I-38, which is real and assigned: it was
+// opened against this initiative after I-18 hit the blocker, so it postdates plan.md and
+// grepping the plan's 37 tasks for it correctly finds nothing. See checks/core-surface-19.mjs,
+// which pins `knowledge_reindex` as a name the core door still serves and is registered and
+// green — accurate today, and I-38 is what changes it.
+//
+// Asserting 31 here would make this check red for a reason that is not
+// this task's, which is how a gate teaches people to read past it. When that move lands, the
+// name joins SUPER below AND the `expected` set beside it — `knowledge_reindex` is a
+// TOOL_ALIAS value, not a MANAGE_ALIAS one, because the old name lived on /core — and the
+// total becomes 31.
+//
+// WHY THE THIRTY NAMES ARE DERIVED AND THE THREE TIERS ARE NOT. The name set is
+// `Object.values(MANAGE_ALIAS)` plus `whoami`, so it is the frozen rename table itself rather
+// than a list anybody maintains: add an entry to the table without renaming the tool and this
+// goes red on its own. The tiers cannot be derived — the spec froze "16 for a member" as a
+// number and never enumerated them — so they are written out below, and their union is
+// asserted against the derived set, which is what stops a name being quietly moved between
+// tiers to make the numbers work.
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { MANAGE_ALIAS } from "../packages/contracts/dist/index.js";
-const fail = [];
-const files = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
-               "services/gateway/src/admin/flows.ts"];
-const all = files.map((f) => readFileSync(f, "utf8")).join("\n");
-const names = [...all.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
 
-if (names.length !== 31) fail.push(`/manage registers ${names.length} tools, expected 31`);
-for (const gone of ["issue_my_access_token", "my_access_tokens", "revoke_my_access_token"]) {
-  if (names.includes(gone)) fail.push(`${gone} is a duplicate and must be deleted`);
+const fail = [];
+const FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
+               "services/gateway/src/admin/flows.ts"];
+
+/** Source with comments removed. Not for the description scan — a description is a string
+ *  literal and survives this — but for every question of the form "is this name still HERE",
+ *  where a note explaining what something used to be called is an answer of "no". */
+const decomment = (src) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+// ── every registration, with the role gate that gates it ────────────────────────────────
+//
+// The gate is the text between the start of the line and `server.registerTool`, and it must be
+// EXACTLY one of three forms. Anything else — `if (!sup)`, `if (sup || lead)`, a gate computed
+// somewhere else — is a failure rather than a shrug, because the alternative is reading an
+// unrecognised gate as "ungated" and reporting a member who can see the whole door as correct.
+const GATES = { "": "member", "if (sup) ": "sup", "if (lead) ": "lead" };
+const registered = new Map();   // name -> tier
+for (const f of FILES) {
+  const src = decomment(readFileSync(f, "utf8"));
+  // The name is matched permissively and JUDGED after, not matched by the shape it is
+  // supposed to have. A `[a-z0-9_]+` pattern does not fail on `credential_admin_DELETE` — it
+  // fails to MATCH it, and a registration the scan never saw is a registration it vouches for.
+  for (const m of src.matchAll(/^[ \t]*(.*?)server\.registerTool\(\s*\n?\s*"([^"]+)"/gm)) {
+    const [, prefix, name] = m;
+    if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+      fail.push(`${JSON.stringify(name)} is registered on /manage and is not a lowercase snake_case name`);
+    }
+    const tier = GATES[prefix];
+    if (tier === undefined) {
+      fail.push(`${name} is registered behind an unrecognised gate ${JSON.stringify(prefix)} — ` +
+                "this check cannot tell who sees it, so it will not vouch for the door");
+      continue;
+    }
+    if (registered.has(name)) fail.push(`${name} is registered twice on /manage`);
+    registered.set(name, tier);
+  }
 }
+
+// ── the three tiers the spec froze ──────────────────────────────────────────────────────
+//
+// DERIVED, and here is the derivation, because the spec froze "16 for a member" as a NUMBER and
+// never enumerated it: a member sees every ungated registration, which is the nine in
+// access-door.ts, the six in admin.ts, and catalog_list in admin/flows.ts. A lead adds the four
+// `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts and the two
+// in access-door.ts. The numbers are not asserted against themselves — counting a list this file
+// also wrote proves nothing. What carries the weight is the set equality below, against the gates
+// parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
+const MEMBER = ["block_connect", "block_disconnect", "platform_list", "team_mine", "team_switch",
+                "credential_set", "credential_list", "credential_delete", "client_setup",
+                "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list", "install_list",
+                "catalog_list"];
+const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
+const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
+               "team_create", "team_archive", "tool_grant", "tool_revoke",
+               "credential_admin_set", "credential_admin_delete"];
+
+// The tiers and the frozen table have to describe the same door. Without this, a name could be
+// dropped from a tier and from the rename table together and every count below would agree.
+const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami"]);
+const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
+for (const n of expected) {
+  if (!tiered.has(n)) fail.push(`${n} is a current /manage name and no tier above claims it`);
+}
+for (const n of tiered) {
+  if (!expected.has(n)) fail.push(`${n} is in a tier above and is not a name MANAGE_ALIAS produces`);
+}
+
+// ── what each role actually sees ────────────────────────────────────────────────────────
+//
+// BOTH DIRECTIONS, per tier. Asserting only that a member sees the sixteen passes a door that
+// shows a member everything; asserting only that a superadmin sees thirty passes a door that
+// shows a member everything too. So each tier is checked as a set equality against what the
+// gates say, and the sets are named in the failure rather than counted.
+const visibleTo = (role) => new Set([...registered.entries()]
+  .filter(([, tier]) => tier === "member" || (role === "sup") ||
+                        (role === "lead" && tier === "lead"))
+  .map(([n]) => n));
+
+const tierSets = [
+  ["a member", visibleTo("member"), new Set(MEMBER)],
+  ["a team lead", visibleTo("lead"), new Set([...MEMBER, ...LEAD])],
+  ["a superadmin", visibleTo("sup"), new Set([...MEMBER, ...LEAD, ...SUPER])],
+];
+for (const [who, got, want] of tierSets) {
+  const extra = [...got].filter((n) => !want.has(n));
+  const missing = [...want].filter((n) => !got.has(n));
+  if (extra.length) fail.push(`${who} is offered ${extra.sort().join(", ")}, which that role does not carry`);
+  if (missing.length) fail.push(`${who} is not offered ${missing.sort().join(", ")}`);
+  if (!extra.length && !missing.length && got.size !== want.size) {
+    fail.push(`${who} sees ${got.size} tools, expected ${want.size}`);
+  }
+}
+
+if (registered.size !== 30) {
+  fail.push(`/manage registers ${registered.size} tools, expected 30 ` +
+            `(33 today, minus the 3 duplicates). Registered: ${[...registered.keys()].sort().join(", ")}`);
+}
+
+// ── the three duplicates, absent EVERYWHERE and not merely here ─────────────────────────
+//
+// Each is the same act as a survivor called with no arguments — `issue_my_access_token` is
+// `pat_issue`, `my_access_tokens` is `pat_list`, `revoke_my_access_token` is `pat_revoke`, and
+// admin.ts already lets a token's owner revoke it. They take no MANAGE_ALIAS entry on purpose:
+// folding them onto the survivors would merge two genuinely distinct telemetry series.
+const walk = (d, out = []) => {
+  for (const e of readdirSync(d)) {
+    if (["node_modules", "dist", ".git"].includes(e)) continue;
+    const p = join(d, e);
+    if (statSync(p).isDirectory()) walk(p, out);
+    else if (/\.(ts|mjs|js)$/.test(p)) out.push(p);
+  }
+  return out;
+};
+const GONE = ["issue_my_access_token", "my_access_tokens", "revoke_my_access_token"];
+let scanned = 0;
+for (const f of [...walk("services"), ...walk("packages")]) {
+  const src = decomment(readFileSync(f, "utf8"));
+  scanned++;
+  for (const gone of GONE) {
+    if (new RegExp(`\\b${gone}\\b`).test(src)) {
+      fail.push(`${f} still names ${gone}, a duplicate this task deleted`);
+    }
+  }
+}
+// A scan that reads nothing reports no failures, which is indistinguishable from a clean tree.
+if (scanned < 50) fail.push(`the deletion scan read only ${scanned} files; it is looking in the wrong place`);
+
+// ── no old name survives, and the shape holds ───────────────────────────────────────────
 for (const old of Object.keys(MANAGE_ALIAS)) {
-  if (names.includes(old)) fail.push(`${old} was not renamed`);
+  if (registered.has(old)) fail.push(`${old} was not renamed — MANAGE_ALIAS says ${MANAGE_ALIAS[old]}`);
 }
 const NOUNS = ["person", "team", "member", "pat", "flow", "install", "tool",
                "enrolment", "block", "platform", "credential", "client", "catalog", "knowledge"];
-for (const n of names) {
+for (const n of registered.keys()) {
   if (n === "whoami") continue;                       // the one exception, deliberately kept
   if (!NOUNS.some((x) => n.startsWith(`${x}_`))) fail.push(`${n} does not start with a noun`);
 }
 // Control: whoami must still be here. A convention sweep that renamed it broke the exception.
-if (!names.includes("whoami")) fail.push("whoami was renamed; it is the shape's one exception");
-// AC-2.13: every description on this door says when / returns / refuses.
-for (const f of files) {
+if (!registered.has("whoami")) fail.push("whoami was renamed; it is the shape's one exception");
+
+// ── AC-2.13: every description says when / returns / refuses ────────────────────────────
+//
+// The scan takes the whole registration block and strips ITS comments, so the distance between
+// the name and `description:` stops mattering. Then the two name sets are compared, because the
+// failure this replaces was silence about the tools it never reached.
+const described = new Set();
+for (const f of FILES) {
   const src = readFileSync(f, "utf8");
-  for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"[\s\S]{0,80}?description:\s*([\s\S]{0,1200}?)(inputSchema|\}\s*,)/g)) {
-    const [, tool, desc] = m;
+  for (const m of src.matchAll(/server\.registerTool\(\s*\n?\s*"([^"]+)"([\s\S]*?)inputSchema:/g)) {
+    const [, tool, body] = m;
+    const d = decomment(body);
+    const at = d.indexOf("description:");
+    if (at < 0) continue;                         // reported below as an uncovered tool
+    const desc = d.slice(at);
+    described.add(tool);
     if (!/when\b/i.test(desc)) fail.push(`${tool}'s description does not say WHEN it is called`);
     if (!/return|comes back|answers/i.test(desc)) fail.push(`${tool}'s description does not say what it RETURNS`);
     if (!/refus|reject|never|cannot/i.test(desc)) fail.push(`${tool}'s description does not say what it REFUSES`);
   }
 }
-// The stale count comment is gone rather than corrected.
-if (/twenty tools|thirty-four/i.test(readFileSync(files[0], "utf8"))) {
-  fail.push("access-door.ts still states a hand-maintained tool count");
+for (const n of registered.keys()) {
+  if (!described.has(n)) {
+    fail.push(`${n} is registered and this check captured no description for it — ` +
+              "the scan is blind here, and a blind scan reports a clean subset as a clean whole");
+  }
 }
+
+// ── no hand-maintained count describing the surface, in any of the three ────────────────
+//
+// Deleted rather than corrected: access-door.ts claimed 20/34 against a real 19/33, and
+// admin.ts claimed "all twenty tools" and "twenty-eight refusals" beside it. Task I-33 derives
+// the number; the numbers this door has live in this file, where they are measured.
+const WORDS = "(twenty|thirty|forty|eight|nineteen|sixteen|fourteen|thirty-four|twenty-eight)";
+for (const f of FILES) {
+  const src = readFileSync(f, "utf8");
+  const m = src.match(new RegExp(`\\b${WORDS}[- ](tools|refusals)\\b|\\b${WORDS}\\s+tools\\b`, "i"));
+  if (m) fail.push(`${f} still states a hand-maintained tool count: ${JSON.stringify(m[0])}`);
+}
+
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
-console.log("manage surface: ok");
+console.log(`manage surface: ok — 30 tools, ${MEMBER.length} for a member, ` +
+            `+${LEAD.length} for a lead, +${SUPER.length} for a superadmin; ` +
+            `${GONE.length} duplicates absent from ${scanned} files; ` +
+            `${described.size} descriptions read`);

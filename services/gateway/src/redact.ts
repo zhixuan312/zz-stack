@@ -2,8 +2,8 @@
  * The response redactor (← Task I-12, AC-4).
  *
  * WHY THIS EXISTS: the credential store is a plaintext JSON file at /data/credentials.json
- * (see server.ts, CRED_PATH). Its `my_*` tools — my_credentials, set_my_credential,
- * my_access_tokens, issue_my_access_token, my_client_setup, and their team/admin siblings —
+ * (see server.ts, CRED_PATH). Its credential and token tools — credential_list,
+ * credential_set, pat_list, pat_issue, client_setup, and their admin siblings —
  * were written for a caller that was always an AGENT holding a PAT, never a web page. Tasks
  * I-13 to I-15 put those same capabilities behind browser routes, and the risk changes
  * completely when the caller is a page that can be left open on a shared screen,
@@ -36,9 +36,9 @@
  * combined with anything else to get closer to the value" — a browser tab is read by
  * screenshot, not by someone trying to brute-force the rest from four known characters, but
  * this module does not get to assume that about every future reader of what it returns. What
- * a page's viewer actually needs is answered by list_pats's own precedent: enough to CONFIRM
+ * a page's viewer actually needs is answered by pat_list's own precedent: enough to CONFIRM
  * a value is set and tell it apart from another (an id, a label, a scope, a team, when it was
- * set, by whom) — never a piece of the value itself, because list_pats never had one to leak
+ * set, by whom) — never a piece of the value itself, because pat_list never had one to leak
  * in the first place; the plaintext token was never in the row it queries. This module holds
  * to the same bar for a value it DOES have in hand: a presence flag, a length, and a SHA-256
  * fingerprint truncated to 12 hex characters. A fingerprint is one-way — it identifies "is
@@ -46,7 +46,7 @@
  * something) without being a step towards reconstructing it, which four real characters
  * always are.
  *
- * THE ONE EXCEPTION: a single newly-issued access token, from issue_my_access_token's browser
+ * THE ONE EXCEPTION: a single newly-issued access token, from the browser
  * counterpart (I-13). It is shown exactly once and is useless to the platform forever after,
  * so redacting it would not protect anything — it would just break the one response whose
  * entire purpose is handing over a secret the caller asked for. That route MUST return the
@@ -177,7 +177,7 @@ function walk(value: unknown, seen: WeakSet<object>): unknown {
  * function can decide. That is a deliberate limitation, not a gap: every route this module
  * protects returns a structured object or array of them, never a naked string, and the
  * design requirement this shape enforces is exactly "build the response as named fields
- * before it reaches this function" — the same discipline list_pats already follows.
+ * before it reaches this function" — the same discipline pat_list already follows.
  */
 export function redact(value: unknown): unknown {
   return walk(value, new WeakSet<object>());

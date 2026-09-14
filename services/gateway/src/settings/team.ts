@@ -20,7 +20,7 @@ export function mountTeamSettings(app: Express): void {
   // here DOES carry a field somebody could put another team's name in. `teamAuthority` is
   // the whole authorisation story: every route below calls it directly on the `team` the
   // request names, before touching anything, and a plain member or a team admin of some
-  // OTHER team is refused 403 the same way add_member itself refuses them over MCP.
+  // OTHER team is refused 403 the same way member_add itself refuses them over MCP.
 
   /** The team's own slug, trimmed — from the query string for a GET, the body otherwise. */
   function teamField(v: unknown): string {
@@ -81,7 +81,7 @@ export function mountTeamSettings(app: Express): void {
   });
 
   /** Remove a member. `confirm` must repeat the team slug exactly — `removeMember`'s own
-   *  rule, surfaced here rather than duplicated, so this route and add_member's destructive
+   *  rule, surfaced here rather than duplicated, so this route and member_add's destructive
    *  sibling can never disagree about what counts as confirmed. The UI's own confirmation is
    *  an inline swap (NFR-4, no modal); this is the gateway's independent check regardless of
    *  what the browser sent. */

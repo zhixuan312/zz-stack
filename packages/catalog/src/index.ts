@@ -169,7 +169,7 @@ export function catalogEntries(): CatalogEntry[] {
     if (got.manifest) { out.push({ owner, flow, dir, manifest: got.manifest }); continue; }
     // Skipped, but never silently. This can only happen to a catalog edited on a running
     // host — the build override makes that easy, mounting the working tree over the
-    // image's copy — and a typo there removes the flow from the shelf, from list_catalog
+    // image's copy — and a typo there removes the flow from the shelf, from catalog_list
     // and from every gate it governs. Without this line the only symptom is that it is
     // gone.
     console.error(`catalog: ${owner}/${flow}/flow.json ${got.why}, skipping`);
@@ -181,8 +181,8 @@ export function catalogEntries(): CatalogEntry[] {
  *
  * `includePlatform` is off by default, and that default is the guard. Filtering where a
  * thing is LOOKED UP rather than where it is LISTED is the difference between a guard and a
- * cosmetic: the platform filter first went into the listing alone, so list_catalog correctly
- * hid zz-access while install_flow, which resolves a manifest directly, installed it anyway.
+ * cosmetic: the platform filter first went into the listing alone, so catalog_list correctly
+ * hid zz-access while flow_install, which resolves a manifest directly, installed it anyway.
  * Callers that genuinely want a platform entry — the package builder — ask for it. */
 export function catalogEntry(flow: string, includePlatform = false): CatalogEntry | null {
   for (const e of catalogEntries()) {

@@ -276,7 +276,7 @@ async function main(argv: string[]): Promise<number> {
   let blocks: string[];
   if (block === "all") {
     const listed = resultText(
-      await mcp(gateway, "manage/mcp", pat, "tools/call", { name: "list_platforms", arguments: {} }),
+      await mcp(gateway, "manage/mcp", pat, "tools/call", { name: "platform_list", arguments: {} }),
     );
     // The answer is prose when the call failed, and JSON.parse on it ended the run in a stack
     // trace with the actual reason — "RPC ERROR: …" — thrown away inside the exception.

@@ -34,8 +34,8 @@
   },
   "zz-core": {
     "version": "0.34.0",
-    "digest": "90d1aae3",
-    "cases_digest": "e0e2b9b8",
+    "digest": "0a6054d6",
+    "cases_digest": "6f389b58",
     "skills": {
       "zz-backbone": "8697ece2710c",
       "zz-doctor": "32f46223e8d2",

@@ -56,18 +56,36 @@ interface PluginLockEntry {
  *
  * DIRECTORIES only at the top level, the same rule client-package.ts keeps and for the same
  * reason its comment gives: a stray file there — a README, an editor's leftover — once threw
- * ENOTDIR and took package building down for everyone, from a file that is not a skill. */
+ * ENOTDIR and took package building down for everyone, from a file that is not a skill.
+ *
+ * AND A SUITE'S OUTPUT IS NOT PART OF ITS IDENTITY.
+ *
+ * `evals/results/` holds what running the suite produced — one directory per run, different on
+ * every machine, and `.gitignore`d for exactly that reason. This walk had no exclusions, so it
+ * hashed them into the committed `plugins.lock.json`, and the consequence was invisible to
+ * whoever ran it: the digest reproduced fine on the machine that wrote it and could not be
+ * reproduced anywhere else. A fresh clone recomputed a different value and was told "CHANGED
+ * WITHOUT A VERSION BUMP — bump the version in its flow.json", which names the wrong cause
+ * entirely; no version bump fixes a digest that depends on files git does not carry.
+ *
+ * The exclusion is STRUCTURAL rather than a `.gitignore` read, because this file is compiled
+ * into the image, where there is no git and no working tree to ask. The principle holds in both
+ * places and needs neither: a digest over a suite covers the cases, never the run. */
+const OUTPUT_DIR = "results";
+
 function walkTree(root: string, prefix: string): PackageFile[] {
   if (!existsSync(root)) return [];
   const out: PackageFile[] = [];
   const walk = (dir: string, rel: string): void => {
     for (const f of readdirSync(dir, { withFileTypes: true })) {
+      if (f.name === OUTPUT_DIR) continue;
       const abs = join(dir, f.name);
       if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
       else out.push({ path: `${prefix}/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
     }
   };
   for (const e of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.name === OUTPUT_DIR) continue;
     if (e.isDirectory()) walk(join(root, e.name), e.name);
   }
   return out;

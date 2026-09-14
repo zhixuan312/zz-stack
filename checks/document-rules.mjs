@@ -27,12 +27,21 @@ const is = (name, got, want) => {
 const refuses = (name, got) => { const ok = typeof got === "string" && got.length > 0; if (!ok) failed += 1; console.log(`  ${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `  (got ${JSON.stringify(got)})`}`); };
 const allows = (name, got) => is(name, got, null);
 
-/* ── initiativeNameShape — the path a name becomes ────────────────────────── */
-allows("a dated slug is a name",              R.initiativeNameShape("2026-09-11-sample-intake"));
-refuses("a traversal is refused",             R.initiativeNameShape("../../etc"));
-refuses("a slash is refused",                 R.initiativeNameShape("2026-09-11/sample-intake"));
-refuses("an absolute path is refused",        R.initiativeNameShape("/etc/passwd"));
-refuses("an empty name is refused",           R.initiativeNameShape(""));
+/* ── slugRefusal — the slug a name is built from ───────────────────────────
+ *
+ * This replaced initiativeNameShape, which read a name a model had already composed. The
+ * caller sends a SLUG now and initiative-record.ts builds the name from it and the platform's
+ * clock, so a name without a date is unreachable rather than refused — and what is left to
+ * check is the slug. The traversal cases carry over unchanged; the last one is new, and it is
+ * the mistake a caller reaches by being helpful. */
+allows("an ordinary slug is a slug",          R.slugRefusal("sample-intake"));
+refuses("a traversal is refused",             R.slugRefusal("../../etc"));
+refuses("a slash is refused",                 R.slugRefusal("2026-09-11/sample-intake"));
+refuses("an absolute path is refused",        R.slugRefusal("/etc/passwd"));
+refuses("an empty slug is refused",           R.slugRefusal(""));
+refuses("a dot-entry is refused",             R.slugRefusal(".git"));
+refuses("a slug that is already dated is refused, or the name would carry two",
+                                              R.slugRefusal("2026-09-11-sample-intake"));
 
 /* ── frontmatterRefusal — the platform writes the envelope, never the caller ── */
 refuses("content opening with --- is refused", R.frontmatterRefusal("---\nflow: sdlc-flow\n---\n\n# Spec\n", "document_write"));

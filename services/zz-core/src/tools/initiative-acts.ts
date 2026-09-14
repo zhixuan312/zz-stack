@@ -28,7 +28,16 @@ import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
+import { registerInitiativeOpenTool } from "./initiative-open.js";
+
 export function registerInitiativeActTools(server: McpServer): void {
+  // OPENING IS THE FOURTH ACT, and it lives in its own file for one reason: this one is at
+  // 640 lines against the 700 the repository enforces, and a tool whose refusals are the
+  // point does not fit in sixty. It is registered from here rather than from server.ts so
+  // the acts stay one registration to the door — see initiative-open.ts for why the date is
+  // the platform's and why a missing flow is a choice.
+  registerInitiativeOpenTool(server);
+
   server.registerTool(
     "document_approve",
     {
@@ -61,7 +70,16 @@ export function registerInitiativeActTools(server: McpServer): void {
         return text(`ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`);
       }
       const chain = await chainFor(root, relPath, team);
-      if (!chain.docs.has(parts[1])) {
+      // ONLY A FLOW CAN SAY A DOCUMENT IS NOT ITS BUSINESS.
+      //
+      // This was `if (!chain.docs.has(parts[1]))` unconditionally, and a freeform initiative
+      // resolves to EMPTY_CHAIN, whose `docs` is an empty Set — so EVERY approval on a
+      // freeform initiative was refused, with an error naming a flow that does not exist.
+      // A gate is a person saying yes and the platform stamping it, not a manifest; an
+      // initiative that declared no chain has nothing to measure a document against, so
+      // whatever is in the folder is approvable. A flow that DID declare its documents still
+      // refuses one it never named — that is the flow's own discipline and it is untouched.
+      if (chain.documents.length && !chain.docs.has(parts[1])) {
         return text(`ERROR: ${parts[1]} is not a document this flow declares`);
       }
       const signer = (on_behalf_of ?? "").trim() || who.email;
@@ -133,11 +151,15 @@ export function registerInitiativeActTools(server: McpServer): void {
         accepted_by: z.string().optional().describe(
           "The person who said this is what they wanted. Give it whenever somebody did — " +
           "their name, or the address they wrote from. Omit only when nobody has."),
+        document: z.string().optional().describe(
+          "Which document records the close. REQUIRED for a freeform initiative, where no " +
+          "flow declares a closing document; ignored where one does, because the flow has " +
+          "already answered."),
         no_signoff_reason: z.string().optional().describe(
           "Required when `finished` carries no `accepted_by`: one line on why nobody signed off."),
       },
     },
-    async ({ initiative, disposition, accepted_by, no_signoff_reason }) => {
+    async ({ initiative, disposition, accepted_by, no_signoff_reason, document }) => {
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
       const team = await teamFor(who.email);
@@ -229,15 +251,35 @@ export function registerInitiativeActTools(server: McpServer): void {
         : acceptor ? "accepted" : "delivered";
       const probe = join(initiative, "probe.md");
       const chain = await chainFor(root, probe, team);
-      if (!chain.closingDoc) {
-        return text(`ERROR: the flow governing '${initiative}' declares no closing document, so there is nothing to close.`);
+      // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
+      //
+      // This refused outright when `chain.closingDoc` was empty — "the flow governing '<x>'
+      // declares no closing document" — and EMPTY_CHAIN's closingDoc is `""`, so no freeform
+      // initiative could ever be closed. The sentence also named a flow that does not exist.
+      //
+      // ASKED, NOT DERIVED. There is no manifest to read a closing document off, and the
+      // alternatives are all guesses: the newest file, the only file, a document the platform
+      // invents. The outcome is the row a team's counts are built from, so the one thing it
+      // cannot sit on is a document nobody chose. A flow that DOES declare one keeps
+      // answering for itself — `document` is ignored there rather than fought with, because
+      // the flow's declaration is the more authoritative of the two.
+      const closingDoc = chain.closingDoc || (document ?? "").trim();
+      if (!closingDoc) {
+        return text(
+          `ERROR: no flow governs '${initiative}', so nothing declares which document records ` +
+          "the close — name it: `document: \"<name>.md\"`. That is not a limitation of " +
+          "freeform work, it is the one question a manifest would have answered. The outcome " +
+          "is what the team's counts read, and it must not sit on a document the platform " +
+          "picked for you.");
       }
-      const relPath = `${initiative}/${chain.closingDoc}`;
+      const badDoc = safeName(closingDoc, "document");
+      if (badDoc) return text(badDoc);
+      const relPath = `${initiative}/${closingDoc}`;
       const blocked = writeGuard(relPath);
       if (blocked) return text(blocked);
       const target = await safePath(relPath);
       if (!existsSync(target)) {
-        return text(`ERROR: ${relPath} does not exist — this flow closes on it, so it must be written first.`);
+        return text(`ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`);
       }
       let doc = readFileSync(target, "utf8");
       // AN INITIATIVE CLOSES ONCE.
@@ -393,7 +435,9 @@ export function registerInitiativeActTools(server: McpServer): void {
       const target = await safePath(relPath);
       if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`);
       const chain = await chainFor(root, relPath, team);
-      if (!chain.docs.has(parts[1]))
+      // Narrowed by a flow's declaration, never by its absence — see document_approve above.
+      // Unconditionally, this refused every revision on a freeform initiative.
+      if (chain.documents.length && !chain.docs.has(parts[1]))
         return text(`ERROR: ${parts[1]} is not a document this flow declares`);
 
       const prevEnv = parseEnvelope(readFileSync(target, "utf8"));

@@ -24,6 +24,330 @@ import { logActivity } from "../persist.js";
 import { db, teamFor } from "../platform-db.js";
 import { type Chain } from "../write-guards.js";
 
+interface DocState {
+  name: string; role?: string; exists: boolean; status: string | null;
+  gate: boolean; approved_by?: string; approved_at?: string; requires?: string;
+}
+
+/** A document's frontmatter, or {} when there is no document there.
+ *
+ * The isFile() test is not defensive padding. When a chain cannot be resolved its
+ * closingDoc is the empty string, and join(dir, "") is the DIRECTORY — so this read threw
+ * EISDIR and took initiative_status down with it, for exactly the initiatives that most
+ * needed answering. */
+function envelopeOf(file: string): Record<string, string> {
+  if (!existsSync(file) || !statSync(file).isFile()) return {};
+  return parseEnvelope(readFileSync(file, "utf8"));
+}
+
+/** What state an initiative is in, and what the next move is — the one computation both
+ * `initiative_status` and `initiative_open` answer from.
+ *
+ * Exported and taking `root` explicitly so it can be RUN over a fixture store rather than
+ * read: every other statement about what this returns is a sentence somebody could write in
+ * a comment. `checks/initiative-open.mjs` drives it.
+ *
+ * `next_move` is null exactly when nothing declared a chain, and `next_move_absent` says why
+ * in that case and is undefined otherwise. */
+export function initiativeState(root: string, name: string, chain: Chain, docs: FlowDoc[]) {
+  const dir = join(root, name);
+  // NO CHAIN, SO NO NEXT MOVE — and that is an answer rather than a gap.
+  //
+  // A freeform initiative is one nobody drove with a flow: a folder of sources and documents
+  // somebody assembled by hand. It is a first-class path, not a degraded one. Every document
+  // operation works, every gate still gates — a gate is a person saying yes and the platform
+  // stamping it, not a manifest — and the close works. The single thing it gives up is this
+  // field, because there is no declared chain to read a next stage off, and inventing one
+  // would be the platform guessing at a shape nobody agreed to.
+  //
+  // chain.ts:74-81 words the same rule for the chain itself: "Enforcing nothing is the honest
+  // outcome of not knowing; enforcing somebody else's chain is a guardrail pointed at the
+  // wrong thing." `next_move: null` is that sentence applied to the answer instead of to the
+  // enforcement.
+  //
+  // WHAT THIS REPLACED, and why the replacement is not a loss. It answered
+  // `action: "declare_flow"` and told the caller to pass `flow:` to document_write on the
+  // first document. Both halves are now wrong: the flow is declared to `initiative_open`, at
+  // the one moment the choice is meaningful, and there is no way to adopt one afterwards
+  // (FR-30) — so a next move instructing somebody to do it later pointed at a door that no
+  // longer opens. A freeform initiative is not waiting on anybody.
+  //
+  // THE TEST IS THE EMPTY CHAIN, not the missing name. It was `!chain.name && !docs.length`,
+  // and a named chain with no documents slipped past it into the walk below: every branch
+  // there reads `states`, which is empty, so `pending` and `awaiting` are both undefined and
+  // the fallthrough answered `action: "close", document: ""` — the platform telling an agent
+  // to close an initiative naming no document, off a flow that declares none. chain.ts no
+  // longer produces such a chain, and this is the second half of the same fix: with nothing
+  // declared there is nothing to compute a next move over, whatever resolved the chain.
+  // `chain.name` is therefore null whenever this fires, which is what makes `flow: null`
+  // below still the truth rather than a guess.
+  if (docs.length === 0) {
+    const files = existsSync(dir)
+      ? readdirSync(dir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort()
+      : [];
+    // A CLOSED FREEFORM INITIATIVE IS CLOSED. There is no manifest naming a closing document,
+    // so the outcome is read off whichever document carries one — which is exactly how
+    // initiative_close chose where to write it. Reporting `null` here would have made every
+    // freeform close invisible: the no-argument listing filters on `next_move.action ===
+    // "closed"`, so a freeform initiative would have been listed as open for good.
+    const envs: Array<{ name: string } & Record<string, string>> =
+      files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) }));
+    const closer = envs.find((e) => e.outcome);
+    return {
+      initiative: name,
+      flow: null,
+      documents: envs,
+      outcome: closer?.outcome ?? null,
+      closed_by: closer?.closed_by ?? null,
+      next_move: closer
+        // The one next move a freeform initiative HAS: it is over. Not computed from a chain
+        // — there is none — but read off the outcome that is already written down, so the
+        // listing can stop reporting it as open without the platform inventing a stage.
+        ? { action: "closed", waiting_on: "nobody",
+            why: `closed with outcome: ${closer.outcome}` }
+        : null,
+      // STATED, not left to be inferred from the null. A caller that reads `next_move: null`
+      // and nothing else cannot tell "freeform, and that is fine" from "the platform failed
+      // to compute one", and those want opposite reactions.
+      next_move_absent: closer ? undefined :
+        "no flow governs this initiative, so there is no declared chain and therefore no " +
+        "next stage to name. That is the answer, not a gap. NO GATE AND NO REQUIRED " +
+        "DOCUMENT IS ENFORCED HERE — nothing is refused for want of an approval, and " +
+        "nothing has to exist before this closes. Every act still WORKS and still records: " +
+        "document_approve stamps a real approval, initiative_close writes a real outcome and " +
+        "a real ledger row — name the document it goes on, since no manifest does. A flow " +
+        "cannot be adopted after an initiative exists; open a new one with `flow` if you " +
+        "want its order and its gates enforced.",
+    };
+  }
+  const states: DocState[] = docs.map((d) => {
+    const env = envelopeOf(join(dir, d.name));
+    return {
+      name: d.name, role: d.role, exists: existsSync(join(dir, d.name)),
+      status: env.status ?? null, gate: !!d.gate,
+      approved_by: env.approved_by || undefined, approved_at: env.approved_at || undefined,
+      requires: d.requires,
+    };
+  });
+  const closingEnv = envelopeOf(join(dir, chain.closingDoc));
+  const outcome = closingEnv.outcome || null;
+  // WHO recorded the close, beside WHAT it was. Both are on the closing document's envelope
+  // and both are stamped by initiative_close(), and reporting one without the other left the smoke
+  // suite's per-lane attribution reading a field nothing emitted: it scanned each DOCUMENT
+  // for `closed_by`, and DocState has never carried one. Every lane in a parallel round then
+  // saw every close as its own, which is the false green that attribution exists to stop —
+  // with five lanes, the first scenario to finish passed the other four.
+  const closedBy = closingEnv.closed_by || null;
+
+  // the next move, in the flow's own declared order
+  let next: { action: string; document?: string; waiting_on: string; why: string };
+  if (outcome) {
+    // THE PLATFORM APPENDS THE HANDOVER TO EVERY FLOW, whatever the flow declares.
+    //
+    // Delivery ends at close; the cycle does not. What made this run expensive — the
+    // question that cost a round, how this stakeholder decides, the block that behaved
+    // differently from its documentation — is worth more than the deliverable to the
+    // initiative after it, and it is gone the moment the conversation ends.
+    //
+    // Which is why it cannot be the flow author's decision. sdlc-flow wrote itself a
+    // recording stage; ops-flow's close is mechanical; a flow written next week will do
+    // whatever its author thought of. "What gets captured" is exactly the class of thing
+    // that must not depend on that, so the step is added HERE, below the manifest, and
+    // every flow ends the same way.
+    //
+    // Not verified in the middle, deliberately. Execute and review happen in the caller's
+    // own terminal where the platform can see nothing, and a gate that pretends to check
+    // what it cannot is worse than no gate: it gets satisfied, and leaves a compliant
+    // record of nothing. The end of the cycle is the one point the platform does see.
+    // THE HANDOVER IS A KNOWLEDGE NODE, not a document. This asked for `learnings.md`, a
+    // file written into the initiative folder and then promoted into the knowledge base by
+    // a second skill. The promotion step never ran once in any initiative, so the handover
+    // was satisfied by writing a file nothing ever read — a compliant record of nothing,
+    // which is exactly what the comment above warns a gate must not become.
+    //
+    // So the completion signal is the document's OWN approval, not a count derived from
+    // it. Zero knowledge nodes is a legitimate outcome of a careful handover (an
+    // initiative can teach the team nothing new), so a count can never distinguish that
+    // from a handover nobody wrote — which is why the signal moved onto handover.md
+    // itself, gated like every other document deriveChain appends. Read through the same
+    // `states` machinery every other gated document already goes through here, not a
+    // second bespoke path.
+    const handoverState = states.find((d) => d.name === "handover.md");
+    next = !handoverState || !handoverState.exists
+      ? {
+          action: "handover", waiting_on: "agent",
+          why: `closed with outcome: ${outcome}; the platform's closing step is the ` +
+               "handover — run `skill_read(\"zz-knowledge\")`, mint what generalises with " +
+               "`knowledge_add`, and write handover.md, so what this cycle learned " +
+               "outlives the conversation that learned it",
+        }
+      : handoverState.status !== "approved"
+      ? {
+          action: "handover", waiting_on: "human",
+          why: `closed with outcome: ${outcome}; handover.md is ` +
+               `${handoverState.status ?? "unwritten"} — call ` +
+               `document_approve("${name}/handover.md") once the stakeholder agrees before this ` +
+               "initiative can close",
+        }
+      : (() => {
+          // THE APPROVAL AUTHORISES THE TEAM NODES; IT DOES NOT WRITE THEM.
+          //
+          // zz-knowledge mints platform nodes immediately and PROPOSES team nodes in
+          // handover.md, minting them only once a team member has approved. But document_approve()
+          // is a generic gate recorder with no side effect, so nothing makes that second
+          // pass happen. Reading "closed" the moment the document was approved therefore
+          // let an initiative report complete with every promised team node unwritten, and
+          // nothing anywhere noticed — a promise recorded whose keeping went unverified,
+          // which is the same shape as the substring scan this branch replaced.
+          //
+          // So the document declares how many it promised, and the count has to be met.
+          // This is NOT the deleted substring scan returning: that read every node's whole text
+          // for the initiative's name and any mention satisfied it. This reads a number the
+          // document itself states, and counts nodes on the TEAM shelf whose structured
+          // `evidence` names this initiative. A promise of zero is met by zero, so a
+          // careful handover that found nothing worth the team keeping still closes — the
+          // rule is "keep what you promised", never "promise something".
+          const promised = Number(
+            parseEnvelope(readFileSync(join(root, name, "handover.md"), "utf8"))
+              .proposed_team_nodes ?? "0");
+          if (!promised) {
+            return { action: "closed", waiting_on: "nobody",
+                     why: `closed with outcome: ${outcome}; handover.md is approved` };
+          }
+          const ndir = join(root, "_knowledge", "nodes");
+          const minted = existsSync(ndir)
+            ? readdirSync(ndir).filter((f) => f.endsWith(".md")).filter((f) => {
+                // Through parseEnvelope like every other envelope read on this platform.
+                // A bespoke regex here would take the first match rather than the last of a
+                // repeated key, and would read the whole document rather than the
+                // frontmatter — the two failures that rule exists for.
+                const ev = parseEnvelope(readFileSync(join(ndir, f), "utf8")).evidence ?? "";
+                return ev.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).includes(name);
+              }).length
+            : 0;
+          return minted >= promised
+            ? { action: "closed", waiting_on: "nobody",
+                why: `closed with outcome: ${outcome}; handover.md is approved and its ` +
+                     `${promised} proposed team node(s) are written` }
+            : { action: "handover", waiting_on: "agent",
+                why: `closed with outcome: ${outcome}; handover.md is approved but only ` +
+                     `${minted} of the ${promised} team node(s) it proposed have been ` +
+                     "written — run `skill_read(\"zz-knowledge\")` and mint the rest with " +
+                     "`knowledge_add(scope: \"team\")`, exactly as the approved document " +
+                     "promised them" };
+        })();
+  } else {
+    // A REQUIREMENT IS MET BY THE ONLY THING ITS TARGET CAN OFFER.
+    //
+    // This asked for `status === "approved"` whatever the target was, and nothing ever
+    // approves a NON-GATED document — `gate: false` means no approval is required, so its
+    // status stays `draft` for the life of the initiative. A document requiring one could
+    // therefore never become pending, `awaiting` only fires for a document that already
+    // EXISTS, and both fell through to the close branch.
+    //
+    // sdlc-flow is exactly that shape: explore.md (no gate) -> spec.md (gate, closing) ->
+    // plan.md (gate). From the moment explore.md was written, this answered
+    //
+    //     action: close   "every declared document exists and every gate is recorded"
+    //
+    // with two of the three documents absent and both of them gates. The sentence reads as
+    // permission — the comment in that branch already records it causing one false close,
+    // and the fix then was to reword the sentence rather than correct the condition.
+    //
+    // ops-flow never met it because every one of ITS requires-targets is itself gated, which
+    // is why this survived: the flow that hits it is the one nobody ran end to end.
+    const requirementMet = (docName: string): boolean => {
+      const t = states.find((x) => x.name === docName);
+      if (!t) return false;
+      return t.gate ? t.status === "approved" : t.exists;
+    };
+    const pending = states.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
+    const awaiting = states.find((d) => d.exists && d.gate && d.status !== "approved");
+    if (awaiting) {
+      next = {
+        action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
+        why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call document_approve("${name}/${awaiting.name}") ` +
+             "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
+      };
+    } else if (pending) {
+      next = { action: "write_document", document: pending.name, waiting_on: "agent",
+               why: `${pending.name} is the next document this flow declares` };
+    } else {
+      const missing = chain.closeRequires.filter((n) => !existsSync(join(dir, n)));
+      next = missing.length
+        ? { action: "write_document", document: missing[0], waiting_on: "agent",
+            why: `${missing[0]} is required before this initiative can close` }
+        // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
+        // write_document, await_approval, handover, closed, close — and `write_document`
+        // is already not a tool name. Renaming one member of that set to the tool it
+        // suggests would leave the set half verbs and half tool names, which is harder to
+        // read than either. The `why` beside it names the tool to call.
+        : { action: "close", document: chain.closingDoc, waiting_on: "agent",
+            // What this said, and only this, was "every declared document exists and
+            // every gate is recorded" — which reads as permission. The first live smoke
+            // run reached exactly here and closed the initiative as accepted while the
+            // stakeholder had accepted nothing. Every gate being recorded is a statement
+            // about approvals; acceptance is a different act by a different person, and
+            // the close is where the two get confused.
+            why: "every declared document exists and every gate is recorded — close it " +
+                 `with initiative_close("${name}", "finished") once somebody has accepted, naming ` +
+                 "them in `accepted_by`. The outcome is DERIVED from that: with an " +
+                 "acceptor it is `accepted`; without one it is `delivered` and owes one " +
+                 "line on why nobody signed off. You do not write `outcome`, and the " +
+                 "platform refuses it by hand. If nobody has accepted yet, that is what " +
+                 "is outstanding, not this call" };
+    }
+  }
+  // A source attached AFTER a document was approved means that document may
+  // no longer say what the team knows. Compare FILE TIMES, not the dates
+  // people type: `approved_at` is day-granular and hand-written, while the
+  // approval snapshot in _versions/ and the source file both carry a real
+  // mtime the platform wrote itself.
+  const srcDir = join(dir, "sources");
+  const sourceFiles = existsSync(srcDir) ? readdirSync(srcDir).filter((f) => f.endsWith(".md")) : [];
+  const approvalTime = (docName: string): number => {
+    const vdir = join(dir, "_versions");
+    let latest = 0;
+    if (existsSync(vdir)) {
+      const stem = docName.replace(/\.md$/, "") + ".v";
+      for (const v of readdirSync(vdir)) {
+        if (!v.startsWith(stem)) continue;
+        latest = Math.max(latest, statSync(join(vdir, v)).mtimeMs);
+      }
+    }
+    // no snapshot (approved before snapshots, or written in one go) -> the
+    // document's own mtime is when it last changed, approval included
+    return latest || (existsSync(join(dir, docName)) ? statSync(join(dir, docName)).mtimeMs : 0);
+  };
+  const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
+  for (const f of sourceFiles) {
+    const env = parseEnvelope(readFileSync(join(srcDir, f), "utf8"));
+    const sourceTime = statSync(join(srcDir, f)).mtimeMs;
+    for (const d of (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean)) {
+      const st = states.find((x) => x.name === d);
+      if (!st || st.status !== "approved") continue;
+      if (sourceTime > approvalTime(d)) {
+        needsRefinement.push({ document: d, source: `sources/${f}`, title: env.title || f });
+      }
+    }
+  }
+  return { initiative: name,
+           // The chain already knows which flow governs this initiative — it was
+           // resolved to build `docs`. Reading the envelope of the FIRST DECLARED
+           // document instead reported null whenever that document had not been written
+           // yet, so an initiative could list a flow's documents, each with its role,
+           // under "flow": null.
+           flow: chain.name ?? (envelopeOf(join(dir, docs[0]?.name ?? "")).flow || null),
+           documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
+           // reported, never enforced: material that landed after an
+           // approval MAY warrant a revision — the team decides, and
+           // document_revise is how they do it
+           sources_after_approval: needsRefinement, next_move: next,
+           // Undefined rather than absent, so the two returns of this function have one
+           // shape and a caller can read the field without knowing which branch answered.
+           next_move_absent: undefined as string | undefined };
+}
+
 export function registerInitiativeStatusTools(server: McpServer): void {
   // ── the initiative is the unit of work, not the chat ────────────────────
   // Anyone, on any harness, must be able to pick an initiative up exactly
@@ -31,281 +355,6 @@ export function registerInitiativeStatusTools(server: McpServer): void {
   // two different answers; this computes it from the manifest and the
   // frontmatter, mechanically.
 
-  interface DocState {
-    name: string; role?: string; exists: boolean; status: string | null;
-    gate: boolean; approved_by?: string; approved_at?: string; requires?: string;
-  }
-
-  /** A document's frontmatter, or {} when there is no document there.
-   *
-   * The isFile() test is not defensive padding. When a chain cannot be resolved its
-   * closingDoc is the empty string, and join(dir, "") is the DIRECTORY — so this read threw
-   * EISDIR and took initiative_status down with it, for exactly the initiatives that most
-   * needed answering. */
-  function envelopeOf(file: string): Record<string, string> {
-    if (!existsSync(file) || !statSync(file).isFile()) return {};
-    return parseEnvelope(readFileSync(file, "utf8"));
-  }
-
-  function initiativeState(root: string, name: string, chain: Chain, docs: FlowDoc[]) {
-    const dir = join(root, name);
-    // No chain resolved: the documents declare no `flow:` and the team has no single
-    // installed flow to fall back on. Say that, and say how to fix it. The alternative was
-    // a crash — EISDIR, from reading the folder as if it were the closing document — on the
-    // one call zz-backbone tells every agent to make before continuing any work.
-    //
-    // THE TEST IS THE EMPTY CHAIN, not the missing name. It was `!chain.name && !docs.length`,
-    // and a named chain with no documents slipped past it into the walk below: every branch
-    // there reads `states`, which is empty, so `pending` and `awaiting` are both undefined and
-    // the fallthrough answered `action: "close", document: ""` — the platform telling an agent
-    // to close an initiative naming no document, off a flow that declares none. chain.ts no
-    // longer produces such a chain, and this is the second half of the same fix: with nothing
-    // declared there is nothing to compute a next move over, whatever resolved the chain.
-    // `chain.name` is therefore null whenever this fires, which is what makes `flow: null`
-    // below still the truth rather than a guess.
-    if (docs.length === 0) {
-      const files = existsSync(dir)
-        ? readdirSync(dir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort()
-        : [];
-      return {
-        initiative: name,
-        flow: null,
-        documents: files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) })),
-        next_move: {
-          action: "declare_flow",
-          waiting_on: "agent",
-          why: "no flow governs this initiative: no document declares `flow:` and the team " +
-               "runs more than one flow, so nothing can say which gates apply. Pass " +
-               "`flow: \"<name>\"` as an argument to document_write on the FIRST document " +
-               "— until then no gate, no " +
-               "required document and no closing rule is being enforced here",
-        },
-      };
-    }
-    const states: DocState[] = docs.map((d) => {
-      const env = envelopeOf(join(dir, d.name));
-      return {
-        name: d.name, role: d.role, exists: existsSync(join(dir, d.name)),
-        status: env.status ?? null, gate: !!d.gate,
-        approved_by: env.approved_by || undefined, approved_at: env.approved_at || undefined,
-        requires: d.requires,
-      };
-    });
-    const closingEnv = envelopeOf(join(dir, chain.closingDoc));
-    const outcome = closingEnv.outcome || null;
-    // WHO recorded the close, beside WHAT it was. Both are on the closing document's envelope
-    // and both are stamped by initiative_close(), and reporting one without the other left the smoke
-    // suite's per-lane attribution reading a field nothing emitted: it scanned each DOCUMENT
-    // for `closed_by`, and DocState has never carried one. Every lane in a parallel round then
-    // saw every close as its own, which is the false green that attribution exists to stop —
-    // with five lanes, the first scenario to finish passed the other four.
-    const closedBy = closingEnv.closed_by || null;
-
-    // the next move, in the flow's own declared order
-    let next: { action: string; document?: string; waiting_on: string; why: string };
-    if (outcome) {
-      // THE PLATFORM APPENDS THE HANDOVER TO EVERY FLOW, whatever the flow declares.
-      //
-      // Delivery ends at close; the cycle does not. What made this run expensive — the
-      // question that cost a round, how this stakeholder decides, the block that behaved
-      // differently from its documentation — is worth more than the deliverable to the
-      // initiative after it, and it is gone the moment the conversation ends.
-      //
-      // Which is why it cannot be the flow author's decision. sdlc-flow wrote itself a
-      // recording stage; ops-flow's close is mechanical; a flow written next week will do
-      // whatever its author thought of. "What gets captured" is exactly the class of thing
-      // that must not depend on that, so the step is added HERE, below the manifest, and
-      // every flow ends the same way.
-      //
-      // Not verified in the middle, deliberately. Execute and review happen in the caller's
-      // own terminal where the platform can see nothing, and a gate that pretends to check
-      // what it cannot is worse than no gate: it gets satisfied, and leaves a compliant
-      // record of nothing. The end of the cycle is the one point the platform does see.
-      // THE HANDOVER IS A KNOWLEDGE NODE, not a document. This asked for `learnings.md`, a
-      // file written into the initiative folder and then promoted into the knowledge base by
-      // a second skill. The promotion step never ran once in any initiative, so the handover
-      // was satisfied by writing a file nothing ever read — a compliant record of nothing,
-      // which is exactly what the comment above warns a gate must not become.
-      //
-      // So the completion signal is the document's OWN approval, not a count derived from
-      // it. Zero knowledge nodes is a legitimate outcome of a careful handover (an
-      // initiative can teach the team nothing new), so a count can never distinguish that
-      // from a handover nobody wrote — which is why the signal moved onto handover.md
-      // itself, gated like every other document deriveChain appends. Read through the same
-      // `states` machinery every other gated document already goes through here, not a
-      // second bespoke path.
-      const handoverState = states.find((d) => d.name === "handover.md");
-      next = !handoverState || !handoverState.exists
-        ? {
-            action: "handover", waiting_on: "agent",
-            why: `closed with outcome: ${outcome}; the platform's closing step is the ` +
-                 "handover — run `skill_read(\"zz-knowledge\")`, mint what generalises with " +
-                 "`knowledge_add`, and write handover.md, so what this cycle learned " +
-                 "outlives the conversation that learned it",
-          }
-        : handoverState.status !== "approved"
-        ? {
-            action: "handover", waiting_on: "human",
-            why: `closed with outcome: ${outcome}; handover.md is ` +
-                 `${handoverState.status ?? "unwritten"} — call ` +
-                 `document_approve("${name}/handover.md") once the stakeholder agrees before this ` +
-                 "initiative can close",
-          }
-        : (() => {
-            // THE APPROVAL AUTHORISES THE TEAM NODES; IT DOES NOT WRITE THEM.
-            //
-            // zz-knowledge mints platform nodes immediately and PROPOSES team nodes in
-            // handover.md, minting them only once a team member has approved. But document_approve()
-            // is a generic gate recorder with no side effect, so nothing makes that second
-            // pass happen. Reading "closed" the moment the document was approved therefore
-            // let an initiative report complete with every promised team node unwritten, and
-            // nothing anywhere noticed — a promise recorded whose keeping went unverified,
-            // which is the same shape as the substring scan this branch replaced.
-            //
-            // So the document declares how many it promised, and the count has to be met.
-            // This is NOT the deleted substring scan returning: that read every node's whole text
-            // for the initiative's name and any mention satisfied it. This reads a number the
-            // document itself states, and counts nodes on the TEAM shelf whose structured
-            // `evidence` names this initiative. A promise of zero is met by zero, so a
-            // careful handover that found nothing worth the team keeping still closes — the
-            // rule is "keep what you promised", never "promise something".
-            const promised = Number(
-              parseEnvelope(readFileSync(join(root, name, "handover.md"), "utf8"))
-                .proposed_team_nodes ?? "0");
-            if (!promised) {
-              return { action: "closed", waiting_on: "nobody",
-                       why: `closed with outcome: ${outcome}; handover.md is approved` };
-            }
-            const ndir = join(root, "_knowledge", "nodes");
-            const minted = existsSync(ndir)
-              ? readdirSync(ndir).filter((f) => f.endsWith(".md")).filter((f) => {
-                  // Through parseEnvelope like every other envelope read on this platform.
-                  // A bespoke regex here would take the first match rather than the last of a
-                  // repeated key, and would read the whole document rather than the
-                  // frontmatter — the two failures that rule exists for.
-                  const ev = parseEnvelope(readFileSync(join(ndir, f), "utf8")).evidence ?? "";
-                  return ev.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).includes(name);
-                }).length
-              : 0;
-            return minted >= promised
-              ? { action: "closed", waiting_on: "nobody",
-                  why: `closed with outcome: ${outcome}; handover.md is approved and its ` +
-                       `${promised} proposed team node(s) are written` }
-              : { action: "handover", waiting_on: "agent",
-                  why: `closed with outcome: ${outcome}; handover.md is approved but only ` +
-                       `${minted} of the ${promised} team node(s) it proposed have been ` +
-                       "written — run `skill_read(\"zz-knowledge\")` and mint the rest with " +
-                       "`knowledge_add(scope: \"team\")`, exactly as the approved document " +
-                       "promised them" };
-          })();
-    } else {
-      // A REQUIREMENT IS MET BY THE ONLY THING ITS TARGET CAN OFFER.
-      //
-      // This asked for `status === "approved"` whatever the target was, and nothing ever
-      // approves a NON-GATED document — `gate: false` means no approval is required, so its
-      // status stays `draft` for the life of the initiative. A document requiring one could
-      // therefore never become pending, `awaiting` only fires for a document that already
-      // EXISTS, and both fell through to the close branch.
-      //
-      // sdlc-flow is exactly that shape: explore.md (no gate) -> spec.md (gate, closing) ->
-      // plan.md (gate). From the moment explore.md was written, this answered
-      //
-      //     action: close   "every declared document exists and every gate is recorded"
-      //
-      // with two of the three documents absent and both of them gates. The sentence reads as
-      // permission — the comment in that branch already records it causing one false close,
-      // and the fix then was to reword the sentence rather than correct the condition.
-      //
-      // ops-flow never met it because every one of ITS requires-targets is itself gated, which
-      // is why this survived: the flow that hits it is the one nobody ran end to end.
-      const requirementMet = (docName: string): boolean => {
-        const t = states.find((x) => x.name === docName);
-        if (!t) return false;
-        return t.gate ? t.status === "approved" : t.exists;
-      };
-      const pending = states.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
-      const awaiting = states.find((d) => d.exists && d.gate && d.status !== "approved");
-      if (awaiting) {
-        next = {
-          action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
-          why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call document_approve("${name}/${awaiting.name}") ` +
-               "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
-        };
-      } else if (pending) {
-        next = { action: "write_document", document: pending.name, waiting_on: "agent",
-                 why: `${pending.name} is the next document this flow declares` };
-      } else {
-        const missing = chain.closeRequires.filter((n) => !existsSync(join(dir, n)));
-        next = missing.length
-          ? { action: "write_document", document: missing[0], waiting_on: "agent",
-              why: `${missing[0]} is required before this initiative can close` }
-          // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
-          // write_document, await_approval, handover, closed, close — and `write_document`
-          // is already not a tool name. Renaming one member of that set to the tool it
-          // suggests would leave the set half verbs and half tool names, which is harder to
-          // read than either. The `why` beside it names the tool to call.
-          : { action: "close", document: chain.closingDoc, waiting_on: "agent",
-              // What this said, and only this, was "every declared document exists and
-              // every gate is recorded" — which reads as permission. The first live smoke
-              // run reached exactly here and closed the initiative as accepted while the
-              // stakeholder had accepted nothing. Every gate being recorded is a statement
-              // about approvals; acceptance is a different act by a different person, and
-              // the close is where the two get confused.
-              why: "every declared document exists and every gate is recorded — close it " +
-                   `with initiative_close("${name}", "finished") once somebody has accepted, naming ` +
-                   "them in `accepted_by`. The outcome is DERIVED from that: with an " +
-                   "acceptor it is `accepted`; without one it is `delivered` and owes one " +
-                   "line on why nobody signed off. You do not write `outcome`, and the " +
-                   "platform refuses it by hand. If nobody has accepted yet, that is what " +
-                   "is outstanding, not this call" };
-      }
-    }
-    // A source attached AFTER a document was approved means that document may
-    // no longer say what the team knows. Compare FILE TIMES, not the dates
-    // people type: `approved_at` is day-granular and hand-written, while the
-    // approval snapshot in _versions/ and the source file both carry a real
-    // mtime the platform wrote itself.
-    const srcDir = join(dir, "sources");
-    const sourceFiles = existsSync(srcDir) ? readdirSync(srcDir).filter((f) => f.endsWith(".md")) : [];
-    const approvalTime = (docName: string): number => {
-      const vdir = join(dir, "_versions");
-      let latest = 0;
-      if (existsSync(vdir)) {
-        const stem = docName.replace(/\.md$/, "") + ".v";
-        for (const v of readdirSync(vdir)) {
-          if (!v.startsWith(stem)) continue;
-          latest = Math.max(latest, statSync(join(vdir, v)).mtimeMs);
-        }
-      }
-      // no snapshot (approved before snapshots, or written in one go) -> the
-      // document's own mtime is when it last changed, approval included
-      return latest || (existsSync(join(dir, docName)) ? statSync(join(dir, docName)).mtimeMs : 0);
-    };
-    const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
-    for (const f of sourceFiles) {
-      const env = parseEnvelope(readFileSync(join(srcDir, f), "utf8"));
-      const sourceTime = statSync(join(srcDir, f)).mtimeMs;
-      for (const d of (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean)) {
-        const st = states.find((x) => x.name === d);
-        if (!st || st.status !== "approved") continue;
-        if (sourceTime > approvalTime(d)) {
-          needsRefinement.push({ document: d, source: `sources/${f}`, title: env.title || f });
-        }
-      }
-    }
-    return { initiative: name,
-             // The chain already knows which flow governs this initiative — it was
-             // resolved to build `docs`. Reading the envelope of the FIRST DECLARED
-             // document instead reported null whenever that document had not been written
-             // yet, so an initiative could list a flow's documents, each with its role,
-             // under "flow": null.
-             flow: chain.name ?? (envelopeOf(join(dir, docs[0]?.name ?? "")).flow || null),
-             documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
-             // reported, never enforced: material that landed after an
-             // approval MAY warrant a revision — the team decides, and
-             // document_revise is how they do it
-             sources_after_approval: needsRefinement, next_move: next };
-  }
 
   server.registerTool(
     "initiative_status",
@@ -350,7 +399,11 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         }
         const chain = await chainFor(root, `${name}/x.md`, team);
         const state = initiativeState(root, name, chain, chain.documents);
-        if (!initiative && state.next_move.action === "closed") { closedCount++; continue; }
+        // OPTIONAL-CHAINED, because `next_move` is null for a freeform initiative. Indexing
+        // it bare threw here, in the no-argument listing — the one call zz-backbone tells
+        // every agent to make before continuing any work — so one freeform folder in the
+        // store would have taken down the listing of every other initiative beside it.
+        if (!initiative && state.next_move?.action === "closed") { closedCount++; continue; }
         out.push(state);
       }
       logActivity(root, null, { user: who.email, action: "initiative_status", initiative: initiative ?? "*" });

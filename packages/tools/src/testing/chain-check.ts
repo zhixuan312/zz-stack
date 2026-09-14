@@ -46,12 +46,19 @@ const PAT = envRequired("ZZ_PAT", "a person's platform token");
  * worked once per store and failed every time after, for a reason none of its output names.
  * Passing an initiative explicitly still re-enters one deliberately.
  */
-function freshInitiative(): string {
+function freshSlug(): string {
   const d = new Date();
   const p = (n: number): string => String(n).padStart(2, "0");
   return `chain-check-${p(d.getDate())}${p(d.getMonth() + 1)}-${randomUUID().slice(0, 4)}`;
 }
-const INIT = parseArgs(process.argv.slice(2)).positional[0] || freshInitiative();
+/** A SLUG, not a name. The platform composes `<YYYY-MM-DD>-<slug>` from its own clock, and
+ * this probe must not compose one of its own — a date it chose would be the exact mistake
+ * `initiative_open` exists to make unreachable, written by the tool that checks the door. */
+const SLUG = freshSlug();
+/** Filled from what `initiative_open` hands back, or from the positional argument when a run
+ * deliberately re-enters an existing initiative. Declared `let` because only the platform
+ * knows the name until the open returns. */
+let INIT = parseArgs(process.argv.slice(2)).positional[0] ?? "";
 
 // WHICH flow this document belongs to. A team running one flow needs no such line — the
 // platform infers it. A team running two cannot: nothing else says which gates apply, and
@@ -178,11 +185,63 @@ function doc(body: string): string {
   return `# chain check\n\n${body}\n`;
 }
 
-/** A write, with the flow declared where the platform takes it: as an argument. */
+/** A write. The flow is NOT an argument here any more — it is declared once, to
+ * `initiative_open`, and `document_write` refuses one outright. */
 const writeDoc = (path: string, body: string): Promise<string> =>
-  call("document_write", { path, content: doc(body), flow: FLOW });
+  call("document_write", { path, content: doc(body) });
 
 async function main(): Promise<number> {
+  // OPENING IS ITS OWN ACT, and every write below depends on it. `document_write` refuses a
+  // path whose initiative was never opened, and so does `source_add` — so a probe that walked
+  // straight into a write would now fail on its first line, for a reason that has nothing to
+  // do with what it is probing. The NAME comes back from the platform: it prepends today's
+  // date to the slug, and this tool deliberately does not know how to build one.
+  if (!INIT) {
+    const body = await call("initiative_open", { slug: SLUG, flow: FLOW });
+    const parsed = JSON.parse(body) as { initiative?: string };
+    if (!parsed.initiative) {
+      console.log(`  FAIL  initiative_open returned no name: ${body.slice(0, 300)}`);
+      return 1;
+    }
+    INIT = parsed.initiative;
+    console.log(`  ok    initiative_open("${SLUG}", "${FLOW}") -> ${INIT}`);
+    // A SECOND OPEN OF THE SAME SLUG IS REFUSED, and this is the only place that can be
+    // checked against a live door. Two folders for one slug diverge with nothing able to say
+    // which was meant.
+    check("a slug already taken is refused",
+      await call("initiative_open", { slug: SLUG }), true, /already taken/);
+    // FREEFORM IS ACCEPTED. A missing flow is a choice the platform supports, and a door that
+    // refused it would make every freeform initiative unreachable — with nothing here to say
+    // so, because every other assertion in this probe declares a flow.
+    const freeSlug = `${SLUG}-freeform`;
+    const free = await call("initiative_open", { slug: freeSlug });
+    check("opening without a flow is accepted", free, false);
+    const freeName = (JSON.parse(free) as { initiative?: string; next_move?: unknown }).initiative;
+    record(JSON.parse(free).next_move === null,
+      "a freeform initiative is given no next move",
+      `freeform next_move was ${JSON.stringify(JSON.parse(free).next_move)}, expected null`);
+    // AND THE OTHER DIRECTION, which is the half a null-only assertion cannot see: the
+    // flow-driven initiative opened above must still be told its first document.
+    const govNext = JSON.parse(
+      await call("initiative_status", { initiative: INIT })) as { next_move?: { action?: string } };
+    record(govNext.next_move?.action === "write_document",
+      "a flow-driven initiative is told its first document",
+      `governed next_move was ${JSON.stringify(govNext.next_move)}, expected write_document`);
+    check("a write into an initiative nobody opened is refused",
+      await writeDoc(`${SLUG}-never-opened/spec.md`, "x"), true, /initiative_open/);
+    if (freeName) {
+      check("a freeform initiative still takes a document",
+        await writeDoc(`${freeName}/notes.md`, "hand-assembled"), false);
+      check("a freeform initiative still records a gate",
+        await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: "Chain Check" }),
+        false);
+      check("a freeform initiative still closes, on the document it names",
+        await call("initiative_close", {
+          initiative: freeName, disposition: "finished", accepted_by: "Chain Check",
+          document: "notes.md",
+        }), false);
+    }
+  }
   console.log(`walking ${INIT}/ through ${GW}`);
 
   // A gate is passed BY A PERSON, ON A DAY, and the platform is what knows both. This used

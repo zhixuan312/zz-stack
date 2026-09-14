@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { type CatalogManifest, type FlowDoc, parseEnvelope } from "@zz/contracts";
 import { catalogManifest, isFlow } from "@zz/catalog";
 
+import { openRecord } from "./initiative-record.js";
 import { db } from "./platform-db.js";
 import { type Chain } from "./write-guards.js";
 
@@ -122,7 +123,8 @@ function chainForFlow(declared: string): Chain | null {
  *
  * ONE install, or nothing. A team running several has no answer here — which of them
  * governs is the document's to declare — and the honest outcome of not knowing is
- * EMPTY_CHAIN plus flowDeclarationCheck's refusal, not somebody else's chain.
+ * EMPTY_CHAIN, not somebody else's chain. (This used to add "plus flowDeclarationCheck's
+ * refusal"; that guard is gone — the question it asked is asked once, by initiative_open.)
  *
  * This said "must not be judged by another flow's chain merely because that other one is
  * the mounted default". There is no mounted default: EMPTY_CHAIN replaced the hardcoded
@@ -141,8 +143,10 @@ async function chainForTeam(team: string | null): Promise<Chain | null> {
       [team],
     );
     // Exactly one installed flow -> it governs. With several, the document must name its
-    // own; an undeclared one resolves to nothing here, and chainFor then returns
-    // EMPTY_CHAIN while flowDeclarationCheck refuses the write and lists the team's flows.
+    // own; an undeclared one resolves to nothing here and chainFor returns EMPTY_CHAIN.
+    //
+    // REACHED ONLY WITHOUT AN OPEN RECORD. An initiative opened freeform short-circuits above,
+    // because "one install" is not consent — it is the only thing there was to guess with.
     if (rows.length === 1) {
       const m = rows[0].manifest;
       // THE CATALOG FIRST, the stored manifest only when the catalog cannot resolve the flow.
@@ -182,6 +186,39 @@ export async function chainFor(root: string, relPath: string, team: string | nul
     const own = chainForFlow(declaredHere);
     if (own) return own;
   }
+  // THE DECLARATION MADE AT OPEN TIME, before any document exists to carry one.
+  //
+  // Between `initiative_open("x", "sdlc-flow")` and that initiative's first document there is
+  // no envelope to read a `flow:` off, and on a team running two flows there is no single
+  // install to fall back to either — so without this the initiative a person opened WITH a
+  // flow resolves to EMPTY_CHAIN and `initiative_status` reports it freeform. That window is
+  // not an edge case: it is exactly when an agent picks the work up, because picking it up is
+  // what `initiative_status` is called for.
+  //
+  // AFTER `content`, deliberately. `content` is the document about to be written, and a
+  // document's own declaration is the one thing more specific than the folder's.
+  const opened = openRecord(root, parts[0]);
+  if (opened?.flow) {
+    const own = chainForFlow(opened.flow);
+    if (own) return own;
+  }
+  // A DECLARED FREEFORM IS AN ANSWER, AND IT OUTRANKS EVERY FALLBACK BELOW.
+  //
+  // `flow: null` in the record is a person saying "nothing governs this", and without this
+  // return the team fallback at the bottom of the function would overrule them: a team with
+  // exactly ONE installed flow resolves to that flow for any initiative that names none, so
+  // a deliberately freeform initiative would have been governed by it — every write judged
+  // against a chain nobody asked for, and initiative_status naming stages off a manifest the
+  // person declined. That is a flow adopted at open time against a stated wish, which FR-30
+  // forbids doing afterwards and which the comment on EMPTY_CHAIN calls a wrong answer rather
+  // than a fallback.
+  //
+  // The oldest-document walk is skipped too, deliberately: the platform does not stamp `flow:`
+  // onto a freeform document, so an envelope carrying one here was either hand-written or left
+  // from before the record existed, and the record is the more recent and more explicit of the
+  // two. An initiative with NO record at all falls through to both, exactly as it did before —
+  // nothing written before this file existed is reinterpreted.
+  if (opened && !opened.flow) return EMPTY_CHAIN;
   // THE OLDEST DOCUMENT ANSWERS, not whichever one readdir hands back first.
   //
   // This walked the directory in readdir order and took the first `flow:` it met, while

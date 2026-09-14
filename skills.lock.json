@@ -37,7 +37,7 @@
   },
   "sdlc-method": {
     "version": "1.4",
-    "sha": "513397ae821b"
+    "sha": "4fa697d29c55"
   },
   "sdlc-plan-audit": {
     "version": "1.0",
@@ -105,7 +105,7 @@
   },
   "zz-backbone": {
     "version": "3.28",
-    "sha": "63a4e3f19daf"
+    "sha": "0cf61db87967"
   },
   "zz-doctor": {
     "version": "1.2",

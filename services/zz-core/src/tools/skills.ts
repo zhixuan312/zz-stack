@@ -27,10 +27,30 @@ export function registerSkillTools(server: McpServer): void {
   server.registerTool(
     "session_whoami",
     {
+      // WHAT ONLY THIS TOOL ANSWERS. Three tools answer some form of "who am I" and they are
+      // deliberately not merged — see the same note over `whoami` in the gateway's admin.ts,
+      // which was sharpened first. Each names the other two, because a model choosing between
+      // three overlapping identity tools picks by description and there is no other signal.
+      //
+      // This is the one an agent DOING WORK calls, and it is the only source of two things:
+      // `today`, which no other tool anywhere returns, and `how_this_works`, the pointer to
+      // the rules for a session that connected without a flow to tell it. Neither is a fact
+      // about the caller's account, which is what the other two answer.
+      //
+      // "THE ONLY TOOL THAT ANSWERS EITHER" is what this said first, and it was false:
+      // `my_teams` returns the acting team too. Overclaiming on the ONE tool whose job is to
+      // be told apart from two others is the defect this task exists to fix, so the exclusive
+      // claim is made where it is true — the date — and the team is described by WHO asks for
+      // it here rather than by nobody else having it.
       description:
-        "Who am I — the identity this session acts as, my team (artifacts " +
-        "are shared with every member of my team), and TODAY'S DATE. Use `today` " +
-        "wherever a date is needed; never work one out from the store.",
+        "TODAY'S DATE — no other tool on any door returns it — and the team this session is " +
+        "acting for, which every document you write and every search you run is scoped to. " +
+        "The two facts to establish before anything else. Use `today` wherever a date is " +
+        "needed; never work one out from the store or from a run tag. It also returns " +
+        "how_this_works, the skill to read before your first write. For your platform role, " +
+        "how this request authenticated, or why a tool is missing from your list, call " +
+        "whoami on /manage; for every team you belong to and how to switch between them, " +
+        "call my_teams.",
       inputSchema: {},
     },
     async () => {

@@ -27,7 +27,13 @@ import { type Chain, isoToday, stampEnvelope } from "./write-guards.js";
 function snapshotOnApproval(chain: Chain, root: string, relPath: string, target: string, newContent: string): void {
   try {
     const parts = relPath.replace(/^\/+/, "").split("/");
-    if (parts.length !== 2 || !chain.docs.has(parts[1])) return;
+    // A FLOW'S DECLARATION NARROWS THIS; ITS ABSENCE DOES NOT SWITCH IT OFF. Unconditionally
+    // this returned for every document of a freeform initiative, so an approval there filed
+    // no frozen copy at all — the approver's name stood on bytes with nothing recording what
+    // they were. Provenance the platform cannot show is the failure this function exists to
+    // prevent, and "no manifest" is not a reason to stop preventing it.
+    if (parts.length !== 2) return;
+    if (chain.documents.length && !chain.docs.has(parts[1])) return;
     if (parseEnvelope(newContent).status !== "approved") return;
     const oldStatus = existsSync(target)
       ? parseEnvelope(readFileSync(target, "utf8")).status
@@ -136,14 +142,21 @@ export function logActivity(root: string, relPath: string | null, entry: Record<
 function ledgerOnClose(chain: Chain, root: string, relPath: string, content: string): void {
   try {
     const parts = relPath.replace(/^\/+/, "").split("/");
-    if (parts.length !== 2 || parts[1] !== chain.closingDoc) return;
+    // WHICHEVER DOCUMENT CARRIES THE OUTCOME, when no flow named one. A freeform initiative
+    // has `closingDoc === ""`, so this returned every time and a freeform close appended no
+    // ledger row — and the ledger is what the team's counts read, so those closes were
+    // invisible to every total built on it. initiative_close is the only thing that can write
+    // an `outcome` (outcomeCheck refuses one typed by hand), so the document it stamps is the
+    // one that closed the initiative.
+    if (parts.length !== 2) return;
+    if (chain.closingDoc && parts[1] !== chain.closingDoc) return;
     // Through parseEnvelope: both of these scanned the whole document, so a closing document
     // that merely mentioned `outcome:` in its body — quoting the rule, or showing an
     // example — appended a ledger row for an initiative nobody had closed.
     const outcome = parseEnvelope(content).outcome;
     if (!outcome) return;
-    const prev = existsSync(join(root, parts[0], chain.closingDoc))
-      ? readFileSync(join(root, parts[0], chain.closingDoc), "utf8")
+    const prev = existsSync(join(root, parts[0], parts[1]))
+      ? readFileSync(join(root, parts[0], parts[1]), "utf8")
       : "";
     if (parseEnvelope(prev).outcome) return; // already closed once
     let writes = 0, patches = 0, firstTs = "", lastTs = "";

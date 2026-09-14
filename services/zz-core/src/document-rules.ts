@@ -49,26 +49,53 @@ export const RESERVED_ENVELOPE = new Set<string>(Object.keys(Envelope.shape));
  * this deliberately does not ask. */
 const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
 
-/** AN INITIATIVE IS NAMED <YYYY-MM-DD>-<slug>, and until now nothing said so but prose.
+/** AN INITIATIVE IS NAMED <YYYY-MM-DD>-<slug>, and the platform is what makes that true.
  *
- * Every flow's own text states the shape and none of it was enforced, so an agent wrote
+ * Every flow's own text stated the shape and none of it was enforced, so an agent wrote
  * `27-08-2026-sample-intake-2` on 27 August and the platform took it. Forty initiatives on
  * this deployment do not match. The cost is not tidiness: the date IS the sort key everywhere
  * work is listed, so a day-first name sorts under "2" and files itself between two September
  * entries in the console, in initiative_status, and in every report built by ordering on it.
  *
- * ON CREATION ONLY, and that is the whole of the design. Put in safeName it would have guarded
- * every call that names an initiative — source_add, close, initiative_status — and the forty
- * that already exist could then never be closed, which is the shape of bug this file has now
- * fixed twice. A name is checked when it is chosen; afterwards it is simply the name. */
-export function initiativeNameShape(name: string): string | null {
-  if (/^\d{4}-\d{2}-\d{2}-/.test(name)) return null;
-  return (
-    `ERROR: an initiative is named <YYYY-MM-DD>-<slug> and "${name}" does not begin with a ` +
-    "date in that order. The date is what every listing sorts on, so a day-first or undated " +
-    "name files itself in the wrong place for good. session_whoami carries today's date in this " +
-    "deployment's own timezone — use that, then a short slug in the stakeholder's words."
-  );
+ * WHAT REPLACED THE GUARD. `initiativeNameShape` was here — a refusal read against a name a
+ * model had already composed, on the write path, once per document. The name is not the
+ * caller's to compose any more: `initiative_open` takes a SLUG and the two functions below
+ * build the name from it and the platform's own clock, so a malformed name is not refused,
+ * it is unreachable. A rule the caller cannot break beats a rule the caller is told about,
+ * and the sentence that told them — "session_whoami carries today's date, use that" — was an
+ * instruction to do by hand the one thing that had already gone wrong by hand.
+ *
+ * `initiativeNameFor` composes the name and lives in initiative-record.ts, beside the clock:
+ * this file cannot import write-guards.ts, which imports this one.
+ *
+ * This stays ON CREATION ONLY, which was the old guard's whole design and still is. Put in
+ * safeName they would guard every call that NAMES an initiative — source_add, close,
+ * initiative_status — and the forty that already exist could then never be closed, which is
+ * the shape of bug this file has now fixed twice. A name is checked when it is chosen;
+ * afterwards it is simply the name. */
+export function slugRefusal(slug: string): string | null {
+  const v = slug.trim();
+  if (!v) return "ERROR: slug is required — a few words in the stakeholder's own language, hyphenated.";
+  if (v.includes("/") || v.includes("\\") || v === "." || v === "..") {
+    return `ERROR: a slug is a single name, not a path — "${v}" contains a separator.`;
+  }
+  if (v.startsWith(".")) {
+    return "ERROR: a slug cannot begin with a dot — the store skips dot-entries, so the " +
+           "initiative would be created and then invisible to every listing and to search.";
+  }
+  // THE HELPFUL CALLER'S MISTAKE. Somebody who knows initiatives are named
+  // `<YYYY-MM-DD>-<slug>` types the whole thing, the platform prepends today's date on top of
+  // it, and the folder is `2026-09-14-2026-09-13-payment-retries`. That still sorts, which is
+  // why nothing downstream would ever report it — the same property that made the old
+  // day-first names survive forty times over.
+  if (/^\d{4}-\d{2}-\d{2}([-_]|$)/.test(v)) {
+    return (
+      `ERROR: "${v}" already begins with a date, and the platform prepends today's — this ` +
+      "initiative would carry two. Send the slug alone, in the stakeholder's own words: " +
+      "`payment-retries`, not the dated folder name."
+    );
+  }
+  return null;
 }
 
 /** A flow field this document may not carry, or null.
@@ -149,12 +176,13 @@ export function frontmatterRefusal(content: string, tool: string): string | null
  * stampEnvelope adds it only when absent, so a patched one stands and desynchronises the
  * document from its own snapshots in _versions/.
  *
- * This closes a route document_patch's own comment used to contemplate — a patch that adds a missing
- * `flow:` line to repair an ungoverned initiative — and that nothing recommends:
- * flowDeclarationCheck and initiative_status both answer that case with "pass
- * `flow: \"<name>\"` as an argument to document_write", which still works and is stamped rather
- * than typed. Every skill that teaches document_patch teaches it for body content: filling a
- * `<!-- brief: -->` marker, one section at a time. */
+ * This closes a route document_patch's own comment used to contemplate — a patch that adds a
+ * missing `flow:` line to repair an ungoverned initiative. There is now no repair to reach
+ * for: the flow is declared to `initiative_open` and CANNOT be adopted afterwards (FR-30), so
+ * an initiative governing nothing is governing nothing on purpose. This docstring used to send
+ * the reader to "pass `flow` as an argument to document_write", citing flowDeclarationCheck;
+ * both are gone. Every skill that teaches document_patch teaches it for body content: filling
+ * a `<!-- brief: -->` marker, one section at a time. */
 export function envelopeEditRefusal(before: string, after: string): string | null {
   const was = ENVELOPE_BLOCK.exec(before)?.[0] ?? "";
   const now = ENVELOPE_BLOCK.exec(after)?.[0] ?? "";
@@ -164,8 +192,9 @@ export function envelopeEditRefusal(before: string, after: string): string | nul
     "the platform writes. A gate is recorded by document_approve(); an outcome by initiative_close(); the flow, " +
     "the title, the stakeholder and the tags are named arguments to document_write and " +
     "document_revise, so they arrive as something you were told rather than something you " +
-    "composed. If this initiative declares no flow, write its first document again with " +
-    '`flow: "<name>"` as an argument — that is the repair, and the platform stamps it.'
+    "composed. The FLOW is not among them: it is declared to initiative_open and cannot be " +
+    "adopted afterwards, so an initiative that declares none declares none deliberately and " +
+    "there is nothing here to repair."
   );
 }
 

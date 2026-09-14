@@ -88,8 +88,9 @@ deeper top level makes them see nothing.
 
 ```markdown
 # No frontmatter. document_write takes the BODY; the platform writes the envelope.
-#   document_write(path: "<initiative>/explore.md", flow: "sdlc-flow", content: "<the body>")
-# flow is needed on the FIRST document of an initiative and stamped onto the rest.
+#   document_write(path: "<initiative>/explore.md", content: "<the body>")
+# document_write takes no `flow`. The flow was declared to initiative_open, which is also
+# what created this initiative, and the platform stamps it onto every document from there.
 
 # Exploration: <title>
 

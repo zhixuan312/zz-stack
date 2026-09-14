@@ -20,13 +20,15 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
-import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal, initiativeNameShape } from "../document-rules.js";
-import { documentGuards, flowDeclarationCheck, initiativeNameTaken } from "../guards.js";
+import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
+import { documentGuards } from "../guards.js";
 import { indexDoc, sourceDocument, walk } from "../indexing.js";
+import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { commitStore, logActivity, persistDocument } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { documentVersions, presentDocument, versionRefusal } from "../versions.js";
+
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 
 export function registerArtifactTools(server: McpServer): void {
@@ -39,12 +41,12 @@ export function registerArtifactTools(server: McpServer): void {
         "one. Paths are relative, e.g. '2026-08-20-sample-intake/spec.md'. " +
         "SEND THE BODY, starting at its first heading: the frontmatter is written by the " +
         "platform from what it already knows, and anything else the document needs — " +
-        "`flow` on the first document, `stakeholder`, `tags`, `title` — is an argument here.",
+        "`stakeholder`, `tags`, `title` — is an argument here. The initiative must already " +
+        "exist: `initiative_open` creates one, and this no longer does. The FLOW is declared " +
+        "there too, never here.",
       inputSchema: {
         path: z.string(),
         content: z.string().describe("The document's BODY, starting at its first heading. No frontmatter — the platform writes that."),
-        flow: z.string().optional()
-          .describe("Which flow governs this initiative. Required on the FIRST document; stamped onto later ones."),
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
@@ -57,7 +59,7 @@ export function registerArtifactTools(server: McpServer): void {
           .describe("This FLOW's own frontmatter fields, e.g. {building_block: 'casebox'}. Not envelope names."),
       },
     },
-    async ({ path, content, flow, stakeholder, tags, title, blocks, fields }) => {
+    async ({ path, content, stakeholder, tags, title, blocks, fields }) => {
       const blocked = writeGuard(path);
       if (blocked) return text(blocked);
       const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
@@ -73,17 +75,24 @@ export function registerArtifactTools(server: McpServer): void {
       // the author had rewritten the document. pathShapeRefusal exists to teach the path
       // form once, and it cannot do that from behind the guards.
       const target = await safePath(path);
-      // The flow arrives as an ARGUMENT now, not as a line the model typed. chainFor still
-      // resolves it from the content of an existing document when there is one; on a first
-      // write there is nothing to read, which is exactly the case this argument covers.
-      const declared = flow?.trim() ? `---\nflow: ${flow.trim()}\n---\n` : content;
-      const chain = await chainFor(root, path, team, declared);
-      content = envelopeFor(chain, path, content, { flow, stakeholder, tags, title, blocks, fields });
+      // THE WRITE NO LONGER CREATES, and three guards left with the creating. The name shape,
+      // the taken check and the flow declaration all asked questions about CREATION, and they
+      // ran on every write of every document because this path could not tell which write was
+      // the creating one. `initiative_open` is that moment now, so each is asked once, where
+      // the answer can still be acted on, and what is left here is a single existence test.
+      const unopened = unopenedRefusal(root, path);
+      if (unopened) return text(unopened);
+      // THE `flow` ARGUMENT IS GONE FROM THIS TOOL. It was the adopt-a-flow tool FR-30 forbids
+      // reached through an argument instead of a verb: an initiative opened freeform would
+      // acquire a manifest on its next document, and the gates that manifest declares would
+      // land on documents already written and unapproved. The flow is declared to
+      // `initiative_open`, at the one moment the choice is meaningful, and chainFor reads it
+      // from the record written there — which is also what covers the window this argument
+      // used to cover, an initiative whose first document is not yet on disk.
+      const chain = await chainFor(root, path, team, content);
+      content = envelopeFor(chain, path, content, { stakeholder, tags, title, blocks, fields });
       const fixed = normalizeSections(chain, path, content);
-      const gate = initiativeNameShape(path.replace(/^\/+/, "").split("/")[0])
-        ?? initiativeNameTaken(chain, root, path)
-        ?? await documentGuards(chain, root, path, fixed.content, team)
-        ?? await flowDeclarationCheck(chain, path, team, fixed.content);
+      const gate = await documentGuards(chain, root, path, fixed.content, team);
       if (gate) return text(gate);
       const written = persistDocument(chain, root, path, target, fixed.content, "write");
       logActivity(root, path,
@@ -313,8 +322,11 @@ export function registerArtifactTools(server: McpServer): void {
       // few lines, so a check reading `replace` was reading a document with no frontmatter —
       // which is why the guards have to see the whole thing.
       const fixed = normalizeSections(chain, path, result);
-      const bad = await documentGuards(chain, root, path, fixed.content, team)
-        ?? await flowDeclarationCheck(chain, path, team, fixed.content);
+      // flowDeclarationCheck went with the creation guards. It asked "did you forget to
+      // declare a flow?" — a question about an initiative being created, asked on a path that
+      // has never created one. initiative_open asks it now, once, and an initiative that
+      // exists is one that was already asked.
+      const bad = await documentGuards(chain, root, path, fixed.content, team);
       if (bad) return text(bad);
       persistDocument(chain, root, path, target, fixed.content, "patch");
       logActivity(root, path,
@@ -396,6 +408,12 @@ export function registerArtifactTools(server: McpServer): void {
       // and it is what stops a tool added later from being the exception.
       const blocked = writeGuard(rel);
       if (blocked) return text(blocked);
+      // THE SECOND CREATION PATH, and it is easy to miss. `mkdirSync(..., {recursive:true})`
+      // below builds `<initiative>/sources/` for an initiative that does not exist, so
+      // attaching a source used to conjure the folder that document_write is now refused for
+      // — leaving a half-initiative with material in it and no record of anyone opening it.
+      const unopened = unopenedRefusal(root, rel);
+      if (unopened) return text(unopened);
       const target = await safePath(rel);
       if (existsSync(target)) return text(`ERROR: ${rel} already exists — sources are immutable; add a new file`);
       const doc = sourceDocument(

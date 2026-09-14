@@ -21,6 +21,7 @@ import { serveMcp, serviceVersion, text } from "@zz/mcp-http";
 import express from "express";
 
 import { reindexAllTeams } from "./indexing.js";
+import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
@@ -167,7 +168,11 @@ async function recordOwnSurface(): Promise<void> {
 const OWN_TOOLS = new Set<string>();
 
 function buildServer(): McpServer {
-  const server = new McpServer({ name: "zz-core", version: serviceVersion(import.meta.url) });
+  // WHAT THIS DOOR SAYS ABOUT ITSELF, from orientation.ts — the `instructions` a client is
+  // handed at `initialize`, before it has called anything. It is constructed there rather
+  // than inline here so that a check can build the same server and read the handshake back
+  // through a real client; this file cannot be imported, because it binds :8000 below.
+  const server = coreServer(serviceVersion(import.meta.url));
 
   // A THROWN `Refusal` BECOMES `text(message)`, FOR EVERY TOOL, IN ONE PLACE.
   //

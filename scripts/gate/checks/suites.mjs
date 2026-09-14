@@ -276,3 +276,9 @@ check("a document read takes a list and a version, and history never vouches for
 
 check("the two tools that left the core door are gone from it and from every caller",
       runsCheck("core-surface-19.mjs"));
+
+check("the core door introduces itself to a client that reads nothing else, and the pointer survives",
+      runsCheck("orientation.mjs"));
+
+check("opening is explicit and dated by the platform, and freeform gets no next move",
+      runsCheck("initiative-open.mjs"));

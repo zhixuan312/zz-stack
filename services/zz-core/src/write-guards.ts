@@ -53,7 +53,12 @@ export interface Chain {
  * draft. */
 export function statusCheck(chain: Chain, relPath: string, content: string): string | null {
   const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2 || !chain.docs.has(parts[1])) return null;
+  // A FLOW'S DECLARATION NARROWS THIS GUARD; ITS ABSENCE DOES NOT DISABLE IT. As a bare
+  // `!chain.docs.has(...)` it returned null for every document of a freeform initiative, so
+  // `status: accepted` — the exact category error this function exists to catch — was
+  // accepted there. A flow that DID name its documents still exempts the ones it did not.
+  if (parts.length !== 2) return null;
+  if (chain.documents.length && !chain.docs.has(parts[1])) return null;
   const st = parseEnvelope(content).status;
   if (st !== undefined && !(STATUSES as readonly string[]).includes(st)) {
     return (
@@ -70,7 +75,12 @@ export function statusCheck(chain: Chain, relPath: string, content: string): str
  * with the definition in @zz/contracts. */
 export function outcomeCheck(chain: Chain, relPath: string, content: string): string | null {
   const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2 || !chain.docs.has(parts[1])) return null;
+  // Narrowed by a declaration, not switched off by its absence — see statusCheck. This one
+  // matters most: with the guard quiet on freeform documents, `outcome: banana` was accepted,
+  // and ledgerOnClose no longer requires a DECLARED closing document, so an unvalidated word
+  // would reach the row the team's counts are totalled from.
+  if (parts.length !== 2) return null;
+  if (chain.documents.length && !chain.docs.has(parts[1])) return null;
   const out = parseEnvelope(content).outcome;
   if (out === undefined || (OUTCOMES as readonly string[]).includes(out)) return null;
   return (
@@ -120,7 +130,11 @@ const ANONYMOUS = new Set([
 
 export function attributionCheck(chain: Chain, relPath: string, content: string, team: string | null): string | null {
   const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2 || !chain.docs.has(parts[1])) return null;
+  // Narrowed by a declaration, not switched off by its absence — see statusCheck. Quiet on
+  // freeform documents, this let `approved_by: the agent` stand: a gate recorded against
+  // nobody, on the one kind of initiative where no manifest is watching either.
+  if (parts.length !== 2) return null;
+  if (chain.documents.length && !chain.docs.has(parts[1])) return null;
   const env = parseEnvelope(content);
   for (const field of ["approved_by", "accepted_by", "closed_by"] as const) {
     const who = (env[field] ?? "").trim();

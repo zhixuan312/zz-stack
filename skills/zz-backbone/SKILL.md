@@ -181,15 +181,26 @@ what delegated access is for.
   `initiative_status`. A model guessing something a command would have answered
   is the most common way this platform gets a wrong fact written into a
   document that outlives the conversation.
+- **WORK STARTS WITH `initiative_open(slug)`, and nothing else creates an initiative.**
+  Writing a document into a name nobody opened is refused, and so is attaching a
+  source to one. Send the SLUG alone — a few words in the stakeholder's own
+  language, hyphenated — and use the name the tool hands back: **the platform
+  prepends today's date from its own clock, and you never type a date into a
+  folder name.** An agent that reasoned "latest stored activity is 27-08 and the
+  tag says 2808, so today is 28-08" called that "the date from the system"; the
+  same reasoning wrote 26-08 on the 28th and named a folder nothing can rename
+  afterwards. That whole class of mistake is now unreachable.
+- **Pass `flow` to `initiative_open` when a flow governs the work — and LEAVING IT
+  OUT IS A CHOICE, not an omission.** A freeform initiative takes every document,
+  approval and close a governed one does; what it gives up is the platform saying
+  what comes next, so `initiative_status` answers `next_move: null` and says why.
+  Do not go looking for a way to adopt a flow later — there is none, deliberately,
+  because the gates a flow declares would land on documents already written and
+  unapproved. Decide when you open.
 - **Today's date is `today` from `session_whoami`. Nothing else is today's date.**
   Not the newest row in the store, not a number inside a run tag, not the date
-  on the last document somebody wrote. You have no clock, so read it — one call,
-  before you name an initiative or write a date anywhere. An agent that reasoned
-  "latest stored activity is 27-08 and the tag says 2808, so today is 28-08"
-  called that "the date from the system"; the same reasoning wrote 26-08 on the
-  28th and named a folder that nothing can rename afterwards. The platform
-  overwrites `updated_at` for you, but it cannot fix a directory name you chose
-  before the first document existed.
+  on the last document somebody wrote. You have no clock, so read it before you
+  write a date anywhere. The platform overwrites `updated_at` for you.
 - Every document carries the envelope: `flow`, `type`, `status`, approvals
   when gated, and on close `outcome` with `accepted_by` naming who accepted.
   The platform's telemetry, index and audits read only these.
@@ -441,14 +452,15 @@ reading later can see one caused the other.
 
 ## Process layer vs building blocks
 
-- **THE PLATFORM'S TOOLS ARE THESE TWENTY-NINE, AND NOTHING ELSE IS ONE.** They
+- **THE PLATFORM'S TOOLS ARE THESE THIRTY, AND NOTHING ELSE IS ONE.** They
   are served by `zz-core`. Whenever this skill or a flow's skill names a tool
   without saying where it lives, it means the one on this list:
 
   | | |
   |---|---|
   | documents | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` |
-  | gates | `document_approve` `initiative_close` |
+  | initiatives | `initiative_open` `initiative_close` |
+  | gates | `document_approve` |
   | sources | `source_add` `source_list` |
   | knowledge | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
   | skills | `skill_list` `skill_read` |
@@ -473,7 +485,7 @@ make every number incomparable with every other number.
   them is a gate.
 - **Every tool in this skill and in a flow's skills is ZZ-CORE'S tool of that
   name.** Read `document_approve(path)` as *zz-core's `document_approve`*, `document_write` as
-  *zz-core's `document_write`*, and so on for all twenty-nine. Say it to yourself that
+  *zz-core's `document_write`*, and so on for all thirty. Say it to yourself that
   way before you call it, because that is the whole question — not what the verb
   sounds like, but which server it comes from.
 - **Find it by server, not by verb.** Clients qualify tool names differently and

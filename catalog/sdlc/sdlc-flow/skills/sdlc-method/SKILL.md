@@ -161,25 +161,23 @@ what the platform already knows; `approved_by`, `approved_at`, `outcome` and `cl
 from `document_approve()` and `initiative_close()`.
 
 What the document needs beyond those facts is a NAMED ARGUMENT to the write, not a line you
-type: `flow` on the first document, then `stakeholder`, `tags`, `title`, and `fields` for this
-flow's own keys.
+type: `stakeholder`, `tags`, `title`, and `fields` for this flow's own keys.
 
 ```
-document_write(path: "<initiative>/explore.md", flow: "sdlc-flow", content: "<the body>")
+initiative_open(slug: "<a few words>", flow: "sdlc-flow")
+document_write(path: "<initiative>/explore.md", content: "<the body>")
 ```
 
-`flow` is not decoration. The platform reads it to decide which chain of gates applies. A team
-running exactly one flow gets away without it, because there is one thing to fall back on. A
-team running more than one does not: nothing resolves, so no gate, no required document and no
-closing rule would be enforced on that initiative.
+**THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED, and `document_write` does not take one.**
+It used to, and passing it on a later document was a way to retrofit a manifest onto work
+already written — the gates that manifest declares would then land on documents nobody had
+approved. `initiative_open` is the one moment the choice is meaningful, and there is no tool
+for changing it afterwards.
 
-So the write is REFUSED, and the refusal lists the flows your team runs. It used to succeed —
-the conversation then looked exactly like a governed one and `initiative_status` answering
-`action: declare_flow` was the only way anyone found out, which meant nobody did. A `flow:`
-naming something your team has not installed is refused too, and by name; it used to be
-indistinguishable from declaring nothing.
-
-Pass it on the FIRST write of the initiative; the platform stamps every later document from it.
+`flow` is not decoration. The platform reads it to decide which chain of gates applies, and a
+flow your team has not installed is refused by name at the open. Opening WITHOUT one is a
+legitimate choice rather than a mistake: nothing is enforced on that initiative, and
+`initiative_status` says so by answering `next_move: null` instead of inventing a stage.
 
 **Documents** go in the initiative, written with `document_write` — never a local path. The
 initiative store is what gives a document its envelope, its version snapshot at approval, and

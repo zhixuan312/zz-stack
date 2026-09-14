@@ -72,10 +72,15 @@ const walk = (d, out = []) => {
   return out;
 };
 
-// ── 1. The core door's exact surface, as of Task I-18 ────────────────────────────────────
+// ── 1. The core door's exact surface, as of Task I-14 ────────────────────────────────────
+//
+// `initiative_open` joined it here. Registered from `registerInitiativeActTools` but defined
+// in `tools/initiative-open.ts`, because initiative-acts.ts is at the 700-line ceiling — which
+// is exactly why the scan below reads the whole tools directory rather than one file.
 const EXPECTED = [
   "document_approve", "document_list", "document_patch", "document_present", "document_read",
-  "document_revise", "document_write", "initiative_close", "initiative_status", "knowledge_add",
+  "document_revise", "document_write", "initiative_close", "initiative_open",
+  "initiative_status", "knowledge_add",
   "knowledge_reconcile", "knowledge_reindex", "knowledge_search", "knowledge_supersede",
   "plugin_affirm", "plugin_cases_record", "plugin_conform", "plugin_finding_record",
   "plugin_judge", "plugin_locate", "plugin_profile", "plugin_ruler", "plugin_ruler_record",

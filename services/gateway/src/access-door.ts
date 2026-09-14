@@ -22,6 +22,43 @@ import { callerIdentity, isSuper } from "./identity.js";
 import { myTeamsSummary } from "./settings.js";
 import { registerShelf, renderClientSetup } from "./admin/flows.js";
 
+/** What this door says about itself at `initialize`, before any tool is called.
+ *
+ * The same field, and the same reasoning, as services/zz-core/src/orientation.ts: one
+ * paragraph handed to a client at connect time, for the client that reads nothing else. It is
+ * an ADDITION and never a replacement — Claude Desktop parses the field without showing it to
+ * the model — so nothing load-bearing lives only here.
+ *
+ * Two lengths are real and checks/orientation.mjs asserts both: Claude Code truncates near
+ * 2KB, and Codex advises the first 512 characters be self-contained, so the purpose and the
+ * skill to read come first.
+ *
+ * NO TOOL NAMES BELOW, deliberately, and it is the one place this text differs in shape from
+ * zz-core's. That door is noun-first and its paragraph names every prefix it serves, checked
+ * both ways. This one is not: it serves list_catalog, connect_block, set_my_credential and a
+ * dozen more verb-first names that Task I-22 renames. Naming them here would put a second
+ * copy of that vocabulary in I-22's path and would rot silently in the meantime, so this says
+ * what the door is FOR, a capability to a line, and lets the tool list speak for itself. */
+const ACCESS_INSTRUCTIONS =
+  "This is /manage: your own access to the ZZ platform — and, if your role carries them, the " +
+  "people, teams and installs behind it. Every tool here acts on YOU, the caller, rather " +
+  "than on a team's work.\n\n" +
+  "START HERE: `whoami`. It says how the platform resolved you, what your platform role is, " +
+  "and what your token is scoped to. THE TOOL LIST IS YOUR ROLE — this door registers only " +
+  "what your role can execute, so a tool you cannot find is a fact about your access rather " +
+  "than a missing feature. Load the zz-access skill for the rest of it.\n\n" +
+  "What is here, a line each:\n" +
+  "  your identity        which team you are acting for, and switching between them\n" +
+  "  your platform token  issue one, list them masked, revoke one — shown ONCE, never again\n" +
+  "  your block keys      store, list and delete your own key for a building block\n" +
+  "  connecting a block   sign in as yourself, so it records you and there is no key to keep\n" +
+  "  your client setup    which marketplace, which plugins, and where the token goes\n" +
+  "  the shelf            what your team may install\n" +
+  "  administration       people, teams, tokens, installs and grants — only if your role " +
+  "carries them, and every one still refuses per call\n\n" +
+  "NOT FOR: doing any work. Documents, the knowledge store, the skills library and today's " +
+  "date are the /core door. This one changes who may do things, not what gets done.";
+
 /** /manage/mcp — the ONE door a person speaks to, built per request for the person speaking.
  *
  * There were two: /manage for your own access and /admin for administering the platform.
@@ -44,7 +81,10 @@ import { registerShelf, renderClientSetup } from "./admin/flows.js";
  * question "why can I not see it" has a tool, and the zz-access skill, which says a tool
  * missing from your list is a fact about your role. */
 export async function buildAccessServer(): Promise<McpServer> {
-  const server = new McpServer({ name: "zz-access", version: serviceVersion(import.meta.url) });
+  // SECOND ARGUMENT. `instructions` is `ServerOptions`; the first argument is
+  // `Implementation` and carries only name/version/title.
+  const server = new McpServer({ name: "zz-access", version: serviceVersion(import.meta.url) },
+                               { instructions: ACCESS_INSTRUCTIONS });
   const id = await callerIdentity();
   // Operator tools on this door take the same reading of "operator" the handlers do. See the
   // note over registerAdminTools: visibility must never be wider than executability.
@@ -132,9 +172,23 @@ export async function buildAccessServer(): Promise<McpServer> {
   server.registerTool(
     "my_teams",
     {
+      // What ONLY this tool says. Three tools answer some form of "who am I" and they are
+      // deliberately not merged — see the note over `whoami` in admin.ts, which was written
+      // first and is the model this follows. This one described itself as "the teams you
+      // belong to, and which one you are acting for", which `session_whoami` also returns:
+      // read that way it is a third copy, and a model choosing between the three had no
+      // reason to prefer any.
+      //
+      // It is the only one that lists the teams you are NOT acting for, which is the answer
+      // to "why can I not see that team's documents" and the call that has to come before
+      // switch_team.
       description:
-        "The teams you belong to, and which one you are ACTING FOR right now. Everything you " +
-        "do — documents, gates, the knowledge store, every agent — happens inside that one.",
+        "EVERY team you belong to, and which one you are ACTING FOR right now — the only " +
+        "tool that names the others, and the one to call before switch_team. Everything you " +
+        "do — documents, gates, the knowledge store, every agent — happens inside the team " +
+        "you are acting for. For your platform role, how this request authenticated, or why " +
+        "a tool is missing from your list, call whoami; for today's date and the team you " +
+        "are acting for while doing work, call session_whoami on /core.",
       inputSchema: {},
     },
     async () => {

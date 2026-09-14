@@ -443,7 +443,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 308 checks**, and thirteen of them RUN code rather than reading it: the
+- **The offline gate is 310 checks**, and fifteen of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through
@@ -453,7 +453,17 @@ is the balance, and the balance is:
   because "every path out of the fetch writes exactly one row" is not a property a regex can
   state, and the document-reads check, which harvests the real zod schemas off a stub server
   and drives `documentVersions`, `presentDocument` and `writeGuard` over a fixture store with
-  `shownSinceLastChange` as its oracle.
+  `shownSinceLastChange` as its oracle, and the orientation check, which opens a real MCP
+  `Client` over an `InMemoryTransport` pair against both doors and asserts what the handshake
+  and `session_whoami`'s payload actually carried — a grep for `instructions:` cannot tell a
+  field that is declared from one that is delivered, and the field is `ServerOptions`, the
+  second argument, so putting it in the first is a mistake the source reads right for. And the
+  initiative-open check, which drives `initiativeState` over a fixture store in BOTH
+  directions — a freeform initiative must answer `next_move: null`, a flow-driven one must
+  still be told its first document, and a check asserting only the first passes an
+  implementation that answers null always — and drives the real `chainFor` against a real
+  flow manifest to prove the open record is what resolves a chain while the folder is still
+  empty.
   (This number is hand-maintained and has been wrong twice in one session — two authors each
   adjusted it and both undercounted, because the enumeration silently omitted the
   fetched-before-approval record. It is the exact species Task I-33 removes: a count describing
@@ -679,7 +689,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **308 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **310 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".

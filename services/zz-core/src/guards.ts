@@ -14,12 +14,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { documentBody, OUTCOME_STOPPED, parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
-import { requestHeaders } from "@zz/mcp-http";
+import { documentBody, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
 import { frontmatterStatus } from "./chain.js";
 import { db } from "./platform-db.js";
-import { governingFlows } from "./skill-roots.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
 /** Closing an initiative (writing `outcome:` into the manifest's closing
@@ -132,151 +130,15 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   }
   return null;
 }
-/** An initiative nothing governs, on a team that runs more than one flow.
- *
- * zz-backbone has always said it: "`flow:` is the one that must be right. Write it on the
- * FIRST document — the platform stamps it onto later ones, but it can only stamp a flow it
- * has been told." It gets skipped, and when it does the platform enforces NOTHING on that
- * initiative — no gate, no required document, no closing rule — and says so only if someone
- * calls initiative_status and reads the answer. One such initiative is on this deployment
- * right now, with an approved intent and an approved spec, neither of which passed a gate.
- *
- * WHO IS ASKED is every team, now. It used to be only a team with two or more installs, on
- * the reasoning that one install answers for itself — but the platform flows ship to every
- * team without an install row, so "one install" never meant "one flow it can run". The teams
- * that reasoning excused are exactly the two it went wrong on: team-one, one install and a
- * zz-block-eval initiative governed by ops-flow throughout; zz-platform, no installs at all
- * and every eval it runs governed by nothing. governingFlows() is the corrected question.
- */
-export async function flowDeclarationCheck(
-  chain: Chain, relPath: string, team: string | null, content: string,
-): Promise<string | null> {
-  if (chain.name) return null;
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2 || !parts[1].endsWith(".md")) return null;
-  let flows: Set<string> | null;
-  try {
-    flows = await governingFlows(team);
-  } catch {
-    // NOT skipped. The platform stamps every later document's flow from the first one, so a
-    // first document written with no `flow:` now is an initiative governed by nothing for as
-    // long as it exists — and an outage is the worst moment to create one silently. Refusing
-    // does not block the work: declaring the flow is one argument, and the caller knows which
-    // flow they are running even when the registry cannot be asked.
-    return parseEnvelope(content).flow
-      ? null
-      : "ERROR: the platform database is unreachable, so which flows your team runs cannot be " +
-        "read — and an initiative that declares none is governed by nothing, permanently, " +
-        "because the platform stamps every later document from the first. Write this document " +
-        'again with `flow: "<name>"` as an argument to document_write and it will be accepted.';
-  }
-  if (!flows || flows.size < 2) return null;
-  const declared = parseEnvelope(content).flow;
-  const known = [...flows].sort().join(", ");
-  // WHICH of the two ways a declared flow fails to govern. This function only runs when the
-  // chain could not be resolved, and that has two causes: the name is not one the team
-  // installed, or it IS installed and the catalog cannot produce its manifest — removed, or
-  // refused by the schema. The message assumed the first and said "no flow named 'ops-flow'
-  // is installed for your team. Installed: sdlc-flow, ops-flow", contradicting itself in the
-  // same breath and sending the reader to install what they already have.
-  if (declared && flows.has(declared.split("@")[0].trim())) {
-    return (
-      `ERROR: '${declared}' IS installed for your team, and the catalog cannot produce its ` +
-      "manifest — it has been removed, or it no longer satisfies the manifest schema, and " +
-      "either way nothing can say which gates apply here. This is a platform-side fault " +
-      "rather than something to fix in this document: tell an admin, and check " +
-      `/schemas/manifest.json against catalog/<owner>/${declared.split("@")[0].trim()}/flow.json.`
-    );
-  }
-  return declared
-    ? `ERROR: no flow named '${declared}' is installed for your team. Installed: ${known}. ` +
-      "The flow's manifest is what says which gates apply, so a name nothing resolves leaves " +
-      "this initiative governed by nothing."
-    : "ERROR: this initiative declares no flow, and your team runs more than one " +
-      `(${known}), so nothing can say which gates apply to it. Write the initiative's FIRST ` +
-      `document again with \`flow: "<name>"\` as an argument to document_write — that argument is ` +
-      "where the flow is declared, and the platform stamps every later document from it. " +
-      "Until it is there, no gate, no required document and no closing rule is enforced here.";
-}
-/** A name already taken is a QUESTION, and the person answers it.
- *
- * The folder IS the initiative, and nothing stopped a second one landing in a folder that
- * already held work. Two people on a team can name the same work the same thing — likelier
- * than it sounds when the name comes from the date and the subject — and the failure was
- * silent: the opening document overwritten, two unrelated pieces of work interleaved under a
- * gate chain that made sense for neither.
- *
- * Both readings are legitimate and the store cannot tell them apart. Someone may be joining
- * work a colleague started, or starting their own and reaching for the obvious name. Guessing
- * either way is wrong in half the cases, and both wrong halves are expensive: silently merge
- * two initiatives, or silently split one a person meant to join.
- *
- * So this refuses, states who opened the existing one, and names both options concretely —
- * including the free index — for the person to choose between. The agent asks; it does not
- * decide. This is the same shape as every gate in this platform: the machine reports, and a
- * human moves it.
- *
- * Only the chain's FIRST document opens an initiative. Continuing one writes a LATER document
- * and never reaches here, so resumption across harnesses is untouched.
- *
- * And ITERATION is not a collision. An agent writes intent.md, the stakeholder asks for a
- * change, the agent writes it again — that is the flow working, and refusing it broke every
- * scenario on the first revision. So the question is not "does this document exist" but
- * "whose is it, and has it been agreed": your own draft is yours to rewrite. */
-export function initiativeNameTaken(chain: Chain, root: string, relPath: string): string | null {
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length < 2) return null;
-  const initiative = parts[0];
-  const first = chain.documents[0]?.name;
-  if (!first || parts[parts.length - 1] !== first) return null;
-  const existing = join(root, initiative, first);
-  if (!existsSync(existing)) return null;                        // free: this IS the creation
-
-  const me = parseCaller(requestHeaders()).email;
-  let opener = "";
-  try {
-    for (const line of readFileSync(join(root, initiative, "activity.jsonl"), "utf8").split("\n")) {
-      if (!line.trim()) continue;
-      const e = JSON.parse(line) as { user?: string; path?: string };
-      if (e.path && e.path.endsWith(first) && e.user) { opener = e.user.trim(); break; }
-    }
-  } catch { /* no readable activity log — fall through to the document's own state */ }
-
-  // Yours, and not yet agreed: iteration. The commonest write in the whole flow.
-  let settled = false;
-  try {
-    settled = parseEnvelope(readFileSync(existing, "utf8")).status === "approved";
-  } catch { /* unreadable: treat as unsettled rather than block a repair */ }
-  if (!settled) {
-    try {
-      const closing = join(root, initiative, chain.closingDoc);
-      settled = existsSync(closing) && !!parseEnvelope(readFileSync(closing, "utf8")).outcome;
-    } catch { /* same */ }
-  }
-  if (opener && opener === me && !settled) return null;
-
-  let n = 2;
-  while (existsSync(join(root, `${initiative}-${n}`, first))) n += 1;
-  const free = `${initiative}-${n}`;
-
-  // THREE cases, not two. This read "opened by X" or else "it is past its opening gate", and
-  // the else is reached two ways: the document IS settled, or the activity log could not be
-  // read and the opener is unknown. In the second, an unsettled draft was described as past a
-  // gate it has not reached — a false statement in a refusal, which is the one place this
-  // platform cannot afford one, because the reader acts on it.
-  const whose = opener && opener !== me
-    ? `, opened by ${opener}`
-    : settled
-      ? ", and it is past its opening gate"
-      : ", and this store does not record who opened it";
-  return `ERROR: '${initiative}' already holds an initiative${whose}. ` +
-    `Two things could be meant here and it is THEIR call, not yours — ask, then act:\n\n` +
-    `  CONTINUE it — this is the same work. Call initiative_status('${initiative}') and carry ` +
-    `on from where it stands. Do not rewrite ${first}; the work already has one.\n` +
-    `  NEW work    — it only shares a name. Write ${first} to '${free}' instead, which is free, ` +
-    `and use that name for every later document.\n\n` +
-    `Do not choose for them, and do not overwrite ${first} to find out.`;
-}
+// `flowDeclarationCheck` and `initiativeNameTaken` were here, and both went with the
+// creation guards when `initiative_open` took over creating. Each asked a question about an
+// initiative COMING INTO EXISTENCE — is a flow declared, is this name already somebody's —
+// on a path that could not tell a creating write from any other, so both ran on every write
+// of every document and could only fire once the document had already been composed.
+// Opening asks each of them once, before there is a folder, where the answer can still be
+// acted on. Neither is kept as a second line of defence: a guard on a path that no longer
+// creates is a rule two places can disagree about, which is the failure documentGuards'
+// own header comment exists to name.
 /** An approved gated document changes through `document_revise`, or it does not change.
  *
  * There were two paths and they disagreed. `document_revise` bumps the version, returns the

@@ -11,7 +11,7 @@ when_to_use: "The person typed /zz-access:doctor, or something on the platform i
 the script is deterministic — there is no judgement to add and nothing to check by hand.
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/skills/zz-doctor/doctor.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/skills/zz-doctor/doctor.js"
 ```
 
 Exit 0 means nothing needs doing. Exit 1 means at least one line came back FAIL.

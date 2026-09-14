@@ -21,14 +21,14 @@
   },
   "zz-access": {
     "version": "2.2.0",
-    "digest": "9203ab3e",
-    "cases_digest": "fdb69ec6",
+    "digest": "9571c3af",
+    "cases_digest": "a0ba2ff9",
     "skills": {
       "zz-access": "29467f7264e8",
       "zz-admin": "b457b4f3e4c3",
-      "zz-doctor": "4e0d5a42bf10",
-      "zz-migrate": "87b3582af113",
-      "zz-update": "9b180cc39a6c"
+      "zz-doctor": "b3960436e687",
+      "zz-migrate": "2ccb1e0161d2",
+      "zz-update": "a5d73e2d40eb"
     }
   },
   "zz-core": {

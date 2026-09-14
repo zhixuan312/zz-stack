@@ -18,7 +18,7 @@ entitled to make.
 comment what it was wrong about; a check nobody trusts is worse than no check. If you
 add behaviour, add the check that would have caught its absence.
 
-`scripts/gate.mjs` is an ORDER, not a list — 26 `import` lines, one per subject. A
+`scripts/gate.ts` is an ORDER, not a list — 26 `import` lines, one per subject. A
 module missing from it is a check that silently does not run, so `report()` refuses to
 pass unless the number of checks written under `scripts/gate/checks/` equals the number
 that ran.
@@ -28,7 +28,7 @@ that ran.
 ```bash
 npm run build                                    # tsc -b, project references
 npm run doctor                                   # where a deployment stops matching this checkout
-node scripts/doctor.mjs --layer repo,image       # offline; no host needed
+node scripts/doctor.ts --layer repo,image       # offline; no host needed
 ```
 
 For a local stack from this checkout rather than published images:
@@ -65,7 +65,7 @@ exemption list, because a list of files allowed to be large is a list nobody pru
 
 ## Releasing
 
-`node scripts/release.mjs --preflight` reports every fact about a release that is not a
+`node scripts/release.ts --preflight` reports every fact about a release that is not a
 judgement call. The release itself gates, builds, pushes, deploys and then verifies
 against the live deployment, rolling back on a disagreement. It ends three ways, not
 two: agreement tags, disagreement rolls back, and probes that could not RUN leave the

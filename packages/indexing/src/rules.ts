@@ -8,7 +8,7 @@
  * without the service.
  *
  * A FILE OF THEIR OWN, and not the package's door, because being pure is what makes them the
- * only part of the index that can be exercised without a Postgres — `checks/document-rules.mjs`
+ * only part of the index that can be exercised without a Postgres — `checks/document-rules.ts`
  * calls every one of them with the shape that would be wrong in the flattering direction.
  */
 import { verdictFromProse } from "@zz/contracts";

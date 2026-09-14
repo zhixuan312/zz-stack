@@ -22,14 +22,14 @@ import { type PlatformWriteOutcome } from "./people.js";
 // EACH WRITE TAKES `extraDetail`, merged into its own `auditAdmin` call's detail — a tool
 // call passes none, so an agent-issued write audits exactly as it always has; settings.ts's
 // routes pass `{ via: "web" }`. See settings.ts's header for why the marker is added by the
-// CALLER rather than assumed here, and gate.mjs's "every console write route records the
+// CALLER rather than assumed here, and gate.ts's "every console write route records the
 // door it came through" for what reads that literal text back out of the route body.
 // Not exported: unlike server.ts's SetCredentialOutcome/IssueTokenOutcome, nothing outside
 // this file needs to NAME this shape — settings.ts imports the four functions below as
 // values and lets their return type infer, since there is no cycle here forcing a
 // type-only import the way there is for server.ts's my_* functions (see settings.ts's
 // header). An `export` nobody imports is exactly what "nothing is exported that nobody
-// imports" (gate.mjs) exists to catch.
+// imports" (gate.ts) exists to catch.
 export type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
 /** Add a principal to a team, or change their role — the SAME call, because the insert's
  * own `on conflict (team_id, principal_id) do update set role = excluded.role` already

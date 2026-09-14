@@ -14,12 +14,12 @@
  * because "the instructions already say it" — that is the mistake this paragraph exists to
  * stop.
  *
- * TWO LENGTHS ARE REAL, and both are asserted by checks/orientation.mjs. Claude Code
+ * TWO LENGTHS ARE REAL, and both are asserted by checks/orientation.ts. Claude Code
  * truncates the field at about 2KB, and Codex's guidance is that the first 512 characters
  * be self-contained — so the purpose and the pointer to the rules come first, and the
  * per-noun detail comes after, where losing it costs a reader nothing they cannot ask for.
  *
- * THE NOUNS LISTED BELOW ARE THE NOUNS THE DOOR SERVES. checks/orientation.mjs derives the
+ * THE NOUNS LISTED BELOW ARE THE NOUNS THE DOOR SERVES. checks/orientation.ts derives the
  * prefix set from the tools actually registered and compares it against this text in both
  * directions, so a tool group that arrives or leaves makes this paragraph red rather than
  * quietly wrong. That is the same discipline server.ts applies to its own recorded surface:
@@ -31,7 +31,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
  *
  * `zz-platform` is named rather than described because a name is what `skill_read` takes.
  * It must stay the name of a skill that exists: if the skill is ever renamed, this text and
- * `session_whoami`'s `how_this_works` move together, and checks/orientation.mjs fails unless
+ * `session_whoami`'s `how_this_works` move together, and checks/orientation.ts fails unless
  * both point at a SKILL.md on disk.
  *
  * NOT EXPORTED, on purpose. Reading the constant is not reading the handshake — a client
@@ -64,7 +64,7 @@ const CORE_INSTRUCTIONS =
  * can be received. server.ts cannot be imported — it binds :8000 at module scope — so a
  * check that read the handshake would have had to grep the constructor's source instead, and
  * a grep for `instructions:` passes on a field that is declared and never delivered. This
- * runs the real SDK constructor, so checks/orientation.mjs can hand it a real client and read
+ * runs the real SDK constructor, so checks/orientation.ts can hand it a real client and read
  * back exactly what the handshake carries. */
 export function coreServer(version: string): McpServer {
   // SECOND ARGUMENT, not the first. `instructions` is `ServerOptions`, beside `capabilities`;

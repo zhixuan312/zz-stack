@@ -40,7 +40,7 @@
  *
  * `via: "web"` is logged explicitly on the write, same as every other console act — see
  * console-write.ts's own header for why that is stated by the route and not inherited, and
- * scripts/gate.mjs's "every console write route records the door it came through" for what
+ * scripts/gate.ts's "every console write route records the door it came through" for what
  * enforces it. This table is gateway-owned and not yet evidence: nothing downstream treats
  * a thread message as a decision or a document, and that is why it lives here rather than
  * in `zz.doc`.
@@ -300,7 +300,7 @@ export function mountDiscussion(app: Express): void {
     const row = result.rows[0] as { seq: number; created_at: string };
     // Written after the act succeeds, never before, and `via: "web"` is stated explicitly
     // here — see console-write.ts's own header on why a write names its door itself rather
-    // than inheriting one, and scripts/gate.mjs's door check for what enforces it.
+    // than inheriting one, and scripts/gate.ts's door check for what enforces it.
     logEvent({
       actor: identity.email, teamSlug: scope.slug, kind: "discussion.append",
       subject: `${initiative}/${path}`, detail: { via: "web" },

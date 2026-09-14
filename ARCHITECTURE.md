@@ -98,11 +98,11 @@ Three places hold things that are run rather than served, and the boundary is *w
 - `packages/tools/src` — anything with logic. TypeScript, compiled, imported, testable. If it
   parses, decides, or talks to a database, it lives here.
 - `scripts/` — the repository's own lifecycle, run by a person or by CI at the repo root:
-  `gate.mjs`, `release.mjs`, `set-version.mjs`. These may shell out to `tools`.
+  `gate.ts`, `release.ts`, `set-version.ts`. These may shell out to `tools`.
   `scripts/gate/` is the one subtree here, and it splits along the same line as the rule
-  below: `gate.mjs` is the ORDER the checks run in, `gate/checks/<subject>.mjs` are the checks
-  themselves, `gate/run.mjs` is the one `check` they all register through, and `gate/read.mjs`
-  and `gate/facts.mjs` are what they read the repository with. It was one 11,428-line file
+  below: `gate.ts` is the ORDER the checks run in, `gate/checks/<subject>.ts` are the checks
+  themselves, `gate/run.ts` is the one `check` they all register through, and `gate/read.ts`
+  and `gate/facts.ts` are what they read the repository with. It was one 11,428-line file
   until 2026-09-11, which is how long it takes a list to stop being navigable.
 - `testing/` — drivers that point at a *running deployment*. Orchestration, not computation.
 
@@ -145,20 +145,20 @@ rule is what the directory means:
   wrong.
 - **`packages/contracts/src/identity.ts`** is behind the package's door: `index.ts` is still
   the single definition point every importer sees, and the split is internal to it.
-- **`scripts/release/<step>.mjs` — one release step per file**, plus `config.mjs` for the
-  release's own flags. `release.mjs` keeps the order, the way `gate.mjs` keeps the order of
+- **`scripts/release/<step>.ts` — one release step per file**, plus `config.ts` for the
+  release's own flags. `release.ts` keeps the order, the way `gate.ts` keeps the order of
   the checks.
-- **`scripts/doctor/layers/<layer>.mjs` — one LAYER per file**, where a layer is a question
+- **`scripts/doctor/layers/<layer>.ts` — one LAYER per file**, where a layer is a question
   with one source of truth on the repository side and one on the deployment side: repo,
-  image, host, doors, contract, data. `doctor.mjs` is the order they are asked in, because
-  the first layer that disagrees usually explains every layer after it. `doctor/run.mjs` is
+  image, host, doors, contract, data. `doctor.ts` is the order they are asked in, because
+  the first layer that disagrees usually explains every layer after it. `doctor/run.ts` is
   the runner, and it is the only place that decides what a probe's outcome MEANS.
-- **`scripts/deployment.mjs`** is the one description of the deployment — its address, its
+- **`scripts/deployment.ts`** is the one description of the deployment — its address, its
   paths, its images, how to speak to it. It is not under either subtree because both read it:
-  it sat inside `release/config.mjs` until the doctor needed every line of it.
+  it sat inside `release/config.ts` until the doctor needed every line of it.
 
 The common shape: **the entry file states the order or the door, the modules hold the work.**
-`gate.mjs`, `release.mjs` and `doctor.mjs` are all three that, and a reader who knows one
+`gate.ts`, `release.ts` and `doctor.ts` are all three that, and a reader who knows one
 knows the others.
 
 ### The three things that ask whether this is working, and what each one can see
@@ -166,7 +166,7 @@ knows the others.
 | | asks | reads | when |
 |---|---|---|---|
 | `npm run gate` | is this checkout correct | the repository, offline | before anything |
-| `release.mjs --preflight` | is this release worth starting | the checkout and the host, read-only | before a release |
+| `release.ts --preflight` | is this release worth starting | the checkout and the host, read-only | before a release |
 | `npm run doctor` | where does the deployment stop matching this checkout | both sides, layer by layer | any time, outage included |
 
 They are not three lists. The doctor's layers ARE the release's step-5 verification — the
@@ -175,7 +175,7 @@ refuses it if it grows one. Step 5 used to hold eleven checks that ran for forty
 a release and at no other time, which is how three of them came to call names they never
 imported without anybody finding out.
 
-**A probe that could not RUN is not a probe that FAILED**, and `doctor/run.mjs` is where that
+**A probe that could not RUN is not a probe that FAILED**, and `doctor/run.ts` is where that
 distinction lives. Three verdicts: `ok`, `wrong` (the two sides disagree — the only one a
 release may roll back on) and `unknown` (the probe's own bug, an unreachable host, a missing
 token — reported, never silent, never evidence about the platform). A checker that cannot tell
@@ -295,7 +295,7 @@ Three properties of this standard are the standard, as much as any row below:
   `zz-platform` uses, for the reason it gives: a rule stated as an absolute that nothing
   enforces teaches a reader to distrust the ones that are real.
 - **There is no "this will hard-fail later".** A promised flip to blocking is the documented
-  way a standard in this repository becomes decoration, and `plugin-declaration.mjs` says so
+  way a standard in this repository becomes decoration, and `plugin-declaration.ts` says so
   in its own header. A rule either has a check on the day it is written, or it is a convention.
 - **Where this document and the repository disagree, the repository is wrong.** That is what
   makes the rows below rules rather than description.
@@ -328,7 +328,7 @@ that the next Surface does; getting it wrong costs an agent described as somethi
 | `purpose` | yes | the sentence that decides whether a capability belongs in THIS plugin or the next one. `description` is what a reader sees in a listing; `purpose` is what you argue against when the plugin starts accreting whatever was convenient | `check "a plugin manifest says what the plugin is for"` |
 | `entry` | yes, if it has stages | the skill the agent opens first. Orthogonal to shape: an `entry` says nothing about whether the package is a Flow | `check "every flow.json parses, and its entry names a skill it ships"` |
 | `commands` | yes, for every skill a person types | a command is DECLARED, never derived. `commandName()` derived one from a skill's name, so it could not be wrong in a way anybody could see | `check "a command is what a manifest declares, not what a function derives from a skill name"` |
-| `libraries` | yes, for every skill another skill loads | a library is a skill nobody types and no stage names, so without this field it is shipped and declared nowhere. That was the hole: `catalog-manifest.mjs` never read `libraries` | `check "a plugin declares every skill it ships, and ships every skill it declares"` |
+| `libraries` | yes, for every skill another skill loads | a library is a skill nobody types and no stage names, so without this field it is shipped and declared nowhere. That was the hole: `catalog-manifest.ts` never read `libraries` | `check "a plugin declares every skill it ships, and ships every skill it declares"` |
 | `stages[].name` | yes, per stage | the stage's own skill | same check |
 | `stages[].produces` | yes, per stage | what the stage LEAVES, and the vocabulary is closed: **a document name** the stage writes, **`"record"`** where the result is stored by the platform rather than as a file, or **`"nothing"`**. The last two are ANSWERS, not omissions — that is the whole reason the field is required, because an absent field cannot tell "the author forgot" from "this stage genuinely produces nothing". A document it names must name the stage back | `check "every stage says what it leaves behind, and the document it names names it back"` |
 | `documents` | only if it is a Flow | see the table above | `check "every flow declares which document closes it"` |
@@ -388,7 +388,7 @@ plugin at all** — see §2.
 
 ### Releasing one
 
-`scripts/release.mjs` is the only release procedure this repository has. Step 1a is the
+`scripts/release.ts` is the only release procedure this repository has. Step 1a is the
 fit-for-purpose review, and it is the one step no check can do for you: it prints each
 plugin's declared purpose beside the tools its declared doors actually register, and asks
 whether that surface delivers that purpose. A check that computed a verdict there would be
@@ -408,7 +408,7 @@ smaller set: what the gate holds about where things LIVE.
 | A Surface carries its own system prompt | nothing checks it — **[convention]**, §3b |
 | Nothing in `testing/` computes — it drives | `check "nothing in testing/ computes — it drives, and the computing lives in packages/tools"` |
 | No `tests/` fixture directory enters the image | `check "no fixture directory enters the image"` |
-| No source file is over 700 lines | `check "no source file is larger than one subject usually is"` — `.md` is outside it, so the documents this repository ships are held by `checks/docs-current.mjs` instead |
+| No source file is over 700 lines | `check "no source file is larger than one subject usually is"` — `.md` is outside it, so the documents this repository ships are held by `checks/docs-current.ts` instead |
 | The written record matches the delivered surface | `check "the written record matches the delivered surface, and no document outgrew the ceiling"` |
 
 The rows above used to name `flowShapeDeclared`, `testingDrivesOnly`, `imageCarriesNoFixtures`

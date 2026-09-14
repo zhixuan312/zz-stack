@@ -11,7 +11,7 @@ disable-model-invocation: true
 configure afterwards.
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/skills/zz-update/update.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/skills/zz-update/update.js"
 ```
 
 ## Why this is one command and not two

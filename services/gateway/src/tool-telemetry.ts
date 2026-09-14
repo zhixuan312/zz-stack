@@ -269,7 +269,7 @@ function shapes(args: Record<string, unknown>): Record<string, string> {
  * is safe for exactly one reason — the mount list beside it is short and every entry appears
  * below. Add a door to that list and not to this function and its calls are recorded as core:
  * nothing fails, nothing is empty, and the numbers are wrong in a way no report can show.
- * Written as an exported function of the URL so `checks/eval-door.mjs` CALLS it, per door,
+ * Written as an exported function of the URL so `checks/eval-door.ts` CALLS it, per door,
  * rather than reading a lambda out of server.ts and hoping the branch it found is the one that
  * runs.
  *
@@ -510,7 +510,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // trace was guessing at.
         // RAW NAME: the same reason as the `loading` predicate above — `call.params.name` is
         // what the CLIENT sent, so these are the registered spellings and not resolver output.
-        // A regex literal is invisible to `checks/pre-rename-literals.mjs`, which only reads
+        // A regex literal is invisible to `checks/pre-rename-literals.ts`, which only reads
         // quoted strings, so this marker is the only thing standing between the next rename
         // and three document writes that stop being stamped with the stage that owes them.
         const wroteDoc = /^(document_write|document_revise|document_patch)$/.test(String(call.params?.name ?? ""));

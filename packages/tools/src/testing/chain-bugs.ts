@@ -8,7 +8,7 @@
  * overwrite each other. Keeping both in one file was what pushed it past the 700-line ceiling,
  * and the ceiling is where this repository has always found a second subject hiding.
  *
- * `checks/chain-check-wiring.mjs` follows this import, so a tool exercised here counts as
+ * `checks/chain-check-wiring.ts` follows this import, so a tool exercised here counts as
  * exercised — the walk is what matters, not which file it is written in.
  */
 

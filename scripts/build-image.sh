@@ -21,7 +21,7 @@ VERSION="${ZZ_VERSION:-$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\
 # host, and nothing here or in docker says so until a container fails to start there.
 #
 # Two scripts building one tag is a divergence waiting to happen, and this was already it.
-# release.mjs reads ZZ_PLATFORM with the same default, and the gate holds the two to the
+# release.ts reads ZZ_PLATFORM with the same default, and the gate holds the two to the
 # same value.
 PLATFORM="${ZZ_PLATFORM:-linux/amd64}"
 

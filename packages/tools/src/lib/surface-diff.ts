@@ -28,7 +28,7 @@
  *
  * PURE, AND SEPARATE FROM THE OP THAT PRINTS IT, for one concrete reason: every op in this
  * package calls `process.exit` at module scope, so importing one to test its logic ends the
- * importing process. checks/eval-door.mjs drives the functions below over a synthetic before
+ * importing process. checks/eval-door.ts drives the functions below over a synthetic before
  * and after, which is what proves a move is reported AS a move rather than that a query ran.
  */
 

@@ -241,7 +241,7 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
     // The consequence is worth stating plainly: the ablation half of case scoring has never
     // parsed a real run. Every one of the frozen run's cases is skipped for want of a delta,
     // so `mean_delta` is null and `sufficient` is false for the only data that exists. Task
-    // I-37 owns proving the instrument produces a readable result; `checks/eval-readable.mjs`
+    // I-37 owns proving the instrument produces a readable result; `checks/eval-readable.ts`
     // is where both arms, a computable delta and a once-only case name become enforced.
     const agg = asRecord(c.aggregates);
     const withScore = num(agg, "score") ?? num(c, "with_score") ?? num(c, "with");

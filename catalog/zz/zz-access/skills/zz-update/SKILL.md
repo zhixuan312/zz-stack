@@ -11,7 +11,7 @@ when_to_use: "The person typed /zz-access:update, or asked how to update, or is 
 configure afterwards.
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/skills/zz-update/update.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/skills/zz-update/update.js"
 ```
 
 ## Why this is one command and not two

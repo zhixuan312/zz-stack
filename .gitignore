@@ -26,6 +26,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# build-marketplace.ts compiles catalog/**/skills/**/*.ts here before packaging, so the
+# marketplace/ tree never sees the .ts source beside the .js it ships. Rebuilt per invocation.
+.marketplace-staging/
+
 
 # documentation is kept locally, not published with the package
 docs/

@@ -5,7 +5,7 @@
  * browser, and a credential the browser can reach is a credential every visitor can reach —
  * that is exactly what Next.js's `NEXT_PUBLIC_*` convention means. This module is its own
  * file, imported by nothing outside this service, so the gate has one thing to point a
- * check at: "the server-held LLM client stays off the console" in scripts/gate.mjs asserts
+ * check at: "the server-held LLM client stays off the console" in scripts/gate.ts asserts
  * that nothing under zz-stack-dashboard/ imports this file, reads LLM_API_KEY or
  * LLM_BASE_URL, or ships either through a NEXT_PUBLIC_* name.
  *

@@ -14,7 +14,7 @@
  * Everything below installs and uninstalls as a unit instead.
  *
  * Distribution is a PUBLIC marketplace committed to this repository, which
- * `build-marketplace.mjs` renders with the very function below. It used to be a tarball from
+ * `build-marketplace.ts` renders with the very function below. It used to be a tarball from
  * `/pkg/`, behind `Authorization: Bearer` — which put a credential in front of the tools a
  * person installs in order to obtain one. The shelf was never the boundary: every tool it
  * lists is a door at the gateway, and the door still refuses.
@@ -45,7 +45,7 @@ export const PLATFORM_VERSION: string = serviceVersion(import.meta.url);
 
 /** Where the Claude Code shelf is published, as `claude plugin marketplace add` takes it.
  *
- * The repository is the distribution: `build-marketplace.mjs` renders the shelf into it and
+ * The repository is the distribution: `build-marketplace.ts` renders the shelf into it and
  * the gate refuses a release whose committed copy has fallen behind. This is the one place
  * that name is written — the install, refresh and owner URL below all read it. */
 const MARKETPLACE_REPO = "zhixuan312/zz-stack";
@@ -188,7 +188,7 @@ function baselineFiles(flows: InstalledFlow[]): PackageFile[] {
  * receives and the card the catalog declares free to drift apart.
  *
  * THROWS rather than falling back. An empty card on the one plugin everybody must install is
- * the failure nobody notices, and catalog-manifest.mjs already refuses a shelved entry with no
+ * the failure nobody notices, and catalog-manifest.ts already refuses a shelved entry with no
  * description — so reaching this line means the manifest is not the one that check read. */
 function baselineCard(target: string): string {
   const said = catalogManifest(BASELINE, true)?.description;
@@ -199,7 +199,7 @@ function baselineCard(target: string): string {
   }
   // A FUNCTION, not a replacement string. `target` is the person's own email on the
   // gateway, and `$&` or `$'` inside a replacement STRING are read as patterns — the
-  // defect security-boundary.mjs found in nine sites that put somebody's words into
+  // defect security-boundary.ts found in nine sites that put somebody's words into
   // somebody's document.
   return said.replace("ZZ platform baseline", () => `ZZ platform baseline for ${target}`);
 }

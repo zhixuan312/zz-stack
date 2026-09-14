@@ -2,7 +2,7 @@
  * WHAT EACH PLUGIN IS, computed from the catalog alone — no request, no caller, no database.
  *
  * A plugin declares a version in its flow.json and nothing has ever checked it:
- * `scripts/set-version.mjs` bumps every manifest in the workspace and never touches `catalog/`.
+ * `scripts/set-version.ts` bumps every manifest in the workspace and never touches `catalog/`.
  * So a plugin's content could move under a frozen number indefinitely, and an evaluation of
  * "plugin X at version V" that cannot say what V contained is an evaluation of nothing.
  *
@@ -121,7 +121,7 @@ function skillNames(root: string): string[] {
 function lockedSkills(root: string, names: string[], plugin: string): PluginSkill[] {
   const lockPath = join(root, SKILLS_LOCK);
   if (!existsSync(lockPath)) {
-    throw new Error(`${SKILLS_LOCK} is missing — run \`node scripts/skill-versions.mjs --write\``);
+    throw new Error(`${SKILLS_LOCK} is missing — run \`node scripts/skill-versions.ts --write\``);
   }
   const lock = JSON.parse(readFileSync(lockPath, "utf8")) as Record<string, { version: string; sha: string }>;
   return names.map((name) => {
@@ -132,7 +132,7 @@ function lockedSkills(root: string, names: string[], plugin: string): PluginSkil
       // "this plugin was never used".
       throw new Error(
         `skill "${name}" ships in plugin "${plugin}" and is absent from ${SKILLS_LOCK} — run ` +
-        "`node scripts/skill-versions.mjs --write`");
+        "`node scripts/skill-versions.ts --write`");
     }
     return { name, version: row.version, sha: row.sha };
   });

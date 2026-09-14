@@ -28,7 +28,7 @@
 #
 # THE PROMPT TYPES THE COMMAND, and that is forced rather than chosen. zz-doctor does NOT
 #   ship as a skill: measured 2026-09-13, `marketplace/zz-access/skills/zz-doctor/` contains
-#   `doctor.mjs` and no SKILL.md at all, because buildClientPackage renders zz-access's three
+#   `doctor.js` and no SKILL.md at all, because buildClientPackage renders zz-access's three
 #   typed capabilities (doctor, update, migrate) as COMMANDS — and a command carries
 #   `disable-model-invocation: true`, so no model can open it whatever the prompt says.
 #
@@ -42,13 +42,13 @@
 #   such command installed, the line is just text.
 #
 # `regex` matches the run's LAST MESSAGE only (measured on the sdlc suite, 2026-09-13),
-#   and any string quoted in the prompt is free to the baseline arm. `doctor.mjs` and `zzp_`
+#   and any string quoted in the prompt is free to the baseline arm. `doctor.js` and `zzp_`
 #   below appear nowhere in the prompt; `/zz-access:doctor` DOES, so it is not graded.
 #
 # What it tests: given the exact symptom pair the skill names, does the agent reach for
 #   zz-doctor and hand over the script, instead of improvising a diagnosis?
 #
-# Bash is not granted by default, so the agent cannot RUN doctor.mjs. Quoting the command
+# Bash is not granted by default, so the agent cannot RUN doctor.js. Quoting the command
 #   for the person to run is the intended observable and is what the skill tells it to do
 #   anyway when it cannot execute — do not add `--allow-tools Bash` to make it run, that
 #   would put a live network call inside an eval.
@@ -56,7 +56,7 @@
 # Expected Δ (with-plugin minus no-plugin):
 #   (doctor-skill-fired was removed: it graded `Skill(zz-doctor)`, and there is no such
 #    skill in the shipped plugin. See the note above.)
-#   hands-over-the-script ~1.0 — `doctor.mjs` is a filename that exists only inside this
+#   hands-over-the-script ~1.0 — `doctor.js` is a filename that exists only inside this
 #                                plugin. The baseline arm cannot produce it by guessing.
 #   plugin-only-vocabulary ~0.9 — `zzp_` (the platform's token prefix), `/zz-access:update` (the
 #                                fix the skill names for a version mismatch) and
@@ -76,11 +76,11 @@ execution:
   max_turns: 15
 graders:
   # `/zz-access:doctor` was in this alternation and has been removed: the prompt now types it, so
-  # the baseline arm gets it for free by quoting the request back. `doctor.mjs` is the file
+  # the baseline arm gets it for free by quoting the request back. `doctor.js` is the file
   # name only this plugin carries.
   - name: hands-over-the-script
     type: regex
-    pattern: 'doctor\.mjs'
+    pattern: 'doctor\.js'
   - name: plugin-only-vocabulary
     type: regex
     pattern: 'zzp_|/zz-access:update|CLAUDE_PLUGIN_ROOT'

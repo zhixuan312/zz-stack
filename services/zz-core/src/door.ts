@@ -24,7 +24,7 @@
  * THE WORDS ARE THE GATEWAY'S, NOT A SECOND VOCABULARY. `core` and `eval` are what
  * `doorSurface()` answers for `/core/mcp` and `/eval/mcp`, which is also the left half of
  * `zz.event.tool_key` — so the recorded surface and the recorded calls line up with no
- * translation. checks/eval-door.mjs asserts that by comparing what a real build recorded here
+ * translation. checks/eval-door.ts asserts that by comparing what a real build recorded here
  * against what that function returns, so the two cannot drift on a rename.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -41,7 +41,7 @@ import { Refusal } from "./refusal.js";
  *
  * A NAME BELONGS TO ONE DOOR, and a second registration of it overwrites the first rather than
  * accumulating a list. That is not a guess about which door wins: a tool served by both doors
- * is a defect this repository already refuses — checks/eval-door.mjs fails on any name in both
+ * is a defect this repository already refuses — checks/eval-door.ts fails on any name in both
  * tool lists, because the core door is in the required baseline plugin and a tool on both is a
  * tool everybody has after a move that was supposed to take it away. So the case this would
  * have to disambiguate cannot reach a green gate, and inventing a representation for it here
@@ -61,7 +61,7 @@ export const OWN_TOOLS = new Map<string, string>();
  * see.
  *
  * Patched on the INSTANCE, not renamed at each call site: a gate check (`a path is resolved
- * before the document at it is judged`, scripts/gate.mjs) splits tool source on the literal
+ * before the document at it is judged`, scripts/gate.ts) splits tool source on the literal
  * string `server.registerTool(` to find each tool's body, so every registration has to keep
  * reading exactly that. The cast is confined to this one assignment; every
  * `server.registerTool(name, config, cb)` call is still checked against the SDK's own generic

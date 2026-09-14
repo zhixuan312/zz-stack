@@ -101,7 +101,7 @@ const CONTEXT_WINDOW_KB = 800;
 /** A `count(*)`, which is never SQL-null — the `?? 0` guards an absent ROW, not a null
  *  aggregate, and this helper must never be pointed at one. An aggregate that can come back
  *  null (`sum`, `avg`, a nullable column) is tested for null at its own call site and
- *  reported as unmeasured; see where the run bytes are read. `checks/console-nulls.mjs`
+ *  reported as unmeasured; see where the run bytes are read. `checks/console-nulls.ts`
  *  pins both halves. */
 const count = (v: unknown): number => Number(v ?? 0);
 const pct = (a: number, b: number): number | null => (b ? (a / b) * 100 : null);

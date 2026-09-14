@@ -116,7 +116,7 @@ export function actingTeam(
  * writes a token, whatever reads one back, and whatever recognises one in a log.
  *
  * The prefix earns its place separately: it is what makes a leaked token identifiable as
- * ours in someone else's paste buffer, and what release.mjs redacts on.
+ * ours in someone else's paste buffer, and what release.ts redacts on.
  */
 const PAT_PREFIX = "zzp_";
 const PAT_BYTES = 24;

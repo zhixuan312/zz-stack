@@ -46,7 +46,7 @@ ssh <ssh-host> 'cd /root/zz-parent/zz-stack/deploy && docker compose up -d --rem
 provisioning script that quietly makes decisions is worse than one that stops.
 
 **Afterwards, that host is a released deployment like any other.** Point the release at it
-with `ZZ_HOST=<ssh-host>` and it will scp each new bundle there itself — `scripts/release.mjs`
+with `ZZ_HOST=<ssh-host>` and it will scp each new bundle there itself — `scripts/release.ts`
 does exactly the two commands above, at the version it is shipping.
 
 **Never copy `deploy/Caddyfile` onto a host by hand.** It is a template: `install-caddy.sh`
@@ -126,7 +126,7 @@ nothing has no blocks and every `/p/<block>/mcp` answering 404. That is the inte
 
 A browser app showing every team's work in one place. It is **not in this bundle** and not in
 this compose file: it has its own compose file, from the `zz-stack-dashboard` repository, at
-its own path on the host. It is still released by `zz-stack/scripts/release.mjs` — one
+its own path on the host. It is still released by `zz-stack/scripts/release.ts` — one
 release, two components — so what runs there is a published image
 (`ghcr.io/zhixuan312/zz-stack-dashboard`) and the only file the host holds is that compose
 file. It binds to loopback, and Caddy splits ONE host on path: `/auth/*` and `/api/console/*`

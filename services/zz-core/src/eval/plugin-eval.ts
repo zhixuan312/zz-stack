@@ -81,7 +81,7 @@ function skillsDirOf(plugin: string): string {
  *
  * THE BASELINE IS NOT OPTIONAL AND IS NOT DECLARED. `zz` is required by every package, so
  * `zz-core` arrives with every plugin whether or not a manifest mentions it — which is the rule
- * the gate states at skill-tools.mjs:182-183: "Reachable = the baseline (/core, in every agent
+ * the gate states at skill-tools.ts:182-183: "Reachable = the baseline (/core, in every agent
  * and the required package) plus whatever the manifest declares."
  *
  * Reading `manifest.servers` alone reported sdlc as reaching NOTHING while the skills it ships

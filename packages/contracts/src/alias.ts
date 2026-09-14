@@ -23,7 +23,7 @@
  * 17 entries, not 16 — the plan's AC-1.3a text originally said 16, which is the /core RENAME
  * count (15 core renames + `reindex_knowledge`, which is renamed as it moves). `block_skills`
  * is a MERGE, counted separately from renames in the spec's own table, but it still needs an
- * alias entry so its history resolves. checks/alias-maps.mjs now pins 17.
+ * alias entry so its history resolves. checks/alias-maps.ts now pins 17.
  */
 export const TOOL_ALIAS: Record<string, string> = Object.freeze({
   get_my_info: "session_whoami",
@@ -148,7 +148,7 @@ export function resolveStep(step: string): string {
  * import a service, and `zz-tool call` has to reject a door before it opens a socket if the
  * person is to get a useful error instead of a connection failure.
  *
- * IT IS NOT A SECOND SOURCE OF TRUTH. `scripts/gate/checks/catalog-servers.mjs` reads
+ * IT IS NOT A SECOND SOURCE OF TRUTH. `scripts/gate/checks/catalog-servers.ts` reads
  * server.ts's DOORS and asserts these two agree, so a door added on one side and not the
  * other is red before it ships. That is the only reason a second statement is allowed to
  * exist at all: it is checked against the first.
@@ -186,7 +186,7 @@ export const isDoor = (path: string): boolean =>
  * what is missing and not one thing about how to get it. A dead end is not an error message
  * problem; it is a missing onboarding step, and the step already existed twenty feet away at
  * `GET /`. Two wordings of it would be two onboardings, so there is one, and
- * `scripts/gate/checks/catalog-servers.mjs` holds the door's copy against this one.
+ * `scripts/gate/checks/catalog-servers.ts` holds the door's copy against this one.
  *
  * Written as lines rather than a paragraph because both readers print it to a terminal. */
 export const NO_TOKEN_ONBOARDING: readonly string[] = Object.freeze([
@@ -210,9 +210,9 @@ export const NO_TOKEN_ONBOARDING: readonly string[] = Object.freeze([
  * `zz` became `zz-core` in 0.34.0. The entry is frozen like the others: nothing writes an old
  * name after the rename, and a miss means "this plugin was never renamed", not a failure.
  *
- * COPIED, DELIBERATELY, INTO catalog/zz/zz-access/skills/zz-update/update.mjs — that script
+ * COPIED, DELIBERATELY, INTO catalog/zz/zz-access/skills/zz-update/update.ts — that script
  * runs on somebody else's machine from inside a plugin directory with no workspace around it,
- * so it cannot import this. `checks/plugin-alias.mjs` holds the two to each other, which is the
+ * so it cannot import this. `checks/plugin-alias.ts` holds the two to each other, which is the
  * only thing that makes a second copy honest. */
 export const PLUGIN_ALIAS: Record<string, string> = Object.freeze({
   zz: "zz-core",

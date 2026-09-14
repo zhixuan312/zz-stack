@@ -1,0 +1,74 @@
+#!/usr/bin/env node
+/**
+ * gate.mjs — everything that must be true before a release leaves this machine.
+ *
+ * WHY THIS EXISTS. Until now the only gate between "I edited a file" and "every user's
+ * platform is down" was `tsc -b`. That is not hypothetical: a duplicate MCP tool
+ * registration typechecked cleanly, deployed cleanly, and returned 500 for every
+ * request to zz-core for about four minutes — including document_write and
+ * initiative_status — because the server is built per request and the throw took the
+ * whole builder down. Nothing caught it. I found it by reading logs.
+ *
+ * The checks are the ones that would have. Most were written as throwaway scripts during a
+ * loop test and found four real defects in five rounds; this is them, promoted to blocking.
+ *
+ *   node scripts/gate.mjs            # all checks
+ *   node scripts/gate.mjs --quiet    # only failures
+ *
+ * Exit 0 = safe to release. Non-zero = do not.
+ *
+ * THIS FILE IS AN ORDER, NOT A LIST. Every check lives in `gate/checks/<subject>.mjs`,
+ * grouped by what it is about, and each module registers its own checks when it is
+ * imported — so the imports below are the gate, and an import missing here is a module
+ * that does not run. `build` is first because several of its checks RUN something and
+ * everything after may rely on the build having succeeded.
+ *
+ * It was one 11,428-line file until 2026-09-11, with 273 checks and nine shared helpers
+ * interleaved between them. Splitting it changed no check's logic; what it changed is that
+ * a person looking for the rule about backups now opens `deploy-ops.mjs` instead of
+ * scrolling a file where §5 alone ran for 9,550 lines.
+ */
+import "./gate/checks/build.ts";
+import "./gate/checks/image.ts";
+
+import "./gate/checks/catalog-manifest.ts";
+import "./gate/checks/plugin-declaration.ts";
+import "./gate/checks/catalog-stages.ts";
+import "./gate/checks/stage-produces.ts";
+import "./gate/checks/marketplace.ts";
+import "./gate/checks/catalog-servers.ts";
+
+import "./gate/checks/skill-shape.ts";
+import "./gate/checks/skill-claims.ts";
+import "./gate/checks/skill-tools.ts";
+import "./gate/checks/skill-prose.ts";
+import "./gate/checks/prose-names.ts";
+
+import "./gate/checks/documents-envelope.ts";
+import "./gate/checks/documents-frontmatter.ts";
+import "./gate/checks/documents-schema.ts";
+import "./gate/checks/documents-guards.ts";
+import "./gate/checks/documents-lifecycle.ts";
+import "./gate/checks/knowledge.ts";
+
+import "./gate/checks/data-sql.ts";
+import "./gate/checks/data-telemetry.ts";
+import "./gate/checks/data-telemetry-reports.ts";
+
+import "./gate/checks/security-identity.ts";
+import "./gate/checks/security-secrets.ts";
+import "./gate/checks/security-boundary.ts";
+
+import "./gate/checks/deploy-compose.ts";
+import "./gate/checks/deploy-release.ts";
+import "./gate/checks/deploy-ops.ts";
+import "./gate/checks/config-env.ts";
+
+import "./gate/checks/console.ts";
+import "./gate/checks/docs-integrity.ts";
+import "./gate/checks/hygiene.ts";
+import "./gate/checks/suites.ts";
+
+import { report } from "./gate/run.ts";
+
+report();

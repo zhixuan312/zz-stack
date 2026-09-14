@@ -141,7 +141,7 @@ export function mountConsoleWrite(app: Express): void {
     // Written after the act succeeds, never before, and `via: "web"` is stated explicitly
     // here rather than assumed from `document_approve` itself — document_approve() has callers that are not
     // this console, and none of them should inherit a door marker they did not come
-    // through. See the gate check below this file's sibling check in scripts/gate.mjs for
+    // through. See the gate check below this file's sibling check in scripts/gate.ts for
     // what happens to FR-8 the day a route forgets this line.
     logEvent({ actor, teamSlug: scope.slug, kind: "document.approve", subject, detail: { via: "web" } });
     res.json({ ok: true, result: reply });

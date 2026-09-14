@@ -345,7 +345,7 @@ mountSettings(app, {
 // not record.
 // THE PATH LIST AND `doorSurface` MOVE TOGETHER. A door added here and not there is recorded
 // as `core` — nothing fails, nothing is empty, and every number about it is wrong. See
-// doorSurface's own paragraph for what rides on the answer; checks/eval-door.mjs calls it per
+// doorSurface's own paragraph for what rides on the answer; checks/eval-door.ts calls it per
 // door rather than reading this line.
 app.use(Object.keys(DOORS),
         toolCallTelemetry((req) => doorSurface(req.originalUrl)));

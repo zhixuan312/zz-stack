@@ -354,7 +354,7 @@ export function mountCatalog(app: Express): void {
               // trust a number they should not.
               //
               // A BARE UNARY PLUS, deliberately, and the same one `cases` above uses. The rule
-              // console-nulls.mjs enforces is that an aggregate which can be SQL null must not
+              // console-nulls.ts enforces is that an aggregate which can be SQL null must not
               // reach JSON through `+`, because `+null` is 0 and a group nothing measured then
               // reports as measured. `errored_runs` is a count(*), not an avg: it is null only
               // when the lateral matched no run at all, and that case never reaches here

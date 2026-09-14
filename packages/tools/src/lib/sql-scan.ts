@@ -2,7 +2,7 @@
  * Find every `.query(...)` in a TypeScript source, with the statement it was handed.
  *
  * ONE SCANNER, USED TWICE. `check:sql` PREPAREs these against a live schema before a release;
- * `scripts/gate.mjs` holds console.ts to passing only literals, offline, so that a query
+ * `scripts/gate.ts` holds console.ts to passing only literals, offline, so that a query
  * assembled at request time cannot slip past the first check by not being one statement at
  * all. Both need to agree, exactly, on where a statement starts and ends.
  *

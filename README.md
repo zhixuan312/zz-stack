@@ -139,7 +139,7 @@ docs/       written for somebody who does not work on this every day.
             about design.
 testing/    the shell around the engines: eval-step.sh (every requirement in
             the corpus through ONE step, each in its own initiative, keeping
-            what it produced), oauth-delegation.mjs (the delegated-access
+            what it produced), oauth-delegation.ts (the delegated-access
             loop end to end against a live deployment, starting from a REVOKED
             grant — without that baseline "the block names a person" would
             prove nothing), block-oracle.sh (which blocks a requirement needs,
@@ -183,27 +183,27 @@ deploy/     the server package: docker compose, the Caddyfile (a TEMPLATE —
             There is no bootstrap script:
             it went with the front end it wrote presets into, and the registry
             answers instead
-scripts/    gate.mjs (the order the gate runs in — every check itself lives in
-            gate/checks/<subject>.mjs, with gate/run.mjs holding the one `check`
-            they all register through and gate/facts.mjs the facts they share),
-            doctor.mjs (the order the LAYERS run in — where the deployment stops
-            matching what this checkout declares, with doctor/layers/<layer>.mjs
-            the probes and doctor/run.mjs the runner that tells a probe's own
+scripts/    gate.ts (the order the gate runs in — every check itself lives in
+            gate/checks/<subject>.ts, with gate/run.ts holding the one `check`
+            they all register through and gate/facts.ts the facts they share),
+            doctor.ts (the order the LAYERS run in — where the deployment stops
+            matching what this checkout declares, with doctor/layers/<layer>.ts
+            the probes and doctor/run.ts the runner that tells a probe's own
             breakage apart from its subject's; release step 5 runs these, so
             there is one list rather than a second that is only ever read during
-            a release), deployment.mjs (the one description of the deployment —
+            a release), deployment.ts (the one description of the deployment —
             its address, paths, images and how to speak to it — read by the
-            release and the doctor alike), release.mjs,
-            build-marketplace.mjs (renders the public Claude Code shelf into
+            release and the doctor alike), release.ts,
+            build-marketplace.ts (renders the public Claude Code shelf into
             marketplace/ and .claude-plugin/, through the same buildClientPackage
             the gateway serves packages with — the gate fails a release whose
             committed shelf no longer matches the catalog),
-            set-version.mjs, skill-versions.mjs (each skill's declared version beside
-            the hash of what it actually says), plugin-versions.mjs (the same
+            set-version.ts, skill-versions.ts (each skill's declared version beside
+            the hash of what it actually says), plugin-versions.ts (the same
             argument one level up, for the unit a person actually installs: each
             plugin's declared version beside a digest of what it ships, recorded in
             plugins.lock.json so the gate can refuse content that moved under a
-            frozen number), manifests.mjs (where the packages are, read by
+            frozen number), manifests.ts (where the packages are, read by
             both) and build-image.sh (the runtime image, from the lockfile). The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:
             set-credential, probe-block, register-skills (what we OFFER, from

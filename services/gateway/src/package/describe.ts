@@ -44,7 +44,7 @@ export function digestOf(plugins: Plugin[]): string {
  *
  * Paired with the version a plugin declares, this is what makes that version TRUE: the gate
  * compares them and refuses a release whose content moved while its number did not. The same
- * argument skill-versions.mjs makes for skills, one level up. */
+ * argument skill-versions.ts makes for skills, one level up. */
 export function digestOfPlugin(plugin: Plugin): string {
   const h = createHash("sha256");
   feed(h, plugin, false);

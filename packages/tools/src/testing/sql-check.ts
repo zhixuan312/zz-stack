@@ -85,7 +85,7 @@ function sources(root: string, dirs: string[]): string[] {
 /**
  * Every `.query(...)` in a file, with the statement it was handed.
  *
- * THE SCAN ITSELF IS SHARED — `@zz/tools/lib/sql-scan`. `scripts/gate.mjs` holds console.ts to
+ * THE SCAN ITSELF IS SHARED — `@zz/tools/lib/sql-scan`. `scripts/gate.ts` holds console.ts to
  * literals using the same walk, offline, and the two have to agree exactly on where a
  * statement starts and ends. They used to be two copies kept in step by hand.
  *

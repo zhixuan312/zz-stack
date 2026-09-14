@@ -54,9 +54,9 @@ function main(argv: string[]): number {
 
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) {
-    // Loud. An absent lock means plugin-versions.mjs has not run, and writing nothing would
+    // Loud. An absent lock means plugin-versions.ts has not run, and writing nothing would
     // leave the evaluation with no subject while this reported success.
-    console.error("\n  plugins.lock.json does not exist — run `node scripts/plugin-versions.mjs --write`\n");
+    console.error("\n  plugins.lock.json does not exist — run `node scripts/plugin-versions.ts --write`\n");
     return 1;
   }
   const lock = JSON.parse(readFileSync(lockPath, "utf8")) as Record<string, LockEntry>;

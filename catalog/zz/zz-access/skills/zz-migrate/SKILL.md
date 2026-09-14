@@ -13,7 +13,7 @@ written on their behalf.
 
 ```bash
 cd <the mma repository>
-node "${CLAUDE_PLUGIN_ROOT}/skills/zz-migrate/migrate.mjs" --dry-run
+node "${CLAUDE_PLUGIN_ROOT}/skills/zz-migrate/migrate.js" --dry-run
 ```
 
 Show them the counts it prints. **Then, and only with their word, run it for real** — the

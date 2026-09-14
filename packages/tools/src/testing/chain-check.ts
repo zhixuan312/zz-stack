@@ -17,7 +17,7 @@
  * keeps on its own, so nothing about a model's availability should stop us checking them. It
  * runs in seconds and costs no model tokens.
  *
- * It is deliberately not part of scripts/gate.mjs: the gate is offline and proves things
+ * It is deliberately not part of scripts/gate.ts: the gate is offline and proves things
  * about the source, while this needs a running deployment and a real token.
  */
 import { randomUUID } from "node:crypto";
@@ -163,8 +163,8 @@ const call = (tool: string, args: unknown): Promise<string> => core.call(tool, a
  *
  * The ten `plugin_*` tools left `/core/mcp` for `/eval/mcp` in Task I-19, and this file opened
  * exactly one client. Calling them on the core door answers "tool not found" ten times — at
- * RELEASE, because `release.mjs` runs this and the offline gate deliberately does not, so
- * nothing before a release would have said so. `checks/chain-check-wiring.mjs` could not catch
+ * RELEASE, because `release.ts` runs this and the offline gate deliberately does not, so
+ * nothing before a release would have said so. `checks/chain-check-wiring.ts` could not catch
  * it either: it asserts every tool registered under `services/zz-core/src/tools` is exercised,
  * one direction only, so ten tools LEAVING that directory made it quieter rather than redder. */
 const evalDoor = new Mcp(`${GW}/eval/mcp`, { pat: PAT, client: "chain-check" });
@@ -175,7 +175,7 @@ const callEval = (tool: string, args: unknown): Promise<string> => evalDoor.call
  * `knowledge_reindex` left `/core/mcp` for `/manage/mcp` at Task I-38 — rebuilding a team's
  * index is an administrative act on a team, not a step in anybody's flow — and this file
  * opened no client that could reach it. The probe below would answer "tool not found" at
- * RELEASE, because release.mjs runs this and the offline gate deliberately does not. */
+ * RELEASE, because release.ts runs this and the offline gate deliberately does not. */
 const manageDoor = new Mcp(`${GW}/manage/mcp`, { pat: PAT, client: "chain-check" });
 
 const RESULTS: { ok: boolean; name: string; got: string }[] = [];

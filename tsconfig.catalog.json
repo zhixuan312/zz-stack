@@ -1,0 +1,36 @@
+{
+  // tsconfig.catalog.json — compiles the shipped skill scripts to JavaScript.
+  //
+  // NOT tsconfig.tooling.json: that config sets `noEmit: true`, which is exactly wrong for
+  // the one place in this repository that must emit — the five scripts under
+  // catalog/zz/zz-access/skills/ are the only source that leaves this machine, packaged
+  // into marketplace/ and installed by consumers who have no `tsc` of their own.
+  //
+  // NOT added to tsconfig.json's `references`: two standing gate checks require every
+  // reference to be a workspace package with its own package.json, and this is a staging
+  // compile for distribution, not a project `tsc -b` builds as a side effect of an
+  // ordinary build.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "removeComments": false,
+    "outDir": ".marketplace-staging",
+    "rootDir": "catalog/zz/zz-access/skills",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "erasableSyntaxOnly": true,
+    // Both required together: migrate.ts imports "./mcp.ts" and "./read-mma.ts" by their
+    // literal .ts specifiers. allowImportingTsExtensions accepts that on the way in;
+    // without rewriteRelativeImportExtensions the compile still fails with TS5097, and with
+    // it the emitted specifiers become "./mcp.js" / "./read-mma.js" — the only form a
+    // consumer's Node can resolve, since there is no .ts file beside them once packaged.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    // A type error must never still emit JavaScript. This is the only guarantee standing
+    // between "type-correct" and what actually ships.
+    "noEmitOnError": true
+  },
+  "include": ["catalog/zz/zz-access/skills/**/*.ts"]
+}

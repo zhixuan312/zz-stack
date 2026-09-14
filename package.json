@@ -1,19 +1,23 @@
 {
   "name": "zz-stack",
   "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "workspaces": [
     "packages/*",
     "services/*"
   ],
   "scripts": {
     "build": "tsc -b",
-    "build:marketplace": "node scripts/build-marketplace.mjs",
+    "typecheck:tooling": "tsc --noEmit -p tsconfig.tooling.json",
+    "build:marketplace": "node scripts/build-marketplace.ts",
     "clean": "tsc -b --clean",
-    "gate": "node scripts/gate.mjs",
-    "doctor": "node scripts/doctor.mjs",
-    "set-version": "node scripts/set-version.mjs",
-    "release": "node scripts/release.mjs",
-    "rollback": "node scripts/release.mjs --rollback",
+    "gate": "node scripts/gate.ts",
+    "doctor": "node scripts/doctor.ts",
+    "set-version": "node scripts/set-version.ts",
+    "release": "node scripts/release.ts",
+    "rollback": "node scripts/release.ts --rollback",
     "check:mcp-client": "node packages/tools/dist/testing/mcp-client-check.js",
     "chain-check": "node packages/tools/dist/testing/chain-check.js",
     "audit": "node packages/tools/dist/testing/manifest-audit.js",

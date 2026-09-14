@@ -19,7 +19,7 @@
  * A FILE OF ITS OWN, NOT A SECOND FUNCTION IN server.ts, for the reason orientation.ts exists:
  * server.ts binds :8000 at module scope and therefore cannot be imported, so a check that
  * wanted to know what this door actually serves would have had to grep for it. This exports
- * the very function the service mounts, so checks/eval-door.mjs opens a real client against
+ * the very function the service mounts, so checks/eval-door.ts opens a real client against
  * the real door and reads back the real tool list.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -38,7 +38,7 @@ import { registerPluginRecordTools } from "./eval/plugin-record.js";
  * Codex keeps, and the whole thing has to fit under the ~2KB Claude Code truncates at. So the
  * skill to read comes first and the detail comes after.
  *
- * THE NOUNS ARE THE NOUNS THIS DOOR SERVES, and checks/orientation.mjs derives that set from
+ * THE NOUNS ARE THE NOUNS THIS DOOR SERVES, and checks/orientation.ts derives that set from
  * the live `tools/list` and compares it with this text in both directions. This door serves
  * five nouns — plugin, ruler, round, case and finding — and it served one until the renames
  * of Task I-21 split them out. That is exactly why the clause earns its keep: the paragraph

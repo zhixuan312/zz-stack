@@ -47,7 +47,7 @@ export function fmField(md: string, key: string): string | undefined {
  * `catalog/zz/zz-core/flow.json`, so `shelved === true` alone would return the baseline here and
  * buildClientPackage would emit it TWICE — once synthesised and once from the catalog, two
  * plugins of one name writing over each other's files, which is the collision
- * catalog-manifest.mjs already refuses for a catalog package that steals the baseline's name.
+ * catalog-manifest.ts already refuses for a catalog package that steals the baseline's name.
  * Its manifest is read for what it DECLARES — the commands map, above all; its FILES are
  * synthesised, because the router among them is generated per person. */
 interface PlatformPlugin {

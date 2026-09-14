@@ -56,7 +56,7 @@ function envelopeOf(file: string): Record<string, string> {
  *
  * Exported and taking `root` explicitly so it can be RUN over a fixture store rather than
  * read: every other statement about what this returns is a sentence somebody could write in
- * a comment. `checks/initiative-open.mjs` drives it.
+ * a comment. `checks/initiative-open.ts` drives it.
  *
  * `next_move` is null exactly when nothing declared a chain, and `next_move_absent` says why
  * in that case and is undefined otherwise. */

@@ -444,9 +444,9 @@ export const FlowStage = z.object({
    *
    * THE UNION IS LOAD-BEARING NOW, AND WAS NOT. Beside `z.string().min(1)` the two literals
    * decided nothing — a non-empty string already accepts them — so `produces: "garbage"`
-   * validated, while contract-fields.mjs's control claimed otherwise by testing `""`, the one
+   * validated, while contract-fields.ts's control claimed otherwise by testing `""`, the one
    * value `.min(1)` catches on its own. Every reader already treats a document name as a name
-   * (stage-produces.mjs resolves it against `documents`; sdlc-documents.mjs orders the flow by
+   * (stage-produces.ts resolves it against `documents`; sdlc-documents.ts orders the flow by
    * which values end in `.md`), so the shape was load-bearing everywhere but here. */
   produces: z.union([
     z.string().regex(/^[a-z0-9][a-z0-9-]*\.md$/, "a document name, like \"spec.md\""),
@@ -514,7 +514,7 @@ export const CatalogManifest = z.object({
    * manifest. `"evals"` for the three packages whose content is catalog-resident.
    *
    * DECLARED BECAUSE A WALK OF THE CHECKOUT CANNOT TELL A SOURCE FROM ITS OWN BUILD OUTPUT.
-   * `build-marketplace.mjs` deletes and regenerates `marketplace/` from `catalog/`, so every
+   * `build-marketplace.ts` deletes and regenerates `marketplace/` from `catalog/`, so every
    * case exists twice on disk by construction — and a sweep pointed at the repository root
    * found both: measured 2026-09-13, `audit-catches-an-unverified-claim` discovered once under
    * each tree and billed for six runs of one case, every one of them failing. Any cost read off
@@ -528,7 +528,7 @@ export const CatalogManifest = z.object({
    * `catalog/zz/zz-core/` at all — `baselineFiles()` walks ZZ_SKILLS_DIR and
    * `platformOwnEvals()` walks ZZ_EVALS_DIR, both of which are this repository's root — so it
    * declares `"../../../evals"` rather than naming a directory that does not exist beside it.
-   * Same reason `skill-homes.mjs` asserts its skills at `skills/` and absent from the catalog.
+   * Same reason `skill-homes.ts` asserts its skills at `skills/` and absent from the catalog.
    *
    * NOT THE KEY `claude plugin eval` READS. That CLI defaults to `experimental.evals` on the
    * built `plugin.json`, and the packaged layout stays `evals/` by construction — residentFiles
@@ -574,7 +574,7 @@ export const CatalogManifest = z.object({
   // also what retires a field: `standalone` is not listed above, so a manifest still carrying
   // it is REFUSED rather than quietly ignored. The message zod gives for that is
   // `Unrecognized key(s): 'standalone'`, which says the key is not legal and does not say what
-  // to write instead — `catalog-manifest.mjs` carries that sentence, beside the one it already
+  // to write instead — `catalog-manifest.ts` carries that sentence, beside the one it already
   // carries for `clients`, because a schema published as JSON cannot carry advice.
   // It matters most here because this schema is PUBLISHED at
   // /schemas/manifest.json as the rules for writing a flow, precisely so a tenant can be told

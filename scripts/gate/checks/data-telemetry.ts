@@ -1,0 +1,304 @@
+/**
+ * Telemetry: the write side. Every tool that mutates state records that it did; every
+ * identifier the platform keeps is one a tool can actually send, and never the team's own
+ * words; and the platform's own surface, its correlation headers and its per-call version are
+ * recorded the same way everybody else's are.
+ *
+ * The read side — whether a report, a count or a reader actually depends on what got
+ * written here — is checks/data-telemetry-reports.ts.
+ */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { between, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools } from "../read.ts";
+import { check } from "../run.ts";
+import { schemaColumns } from "../facts.ts";
+
+check("a tool that changes something records that it did", () => {
+  // Provenance is one of the platform's permanents, and principle 6 says evidence must be
+  // produced mechanically. A mutation nobody recorded is a fact about the platform that can
+  // only be recovered by reading the state it changed.
+  //
+  // credential_set and credential_delete were the gap, and the shape of it is what
+  // makes it worth a check: their OPERATOR twins — credential_admin_set,
+  // credential_admin_delete — both logged an event, so the same change to the same store was
+  // recorded when an operator made it and invisible when the person made it themselves. The
+  // audited path was the rare one; the unaudited path is how almost every key is stored. So
+  // "who holds a key for casebox, and since when" could only be answered by opening a file that
+  // holds those keys in plaintext.
+  //
+  // The key itself is never recorded, and that is not what this asks for: THAT a credential
+  // changed is provenance, its value is not.
+  const MUTATES = /\b(writeFileSync|appendFileSync|withCredentials\(|insert into|update zz\.|delete from)/i;
+  const RECORDS = /\b(logActivity\(|auditAdmin\(|logEvent\(|commitStore\()/;
+  const bad: string[] = [];
+  // Every file that registers a tool, found by asking which ones do. Naming the three that
+  // register them today is a list that is correct until somebody adds a fourth door, and the
+  // whole subject of this check is a tool nobody thought to look at.
+  for (const f of sourceFiles(["services"], [".ts"])) {
+    const src = readFileSync(join(root, f), "utf8");
+    for (const { name, body } of toolsIn(src)) {
+      if (MUTATES.test(body) && !RECORDS.test(body)) {
+        bad.push(`${name} changes state and records nothing`);
+      }
+    }
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
+// AN ALLOWLIST ENTRY NO TOOL CAN PRODUCE IS DEBRIS.
+//
+// IDENTIFIER_ARGS decides which argument values the platform keeps. Two of its entries could
+// never appear: `open_only` is named by nothing anywhere in this repository, and `kr` exists
+// only nested inside okr_grade's `scores`, which identifiers() never sees because it reads
+// the TOP-LEVEL arguments. An entry that cannot be reached reads as a considered decision
+// and is only debris — and this list is where the reasoning about what may be recorded
+// lives, so debris in it is worse than debris elsewhere.
+//
+// The other direction is deliberately not checked. An argument absent from the list is
+// absent on purpose, and most of them are content: a query, a body, a title, an api_key.
+check("every identifier the telemetry keeps is one a tool can send", () => {
+  const src = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
+  const region = between(src, "const IDENTIFIER_ARGS = new Set([", "]);");
+  if (!region.text) return `IDENTIFIER_ARGS cannot be located: ${region.why}`;
+  // EVERY quoted name, not the first on each line. The line-anchored version missed a second
+  // entry written beside another — the same blind spot as reading a one-line inputSchema,
+  // found the same way: by putting the defect back and watching the check not notice.
+  const listed = [...region.text.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+  if (listed.length === 0) return "IDENTIFIER_ARGS is empty — the extraction is broken";
+
+  // The TOP-LEVEL argument names every tool declares, which is what identifiers() iterates.
+  const declared = new Set();
+  for (const f of sourceFiles(["services"], [".ts"])) {
+    const text = readFileSync(join(root, f), "utf8");
+    for (const t of toolsIn(text)) {
+      const schema = between(t.body, "inputSchema:", "async (");
+      if (!schema.text) continue;
+      // TOP LEVEL ONLY, by removing nested objects rather than by counting indentation.
+      // Anchoring to a line start looked equivalent and was not: knowledge_supersede writes
+      // its whole schema on one line, so both of its arguments vanished and `old_id` came
+      // back as an entry no tool declares. A check that reports a defect because it cannot
+      // read a formatting variant is the same failure as one that misses a defect.
+      let flat = schema.text;
+      for (let i = 0; i < 5; i++) {
+        const next = flat.replace(/z\.object\(\{[^{}]*\}\)/g, "z.nested()");
+        if (next === flat) break;
+        flat = next;
+      }
+      for (const m of flat.matchAll(/([a-z_]+)\s*:\s*z\./g)) declared.add(m[1]);
+    }
+  }
+  if (declared.size === 0) return "no tool arguments found — the extraction is broken";
+  const bad = listed.filter((a) => !declared.has(a))
+    .map((a) => `IDENTIFIER_ARGS keeps \`${a}\`, which no tool declares as a top-level argument`);
+  return bad.join("\n");
+});
+
+check("telemetry keeps identifiers and never the team's own words", () => {
+  // The rule is IDENTIFIER versus CONTENT, not name versus value. A skill name, an
+  // initiative, a flow, a block, a path — the platform publishes those, and they identify
+  // things rather than say anything. A title, a body, a query, an email, a key are the
+  // team's own words about their own work, and they stay out of a table people read.
+  //
+  // The list has been wrong once already, in the way that matters: `confirm` sat in it
+  // looking like an enum, and person_deactivate defines confirm as an ECHO OF THE EMAIL —
+  // so the one value the list most deliberately excludes arrived under a safe-looking name.
+  // Nothing stopped that but somebody noticing.
+  //
+  // A denylist of names that are content BY DEFINITION, whatever a tool calls them. This is
+  // the half that can be stated without guessing; the identifier half stays a judgement.
+  const src = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
+  const block = /const IDENTIFIER_ARGS = new Set\(\[([\s\S]*?)\]\)/.exec(src)?.[1];
+  if (!block) return "IDENTIFIER_ARGS is no longer where this can read it";
+  // Comments in the block explain what was REMOVED; only live entries count.
+  const live = block.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  const kept = new Set([...live.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]));
+  const CONTENT = ["content", "body", "text", "title", "query", "q", "api_key", "key",
+                   "secret", "token", "email", "user_email", "stakeholder", "note",
+                   "reason", "criterion", "message", "description", "confirm",
+                   "source_content", "source_title", "no_signoff_reason", "fields",
+                   "accepted_by", "approved_by", "label", "name_display"];
+  const bad = CONTENT.filter((c) => kept.has(c));
+  return bad.length
+    ? `${bad.join(", ")} in IDENTIFIER_ARGS — these are the team's own words, and this ` +
+      "table is read by people and by tooling"
+    : null;
+});
+
+check("a record that is counted is a record that is written once", () => {
+  // The ledger row is appended at the close and skipped if one is already there. The
+  // DOCUMENT had no such guard, so a second close overwrote its outcome while the ledger
+  // kept the first — and the ledger is what OKR grading and flow-compare COUNT. "How many
+  // were accepted this quarter" and what the closing document says would disagree, silently,
+  // and the disagreement is invisible from either side.
+  //
+  // Both halves have to hold: the ledger appends once, and the close refuses a second one.
+  // Either alone is the divergence.
+  const src = zzCoreSource();
+  const bad: string[] = [];
+  if (!/already closed once/.test(src)) {
+    bad.push("ledgerOnClose no longer skips a second row — a reclose would count twice");
+  }
+  // The refusal, in initiative_close() itself: read the outcome already on the document and stop.
+  // From the one parser: `src.indexOf('\n    "initiative_close",')` found the newline registration form
+  // only, and reformatting initiative_close() would have sliced from -1 — the last character of the
+  // file — leaving an empty body and two failures about a rule nobody had touched.
+  const body = zzCoreTools().find((t) => t.name === "initiative_close")?.body;
+  if (!body) return "initiative_close() is not registered — this check cannot find what it is about";
+  if (!/const already = parseEnvelope\(doc\)\.outcome/.test(body) || !/is already closed as/.test(body)) {
+    bad.push("initiative_close() does not refuse an initiative that already carries an outcome");
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
+check("the platform records its own surface, the way it records everybody else's", () => {
+  // WE ARE A BLOCK TOO, and for a long time the only one that could not be measured.
+  //
+  // `zz.block` has held a row for us since migration 024, which said why: our MCP "is not a
+  // block in the zz-blocks sense and never will be — but it IS an MCP surface like any other".
+  // What nothing did was record a VERSION, so a surface report about `platform` answered "no
+  // recorded surface" and the one instrument this platform has for judging a tool surface
+  // could be pointed at everyone except its author.
+  //
+  // Every other block is measured by probing it, because its surface is somebody else's to
+  // declare. Ours is declared by the registerTool calls themselves — so the recording hangs
+  // off those, and what we store cannot drift from what we serve. A second list built by hand
+  // would be a claim about the surface; this is the surface.
+  //
+  // The check is that the wiring survives, because its failure is silent: nothing breaks, no
+  // call refuses, and the only symptom is that a version leaves no row and "what moved since
+  // the last release" quietly answers nothing.
+  const src = zzCoreSource();
+  const bad: string[] = [];
+  if (!/OWN_TOOLS\.set\(name, door\)/.test(src)) {
+    bad.push("registerTool no longer records the name it is registering AND the door it is registering it on — the surface would be recorded from something other than what is served, or not at all");
+  }
+  if (!/insert into zz\.block_version[\s\S]{0,200}where b\.name = 'platform'/.test(src)) {
+    bad.push("nothing writes a zz.block_version row for 'platform' — `zz-tool block-surface` has nothing to read");
+  }
+  // THE DOOR IS IN THE ROW, AND IT IS IN THE SAME STATEMENT AS THE NAME. Migration 052 added
+  // `zz.block_tool.door` for one reason: a surface recorded as names alone answered NO CHANGE
+  // when ten tools moved from `/core/mcp` to `/eval/mcp`, because not one name changed. A
+  // writer that goes back to `(block_version_id, name)` restores that wrong answer silently —
+  // every row still appears, the column just stays null, and the reader correctly reports it as
+  // not comparable rather than as a fault. So the write is what is checked here.
+  if (!/insert into zz\.block_tool \(block_version_id, name, door\)/.test(src)) {
+    bad.push("the surface row no longer carries the door it was served on — a surface recorded as names alone reports NO CHANGE when a tool moves between doors, which is the wrong answer this platform's largest surface change already got");
+  }
+  if (!/OWN_TOOLS\.get\(name\)/.test(src)) {
+    bad.push("the door written into zz.block_tool does not come from OWN_TOOLS — it would be a second account of which door a tool is on, and the one in OWN_TOOLS is the one the registration itself created");
+  }
+  // Per version, and never rewritten: the row means "this is what that version served".
+  if (!/on conflict \(block_id, version\) do nothing/.test(src)) {
+    bad.push("the surface row is not per-version-and-once — rewriting it makes the history agree with today by construction, which is the one thing a history must not do");
+  }
+  // Recorded at boot, AFTER a server has been built: the doors are stateless, so nothing has
+  // run a builder by then and the set of names would be empty.
+  //
+  // EVERY DOOR, AND THE LIST IS DERIVED FROM THE MOUNTS. This named `buildServer` when that was
+  // the only factory there was. zz-core now serves two doors — `/mcp` and `/eval-mcp`, one
+  // process, two tool sets — and building only the first would record a platform that serves
+  // ten fewer tools than it does. That is worse than recording nothing: the surface report
+  // diffs a version against the one before it, so the release that merely MOVED those tools
+  // would report them deleted, and a diff that invents a finding is the one failure this
+  // instrument cannot have. So the factories come out of the `serveMcp` calls themselves, and
+  // a third door added tomorrow is covered by this check on the day it is mounted.
+  const boot = src.slice(src.indexOf("app.listen(8000"));
+  // Everything boot runs BEFORE the record is written. A builder called after it has filled
+  // nothing by the time the names are read, so "called at boot" is not the property — "called
+  // first" is, and an empty slice here makes every clause below fire rather than pass.
+  const at = boot.indexOf("await recordOwnSurface()");
+  const built = at < 0 ? "" : boot.slice(0, at);
+  const factories = [...src.matchAll(/serveMcp\(app,\s*"[^"]+",\s*(\w+)\)/g)].map((m) => m[1]);
+  if (!factories.length) {
+    bad.push("no serveMcp(app, \"path\", factory) call found in zz-core — this clause cannot see which doors exist, so it asserted nothing about what the recorded surface covers");
+  }
+  if (at < 0) {
+    bad.push("boot never awaits recordOwnSurface — nothing records the surface at all");
+  }
+  for (const factory of factories) {
+    if (!new RegExp(`\\b${factory}\\(\\)`).test(built)) {
+      bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
+    }
+  }
+
+  // ── AND THE COLUMN THE WRITE DEPENDS ON, WITH ITS NULLS LEFT ALONE ─────────────────────
+  //
+  // A writer naming a column no migration adds fails INSIDE the catch that makes recording
+  // deliberately non-fatal: the service starts, one line says it could not record its surface,
+  // and nothing is red. `schemaColumns()` replays every add and drop in order, so a later
+  // migration removing the column is caught by the same clause.
+  //
+  // NO DEFAULT AND NO BACKFILL, asserted rather than trusted. Rows written before 052 carry a
+  // null door honestly — nothing knew the door when they were written. A default, or an
+  // `update … set door`, would make the first diff after this lands read beautifully and INVENT
+  // the moves it shows, because every `plugin_*` name recorded before the move would claim to
+  // have started on the core door. That is NO CHANGE with the sign flipped, committed for good.
+  const mig = "services/gateway/migrations/052_block_tool_door.sql";
+  const sql = (() => { try { return readFileSync(join(root, mig), "utf8"); } catch { return ""; } })();
+  if (!schemaColumns().includes("block_tool.door")) {
+    bad.push("no migration leaves zz.block_tool.door standing — the insert above names a column nothing creates, and it fails inside the catch that makes recording non-fatal, so the service starts and records nothing");
+  }
+  if (!sql) {
+    bad.push(`${mig} could not be read, so nothing about how it treats existing rows was checked`);
+  } else if (/door text[^;]*not null/i.test(sql) || /door text[^;]*default/i.test(sql)) {
+    bad.push(`${mig} gives door a default or makes it NOT NULL — every row written before it would then claim a door nobody recorded, and whatever moved would read as having started on whichever door the default names`);
+  } else if (/update\s+zz\.block_tool[\s\S]*door/i.test(sql)) {
+    bad.push(`${mig} backfills door onto existing rows — a door reconstructed after the fact is a guess written as a fact, on rows the recorder deliberately never rewrites`);
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
+check("every header the telemetry correlates on is actually sent", () => {
+  // `x-zz-client` was READ in step-trace.ts and WRITTEN nowhere, so the second half of the
+  // caller key was the empty string for every caller and the key was one half. Every process
+  // acting as one person then shared a single skill trace — the onboarding timer, the
+  // provisioner, zz-tool and that person's own chat session, all mutating it.
+  //
+  // Measured on UAT during a live round: 160 `render_agent_definition` rows from the
+  // 60-second timer were attributed to `ops-build 1.2` and 35 to `zz-knowledge 2.0`, and one
+  // document_write came out carrying one skill's name beside another skill's version. Those rows
+  // are what tool-report, evolve-report and step-score count.
+  //
+  // A header read but never set is invisible: nothing errors, the key still has two halves,
+  // and the numbers stay plausible. So the rule is checked rather than remembered.
+  const src = [
+    "services/gateway/src/step-trace.ts",
+    "packages/mcp-client/src/index.ts",
+  ].map((f) => readFileSync(join(root, f), "utf8"));
+  const bad: string[] = [];
+  const read = /headers\["x-zz-client"\]/.test(src[0]);
+  const sent = /"x-zz-client":/.test(src[1]);
+  if (read && !sent) {
+    bad.push("step-trace correlates on x-zz-client and mcp-client never sends it — the caller key collapses to the email, so every process acting as one person shares one trace");
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
+check("a step's version comes from the skill, never from a file beside it", () => {
+  // FOUND IN THE TELEMETRY OF A LIVE ROUND. `skill_read(name, file: "references/…")` serves a
+  // supporting file, and the version was read out of whatever came back — so reading a
+  // reference inside the skill you are following blanked step_version for every call after it
+  // (seven casebox calls in one round), and reading a document TEMPLATE wrote the DOCUMENT's
+  // version under the skill's name. runs.ts joins step_version against zz.skill_version, so a
+  // blank matches nothing and those calls leave the per-version reports entirely — the numbers
+  // still look plausible, which is why nobody noticed.
+  const trace = readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8");
+  const tel = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
+  const bad: string[] = [];
+  if (!/function stepLoaded\([^)]*whole\s*:\s*boolean/s.test(trace)) {
+    bad.push("stepLoaded does not take whether the SKILL ITSELF was served — it cannot tell a skill from a file beside it");
+  }
+  // The version and the hash both, because either one taken from a supporting file is a claim
+  // about the skill that the skill never made.
+  if (!/stepVersion:\s*whole\s*\?/.test(trace)) {
+    bad.push("stepVersion is not conditioned on the whole skill having been served");
+  }
+  if (!/stepSha:\s*whole\s*\?/.test(trace)) {
+    bad.push("stepSha is taken from a supporting file's bytes — the hash then names a version of the skill that does not exist");
+  }
+  if (!/\bfile\b[^\n]*undefined/.test(tel) || !/loading\[0\]\.whole/.test(tel)) {
+    bad.push("tool-telemetry does not read skill_read's `file` argument, so every supporting file is still recorded as a skill load");
+  }
+  return bad.length ? bad.join("; ") : null;
+});

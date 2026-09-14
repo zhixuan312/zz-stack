@@ -33,7 +33,7 @@ import { registerShelf, renderClientSetup } from "./admin/flows.js";
  * an ADDITION and never a replacement — Claude Desktop parses the field without showing it to
  * the model — so nothing load-bearing lives only here.
  *
- * Two lengths are real and checks/orientation.mjs asserts both: Claude Code truncates near
+ * Two lengths are real and checks/orientation.ts asserts both: Claude Code truncates near
  * 2KB, and Codex advises the first 512 characters be self-contained, so the purpose and the
  * skill to read come first.
  *
@@ -78,7 +78,7 @@ const ACCESS_INSTRUCTIONS =
  * along — the caller's role. `registerAdminTools` reads it once and registers what that role
  * can execute: a member is offered only tools a member can use, and every extra tool a lead
  * or a superadmin sees is one their role can actually execute. No count is written here —
- * checks/manage-surface.mjs holds the numbers, where they are measured rather than restated.
+ * checks/manage-surface.ts holds the numbers, where they are measured rather than restated.
  *
  * This is why the builder is async, and why `serveMcp` awaits it: resolving who is calling
  * is a database read, and it has to finish before the first tool is registered.

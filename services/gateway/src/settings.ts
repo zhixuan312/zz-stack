@@ -29,7 +29,7 @@
  * browser's button press both reach the same function today, and neither should inherit a
  * marker that only describes one of them. Each write route below passes `{ via: "web" }` as
  * the shared function's last argument, which is merged into that one `logEvent` call's
- * `detail`. See gate.mjs's "every console write route records the door it came through" —
+ * `detail`. See gate.ts's "every console write route records the door it came through" —
  * extended for Task I-13 to recognise this pattern (the marker inside the call to a named
  * shared function, not only inside a literal `logEvent(...)` in the route body).
  *

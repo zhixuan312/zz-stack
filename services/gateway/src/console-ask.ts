@@ -12,8 +12,8 @@
  * `knowledge_search`, which reads; it calls `generate()`, which talks to an LLM and
  * nothing else; it writes NOTHING to zz-core, to `zz.doc`, or to `zz.event`, so there is
  * no act here for `logEvent("… via: web")` to record and no door for
- * scripts/gate.mjs's "every console write route records the door it came through" to
- * check — that check's own `FILES` list in gate.mjs names this file's one route with an
+ * scripts/gate.ts's "every console write route records the door it came through" to
+ * check — that check's own `FILES` list in gate.ts names this file's one route with an
  * `isWrite` that is deliberately false for a call to `knowledge_search`, so the day
  * someone adds a REAL write here (a `core.call` to anything else) the check starts
  * failing instead of staying silent about it. SameSite=Lax cookies make the POST itself

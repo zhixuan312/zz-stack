@@ -13,7 +13,7 @@ set -euo pipefail
 # wrong for the install path the release bundle exists to serve: a recipient who unpacks it
 # anywhere else got three cron lines pointing at a directory that does not exist on their
 # machine, installed successfully, and reported three tagged jobs.
-# The checkout resolves to exactly the same path it always did — release.mjs runs this as
+# The checkout resolves to exactly the same path it always did — release.ts runs this as
 # `cd /root/zz-parent/zz-stack && ./deploy/install-backup-cron.sh`.
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 tmp=$(mktemp)

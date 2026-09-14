@@ -33,6 +33,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.36.1] — 2026-09-14
+
+### Fixed
+- **`/zz-access:update` printed "you are undefined" instead of saying what failed.** Its
+  identity check returned success on any 200 and left the email unparsed when its regex missed,
+  and the caller printed `you are ${email}` without looking. A sentence that reads as an identity
+  when it is a failed lookup fails in the direction that looks like success.
+
+  The condition is real rather than hypothetical: a door answering 200 with a body the script
+  cannot read is what a RENAMED TOOL looks like from a script one release behind. It is what
+  happened — a cached 0.31.0 copy calls `get_my_info`, which 0.34.0 renamed to `session_whoami`.
+  It now refuses with the likely cause named: "this script may be older than the door it is
+  asking", which points at the real problem rather than at the person's identity.
+
+### Upgrade notes
+- Nothing to do beyond updating. No schema, argument or command changed.
+
 ## [0.36.0] — 2026-09-14 · console 0.7.1
 
 Two capabilities and a chart that was deciding the height of the page.

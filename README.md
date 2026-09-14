@@ -64,7 +64,7 @@ services/gateway/     the ONE door: identity (PATs, and a passkey for the consol
                       still does, and a field nobody named yet is caught on its
                       name alone rather than left to be remembered)
 catalog/    the flows and platform capabilities, one directory per owner. A
-            flow.json says what each is; `kind: platform` marks a capability
+            flow.json says what each is; `shelved: true` marks a capability
             every person gets from the shelf rather than one a team installs:
             sdlc/sdlc-flow      software delivery, 17 skills — explore, spec,
                                 audit, plan, audit, execute, review (closing
@@ -75,6 +75,13 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 register behind them — people, teams, installs,
                                 grants (zz-admin). Which tools a caller is offered
                                 is their role
+            zz/zz-core          the baseline every account carries: the manifest
+                                only. It declares what the platform's own plugin is
+                                and what a person types — doctor, migrate, update —
+                                while its SKILLS are the tree at skills/ below,
+                                because one of them (zz-router) is generated per
+                                person from the flows they installed and cannot live
+                                in a catalog shared by everyone
             zz/zz-plugin-eval   plugin evaluation, 6 skills — the whole unit a person
                                 installs, which is the level the platform ships at and
                                 the only level two of its properties are visible from:

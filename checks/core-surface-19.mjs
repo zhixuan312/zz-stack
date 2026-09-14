@@ -1,13 +1,23 @@
 // Two tools leave the core door for good, and skill_list absorbs what block_skills did.
 //
+// TWO OF THE THREE. Task I-18 was written as three tools leaving the core door and delivered
+// two: `encode_base64` deleted, `block_skills` merged into `skill_list`. Moving
+// `knowledge_reindex` to `/manage` needs `reindexTeam` and `indexDoc` extracted from
+// services/zz-core/src/indexing.ts into a package the gateway can depend on — the gateway has
+// no such dependency and no indexer of its own — and that extraction is TASK I-38. So
+// `knowledge_reindex` is listed BELOW as a tool the core door still serves, and I-38 is the
+// task that moves it out of that list and adds the `/manage` assertions this file will then
+// need: registered under `if (sup)`, taking `team?` and `force?` with `team` omitted meaning
+// every team, a named team meaning that one, and an unknown slug refused by name.
+//
 // WHY A SET AND NOT A COUNT. The plan's own draft of this file asserted `registered.size ===
 // 19`, and 19 is the END STATE of the whole initiative rather than of this task. The door held
 // 31 before Task I-18 and holds 29 after it; it reaches 19 only once Task I-14 adds
 // `initiative_open` (+1), Tasks I-19/I-20 move the ten `plugin_*` tools to the eval door (−10),
 // and `knowledge_reindex` leaves for `/manage` (−1). Registering a check that is red for four
 // tasks is how a gate teaches people to read past it, so this pins the NAMES the door serves
-// today instead — a stronger control than a count, because a rename nobody meant shows up as
-// two lines rather than as no lines at all.
+// today instead — a stronger control than a count, because a count passes when two errors
+// cancel and a name set does not.
 //
 // EVERY TASK THAT MOVES THE SURFACE EDITS THE LIST BELOW. That coupling is deliberate: the
 // surface is the thing this initiative is about, and a task that changes it silently is
@@ -41,8 +51,20 @@ const stripComments = (src) => {
   return out;
 };
 
+/** Read a path, or say so. A CHECK THAT THROWS HAS NO FAILURE PATH.
+ *
+ * The plan's own draft of this file read `skills/zz-platform/SKILL.md`, which does not exist:
+ * it would have ended the gate in an ENOENT stack trace rather than in the sentence it was
+ * written to print, and a reader would have gone looking for a broken check instead of a
+ * missing tool. Three checks in this initiative have now had an unreachable failure path. So
+ * every path this file reads is guarded, and a path that has moved is reported as this scan
+ * being blind — which is exactly what it is, and which is red rather than a crash. */
+const missing = [];
+const read = (p) => { try { return readFileSync(p, "utf8"); } catch { missing.push(p); return null; } };
+const list = (d) => { try { return readdirSync(d); } catch { missing.push(d); return []; } };
+
 const walk = (d, out = []) => {
-  for (const e of readdirSync(d)) {
+  for (const e of list(d)) {
     if (["node_modules", "dist", "_versions", "results"].includes(e)) continue;
     const p = join(d, e);
     if (statSync(p).isDirectory()) walk(p, out); else out.push(p);
@@ -62,8 +84,8 @@ const EXPECTED = [
 
 const TOOLS_DIR = "services/zz-core/src/tools";
 const core = new Set();
-for (const f of readdirSync(TOOLS_DIR).filter((f) => f.endsWith(".ts"))) {
-  const src = readFileSync(join(TOOLS_DIR, f), "utf8");
+for (const f of list(TOOLS_DIR).filter((f) => f.endsWith(".ts"))) {
+  const src = read(join(TOOLS_DIR, f)) ?? "";
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) core.add(m[1]);
 }
 // THE CONTROL. Without it every assertion below passes on a door that registers nothing at
@@ -104,7 +126,7 @@ const YAML = /\.ya?ml$/;
 
 for (const p of TREES.flatMap((t) => walk(t))) {
   if (!/\.(ts|tsx|mjs|js|json|md|ya?ml|sh)$/.test(p) || EXEMPT.has(p)) continue;
-  const raw = readFileSync(p, "utf8");
+  const raw = read(p) ?? "";
   const lines = CODE.test(p) ? stripComments(raw) : raw.split("\n");
   for (let i = 0; i < lines.length; i++) {
     let code = lines[i];
@@ -133,7 +155,7 @@ for (const p of TREES.flatMap((t) => walk(t))) {
 // clause asserting that it IS asked — the check passed on an implementation that had swapped
 // the query out from under it. A comment describing a property is the one thing that must
 // never be able to stand in for the property.
-const skills = stripComments(readFileSync(join(TOOLS_DIR, "skills.ts"), "utf8")).join("\n");
+const skills = stripComments(read(join(TOOLS_DIR, "skills.ts")) ?? "").join("\n");
 const body = skills.split('"skill_list"')[1] ?? "";
 if (!body) fail.push("skills.ts registers no skill_list at all");
 
@@ -163,6 +185,14 @@ for (const [re, why] of CLAUSES) if (!re.test(body)) fail.push(why);
 // often reached in.
 if (/JSON\.stringify\(\[\.\.\.names\]\.sort\(\)\)/.test(skills)) {
   fail.push("skill_list still returns a flat array of names");
+}
+
+// A PATH THAT MOVED IS THIS SCAN GOING BLIND, and it is reported before anything else: every
+// assertion above reads as satisfied when the file it reads is empty, so "nothing found" and
+// "nothing to find" are the same answer unless one of them says so.
+for (const p of new Set(missing)) {
+  fail.unshift(`${p} could not be read — this check scans it, so every assertion about it ` +
+               "passed on nothing. Point it at where the path went.");
 }
 
 if (fail.length) { console.error([...new Set(fail)].join("\n")); process.exit(1); }

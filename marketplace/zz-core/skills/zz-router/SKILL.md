@@ -1,7 +1,7 @@
 ---
 name: zz-router
 description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow, zz-plugin-eval) and loads it. Not for ordinary coding, debugging or questions about this repository."
-version: "0.37.0"
+version: "0.38.0"
 ---
 # zz-router
 

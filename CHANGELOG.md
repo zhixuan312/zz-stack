@@ -15,7 +15,7 @@ that repository did not move.
 
 zz-blocks versions separately and has its own changelog — the mock building blocks stand in
 for other teams' services and change for their own reasons. All three are released together
-by `zz-stack/scripts/release.mjs`; separate lifecycles never meant separate deployments.
+by `zz-stack/scripts/release.ts`; separate lifecycles never meant separate deployments.
 
 **Names in the entries below are not the names that were there.** `CaseBox`, `BookIt`,
 `RuleMill` and `SsoAuth` are inventions. One of the three blocks was a system another team
@@ -32,6 +32,59 @@ engineering fact, and it does not need the corpus it came from to be useful.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
+
+## [0.38.0] — 2026-09-15 · console 0.8.0
+
+**Nothing this platform serves changed.** No tool moved, no route changed, no stored shape
+changed, and the running images are byte-for-byte the same work as 0.37.0. This release exists
+because the layer that BUILDS and CHECKS the platform is TypeScript now, and that moved the
+floor a contributor needs.
+
+### Changed
+- **BREAKING — contributing needs Node 24.** `scripts/`, `checks/`, `testing/` and the five
+  shipped catalog skill scripts are TypeScript, run directly by Node's native type stripping
+  with no build step: `node scripts/gate.ts` IS the gate. Stripping only reached Stable in
+  24.12, so a checkout on Node 22 can no longer run the gate. `engines` and `.nvmrc` say so.
+
+  **The Docker images stay on `node:22.23.2-alpine` and that is not an oversight.** `scripts/`
+  and `checks/` are never copied into them, so the image version and the contributor floor are
+  unrelated facts. Do not "fix" the mismatch.
+- **Console — the same conversion, and its image DID move to `node:24-alpine`.** Unlike
+  zz-stack, the console's Dockerfile copies the manifest that declares the floor and installs
+  against it, so the two had to agree. Its `scripts/` and `checks/`, `eslint.config.ts` and
+  `postcss.config.ts` are TypeScript; 105 strict errors it had never been checked against are
+  gone, and `pnpm typecheck` now reads 22 tooling files it previously did not open.
+- **`marketplace/` ships compiled JavaScript.** `catalog/` holds the `.ts` source and
+  `build-marketplace.ts` compiles it to a staging directory first — consumers receive `.js`
+  and never TypeScript, so nothing installing a skill needs a Node version at all.
+
+### Fixed
+- **The console drove Puppeteer with `headless: 'new'`,** undocumented since Puppeteer 22. It
+  worked only because every branch tests `=== 'shell'` and everything else falls through to
+  `--headless=new`. Both audit scripts say `true`, which is what it meant.
+- **A missing colour token killed `doc-counts` three frames from the cause.** It handed
+  `readTokens`' `string | null` straight to `ratio()`, which calls `.trim()` on it. A token the
+  design doc quotes and the stylesheet does not declare now reads as a finding.
+- **`release.ts`'s `drop()` called `.trim()` on `null`.** Under `stdio: "ignore"`,
+  `execFileSync` returns null rather than a buffer.
+
+### Upgrade notes
+- **Running the platform: nothing to do.** No migration, no config change, no restart beyond
+  the normal one. The compose files move to 0.38.0 and console 0.8.0 as usual.
+- **Contributing: install Node 24** (`nvm use` reads the new `.nvmrc`). The console additionally
+  declares `"type": "module"`; nothing downstream of it is affected.
+- Contrast and design checks that evaluate a sibling script's SOURCE must strip it first —
+  `new Function` is a JavaScript parser and does not remove type annotations. Use
+  `module.stripTypeScriptTypes`, which is the same stripper Node runs these files with.
+
+### A note on the evidence
+The case for this conversion was that the tooling had latent bugs types would catch. **That
+case was wrong, and the work was done anyway on the stated reason: a language that refuses
+what it should.** Of 1145 strict errors across 115 zz-stack files, one was a real defect — the
+`drop()` null above. The "246 latent union bugs" that justified it were inference artifacts:
+widened array literals and `never[]` from `const x = []`. The console's 105 produced the two
+Puppeteer and token defects above. Three real findings in 1250 errors is the honest yield, and
+it is recorded here so nobody repeats the argument believing it was the argument that held.
 
 ## [0.37.0] — 2026-09-14
 

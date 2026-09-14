@@ -169,6 +169,65 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
   // against a map that answers the same thing to everything.
   if (!evalNames.size) return "no tool was attributed to the evaluation door, so the roster's door column is compared against a map that says /core/mcp to everything";
   if (![...doorOfTool.values()].includes("/core/mcp")) return "no tool was attributed to the core door — the derivation put the whole service behind the evaluation door";
+  // A THIRD DOOR APPEARS ON THIS ROSTER AT TASK I-38, and it is the gateway's. `knowledge_reindex`
+  // left `/core` for `/manage`: rebuilding a team's index is an administrative act on a team
+  // rather than a step in anybody's flow, and it takes a team argument no /core tool has.
+  //
+  // THE ROSTER MUST STILL CARRY IT, which is the whole reason this derivation widens instead of
+  // the name being dropped. The list's own closing sentence is "a tool NOT on that list belongs
+  // to a building block, whatever it is called" — so deleting the name would not make the
+  // roster silent about it, it would make the roster WRONG about it, and an agent reading that
+  // skill would be told a platform tool is somebody's block. Derived from the gateway's
+  // registrations, so the door column is checked against the source rather than believed.
+  //
+  // NOT ADDED TO `served`, and the asymmetry is deliberate. `served` drives the completeness
+  // test below — every tool zz-core registers must appear here — and the rest of /manage is
+  // people, teams, tokens and installs. Those are zz-access's subject and
+  // are taught by its skills; demanding them on a roster a DELIVERY agent reads would bury the
+  // twenty names it exists to state. So /manage widens what the roster may NAME and what its
+  // door column is judged against, and not what it must be exhaustive about.
+  const MANAGE_FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
+                        "services/gateway/src/admin/flows.ts"];
+  const manageNames = new Set();
+  for (const rel of MANAGE_FILES) {
+    if (!existsSync(join(root, rel))) {
+      return `${rel} is gone — the roster may name a /manage tool, so a scan that cannot read ` +
+             "that door would report every such name as a tool the platform does not serve";
+    }
+    for (const m of readFileSync(join(root, rel), "utf8")
+           .matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) manageNames.add(m[1]);
+  }
+  // THE CONTROL. An empty /manage set turns the widening below into "and anything else", which
+  // is the opposite of what it is for.
+  if (!manageNames.size) return "no tool was found on /manage — the roster's third door is derived from nothing, so any name at all would be accepted as one";
+  // A name zz-core also registers keeps zz-core's door: the two never overlap today, and if they
+  // ever did, the roster should say the door the flow agent reaches, not the administrator's.
+  for (const t of manageNames) if (!doorOfTool.has(t)) doorOfTool.set(t, "/manage/mcp");
+  // WHICH /manage TOOLS THE ROSTER MUST CARRY, derived rather than named. Widening `extra` to
+  // tolerate a /manage name would otherwise have made the row DELETABLE in silence: the
+  // completeness test below runs over `served`, which no /manage tool is in, so dropping
+  // `knowledge_reindex` from the table again would pass — and the roster's closing sentence
+  // then tells every agent it belongs to a building block, which is the exact failure this
+  // check exists to catch. Found by mutation while the widening was being tested.
+  //
+  // The rule is "it used to be on /core". A /manage tool with a TOOL_ALIAS entry MIGRATED —
+  // that map is per door and holds the renames of tools whose old name lived on /core — so it
+  // is a process tool that moved house, and a delivery agent still needs to be told it is
+  // ours. The tools that were always /manage have MANAGE_ALIAS entries or none, are
+  // zz-access's subject, and are deliberately not demanded here.
+  //
+  // PARSED FROM SOURCE, not imported: this gate runs before `tsc -b` has necessarily produced
+  // any JavaScript, which is the rule facts.mjs states for every answer that lives in
+  // TypeScript.
+  const aliasFile = "packages/contracts/src/alias.ts";
+  if (!existsSync(join(root, aliasFile))) return `${aliasFile} is gone — the roster's /manage rows cannot be told from tools that were never on /core`;
+  const aliasRegion = between(readFileSync(join(root, aliasFile), "utf8"),
+                              "export const TOOL_ALIAS", "});");
+  if (!aliasRegion.text) return `TOOL_ALIAS cannot be located in ${aliasFile}: ${aliasRegion.why}`;
+  const coreAliasValues = new Set(
+    [...aliasRegion.text.matchAll(/:\s*"([a-z0-9_]+)"/g)].map((m) => m[1]));
+  if (!coreAliasValues.size) return `no entry was parsed out of TOOL_ALIAS in ${aliasFile}, so no /manage tool would ever be required on the roster`;
+  const migrated = [...manageNames].filter((t) => coreAliasValues.has(t)).sort();
   const skill = readFileSync(join(root, "skills/zz-platform/SKILL.md"), "utf8");
   const start = skill.indexOf("THE PLATFORM'S TOOLS ARE THESE");
   if (start < 0) return "zz-platform no longer carries a roster of the platform's tools";
@@ -188,12 +247,23 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
            "below would then be reported as omitted, so it says this instead";
   }
   const missing = [...served].filter((t) => !listed.has(t)).sort();
-  const extra = [...listed.keys()].filter((t) => !served.has(t)).sort();
+  const extra = [...listed.keys()].filter((t) => !served.has(t) && !manageNames.has(t)).sort();
   if (missing.length) {
     bad.push(`zz-core serves ${missing.join(", ")} and the roster omits them — an agent reading ` +
              "that skill is told they belong to a building block");
   }
-  if (extra.length) bad.push(`the roster names ${extra.join(", ")}, which zz-core does not serve`);
+  const droppedMigrants = migrated.filter((t) => !listed.has(t));
+  if (droppedMigrants.length) {
+    bad.push(`${droppedMigrants.join(", ")} moved from /core to /manage and the roster no longer ` +
+             "names it — it is still the platform's tool, and this list's own closing sentence " +
+             "says a tool NOT on it belongs to a building block, so omitting it does not make " +
+             "the roster quiet about it, it makes the roster wrong about it");
+  }
+  if (extra.length) {
+    bad.push(`the roster names ${extra.join(", ")}, which no door on this platform serves — ` +
+             "neither zz-core nor the gateway registers it, so an agent is being told a name " +
+             "that answers \"tool not found\" belongs to us");
+  }
   // GROUPED BY THE CLAIM, not one sentence per tool: a whole row moving door is one mistake,
   // and ten copies of the same sentence is how a reader learns to skim a failure.
   const wrongDoor = new Map();

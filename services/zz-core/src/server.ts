@@ -17,12 +17,13 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { addressResolver, peerAddress } from "@zz/contracts";
+import { reindexAllTeams } from "@zz/indexing";
 import { serveMcp, serviceVersion } from "@zz/mcp-http";
 import express from "express";
 
 import { OWN_TOOLS, recordingDoor } from "./door.js";
 import { buildEvalServer } from "./eval-door.js";
-import { reindexAllTeams } from "./indexing.js";
+
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
 import { registerArtifactTools } from "./tools/artifacts.js";

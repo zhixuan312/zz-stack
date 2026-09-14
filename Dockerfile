@@ -35,6 +35,7 @@ WORKDIR /repo
 COPY package.json package-lock.json tsconfig.json tsconfig.base.json ./
 COPY packages/catalog/package.json    packages/catalog/
 COPY packages/contracts/package.json  packages/contracts/
+COPY packages/indexing/package.json   packages/indexing/
 COPY packages/mcp-client/package.json packages/mcp-client/
 COPY packages/mcp-http/package.json   packages/mcp-http/
 COPY packages/tools/package.json      packages/tools/

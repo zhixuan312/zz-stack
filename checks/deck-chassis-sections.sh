@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # AC-2.1: the chassis carries no slides; the guidebook carries all of them and the manifest.
-# Run from the workspace root (zz-parent/).
+# RESOLVED FROM THIS SCRIPT, not from the caller's directory — see deck-destination.sh for
+# why. Same defect, same fix, and the two are registered in the gate together.
 set -u
-d="zz-stack/skills/zz-deck"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+d="$here/../skills/zz-deck"
 fail=0
 for f in "$d/deck-chassis.html" "$d/deck-guidebook.html"; do
   if [ ! -f "$f" ]; then echo "FAIL: $f not found"; exit 1; fi

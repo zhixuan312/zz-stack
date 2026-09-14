@@ -44,6 +44,37 @@ which is almost always the answer to "why was that a 403".
 | what a team runs | `flow_install` `flow_uninstall` `install_list` |
 | which building blocks a team may reach | `tool_grant` `tool_revoke` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
+| a team's knowledge index, when it disagrees with the files | `knowledge_reindex` |
+
+## Rebuilding a knowledge index
+
+`knowledge_reindex` rebuilds a team's search index from that team's files, which are the source
+of truth — the index is derived and disposable. You will almost never need it: every tool that
+writes a document indexes it in the same call, and zz-core rebuilds every team at boot. Reach
+for it when:
+
+- a store was **restored from a backup**, so the files moved without the platform watching.
+- somebody **edited documents outside the platform's tools**, on the volume directly.
+- a search **returns a document whose file is gone**, or fails to return one that is there.
+
+| you pass | it does |
+|---|---|
+| nothing | rebuilds **every team** the platform holds — this is what a restore needs |
+| `team: "<slug>"` | rebuilds that one team |
+| `force: true` | re-derives every row even where the stored hash says nothing changed |
+
+A team slug that names no team is **refused, and the refusal names the slug you gave it**. That refusal is not politeness: a team whose store directory is gone has its index
+rows DELETED, which is right for a team that was archived and is what you would want — and a
+typo has no directory either. `team_list` shows the slugs.
+
+`force` is the one to reach for after a release that changed what an index row MEANS. The skip
+is correct about the current derivation and blind to a previous one: rows written by older
+logic look "already stored" to it forever, so an ordinary rebuild reports "nothing had changed"
+and repairs nothing. It costs a full re-derivation of every document, so do not reach for it
+first.
+
+It answers within a second or so on a settled store — unchanged files are skipped by content
+hash — and it is safe to run twice.
 
 **Your tools are the documentation.** Every tool states what it does and what it takes, so
 read your tool list rather than working from memory of an earlier conversation. This table is

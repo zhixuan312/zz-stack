@@ -16,13 +16,14 @@ import { join, resolve, sep } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller, parseEnvelope } from "@zz/contracts";
+import { indexDoc, walk } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
 import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
-import { indexDoc, sourceDocument, walk } from "../indexing.js";
+import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { commitStore, logActivity, persistDocument } from "../persist.js";

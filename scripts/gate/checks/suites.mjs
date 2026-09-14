@@ -14,10 +14,11 @@
  * with a name rather than four calls at the bottom of a long file.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { readJson, root, trackedFiles, unbuilt } from "../read.mjs";
+import { codeOnly, envNamesIn, readJson, root, trackedFiles, unbuilt, withoutComments }
+  from "../read.mjs";
 import { check } from "../run.mjs";
 
 /** Run one of the offline check tools that live beside the code they are about.
@@ -50,11 +51,18 @@ const runsClean = (tool) => () => {
  *
  * NOT EVERY FILE IN `checks/` BELONGS HERE. Three kinds live in that directory:
  *   - plain checks, which assert a property by reading or importing — these, registered below;
- *   - `gate-*.mjs` break-tests, which plant a defect and SPAWN `scripts/gate.mjs` to prove it
- *     goes red — registering one of those here makes the gate invoke itself, forever;
+ *   - break-tests, which plant a defect and SPAWN `scripts/gate.mjs` to prove it goes red —
+ *     registering one of those here makes the gate invoke itself, forever;
  *   - host-dependent checks (`returns-sees-a-backtrack.mjs` reaches the live database over
  *     ssh) — those belong to the release, which has a deployment to reach.
- * The `gate-` prefix is the marker for the second kind. */
+ *
+ * SPAWNING THE GATE IS THE MARKER for the second kind, and the `gate-` prefix is a naming
+ * convention over it rather than the test itself. This paragraph said the prefix WAS the
+ * marker, and the file that would have caught an unwired check — `all-checks-wired.mjs` —
+ * spawns the gate and carries no prefix, so a rule reading the name would have registered it
+ * and the gate would have invoked itself until something ran out. The check at the bottom of
+ * this file reads the file's own text instead, and reports a `gate-` prefix on a file that
+ * spawns nothing as the naming lie it is. */
 const runsCheck = (file) => () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
@@ -65,6 +73,24 @@ const runsCheck = (file) => () => {
   } catch (err) {
     const out = `${err.stdout ?? ""}${err.stderr ?? ""}`.trim();
     return out.split("\n").filter((l) => l.trim()).join("; ").slice(0, 400)
+      || `checks/${file} exited non-zero`;
+  }
+};
+
+/** The same, for the two checks in `checks/` written as bash rather than as a module.
+ *
+ * A SECOND HELPER RATHER THAN A FLAG ON THE FIRST, because what differs is the interpreter and
+ * nothing else, and `runsCheck(file, { shell: true })` is a parameter every future reader has
+ * to go and look up. Both scripts print `FAIL:` lines and exit non-zero, exactly as the .mjs
+ * checks do, so the failure text needs no separate handling. */
+const runsShell = (file) => () => {
+  try {
+    execFileSync("bash", [join(root, `checks/${file}`)],
+                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return null;
+  } catch (err) {
+    const out = `${err.stdout ?? ""}${err.stderr ?? ""}`.trim();
+    return out.split("\n").filter((l) => /FAIL/.test(l)).join("; ").slice(0, 400)
       || `checks/${file} exited non-zero`;
   }
 };
@@ -223,8 +249,15 @@ check("every check this gate registers is a file git will carry", () => {
   if (!trackedFiles()) return null;              // not a checkout; nothing to be tracked in
   const known = new Set(execFileSync("git", ["ls-files", "checks/"], { cwd: root, encoding: "utf8" })
     .split("\n").filter(Boolean).map((f) => f.replace(/^checks\//, "")));
+  // BOTH RUNNERS, and a capture that is actually a FILENAME. `runsShell` registers the two
+  // bash checks and reading only `runsCheck` would carry neither. And `[^"]+` matched the
+  // sentence the check below prints to tell somebody how to write a registration — the advice
+  // contains the spelling it is advising, so this reported `checks/${f}` as untracked, which is
+  // true of a file that has never existed. An extension is what separates a name from a
+  // sentence about names.
   const missing = [...readFileSync(join(root, "scripts/gate/checks/suites.mjs"), "utf8")
-    .matchAll(/runsCheck\("([^"]+)"\)/g)].map((m) => m[1]).filter((f) => !known.has(f));
+    .matchAll(/runs(?:Check|Shell)\("([A-Za-z0-9._-]+\.(?:mjs|sh))"\)/g)]
+    .map((m) => m[1]).filter((f) => !known.has(f));
   // AND THE MODULES THE GATE IMPORTS, which this did not cover and had to. The rule above reads
   // a runsCheck registration against `checks/`, so it sees a registered SUITE and is blind to a gate
   // MODULE — and a module is wired by an `import` in scripts/gate.mjs, one directory over.
@@ -341,3 +374,131 @@ check("every eval case is discovered once, from the tree its manifest declares",
 
 check("no shipped file states a count of this platform's own surface",
       runsCheck("derived-counts.mjs"));
+
+// ── the two checks written as bash, unwired since the day they were written ───────────────
+//
+// Both passed every time somebody typed their name and neither was ever registered, which is
+// the exact shape of the defect the block above exists to remove — the shell spelling simply
+// hid it from the check that hunts for it, because that one reads `.mjs` and these are `.sh`.
+// The check at the bottom of this file counts both extensions for that reason.
+
+check("the deck skill names one destination, and never the platform's document-write tool",
+      runsShell("deck-destination.sh"));
+
+check("the deck chassis carries no slides and the guidebook carries all of them",
+      runsShell("deck-chassis-sections.sh"));
+
+// ── NOTHING IN `checks/` IS INVISIBLE TO THIS FILE ───────────────────────────────────────
+
+/**
+ * Files in `checks/` this gate deliberately does not register, and why.
+ *
+ * NAMED ONE BY ONE, because neither has a property a rule could read: they are checks written
+ * ahead of the work they describe, and "fails today" is not the marker it looks like. A rule
+ * that exempted a check for failing would exempt every check a person drops in this directory
+ * broken, which is precisely the file the check below exists to catch — the probe that proved
+ * this gate blind exits 1 and nothing else.
+ *
+ * NOT A PARKING SPACE. `working-checks-registered.mjs` runs every unregistered check and goes
+ * red the moment one of them PASSES, and it is deliberately not taught about this map: a name
+ * here buys silence only for as long as the check cannot pass, and the day it can, the other
+ * rule demands a registration. Neither rule is weakened by the other's existence.
+ */
+const notRegistered = new Map([
+  ["docs-current.mjs",
+   "reads a plugin standard that is not written yet; it fails until the task that writes it"],
+  ["eval-readable.mjs",
+   "reads evals/results/latest/, which is one person's run output and no checkout carries"],
+]);
+
+check("every check in checks/ is registered here, or named here with a reason", () => {
+  // WHY A CROSS-VALIDATOR AND NOT A LOOP. Registering the directory with a `for` would be one
+  // textual `check(` line however many files it visited, and `report()` in run.mjs compares the
+  // names written under gate/checks/ against the number that ran — so a loop registering
+  // twelve would end the gate with GATE INCOMPLETE and no verdict at all. The list stays
+  // explicit and this makes forgetting a line impossible, which is the property that matters:
+  // adding a check still costs one line, and NOT adding it costs a red gate naming the file.
+  //
+  // THE MEASURED HOLE. `checks/zz-temp-wiring-probe.mjs`, two lines, `process.exit(1)`, could
+  // be dropped in this directory and the gate stayed green — suites.mjs registered by hand and
+  // never read the directory, and `working-checks-registered.mjs` runs an unregistered check
+  // and reports it only when it PASSES. A check that arrives broken was the one case neither
+  // half covered, and a check that arrives broken is what every new check is on its first day.
+  const declared = withoutComments(
+    readFileSync(join(root, "scripts/gate/checks/suites.mjs"), "utf8"));
+  // COMMENTS STRIPPED FIRST. A sentence naming `checks/foo.mjs` in a paragraph explaining why
+  // foo is unregistered would otherwise register it, and this file argues in exactly that way.
+  const registered = new Set([
+    ...[...declared.matchAll(/runs(?:Check|Shell)\("([A-Za-z0-9._-]+\.(?:mjs|sh))"\)/g)]
+      .map((m) => m[1]),
+    // The older spelling: three checks are registered by an inline execFileSync naming the
+    // path. Reading only the helper form reported all three as unwired once already.
+    ...[...declared.matchAll(/["'`]checks\/([A-Za-z0-9._-]+)["'`]/g)].map((m) => m[1]),
+  ]);
+
+  // ── THE TWO EXEMPT CATEGORIES, READ OFF THE FILE RATHER THAN OFF ITS NAME ───────────────
+  //
+  // A break-test spawns `scripts/gate.mjs`; registering one makes the gate invoke itself. A
+  // host-dependent check reaches a deployment; the offline gate has none, so it belongs to the
+  // release's live step. Both are decided by what the file DOES, because the `gate-` prefix
+  // that used to stand for the first is carried by six files and missing from a seventh.
+  // THE PATH IS INSIDE THE SPAWN CALL, not merely somewhere in the same file, and the first
+  // spelling of this — the path anywhere AND a spawner anywhere — reported
+  // `chain-check-wiring.mjs` as a break-test on its first run. That check READS
+  // `scripts/gate.mjs` to ask what the gate is wired to and names the spawners in a regex, so
+  // both halves were true of a file that spawns nothing. Exempting it would have taken a
+  // registered, working check out of the gate on the strength of a coincidence.
+  const spawnsGate = (code) =>
+    /(?:execFileSync|spawnSync|execSync)\s*\([^;]{0,200}["'`]scripts\/gate\.mjs["'`]/.test(code);
+  // A READ OF THE VARIABLE, NOT A MENTION OF ITS NAME, and the distinction is not academic:
+  // `working-checks-registered.mjs` and the break-test for this check both carry the literal
+  // ZZ_GATEWAY inside their own exclusion regex, and a rule that grepped for the bare name
+  // reported each scanner as needing the deployment it exists to keep out. `envNamesIn` reads
+  // `process.env.X` and `envRequired("X")` over source whose string literals are blanked, so a
+  // name that appears only inside a pattern is not a read — and no file needs an exemption,
+  // which is the part that matters: an exemption would still be there the day one of those
+  // scanners genuinely acquired a deployment.
+  const needsHost = (code, plain) =>
+    /(?:execFileSync|spawnSync|execSync)\(\s*["'](?:ssh|docker)["']/.test(code) ||
+    envNamesIn(plain).some((n) => n === "ZZ_GATEWAY" || n === "ZZ_PAT");
+
+  const files = readdirSync(join(root, "checks")).filter((f) => /\.(mjs|sh)$/.test(f)).sort();
+  const seen = new Map(files.map((f) => {
+    const src = readFileSync(join(root, `checks/${f}`), "utf8");
+    return [f, { gate: spawnsGate(withoutComments(src)), host: needsHost(withoutComments(src), codeOnly(src)) }];
+  }));
+
+  const problems = [];
+  for (const [f, { gate, host }] of seen) {
+    if (registered.has(f)) {
+      if (notRegistered.has(f)) {
+        problems.push(`checks/${f} is registered above AND named as deliberately unregistered`);
+      }
+      if (host) {
+        problems.push(`checks/${f} is registered in this gate and reaches a deployment — it ` +
+                      "belongs to release.mjs's live step, which has one to reach");
+      }
+      if (gate) {
+        problems.push(`checks/${f} is registered in this gate and spawns scripts/gate.mjs — ` +
+                      "the gate would invoke itself");
+      }
+      continue;
+    }
+    if (gate || host || notRegistered.has(f)) continue;
+    problems.push(`checks/${f} exists and nothing runs it — add one \`check("…", ` +
+                  `runsCheck("${f}"))\` line above, or name it in notRegistered with a reason`);
+  }
+  // A NAME HERE FOR A FILE THAT IS GONE is the same staleness one directory over: the reason
+  // stays readable, describes nothing, and the next person trusts it.
+  for (const f of notRegistered.keys()) {
+    if (!seen.has(f)) problems.push(`notRegistered names checks/${f}, which does not exist`);
+  }
+  // And the convention is held to its meaning in the one direction it can be: a file that
+  // announces itself a break-test and spawns nothing is a name that will be believed.
+  for (const [f, { gate }] of seen) {
+    if (f.startsWith("gate-") && !gate) {
+      problems.push(`checks/${f} is named for a break-test and spawns no gate`);
+    }
+  }
+  return problems.length ? problems.join("; ") : null;
+});

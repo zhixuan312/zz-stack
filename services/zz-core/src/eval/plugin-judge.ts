@@ -24,6 +24,7 @@ import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
+import { ARTIFACTS_DIR } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
@@ -34,7 +35,7 @@ import { logActivity } from "../persist.js";
 import { pluginCases } from "./plugin-cases.js";
 import { pluginTraces } from "./plugin-profile.js";
 import { sanitize, userRoot } from "../paths.js";
-import { ARTIFACTS_DIR, db } from "../platform-db.js";
+import { db } from "../platform-db.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing about a " +

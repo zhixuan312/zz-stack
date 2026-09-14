@@ -9,6 +9,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@zz/contracts": "*",
+    "@zz/indexing": "*",
     "@zz/catalog": "*",
     "@zz/mcp-http": "*",
     "express": "^4.21.0",

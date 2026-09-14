@@ -1,4 +1,4 @@
-// The /manage door: 30 tools, cut by role into 16 / +4 / +10, three duplicates gone,
+// The /manage door: 31 tools, cut by role into 16 / +4 / +11, three duplicates gone,
 // one exception kept.
 //
 // WHAT THE PLAN'S DRAFT OF THIS FILE COULD NOT SEE, measured against untouched code before a
@@ -20,7 +20,7 @@
 //     role split is the substance of AC-2.29 — it is what "a member sees exactly the 16 the
 //     spec froze" means — and it was the one property the check did not look at. Every
 //     registration's gate is parsed here and pinned per tier, in BOTH directions: a member must
-//     not see the other fourteen, and a superadmin must still see all thirty.
+//     not see the other fourteen, and a superadmin must still see all thirty-one.
 //
 //  3. Its deletion test asked whether three names appear among the registrations IN THESE THREE
 //     FILES. An implementation that moved `issue_my_access_token` into settings.ts, or left it
@@ -28,24 +28,30 @@
 //     package, with comments stripped, because a comment recording what a tool used to be is
 //     history and this repository's files legitimately carry a lot of it.
 //
-// THE COUNT IS 30 AND NOT THE 31 THE PLAN ASKED FOR. The 31st was `knowledge_reindex`
-// "arriving from the core door", which the plan assigns to Task I-18, not to I-22. I-18
-// delivered two of its three tools and left `knowledge_reindex` on /core, because moving it
-// needs `reindexTeam` and `indexDoc` extracted into a package the gateway can depend on, and
-// the gateway has no indexer. That extraction is TASK I-38, which is real and assigned: it was
-// opened against this initiative after I-18 hit the blocker, so it postdates plan.md and
-// grepping the plan's 37 tasks for it correctly finds nothing. See checks/core-surface-19.mjs,
-// which pins `knowledge_reindex` as a name the core door still serves and is registered and
-// green — accurate today, and I-38 is what changes it.
+// THE COUNT IS 31 SINCE TASK I-38, AND THE 31st IS `knowledge_reindex`. It is the tool the
+// plan described as "arriving from the core door" and assigned to Task I-18, which delivered
+// two of its three tools and left this one where it was: moving it needs `reindexTeam` and
+// `indexDoc` reachable from the gateway, and a service cannot import another service. Task
+// I-38 — opened against this initiative after I-18 hit that blocker, so it postdates plan.md
+// and grepping the plan's 37 tasks for it correctly finds nothing — extracted them into
+// `@zz/indexing`, which both services import, and the tool moved.
 //
-// Asserting 31 here would make this check red for a reason that is not
-// this task's, which is how a gate teaches people to read past it. When that move lands, the
-// name joins SUPER below AND the `expected` set beside it — `knowledge_reindex` is a
-// TOOL_ALIAS value, not a MANAGE_ALIAS one, because the old name lived on /core — and the
-// total becomes 31.
+// For most of this initiative this file asserted 30 and said so in this paragraph, because
+// asserting the end state early makes a check red for a reason that is not the task's, which
+// is how a gate teaches people to read past it. The move has landed, so the name is in SUPER
+// below AND in the `expected` set beside it — `knowledge_reindex` is a TOOL_ALIAS value and
+// not a MANAGE_ALIAS one, because the old name lived on /core, so the derivation from
+// MANAGE_ALIAS cannot produce it and it is named there explicitly.
 //
-// WHY THE THIRTY NAMES ARE DERIVED AND THE THREE TIERS ARE NOT. The name set is
-// `Object.values(MANAGE_ALIAS)` plus `whoami`, so it is the frozen rename table itself rather
+// WHAT THIS FILE DELIBERATELY DOES NOT CHECK ABOUT IT. Its argument contract — `team?`,
+// `force?`, omitted meaning every team, an unknown slug refused by name — and the proof that
+// exactly one indexer exists both live in checks/core-surface-19.mjs, section 4, which is the
+// file that tracked the tool's departure from /core. Two files asserting the same thing is
+// two files to edit the day it changes.
+//
+// WHY THE NAMES ARE DERIVED AND THE THREE TIERS ARE NOT. The name set is
+// `Object.values(MANAGE_ALIAS)` plus `whoami` plus the one arrival named above, so it is the
+// frozen rename table itself rather
 // than a list anybody maintains: add an entry to the table without renaming the tool and this
 // goes red on its own. The tiers cannot be derived — the spec froze "16 for a member" as a
 // number and never enumerated them — so they are written out below, and their union is
@@ -99,8 +105,8 @@ for (const f of FILES) {
 // DERIVED, and here is the derivation, because the spec froze "16 for a member" as a NUMBER and
 // never enumerated it: a member sees every ungated registration, which is the nine in
 // access-door.ts, the six in admin.ts, and catalog_list in admin/flows.ts. A lead adds the four
-// `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts and the two
-// in access-door.ts. The numbers are not asserted against themselves — counting a list this file
+// `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts and the
+// three in access-door.ts. The numbers are not asserted against themselves — counting a list this file
 // also wrote proves nothing. What carries the weight is the set equality below, against the gates
 // parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
 const MEMBER = ["block_connect", "block_disconnect", "platform_list", "team_mine", "team_switch",
@@ -110,11 +116,14 @@ const MEMBER = ["block_connect", "block_disconnect", "platform_list", "team_mine
 const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
                "team_create", "team_archive", "tool_grant", "tool_revoke",
-               "credential_admin_set", "credential_admin_delete"];
+               "credential_admin_set", "credential_admin_delete", "knowledge_reindex"];
 
 // The tiers and the frozen table have to describe the same door. Without this, a name could be
 // dropped from a tier and from the rename table together and every count below would agree.
-const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami"]);
+// `knowledge_reindex` is named and not derived: it arrived from /core at Task I-38 and its
+// rename history is a TOOL_ALIAS entry, so MANAGE_ALIAS cannot produce it. Naming it here is
+// what keeps the set equality below honest rather than widening it to "or anything".
+const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami", "knowledge_reindex"]);
 const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
 for (const n of expected) {
   if (!tiered.has(n)) fail.push(`${n} is a current /manage name and no tier above claims it`);
@@ -149,9 +158,15 @@ for (const [who, got, want] of tierSets) {
   }
 }
 
-if (registered.size !== 30) {
-  fail.push(`/manage registers ${registered.size} tools, expected 30 ` +
-            `(33 today, minus the 3 duplicates). Registered: ${[...registered.keys()].sort().join(", ")}`);
+// ONE PLACE, because the first version of this spelled the number in the condition and again
+// in the sentence, and a mutation that changed the condition alone printed "/manage registers
+// 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
+const DOOR_SIZE = 31;
+if (registered.size !== DOOR_SIZE) {
+  fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
+            `(33 before this initiative, minus the 3 duplicates, plus knowledge_reindex ` +
+            `arriving from /core at Task I-38). ` +
+            `Registered: ${[...registered.keys()].sort().join(", ")}`);
 }
 
 // ── the three duplicates, absent EVERYWHERE and not merely here ─────────────────────────

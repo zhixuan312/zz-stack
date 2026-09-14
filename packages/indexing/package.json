@@ -1,0 +1,19 @@
+{
+  "name": "@zz/indexing",
+  "private": true,
+  "version": "0.34.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@zz/contracts": "*",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10"
+  },
+  "license": "MIT"
+}

@@ -15,14 +15,15 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { catalogEntries } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
+import { ARTIFACTS_DIR, indexDoc } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { tableRow } from "../document-rules.js";
-import { indexDoc, journalLog, knowledgeEvent, reindexTeam, type KbRow } from "../indexing.js";
+import { journalLog, knowledgeEvent, type KbRow } from "../indexing.js";
 import { KNOWLEDGE_TEAM, PLAIN_TOKEN, knowledgeRoot, sanitize, tagRefusal, titleSlug, userRoot, yamlValue } from "../paths.js";
 import { commitStore, logActivity, setEnvelopeField } from "../persist.js";
-import { ARTIFACTS_DIR, blockVersionFor, db, teamFor, teamsFor } from "../platform-db.js";
+import { blockVersionFor, db, teamFor, teamsFor } from "../platform-db.js";
 import { isoToday } from "../write-guards.js";
 
 export function registerKnowledgeTools(server: McpServer): void {
@@ -135,9 +136,11 @@ function subjectTagError(tags: string[] | undefined): string | null {
       const { active: team, all: evidenceTeams } = await teamsFor(who.email);
       // userRoot() falls back to a personal directory OUTSIDE teams/ when teamFor() is falsy
       // (server.ts:2374) — a team-scoped node from such a caller would report success and
-      // land where team-gated search can never reach it. knowledge_search and
-      // knowledge_reindex already refuse this caller in these terms; this closes the same
-      // silent-loss path here. `scope: "platform"` is untouched: the platform shelf is not
+      // land where team-gated search can never reach it. knowledge_search already refuses
+      // this caller in these terms; this closes the same silent-loss path here. It used to
+      // say "and knowledge_reindex" too, which stopped being true at Task I-38: that tool is
+      // on /manage now and takes the team as an argument, so it has no caller's team to find
+      // missing. `scope: "platform"` is untouched: the platform shelf is not
       // team-resolved, so a teamless caller still writes there.
       if (scope === "team" && !team) {
         return text("ERROR: you are not in a team — the knowledge base is team-scoped");
@@ -412,41 +415,6 @@ function subjectTagError(tags: string[] | undefined): string | null {
         detail: { supersededBy: new_id, file: oldFile },
       });
       return text(`node ${old_id} superseded by ${new_id}`);
-    },
-  );
-
-  server.registerTool(
-    "knowledge_reindex",
-    {
-      description:
-        "Rebuild your team's knowledge index from the files, which are the source of truth. " +
-        "The index is derived and disposable: it is rebuilt at boot and on every write, so you " +
-        "rarely need this. Run it after editing documents outside the platform's tools, after " +
-        "restoring a backup, or if a search returns something whose file no longer exists. " +
-        "Cheap — unchanged files are skipped by content hash.",
-      inputSchema: {
-        force: z.boolean().optional().describe(
-          "Re-derive every row even where the stored hash says nothing changed. Needed when " +
-          "the DERIVATION changed and left rows the current logic would not produce."),
-      },
-    },
-    async ({ force }) => {
-      const who = parseCaller(requestHeaders());
-      const team = await teamFor(who.email);
-      if (!team) return text("ERROR: you are not in a team — the knowledge base is team-scoped");
-      const p = db();
-      if (!p) return text("ERROR: knowledge index unavailable (no platform db)");
-      // The skip is correct about the CURRENT derivation and blind to a previous one. Rows
-      // written by older logic, whose hash a later deploy then updated, are invisible to it
-      // forever: the hash says "already stored", and what is stored is something this code
-      // would never write. That has now happened twice here — first with _versions/ snapshots
-      // marked superseded, then with decision rows. A rebuild that cannot ignore its own hash
-      // cannot repair an index, which is most of what a rebuild is for.
-      const r = await reindexTeam(team, force === true);
-      return text(
-        `knowledge index rebuilt for ${team}: ${r.scanned} files scanned, ${r.indexed} re-indexed, ` +
-        `${r.removed} stale row(s) removed.` +
-        (r.indexed === 0 && r.removed === 0 ? " Nothing had changed." : ""));
     },
   );
 

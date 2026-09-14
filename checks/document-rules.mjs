@@ -18,6 +18,14 @@ import { pathToFileURL } from "node:url";
 const mod = join(process.cwd(), "services/zz-core/dist/document-rules.js");
 const R = await import(pathToFileURL(mod).href);
 
+// TWO MODULES, ONE SUBJECT, since Task I-38. `indexable`, `isoDate` and `decisionRows` are the
+// rules the knowledge INDEX derives a row by, and they moved to `@zz/indexing` with the indexer
+// that is their only caller — the gateway now serves `knowledge_reindex` and a package is the
+// only thing two services can both import. They are still pure, still the most testable code
+// here, and still exercised below; only the import moved.
+const idx = join(process.cwd(), "packages/indexing/dist/index.js");
+const I = await import(pathToFileURL(idx).href);
+
 let failed = 0;
 const is = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -77,15 +85,15 @@ is("a field in the order but unset is skipped, not written empty",
    "---\nflow: sdlc-flow\n---\n");
 
 /* ── indexable — what the index will hold ─────────────────────────────────── */
-is("a markdown document is indexable",         R.indexable("2026-09-11-x/spec.md"), true);
-is("a frozen snapshot is indexable",           R.indexable("2026-09-11-x/_versions/spec.v1.md"), true);
-is("the activity log is not a document",       R.indexable("2026-09-11-x/activity.jsonl"), false);
+is("a markdown document is indexable",         I.indexable("2026-09-11-x/spec.md"), true);
+is("a frozen snapshot is indexable",           I.indexable("2026-09-11-x/_versions/spec.v1.md"), true);
+is("the activity log is not a document",       I.indexable("2026-09-11-x/activity.jsonl"), false);
 
 /* ── decisionRows — a FIT LEDGER, read out of a body ──────────────────────── */
 // The vocabulary is native / achievable / workaround / not_possible — what a BLOCK can do,
 // not whether an acceptance criterion is met. The key shapes are AC-N.N and FR-N, so the two
 // halves of a row come from different worlds and only this function knows they pair up.
-const rows = R.decisionRows([
+const rows = I.decisionRows([
   "| Claim | Verdict | Detail |",
   "| AC-1.1 | native | the block does this itself |",
   "| FR-3 | Not possible | nothing there answers it |",
@@ -94,8 +102,8 @@ is("both key shapes are read, and prose spelling is normalised",
    rows.map((r) => [r.key, r.verdict]).sort(),
    [["AC-1.1", "native"], ["FR-3", "not_possible"]]);
 is("a verdict outside the vocabulary is not a row",
-   R.decisionRows("| AC-1.1 | met | the endpoint answers |"), []);
-is("a body with no table yields nothing", R.decisionRows("# Spec\n\njust prose\n"), []);
+   I.decisionRows("| AC-1.1 | met | the endpoint answers |"), []);
+is("a body with no table yields nothing", I.decisionRows("# Spec\n\njust prose\n"), []);
 
 if (failed) { console.error(`\ndocument-rules: ${failed} case(s) failed`); process.exit(1); }
 console.log(`\ndocument-rules: all cases passed`);

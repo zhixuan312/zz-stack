@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # AC-1.8: the deck skill names one destination, and never the platform's document-write tool.
-# Run from the workspace root (zz-parent/).
+# RESOLVED FROM THIS SCRIPT, not from the caller's directory. It read
+# `zz-stack/skills/...` and said "run from the workspace root", which is why nothing ran it:
+# the gate's cwd is this repository, one level below, and a check whose invocation depends on
+# where the person happened to be standing is a check that gets invoked by hand or not at all.
 set -u
-skill="zz-stack/skills/zz-deck/SKILL.md"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+skill="$here/../skills/zz-deck/SKILL.md"
 fail=0
 if [ ! -f "$skill" ]; then echo "FAIL: $skill not found"; exit 1; fi
 if grep -n "document_write" "$skill"; then

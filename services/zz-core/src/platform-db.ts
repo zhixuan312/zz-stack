@@ -10,11 +10,11 @@
 import pg from "pg";
 
 import { actingTeam } from "@zz/contracts";
+import { configureIndexing } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { Refusal } from "./refusal.js";
 
-export const ARTIFACTS_DIR = "/artifacts";
 const TEAM_DB_URL = (process.env.TEAM_DB_URL ?? "").trim();
 let pool: pg.Pool | undefined;
 /** The platform database, connected on first use, or null when this deployment has none.
@@ -39,6 +39,16 @@ export function db(): pg.Pool | null {
   pool ??= new pg.Pool({ connectionString: TEAM_DB_URL, max: 4 });
   return pool;
 }
+// THE INDEXER IS TOLD HOW TO REACH THE DATABASE HERE, at import time, because this module is
+// the one that owns the pool. `@zz/indexing` is shared with the gateway, which builds its pool
+// eagerly at boot and answers the same question a different way, so the package takes an
+// accessor rather than picking one service's shape and making the other wrong.
+//
+// AT MODULE LEVEL AND NOT IN server.ts. Every path that indexes a document reaches teamFor()
+// or userRoot() first, so this module is loaded before any of them can run — whereas a call in
+// the entry point is one an eval door, a test harness or a future second entry point can
+// forget, and forgetting it does not fail loudly, it writes documents nothing can find.
+configureIndexing(db);
 const teamCache = new Map<string, { team: string | null; all: string[]; expires: number }>();
 /** Which team's store a person writes into.
  *

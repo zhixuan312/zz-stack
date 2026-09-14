@@ -6,7 +6,7 @@
  * for. It typechecks, it reads as protection, and it protects nothing.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { between, firstOf, gateOwnSource, root, scan, sourceFiles, toolsIn, unbuilt, zzCoreSource, zzCoreTools } from "../read.mjs";
@@ -272,7 +272,15 @@ check("the claim reader reads a criterion written as a checklist item", () => {
   // the code is reverted. Neither the anchor sentence nor anything after it may spell the
   // shapes below in prose — the regex source is the only thing here that carries them, so
   // reverting the regex and keeping every comment fails this check.
-  const src = zzCoreSource();
+  //
+  // THE READER MOVED AT TASK I-38, and this check followed it rather than being relaxed.
+  // `decisionRows` is what the knowledge INDEX derives a document's claims by, so it went to
+  // @zz/indexing with the indexer that is its only caller — byte for byte, all four readers
+  // intact. Read through `zzCoreSource()` it reported "the fourth claim reader is gone or was
+  // renamed", which is this check saying it has been disarmed. The four shapes it pins are
+  // unchanged; only the address is.
+  const f = join(root, "packages/indexing/src/rules.ts");
+  const src = existsSync(f) ? readFileSync(f, "utf8") : "";
   const at = src.indexOf("An acceptance criterion as the spec states it");
   if (at < 0) return "the fourth claim reader is gone or was renamed";
   const region = src.slice(at, at + 900);

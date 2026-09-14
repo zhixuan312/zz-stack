@@ -60,8 +60,8 @@
     "sha": "29467f7264e8"
   },
   "zz-admin": {
-    "version": "2.2",
-    "sha": "aee3c7a0c3f2"
+    "version": "2.3",
+    "sha": "a92dca3d9e94"
   },
   "zz-doctor": {
     "version": "1.3",
@@ -116,8 +116,8 @@
     "sha": "35896603a076"
   },
   "zz-platform": {
-    "version": "3.33",
-    "sha": "64dc57a9d871"
+    "version": "3.34",
+    "sha": "eeea8f561967"
   },
   "zz-tldr": {
     "version": "1.1",

@@ -15,6 +15,7 @@ import { join, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OUTCOMES, OUTCOME_STOPPED, parseCaller, parseEnvelope } from "@zz/contracts";
+import { indexDoc } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -22,7 +23,7 @@ import { shownSinceLastChange } from "../attest.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { fieldRefusal, frontmatterRefusal, oneLine, renderEnvelope } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
-import { indexDoc, sourceDocument } from "../indexing.js";
+import { sourceDocument } from "../indexing.js";
 import { DOC_REF, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";

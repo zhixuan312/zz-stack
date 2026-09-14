@@ -10,16 +10,7 @@
   ],
   "references": [
     {
-      "path": "../../packages/contracts"
-    },
-    {
-      "path": "../../packages/indexing"
-    },
-    {
-      "path": "../../packages/catalog"
-    },
-    {
-      "path": "../../packages/mcp-http"
+      "path": "../contracts"
     }
   ]
 }

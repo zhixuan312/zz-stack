@@ -21,6 +21,8 @@ import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
+import { configureIndexing } from "@zz/indexing";
+
 import { PLATFORM_TEAM, TEAM_SLUG, toTeamSlug } from "./identity.js";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
@@ -35,6 +37,17 @@ export function platformDb(): pg.Pool {
 export function platformDbReady(): boolean {
   return pool !== undefined;
 }
+// THE INDEXER IS TOLD HOW TO REACH THE DATABASE HERE, at import time, because this module is
+// the one that owns the pool. `@zz/indexing` is shared with zz-core, which builds its pool
+// lazily and answers "is there a database" a different way, so the package takes an accessor
+// rather than picking one service's shape and making the other wrong.
+//
+// `null` WHERE THIS THROWS. platformDb() throws before initPlatformDb has run, which is right
+// for a caller that cannot proceed without a database; the indexer's null means "this
+// deployment has none", which is an ordinary answer it already handles. Handing it the
+// throwing accessor would turn a local dev boot into a stack trace on the first document
+// written.
+configureIndexing(() => (platformDbReady() ? platformDb() : null));
 
 export async function initPlatformDb(): Promise<void> {
   const serverUrl = (process.env.PLATFORM_DB_URL || process.env.TEAM_DB_URL || "").trim();

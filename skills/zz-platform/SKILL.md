@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.33
+version: 3.34
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -454,11 +454,12 @@ reading later can see one caused the other.
 
 ## Process layer vs building blocks
 
-- **THE PLATFORM'S TOOLS ARE THESE, AND NOTHING ELSE IS ONE.** They are
-  served by `zz-core`, across its two doors. Whenever this skill or a flow's
-  skill names a tool without saying where it lives, it means the one on this
-  list — and the middle column is the door it is on, which decides whether
-  YOU have it:
+- **THE PLATFORM'S TOOLS ARE THESE, AND NOTHING ELSE IS ONE.** Nearly all of
+  them are served by `zz-core`, across its two doors; one is served by the
+  gateway on `/manage/mcp`, and it is a platform tool exactly like the rest.
+  Whenever this skill or a flow's skill names a tool without saying where it
+  lives, it means the one on this list — and the middle column is the door it
+  is on, which decides whether YOU have it:
 
   | | door | |
   |---|---|---|
@@ -466,18 +467,28 @@ reading later can see one caused the other.
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
   | sources | `/core/mcp` | `source_add` `source_list` |
-  | knowledge | `/core/mcp` | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
+  | knowledge | `/core/mcp` | `knowledge_search` `knowledge_add` `knowledge_supersede` |
   | skills | `/core/mcp` | `skill_list` `skill_read` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `case_record` `finding_record` |
+  | rebuilding a team's index | `/manage/mcp` | `knowledge_reindex` |
 
-**THE LAST ROW IS NOT ON YOUR LIST UNLESS YOU INSTALLED THAT FLOW.** `/core/mcp` is in the
-required baseline package, so every account on this platform carries every row above the last
-one. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that flow is not
+**THE LAST TWO ROWS ARE PROBABLY NOT ON YOUR LIST, FOR TWO DIFFERENT REASONS.** `/core/mcp` is
+in the required baseline package, so every account on this platform carries every `/core/mcp`
+row. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that flow is not
 installed, those tools are not on your surface at all, and calling one answers "tool not
-found" rather than refusing you. They are still the platform's tools and still zz-core's, which
-is why they are on this list and not mistaken for a building block's; what the door decides is
-who can reach them, not whose they are.
+found" rather than refusing you. `/manage/mcp` is a door everyone has and whose LIST IS CUT BY
+ROLE: `knowledge_reindex` is registered to superadmins only, so unless you are one it is not on
+your surface either, and it answers the same "tool not found". In every case they are still
+the platform's tools, which is why they are on this list and not mistaken for a building
+block's; what the door decides is who can reach them, not whose they are.
+
+**`knowledge_reindex` is the one tool here the gateway serves rather than zz-core.** It rebuilds
+a team's search index from the files, which are the source of truth — the answer to "a search
+returned a document whose file is gone", or to a store restored from a backup. It is an
+operator's tool and not a stage of anybody's flow, which is why it sits with the rest of
+platform administration; `zz-admin` is the skill that teaches it. You will not need it in the
+middle of delivery work: every tool that writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation flow. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
@@ -495,8 +506,8 @@ make every number incomparable with every other number.
   `document_approve` records a gate on a document, while bookit's `approve_slot`
   approves somebody's appointment. Same verb, different platform, and only one of
   them is a gate.
-- **Every tool in this skill and in a flow's skills is ZZ-CORE'S tool of that
-  name.** Read `document_approve(path)` as *zz-core's `document_approve`*, `document_write` as
+- **Every tool in this skill and in a flow's skills is THE PLATFORM'S tool of that
+  name** — zz-core's, but for `knowledge_reindex`, which is the gateway's. Read `document_approve(path)` as *zz-core's `document_approve`*, `document_write` as
   *zz-core's `document_write`*, and so on for every one of them. Say it to yourself that
   way before you call it, because that is the whole question — not what the verb
   sounds like, but which server it comes from.

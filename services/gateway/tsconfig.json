@@ -13,6 +13,9 @@
       "path": "../../packages/contracts"
     },
     {
+      "path": "../../packages/indexing"
+    },
+    {
       "path": "../../packages/catalog"
     },
     {

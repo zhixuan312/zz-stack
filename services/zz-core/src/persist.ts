@@ -15,10 +15,11 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, resolve } from "node:path";
 
 import { ENVELOPE_BLOCK, parseCaller, parseEnvelope } from "@zz/contracts";
+import { indexDoc } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { oneLine, tableRow } from "./document-rules.js";
-import { indexDoc } from "./indexing.js";
+
 import { type Chain, isoToday, stampEnvelope } from "./write-guards.js";
 
 /** Mechanical version snapshot: the moment a flow document's status flips

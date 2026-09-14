@@ -9,9 +9,27 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { codeOnly, firstOf, root, sourceFiles, withoutComments, zzCoreSource } from "../read.mjs";
+import { codeOnly, firstOf, root, sourceFiles, withoutComments } from "../read.mjs";
 import { check } from "../run.mjs";
 import { schemaColumns } from "../facts.mjs";
+
+/** The indexer, which left services/zz-core/src/indexing.ts for @zz/indexing at Task I-38.
+ *
+ * The two checks below read it for `reindexTeam` and `reindexAllTeams`, and they used to read
+ * it through `zzCoreSource()`. They had to move with it: `knowledge_reindex` went to /manage,
+ * the gateway serves that door, and a service cannot import another service — so the indexer
+ * is a package both import, and zz-core's source no longer contains a line of it. Left aimed
+ * at the old address both checks reported "this check reads nothing", which is the honest
+ * sentence for a disarmed check and is exactly the silent-skip this gate exists to refuse.
+ *
+ * GUARDED rather than read bare. Both checks already say "reindexTeam is gone — this check
+ * reads nothing" when the function is absent, and that sentence is the failure path; a bare
+ * readFileSync would replace it with an ENOENT stack trace and send the reader looking for a
+ * broken check instead of a missing function. */
+const indexerSource = () => {
+  const f = join(root, "packages/indexing/src/index.ts");
+  return existsSync(f) ? readFileSync(f, "utf8") : "";
+};
 
 check("a team whose store is gone loses its index rows", () => {
   // GHOST ROWS. reindexTeam took one early return for two different absences:
@@ -23,7 +41,16 @@ check("a team whose store is gone loses its index rows", () => {
   //
   // And reindexAllTeams walked teams/ alone, so the one team that needed cleaning — the one
   // with no directory — was the one it could never visit.
-  const src = zzCoreSource();
+  //
+  // THE TRAILING QUOTE IN THE TWO PATTERNS BELOW IS LOAD-BEARING, and it was missing. Both
+  // asked for `delete from zz.<table> where team_slug=$1` unanchored, and the per-document
+  // cleanup at the foot of the same function — `... where team_slug=$1 and initiative=$2 and
+  // path=$3` — begins with exactly that text. The whole function is the region, so the wrong
+  // statement satisfied the assertion about the right one: deleting the vanished team's
+  // `zz.decision` line outright left this check GREEN. Proven by mutation while the check was
+  // being re-aimed at the package, not by reading it. Requiring the closing `"` is what makes
+  // the two statements distinguishable, and the argument list is what tells them apart.
+  const src = indexerSource();
   const fn = /async function reindexTeam\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const all = /async function reindexAllTeams\([\s\S]*?\n}/.exec(src)?.[0] ?? "";
   const bad = [];
@@ -34,10 +61,10 @@ check("a team whose store is gone loses its index rows", () => {
                "directory, so either it empties the index on an unmounted volume or it leaves " +
                "ghost rows for a team that no longer has a store");
     }
-    if (!/delete from zz\.doc where team_slug=\$1/.test(fn)) {
+    if (!/delete from zz\.doc where team_slug=\$1", \[teamSlug\]/.test(fn)) {
       bad.push("reindexTeam never deletes a vanished team's zz.doc rows");
     }
-    if (!/delete from zz\.decision where team_slug=\$1/.test(fn)) {
+    if (!/delete from zz\.decision where team_slug=\$1", \[teamSlug\]/.test(fn)) {
       bad.push("reindexTeam deletes a vanished team's documents but not its decisions — the " +
                "two are keyed the same way and only one being cleaned is the bug this file " +
                "already fixed once for a single document");
@@ -83,7 +110,7 @@ check("a document's two derived tables are cleaned together", () => {
   // before re-deriving them, and the cleanup below), zz.doc once, so removing the cleanup's
   // one still left two against one and the check passed with the bug reinstated. A check
   // that cannot fail is not a check — so this reads the cleanup loop itself.
-  const src = zzCoreSource();
+  const src = indexerSource();
   const from = src.indexOf("const gone = rows.rows.filter");
   if (from === -1) return "cannot find the reindex cleanup loop — this check needs rewriting";
   const loop = src.slice(from, src.indexOf("return { scanned", from));

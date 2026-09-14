@@ -13,10 +13,11 @@ import { mkdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import { parseCaller } from "@zz/contracts";
+import { ARTIFACTS_DIR } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { Refusal } from "./refusal.js";
-import { ARTIFACTS_DIR, teamFor } from "./platform-db.js";
+import { teamFor } from "./platform-db.js";
 
 export const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9@._-]/g, "_");
 /** A filename-safe slug from a human title, with a fallback for when nothing survives.

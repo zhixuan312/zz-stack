@@ -595,7 +595,7 @@ async function main(): Promise<number> {
       `could not read an id back from knowledge_add: ${added}`);
   }
 
-  await walkBugs({ call, check, record, INIT });
+  await walkBugs({ call, check, record, INIT, manage: manageDoor });
 
   // knowledge_search refuses the identical way session_whoami's team lookup and knowledge_add's
   // own team-scope guard do — no platform database, or no team — and that is ordinary on a

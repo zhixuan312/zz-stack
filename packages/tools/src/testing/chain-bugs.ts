@@ -17,12 +17,16 @@
  *  Not exported — it names this function's own parameter and nothing else constructs one. */
 interface ChainDeps {
   call: (tool: string, args: unknown) => Promise<string>;
+  /** The /manage door, and what it offers THIS token. Reading and closing reports are
+   *  superadmin acts and live there; a run whose PAT is not superadmin is not offered them,
+   *  which is a fact about the token rather than a defect. */
+  manage: { tools: () => Promise<{ name: string }[]>; call: (tool: string, args: unknown) => Promise<string> };
   check: (name: string, got: string, wantError: boolean, because?: RegExp) => void;
   record: (ok: boolean, name: string, got: string) => void;
   INIT: string;
 }
 
-export async function walkBugs({ call, check, record, INIT }: ChainDeps): Promise<void> {
+export async function walkBugs({ call, check, record, manage, INIT }: ChainDeps): Promise<void> {
   // A REPORT IS THE ONE THING ANYBODY CAN DO, so it is walked end to end: file, find, close,
   // and refuse a second close. The last is the one that needs a live door — two people closing
   // the same report must not overwrite each other's reasoning, and that is a race no unit test
@@ -38,18 +42,31 @@ export async function walkBugs({ call, check, record, INIT }: ChainDeps): Promis
   if (!bugId) {
     record(false, "bug_report files a report and hands back its id", filed.slice(0, 200));
   } else {
-    // Found by SEARCHING rather than by id: a tracker whose only way in is the id you already
-    // hold is a tracker nobody else can use.
-    const found = await call("bug_list", { query: bugTitle });
-    record(found.includes(bugId), "bug_list finds a report by what it says", found.slice(0, 200));
+    // READING AND CLOSING ARE ON /manage, BEHIND `if (sup)`. Filing is everyone's and is walked
+    // above through /core; answering is an operator's and is walked here. A token whose role is
+    // not superadmin is not offered these, and `call` THROWS on a tool the door does not
+    // publish — which would end the walk rather than record anything, so the door's own list
+    // decides whether they run.
+    const offered = new Set((await manage.tools()).map((t) => t.name));
+    if (offered.has("bug_list") && offered.has("bug_resolve")) {
+      // Found by SEARCHING rather than by id: a tracker whose only way in is the id you already
+      // hold is a tracker nobody else can use.
+      const found = await manage.call("bug_list", { query: bugTitle });
+      record(found.includes(bugId), "bug_list finds a report by what it says", found.slice(0, 200));
 
-    check("bug_resolve closes a report with what was decided",
-      await call("bug_resolve", { id: bugId, status: "not_a_bug", resolution: "chain-check probe; nothing was wrong." }),
-      false);
-    // AND A SECOND CLOSE IS REFUSED, naming who decided and what they said — not silently
-    // overwritten, which is how one person's reasoning disappears under another's.
-    check("a report already closed cannot be closed again",
-      await call("bug_resolve", { id: bugId, status: "fixed", resolution: "second opinion" }),
-      true, /already closed as/);
+      check("bug_resolve closes a report with what was decided",
+        await manage.call("bug_resolve", { id: bugId, status: "not_a_bug", resolution: "chain-check probe; nothing was wrong." }),
+        false);
+      // AND A SECOND CLOSE IS REFUSED, naming who decided and what they said — not silently
+      // overwritten, which is how one person's reasoning disappears under another's.
+      check("a report already closed cannot be closed again",
+        await manage.call("bug_resolve", { id: bugId, status: "fixed", resolution: "second opinion" }),
+        true, /already closed as/);
+    } else {
+      // NOT a pass. A probe that did not run is not a probe that passed, and this file's output
+      // is a count somebody reads at release.
+      console.log("  skip  bug_list/bug_resolve are on /manage behind `if (sup)` and this " +
+                  "token's role is not offered them — the report filed above stays open");
+    }
   }
 }

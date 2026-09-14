@@ -351,12 +351,18 @@ async function main(): Promise<number> {
   };
   const docs = status.documents.map((d) => d.name);
   // What is ALREADY approved, from the platform's own answer. The write loop below walked
-  // every document including the one approved above it — and document_write on an approved gated
+  // every document including the one approved above it — and document_write on an approved
   // document is refused by design, so the loop's first iteration failed against a platform
   // that was working exactly as documented. Skipping it is not avoiding the case: that
   // refusal is asserted directly further down.
+  //
+  // APPROVED, WHETHER OR NOT IT IS GATED. This filtered on `d.gate && approved`, and the
+  // document this flow opens on is approved and UNGATED — so it was not skipped, the loop
+  // rewrote it, and the refusal arrived in the middle of a loop that had no assertion for it.
+  // The platform's rule is about the approval, not about the gate: a gate decides whether an
+  // approval is REQUIRED, never whether one that exists may be overwritten.
   const settled = new Set(status.documents
-    .filter((d) => d.gate && d.status === "approved").map((d) => d.name));
+    .filter((d) => d.status === "approved").map((d) => d.name));
   // The team, from the platform rather than an environment variable — the team-rejection
   // check below is only meaningful if it passes the REAL team name.
   let team = "";

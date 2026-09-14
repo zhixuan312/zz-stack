@@ -251,7 +251,18 @@ function ownershipCheck(root: string, relPath: string, content: string,
       (a ? `change it from \`${a}\` to \`${b || "(removed)"}\`` : `set it to \`${b}\``) + ". " +
       (field === "outcome" || field === "closed_by"
         ? "Use `initiative_close(initiative, disposition)`: you say finished or abandoned and who accepted it, and the outcome follows from that."
-        : "Use `document_approve(path)` the moment the person agrees: it stamps status, approved_by and approved_at from who you are and what time it is.") +
+        // AN APPROVED DOCUMENT BEING REWRITTEN NEEDS document_revise, NOT document_approve.
+        // This said "use document_approve the moment the person agrees" whatever the caller
+        // was doing — advice that is right for a draft and useless for the case that reaches
+        // it most: somebody editing a document that was already approved. They HAVE approved
+        // it; what they are asking for is a new version, and the tool for that is
+        // document_revise, which keeps the approval history and records what caused the change.
+        : a === "approved"
+          ? "That document is approved. Use `document_revise(path, content, because|source)` to " +
+            "supersede it — it opens a new version, records what caused it, and returns the " +
+            "document to draft so it can be approved again. `document_write` is for a document " +
+            "nobody has approved yet."
+          : "Use `document_approve(path)` the moment the person agrees: it stamps status, approved_by and approved_at from who you are and what time it is.") +
       " A field the platform can fill is never a field you should be asked to."
     );
   }

@@ -10,101 +10,8 @@ import { join } from "node:path";
 
 import { between, firstOf, gatewaySource, root, sourceFiles, zzCoreSource, zzCoreTools } from "../read.mjs";
 import { check, note } from "../run.mjs";
-import { catalogRoot, flows, platformSkills, skillsOf } from "../facts.mjs";
+import { catalogRoot, claimsOurs, flows, platformSkills, platformSurface, skillsOf } from "../facts.mjs";
 
-/**
- * THE PLATFORM'S NAMESPACE, DERIVED FROM THE REGISTRATION LITERALS — which tools exist, which
- * NOUNS they are registered under, and which identifiers those registrations declare as
- * arguments rather than as tools.
- *
- * WHY THIS REPLACED TWO WRITTEN-OUT LISTS. Two checks below each carried a hand-kept roster:
- * a `MANAGE` array of thirty names feeding an `OURS` regex, and a nineteen-name array of the
- * platform tools a block's skill is allowed to name. Both were copies of what `registerTool`
- * already says, and a copy of a registration is wrong from the first rename onwards — this
- * repository has renamed its whole surface twice in a fortnight, and after the second pass not
- * one of `my_credential`, `admin_`, `set_[a-z_]*credential` or `delete_[a-z_]*credential`
- * matched a tool that existed. The lists still read as coverage and enforced nothing.
- *
- * THE NOUN IS THE DERIVABLE PART. The exact names in those lists could only ever equal the set
- * of registered names, so a check comparing a name against them could never fire — the rule has
- * to be wider than "is registered" to catch anything at all. Under the noun-first shape it is:
- * a `<noun>_<verb>` name whose NOUN is one this platform registers tools under is a claim on
- * our surface, and if we do not serve it nobody does. `plugin_invented` is ours and missing;
- * `read_api_spec`, `get_platform_overview` and `create_rule_now` are blocks' and are left
- * alone, because no door here registers anything under `read`, `get` or `create`. The stems it
- * replaces (`journal_`, `okr_`, `render_`) vanish with it, and correctly so: not one of them
- * matches a tool that still exists.
- *
- * ITS LIMIT, STATED. A noun the platform has deleted outright is no longer derivable as ours,
- * so a skill still naming `render_agent_definition` would now read as a block's tool here. That
- * ground belongs to the rename checks — "a file that resolves renamed tools never matches a
- * pre-rename name" and "the core door speaks noun-first, and no caller still says the old
- * name" — which read the frozen alias maps and know what the old names were. This one is about
- * a name nobody has ever served.
- */
-let SURFACE = null;
-function platformSurface() {
-  if (SURFACE) return SURFACE;
-  const served = new Set();
-  // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
-  // spread across modules, so a list of its files goes short the moment a door is added.
-  for (const { name } of zzCoreTools()) served.add(name);
-  // THE GATEWAY AS A SERVICE. Its access door moved out of server.ts into access-door.ts,
-  // and a list of files goes short the moment a door is added.
-  for (const m of gatewaySource().matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) served.add(m[1]);
-  // Served by a block only to someone who cannot reach it, so it is registered nowhere here
-  // and is still a real name a skill may explain. Pre-dates this derivation and survives it.
-  served.add("credential_required");
-  const nouns = new Set([...served].map((t) => t.split("_")[0]));
-
-  // AND WHAT THOSE REGISTRATIONS CALL THEIR ARGUMENTS. `source_content` is a parameter of
-  // `document_revise`, and zz-platform names it in backticks to teach an agent to pass it —
-  // which is the noun `source` in call shape, and would otherwise be reported as a tool the
-  // platform does not serve. A declared parameter is the same registration literal speaking;
-  // reading it is the difference between a rule and an exception.
-  //
-  // BRACE-MATCHED, NOT PATTERNED TO A CLOSING SHAPE. Written as `([\s\S]*?)\n\s*\},?\n\s*\},`
-  // this reached 22 of the 60 `inputSchema:` blocks in services/ and quietly missed the rest —
-  // the SILENT SKIP this gate has been caught by before. `closed` below is counted against the
-  // occurrences so a future shape change says so instead of shrinking the exclusion set.
-  const params = new Set();
-  let occurrences = 0, closed = 0;
-  for (const rel of sourceFiles(["services"], [".ts"])) {
-    const src = readFileSync(join(root, rel), "utf8");
-    for (const m of src.matchAll(/inputSchema:\s*\{/g)) {
-      occurrences++;
-      let depth = 0, i = m.index + m[0].length - 1;
-      for (; i < src.length; i++) {
-        if (src[i] === "{") depth++;
-        else if (src[i] === "}" && --depth === 0) break;
-      }
-      if (i >= src.length) continue;   // unbalanced: counted as not closed, reported below
-      closed++;
-      // `name: z.` — the one shape a zod field takes, on its own line or inline with siblings.
-      for (const p of src.slice(m.index, i).matchAll(/\b([a-z][a-z0-9_]*):\s*z\./g)) params.add(p[1]);
-    }
-  }
-
-  // FOREIGN VOCABULARY THAT COLLIDES WITH A NOUN OF OURS, and the only thing here that is
-  // written rather than derived. `tool_order` and `tool_used` are GRADER KINDS belonging to
-  // `claude plugin eval`, named beside `regex` and `file_exists` in zz-plugin-report; they are
-  // not tools, have never been tools, and are not this repository's to rename — so unlike the
-  // rosters this derivation replaced, these two do not rot when our surface moves. They are
-  // here because `tool_grant` and `tool_revoke` make `tool` a noun we register under, and for
-  // no other reason. Anything that belongs to US must never be added to this set: a missing
-  // tool of ours is precisely what the check exists to find.
-  const FOREIGN = new Set(["tool_order", "tool_used"]);
-
-  SURFACE = { served, nouns, params, foreign: FOREIGN, occurrences, closed };
-  return SURFACE;
-}
-
-/** Does this name claim a tool on the platform's own surface? A `<noun>_<verb>` shape whose
- *  noun we register under, that is not one of our declared arguments and not foreign
- *  vocabulary. Says nothing about whether the tool exists — that is the caller's question. */
-const claimsOurs = (name, s) =>
-  name.includes("_") && s.nouns.has(name.split("_")[0]) &&
-  !s.params.has(name) && !s.foreign.has(name);
 
 check("no tool description teaches a path form the platform refuses", () => {
   // document_read said "Read a file from your .zz artifact store" while safePath had just
@@ -164,8 +71,9 @@ check("no skill calls a tool the platform does not register", () => {
 });
 
 check("a skill never names a platform tool that does not exist", () => {
-  // zz-access told people to store a key with `set_credential`. The tools are
-  // `credential_set` and `set_team_credential`; nothing has ever been called `set_credential`.
+  // zz-access told people to store a key with a verb-first name — the verb, an underscore,
+  // then the noun — that no door has ever registered. The tool is `credential_set`, and the
+  // skill named a spelling of it that did not exist and never had.
   // An agent following that goes looking for a tool the platform does not have, and this
   // repository has spent a day on what happens next — it reaches for a block's tool whose name
   // is close, then reports that the platform cannot do the thing.
@@ -499,9 +407,9 @@ check("every tool in packages/tools is reachable from zz-tool", () => {
 check("every tool on the access door is taught by a skill that ships with it", () => {
   // /manage is the ONE door ZZ Access carries, and its two skills are the only thing that
   // tells an agent these tools exist. A tool registered there and unmentioned is dormant from
-  // the only place it can be reached — which is how set_team_credential shipped: the feature
-  // that exists so a new joiner works on day one was invisible at the exact moment somebody
-  // was blocked on a missing key.
+  // the only place it can be reached — which is how the team-wide credential setter shipped,
+  // back when there was one: the feature that exists so a new joiner works on day one was
+  // invisible at the exact moment somebody was blocked on a missing key.
   //
   // It got worse than one tool. When the admin door existed, its package shipped no skills at
   // all, so twenty tools — every principal, team, grant and token on the platform — were

@@ -351,6 +351,26 @@ export const withoutComments = (src) =>
               (m) => (/^["'`]/.test(m) || (m.startsWith("/") && !m.startsWith("//") && !m.startsWith("/*"))
                         ? m : blankRun(m)));
 
+/** ONLY the comments, everything else blanked — the inverse of `withoutComments`, for a rule
+ * about what a source SAYS rather than what it does. A comment is prose: it is read by the
+ * next person exactly as a skill is, and a comment naming a tool nobody registers misleads
+ * them exactly as a skill would.
+ *
+ * The SAME one alternation, so a `//` inside a string is still a string and a quote inside a
+ * regex character class still cannot open one — and BLANKED, not deleted, so a line number
+ * taken from the result is the line somebody opens.
+ */
+export const commentsOnly = (src) => {
+  const re = new RegExp(`${REGEX.source}|${COMMENTS.source}|${STRINGS.source}`, "g");
+  let out = "", last = 0;
+  for (const m of src.matchAll(re)) {
+    out += blankRun(src.slice(last, m.index));
+    out += m[0].startsWith("//") || m[0].startsWith("/*") ? m[0] : blankRun(m[0]);
+    last = m.index + m[0].length;
+  }
+  return out + blankRun(src.slice(last));
+};
+
 /** Comments and string literals both gone — for a rule that reads structure. */
 export const codeOnly = (src) => scan(src, [COMMENTS, STRINGS]);
 

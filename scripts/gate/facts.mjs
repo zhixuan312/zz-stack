@@ -17,7 +17,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestPaths } from "../manifests.mjs";
-import { contractsSource, gatewaySource, root, scan, sourceFiles, trackedFiles, unbuilt } from "./read.mjs";
+import { contractsSource, gatewaySource, root, scan, sourceFiles, trackedFiles, unbuilt, zzCoreTools } from "./read.mjs";
 
 export const MANIFESTS = manifestPaths(root);
 
@@ -212,6 +212,143 @@ export function everyShippedSkill() {
   return _shipped;
 }
 
+
+/**
+ * THE PLATFORM'S NAMESPACE, DERIVED FROM THE REGISTRATION LITERALS — which tools exist, which
+ * NOUNS they are registered under, and which identifiers those registrations declare as
+ * arguments rather than as tools.
+ *
+ * WHY THIS REPLACED TWO WRITTEN-OUT LISTS. Two checks below each carried a hand-kept roster:
+ * a `MANAGE` array of thirty names feeding an `OURS` regex, and a nineteen-name array of the
+ * platform tools a block's skill is allowed to name. Both were copies of what `registerTool`
+ * already says, and a copy of a registration is wrong from the first rename onwards — this
+ * repository has renamed its whole surface twice in a fortnight, and after the second pass not
+ * one of `my_credential`, `admin_`, `set_[a-z_]*credential` or `delete_[a-z_]*credential`
+ * matched a tool that existed. The lists still read as coverage and enforced nothing.
+ *
+ * THE NOUN IS THE DERIVABLE PART. The exact names in those lists could only ever equal the set
+ * of registered names, so a check comparing a name against them could never fire — the rule has
+ * to be wider than "is registered" to catch anything at all. Under the noun-first shape it is:
+ * a `<noun>_<verb>` name whose NOUN is one this platform registers tools under is a claim on
+ * our surface, and if we do not serve it nobody does. `plugin_invented` is ours and missing;
+ * `read_api_spec`, `get_platform_overview` and `create_rule_now` are blocks' and are left
+ * alone, because no door here registers anything under `read`, `get` or `create`. The stems it
+ * replaces (`journal_`, `okr_`, `render_`) vanish with it, and correctly so: not one of them
+ * matches a tool that still exists.
+ *
+ * ITS LIMIT, STATED. A noun the platform has deleted outright is no longer derivable as ours,
+ * so a skill still naming `render_agent_definition` would now read as a block's tool here. That
+ * ground belongs to the rename checks — "a file that resolves renamed tools never matches a
+ * pre-rename name" and "the core door speaks noun-first, and no caller still says the old
+ * name" — which read the frozen alias maps and know what the old names were. This one is about
+ * a name nobody has ever served.
+ */
+let SURFACE = null;
+export function platformSurface() {
+  if (SURFACE) return SURFACE;
+  const served = new Set();
+  // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
+  // spread across modules, so a list of its files goes short the moment a door is added.
+  for (const { name } of zzCoreTools()) served.add(name);
+  // THE GATEWAY AS A SERVICE. Its access door moved out of server.ts into access-door.ts,
+  // and a list of files goes short the moment a door is added.
+  for (const m of gatewaySource().matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) served.add(m[1]);
+  // Served by a block only to someone who cannot reach it, so it is registered nowhere here
+  // and is still a real name a skill may explain. Pre-dates this derivation and survives it.
+  served.add("credential_required");
+  const nouns = new Set([...served].map((t) => t.split("_")[0]));
+
+  // AND THE VERBS THOSE SAME REGISTRATIONS USE, for the shape this platform ABANDONED.
+  // Every registered name is `<noun>_<verb>`, so the segments after the first are the verbs
+  // we conjugate our own surface with — `set`, `delete`, `list`, `read`, `admin_set`. A name
+  // written the other way round, `<verb>_…_<noun>` with one of OUR nouns in it, is a claim on
+  // this surface in the spelling it used before the noun-first rename, and the rename moved
+  // every one of them: not a single verb-first name is registered today. That is the half of
+  // the namespace `claimsOurs` cannot see, and it is where the dead names actually live — the
+  // two team-wide credential tools, deleted along with the shared-credential tier, were named
+  // in eight places in this repository while being registered in none, and the noun-first rule
+  // reads their first segment, the verb `set`, finds no tool registered under a noun by that
+  // name, and calls them somebody else's. Both sets come out of the same `served`; this is one
+  // derivation with two readings of it, not two derivations.
+  const verbs = new Set();
+  for (const t of served) for (const seg of t.split("_").slice(1)) verbs.add(seg);
+
+  // AND WHAT THOSE REGISTRATIONS CALL THEIR ARGUMENTS. `source_content` is a parameter of
+  // `document_revise`, and zz-platform names it in backticks to teach an agent to pass it —
+  // which is the noun `source` in call shape, and would otherwise be reported as a tool the
+  // platform does not serve. A declared parameter is the same registration literal speaking;
+  // reading it is the difference between a rule and an exception.
+  //
+  // BRACE-MATCHED, NOT PATTERNED TO A CLOSING SHAPE. Written as `([\s\S]*?)\n\s*\},?\n\s*\},`
+  // this reached 22 of the 60 `inputSchema:` blocks in services/ and quietly missed the rest —
+  // the SILENT SKIP this gate has been caught by before. `closed` below is counted against the
+  // occurrences so a future shape change says so instead of shrinking the exclusion set.
+  const params = new Set();
+  let occurrences = 0, closed = 0;
+  for (const rel of sourceFiles(["services"], [".ts"])) {
+    const src = readFileSync(join(root, rel), "utf8");
+    for (const m of src.matchAll(/inputSchema:\s*\{/g)) {
+      occurrences++;
+      let depth = 0, i = m.index + m[0].length - 1;
+      for (; i < src.length; i++) {
+        if (src[i] === "{") depth++;
+        else if (src[i] === "}" && --depth === 0) break;
+      }
+      if (i >= src.length) continue;   // unbalanced: counted as not closed, reported below
+      closed++;
+      // `name: z.` — the one shape a zod field takes, on its own line or inline with siblings.
+      for (const p of src.slice(m.index, i).matchAll(/\b([a-z][a-z0-9_]*):\s*z\./g)) params.add(p[1]);
+    }
+  }
+
+  // FOREIGN VOCABULARY THAT COLLIDES WITH A NOUN OF OURS, and the only thing here that is
+  // written rather than derived. `tool_order` and `tool_used` are GRADER KINDS belonging to
+  // `claude plugin eval`, named beside `regex` and `file_exists` in zz-plugin-report; they are
+  // not tools, have never been tools, and are not this repository's to rename — so unlike the
+  // rosters this derivation replaced, these two do not rot when our surface moves. They are
+  // here because `tool_grant` and `tool_revoke` make `tool` a noun we register under, and for
+  // no other reason. Anything that belongs to US must never be added to this set: a missing
+  // tool of ours is precisely what the check exists to find.
+  const FOREIGN = new Set(["tool_order", "tool_used"]);
+
+  SURFACE = { served, nouns, verbs, params, foreign: FOREIGN, occurrences, closed };
+  return SURFACE;
+}
+
+/** Does this name claim a tool on the platform's own surface? A `<noun>_<verb>` shape whose
+ *  noun we register under, that is not one of our declared arguments and not foreign
+ *  vocabulary. Says nothing about whether the tool exists — that is the caller's question. */
+export const claimsOurs = (name, s) =>
+  name.includes("_") && s.nouns.has(name.split("_")[0]) &&
+  !s.params.has(name) && !s.foreign.has(name);
+
+/** Does this name claim a tool on the surface this platform used to have? A `<verb>_…_<noun>`
+ *  name — the VERB-FIRST spelling every registration abandoned — whose verb we conjugate with
+ *  and one of whose later segments is a noun we register under. Nothing this platform serves
+ *  has that shape any more, so a name that does is a name nobody serves.
+ *
+ *  MEASURED BEFORE IT WAS WRITTEN, over the whole md surface (61 files under catalog/,
+ *  marketplace/ and skills/) and every comment under scripts/gate/: it reports four
+ *  occurrences, every one of them a verb-first credential name no door has registered since
+ *  the shared-credential tier was deleted, and nothing else at all. `claimsOurs` over the same
+ *  comments reports six and not one of them is a tool: a dropped TABLE
+ *  (`platform_credential`), two telemetry string values (`skill_view`, `skill_view_disabled`),
+ *  a team slug (`team_one`), a SQL constraint (`skill_kind_check`) and a deliberately invented
+ *  example (`plugin_invented`). A gate check's comments are ABOUT this repository and
+ *  legitimately name tables, columns, slugs and constraints under our nouns; none of them is
+ *  verb-first, because that spelling only ever belonged to tools.
+ *
+ *  ITS LIMIT, STATED, and it is the same boundary `platformSurface` draws above. A verb we do
+ *  not conjugate with (`get_my_info`, `show_document`) or a noun we do not register under in
+ *  the singular (`list_skills`) does not match, and must not: those are RENAMES, they resolve
+ *  through the frozen alias maps, and "every tool the spec renamed resolves through one frozen
+ *  map" is the check that owns them. This one is about a name nobody serves and nothing
+ *  resolves. */
+export const claimsPreRename = (name, s) => {
+  const parts = name.split("_");
+  return parts.length > 1 && s.verbs.has(parts[0]) && !s.params.has(name) &&
+         !s.foreign.has(name) && parts.slice(1).some((seg) => s.nouns.has(seg));
+};
 
 /** Documents a release is answerable for: written here, and read by someone who was not
  * in the room. Discovered rather than listed — a hardcoded set is a set that silently

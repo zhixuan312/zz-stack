@@ -31,6 +31,7 @@
 import "./gate/checks/build.mjs";
 
 import "./gate/checks/catalog-manifest.mjs";
+import "./gate/checks/plugin-declaration.mjs";
 import "./gate/checks/catalog-stages.mjs";
 import "./gate/checks/marketplace.mjs";
 import "./gate/checks/catalog-servers.mjs";
@@ -39,6 +40,7 @@ import "./gate/checks/skill-shape.mjs";
 import "./gate/checks/skill-claims.mjs";
 import "./gate/checks/skill-tools.mjs";
 import "./gate/checks/skill-prose.mjs";
+import "./gate/checks/prose-names.mjs";
 
 import "./gate/checks/documents-envelope.mjs";
 import "./gate/checks/documents-frontmatter.mjs";

@@ -15,7 +15,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { readJson, root, trackedFiles, unbuilt } from "../read.mjs";
 import { check } from "../run.mjs";
@@ -225,9 +225,38 @@ check("every check this gate registers is a file git will carry", () => {
     .split("\n").filter(Boolean).map((f) => f.replace(/^checks\//, "")));
   const missing = [...readFileSync(join(root, "scripts/gate/checks/suites.mjs"), "utf8")
     .matchAll(/runsCheck\("([^"]+)"\)/g)].map((m) => m[1]).filter((f) => !known.has(f));
-  return missing.length
-    ? `registered but not tracked by git: ${missing.join(", ")} — green here, "cannot find ` +
-      'module" on a fresh clone. `git add` them by path (never `git add -A`).'
+  // AND THE MODULES THE GATE IMPORTS, which this did not cover and had to. The rule above reads
+  // a runsCheck registration against `checks/`, so it sees a registered SUITE and is blind to a gate
+  // MODULE — and a module is wired by an `import` in scripts/gate.mjs, one directory over.
+  // Measured on this tree: `plugin-declaration.mjs` and `prose-names.mjs` were imported by a
+  // tracked gate.mjs while untracked themselves, four checks rode on them, and this check was
+  // green. The consequence is worse than the one the comment above describes, not equal to it:
+  // an unresolvable `import` does not fail the gate, it throws before a single check runs, so a
+  // fresh clone gets no verdict at all rather than a red one.
+  //
+  // Every relative import under scripts/gate is followed, not just gate.mjs's own, because
+  // facts.mjs and read.mjs are imported by the modules and would take the whole gate down the
+  // same way.
+  const sources = ["scripts/gate.mjs", ...execFileSync("git", ["ls-files", "scripts/gate/"],
+    { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)];
+  const trackedGate = new Set(execFileSync("git", ["ls-files", "scripts/"],
+    { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
+  const unresolvable = [];
+  for (const src of sources) {
+    const body = readFileSync(join(root, src), "utf8");
+    for (const m of body.matchAll(/(?:^|\n)\s*import\s+(?:[^"']*from\s*)?["'](\.[^"']+)["']/g)) {
+      const target = join(dirname(src), m[1]).replace(/\\/g, "/");
+      if (!trackedGate.has(target)) unresolvable.push(`${src} imports ${target}`);
+    }
+  }
+
+  const problems = [
+    ...missing.map((f) => `registered but not tracked: checks/${f}`),
+    ...unresolvable.map((u) => `${u}, which git does not carry`),
+  ];
+  return problems.length
+    ? `${problems.join("; ")} — green here, and on a fresh clone the suite either cannot find ` +
+      'the module or the gate throws before it runs. `git add` them by path (never `git add -A`).'
     : null;
 });
 

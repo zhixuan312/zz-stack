@@ -331,13 +331,13 @@ check("a key is checked before it is stored, on every path", () => {
 check("deleting the last key deletes the person too", () => {
   // credentials.json is the most sensitive file this platform holds — every person's key to
   // somebody else's real platform, in plaintext by design — and its shape invariant is that
-  // a subject with no keys is not a subject. Three tools delete from it, and each has to
-  // uphold that separately, which is the arrangement that guarantees one of them will not.
+  // a subject with no keys is not a subject. Every tool that deletes from it has to uphold
+  // that separately, which is the arrangement that guarantees one of them will not.
   //
-  // credential_delete was the one that did not. credential_admin_delete and
-  // delete_team_credential both dropped the emptied subject; the tool a person uses on their
-  // own key left their address behind, so the store kept a standing list of everyone who had
-  // ever stored one — in the tool you reach for when a key has leaked. The asymmetry is the
+  // credential_delete was the one that did not. The operator's twin, credential_admin_delete,
+  // dropped the emptied subject; the tool a person uses on their own key left their address
+  // behind, so the store kept a standing list of everyone who had ever stored one — in the
+  // tool you reach for when a key has leaked. The asymmetry is the
   // recurring shape here: this same file already carries two comments about a person-facing
   // tool missing what its operator twin had.
   const src = gatewaySource();
@@ -400,9 +400,11 @@ check("anything that stores a credential can also remove it", () => {
   // Twice now. credential_admin_set shipped without a delete, so an operator could put a key
   // into the store on somebody's behalf and nothing could ever take it out — deactivating
   // the principal stops them authenticating and leaves the platform injecting their key.
-  // set_team_credential then shipped the same way in this release, and it matters more for a
-  // SHARED key, because the reason to remove one is usually that it leaked and "wait for
-  // someone to overwrite it" is not a response to that.
+  // The team-wide setter that shipped beside it in the same release repeated the mistake, and
+  // it mattered more there, for a SHARED key: the reason to remove one is usually that it
+  // leaked, and "wait for someone to overwrite it" is not a response to that. That whole tier
+  // has since been deleted — "a block key resolves to the person, and to nobody else" below is
+  // what replaced it — which is why neither name appears here any more.
   //
   // The shape is simple enough to hold mechanically: a tool that WRITES into the credential
   // store needs a counterpart that removes from it.
@@ -411,8 +413,15 @@ check("anything that stores a credential can also remove it", () => {
   const setters = [...tools].filter((t) => /(^|_)set_/.test(t) && t.includes("credential"));
   const bad = [];
   for (const setter of setters) {
-    // credential_set -> credential_delete, credential_admin_set -> credential_admin_delete,
-    // set_team_credential -> delete_team_credential.
+    // credential_set -> credential_delete, credential_admin_set -> credential_admin_delete.
+    //
+    // BOTH THE SELECTOR ABOVE AND THIS MAPPING ARE WRITTEN FOR VERB-FIRST NAMES — `set_` with
+    // something after it — and the noun-first rename left no registered name in that shape, so
+    // `setters` is empty and this loop currently runs zero times. Said out loud rather than
+    // quietly repaired: changing what a security check ENFORCES is not a prose task, and a
+    // comment that implied working coverage would be the same defect this file's rename debris
+    // already was. `/(^|_)set$/` on the selector and `.replace(/set$/, "delete")` here are what
+    // make it read the surface that exists.
     const deleter = setter.replace(/set_/, "delete_");
     if (!tools.has(deleter)) {
       bad.push(`${setter} stores a key and there is no ${deleter} to remove it`);

@@ -39,9 +39,7 @@
  * `teamAuthority` is imported the same way, so this file's team routes and member_add's own
  * `on conflict` insert both drive the identical check identity.ts computes; a re-implemented
  * comparison here would still pass the gate's own cases while quietly drifting from the real
- * rule. `set_team_credential`/`delete_team_credential`, though, live in server.ts — the
- * cycle DOES apply to those, so they arrive through `SettingsDeps` exactly like the `my_*`
- * functions. Every team write below is validated by `teamAuthority` inside the shared
+ * rule. Every team write below is validated by `teamAuthority` inside the shared
  * function itself, not by `resolveScope`: a team admin managing this surface is not
  * necessarily ACTING FOR the team they administer (they may administer several), so the
  * team is named explicitly in the request rather than read off the caller's active scope.

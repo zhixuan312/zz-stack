@@ -174,8 +174,9 @@ check("every console write route records the door it came through", () => {
     "issueMyAccessTokenFor", "revokeMyAccessTokenFor",
     "disconnectBlock",
     // Task I-14: team settings — member_add/member_remove/flow_install/flow_uninstall's own
-    // guarded bodies (admin.ts) and the *_team_credential tools' (server.ts), shared with
-    // settings.ts's /team/* routes the same way the my_* functions above are.
+    // guarded bodies (admin.ts), shared with settings.ts's /team/* routes the same way the
+    // my_* functions above are. The team-wide credential tools were listed here too until the
+    // shared credential tier was deleted; the tools went with it.
     "addMember", "removeMember", "installFlow", "uninstallFlow",
     // Task I-15: platform settings — person_add/person_deactivate/team_create/team_archive/
     // tool_grant/tool_revoke's own guarded bodies (admin.ts), shared with settings.ts's

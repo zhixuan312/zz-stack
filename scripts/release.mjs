@@ -19,9 +19,11 @@
  * one host, every step reads it, and a flag whose only value is the default is a flag that
  * teaches nobody anything.
  *
- * With a version: --dashboard=<v> releases the console alongside, --no-dashboard leaves it
- * behind deliberately. Given neither, its repo is asked whether it moved and the release
- * stops if it did. Being told what the answer was is not overridable; only the answer is.
+ * With a version: --dashboard=<v> releases the console alongside. Given none, its repo is asked
+ * whether it moved: unchanged, it is skipped and told so; changed, the release STOPS until a
+ * version is decided for it. There is no way to leave a moved console behind — the two are one
+ * deployment in front of the same people, and the flag that used to allow it was only ever used
+ * to get past a message.
  *
  * ── WHY THE ORDER IS WHAT IT IS ──────────────────────────────────────────────
  *
@@ -296,7 +298,8 @@ if (dash.blocked) {
   die(`zz-stack-dashboard ${dash.why}.\n` +
       `        It ships to the same host, in front of the same people. Leaving it behind is a\n` +
       `        choice, not a default.\n` +
-      `        Add --dashboard=<version>, or --no-dashboard if it is deliberate.`);
+      `        Add --dashboard=<version>. The console cannot be left behind when it has moved:\n` +
+      `        it and the platform are one deployment in front of the same people.`);
 }
 const dashVersion = dash.release ? dash.version : null;
 log(`  console:   ${dashVersion ? `releasing ${dashVersion} (${dash.why})` : `skipped — ${dash.why}`}`);

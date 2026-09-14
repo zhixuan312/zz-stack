@@ -74,6 +74,24 @@ console's overview and the numbers the gateway had started sending it.
   the interface, so 158 tests passed while the contract was broken — it is typed now, and
   putting the old key back fails the build by name.
 
+### Removed
+- **STATE.md, HISTORY.md and HISTORY-PRE-0.23.md.** Three documents describing the platform
+  beside the one that records what changed to it. This file is the record now. What went with
+  them, said plainly because nobody should go looking: STATE.md's §6 and §6b separated work that
+  was DELIVERED from work that had RUN in front of somebody, and two gate checks held its
+  declared numbers — the gate's check count and the shipped version — to the truth. That
+  distinction is now drawn inside a changelog entry by whoever writes it, and those two checks
+  are gone with the file they policed.
+- **The whole `blocks/` tree**, including the building-block contract. It described what a block
+  team must meet for services this repository does not ship and does not build. A contract for
+  somebody else's server belongs with that server. The platform keeps its side of the
+  relationship — the per-block door, the credential proxy, the usage skills — which is code, not
+  documents. One more gate check went with it.
+- **`--no-dashboard`.** It existed for the case where leaving the console behind was deliberate,
+  and every actual use of it was a way past a message: a dirty console tree, or commits with no
+  version decided. It shipped a release carrying a gateway field the console needed with no
+  console able to read it. The console is skipped only when its repository says it did not move.
+
 ### Upgrade notes
 - **Nothing to do on the platform.** `next_action` is an added field; no tool argument, schema
   or migration changed.

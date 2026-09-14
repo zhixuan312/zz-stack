@@ -313,50 +313,13 @@ check("the deployed image can be rebuilt from this repo", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("STATE.md counts the checks this gate actually has", () => {
-  // STATE.md said "the offline gate is 82 checks" while the gate had 85, and it had said 82
-  // for about four hours. A number in prose about a thing that grows is a claim that goes
-  // stale by default, and this one describes the very mechanism a reader is being asked to
-  // trust — a release that ships "82 checks" while running 85 is a small lie about the size
-  // of its own safety net.
-  //
-  // Counted rather than remembered. The alternative was to keep editing it, which is the
-  // arrangement that produced the wrong number in the first place.
-  const declared = /the offline gate is (\d+) checks/i.exec(readFileSync(join(root, "STATE.md"), "utf8"))?.[1];
-  if (!declared) return "STATE.md no longer says how many checks the gate has";
-  // COUNTED ACROSS THE MODULES, not out of this file. The checks moved into
-  // gate/checks/ on 2026-09-11 and the entry file holds none; a count that kept
-  // reading gate.mjs would find zero and report a number nobody could act on.
-  const actual = gateCheckNames().length;
-  return Number(declared) === actual
-    ? null
-    : `STATE.md says ${declared} checks; this gate has ${actual}`;
-});
+// THE TWO STATE.md CHECKS ARE GONE WITH THE FILE. One held its declared check count against
+// the gate's real one, the other held its version stamp against package.json. Both existed
+// because a number in prose about a thing that grows is a claim that goes stale, and both
+// caught that happening. STATE.md itself is what was removed: the changelog is the record
+// now, and a changelog entry is written per release rather than maintained between them, so
+// there is no standing number in it for a check to hold anything against.
 
-check("STATE.md names the version this release ships", () => {
-  // STATE.md's first lines say "Status: <version> (<date>)", and it had been saying 0.3.0
-  // while every package.json said 0.3.4. That is not staleness — a date going stale is
-  // expected and the check above deliberately only warns about it. This is a VERSION claim,
-  // and it was simply wrong: a reader was told the world as of a release three patches back
-  // and had no way to know.
-  //
-  // set-version.mjs calls itself "the one place this repo's version is set" and rewrites six
-  // manifests and the compose file, which is exactly the "half-done is invisible" failure
-  // its own docstring exists to prevent — one file outside its reach.
-  //
-  // Checked rather than auto-written on purpose. Bumping this stamp mechanically would say
-  // "the world as of 0.4.0" about a document nobody reread, which is worse than a wrong
-  // number because it converts "probably out of date" into "recently confirmed". The gate
-  // has to pass before a release, so this asks at the one moment somebody is looking.
-  const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  const head = readFileSync(join(root, "STATE.md"), "utf8").slice(0, 1200);
-  const stated = /^Status:\s*([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.-]*)\b/m.exec(head)?.[1];
-  if (!stated) return "STATE.md has no `Status: <version>` line near the top";
-  return stated === version
-    ? null
-    : `STATE.md says ${stated}; package.json says ${version} — reread STATE.md and move ` +
-      "its stamp, or the release ships a description of a different platform";
-});
 
 check("a failed rollback is reported, not thrown", () => {
   // rollback() throws when the remote `docker compose up` cannot start the old version — a

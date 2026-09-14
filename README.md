@@ -130,14 +130,6 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             ablation. What a round FOUND is not here — findings.md lives in the
             initiative the evaluation ran as, with the scores in the platform's
             own tables, because a finding belongs to a moment and a version
-blocks/     one directory per building block, holding everything written ON TOP
-            of it — its usage skill and the tests that check our usage still
-            holds. Separate from skills/ because a usage skill is written about
-            somebody ELSE's server, is true only against the version it was
-            checked on, and has to be deletable in one move when the block goes.
-            Only the standard lives here — `_standard/` is what a block team is
-            asked to meet. The blocks themselves are somebody else's and are not
-            in this repository.
 docs/       written for somebody who does not work on this every day.
             architecture.html is the platform end to end — one page, eight
             tabs, every capability described by what it is, how we look at it,
@@ -245,7 +237,8 @@ Building blocks are NOT in this repo. A block is somebody else's MCP server, rea
 through the credential gateway; nothing here builds one. What the platform owns is its
 side of that relationship — the per-block door, the credential proxy, and the usage
 skills written about a block that are true only against the version they were checked
-on. The requirements a block team must meet are
-`blocks/_standard/skills/building-a-block/references/contract.md`, here and only here: a standard that exists twice is one nobody can trust.
+on. The requirements a block team must meet were documented here and are not any more: that
+contract describes something this repository does not ship, so it belongs with the blocks
+rather than beside the platform they connect to.
 
 Start here: `deploy/README.md` (server install and day-2 operations).

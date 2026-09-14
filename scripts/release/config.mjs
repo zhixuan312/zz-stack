@@ -19,10 +19,20 @@ export const rollbackMode = args.includes("--rollback");
 export const preflightMode = args.includes("--preflight");
 export const exportMode = args.includes("--export");
 export const version = args.find((a) => !a.startsWith("--"));
-// zz-stack-dashboard: the console. An explicit version releases it, --no-dashboard skips it,
-// and by default we ASK its repo whether it moved.
+// zz-stack-dashboard: the console. An explicit version releases it; otherwise we ASK its repo
+// whether it moved and skip it only when it did not.
+//
+// THERE IS NO --no-dashboard ANY MORE. It existed to leave the console behind "deliberately",
+// and every use of it in practice was a way past a message: the console's tree was dirty, or
+// it had commits and no version had been decided, and the flag turned a question into a skip.
+// The platform and the console are one deployment in front of the same people, so a host on an
+// old console is on a stale platform — and the one release that used the flag shipped a gateway
+// field the console needed with no console able to read it.
+//
+// Skipping is still the right answer when the console did not move. That answer is now only
+// ever reached by ASKING, in resolveDashboard(), which is the difference between a skip that
+// was decided and one that was declared.
 export const dashArg = (args.find((a) => a.startsWith("--dashboard=")) || "").split("=")[1] || null;
-export const skipDash = args.includes("--no-dashboard");
 
 /** The gateway address this release verifies against, refused rather than guessed.
  *

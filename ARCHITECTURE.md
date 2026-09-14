@@ -31,7 +31,6 @@ not answer its directory's question is in the wrong place.
 | `services/` | What runs as a process? | yes |
 | `catalog/` | What can a team install? | yes, at `/catalog` |
 | `skills/` | What does every flow carry, whoever owns it? | yes, at `/skills` |
-| `blocks/` | What do we know about someone else's building block? | yes, at `/blocks` |
 | `deploy/` | How does a host stand this up? | no — the host has it |
 | `scripts/` | How does this repository release and check itself? | no |
 | `testing/` | How do we drive a deployment by hand? | no |
@@ -91,29 +90,6 @@ by `buildClientPackage` rather than read from a catalog everybody shares. A skil
 What does NOT belong here is anything about the machine or the credential rather than the
 record — a 401, a connection, a plugin version, a legacy import. `zz-doctor`, `zz-update` and
 `zz-migrate` are in `catalog/zz/zz-access/` with the rest of the credential door.
-
-### `blocks/<block>/` — someone else's building block
-
-We do not own these. What we hold is our reading of them:
-
-```
-blocks/<block>/skills/<skill>/SKILL.md      theirs, as they gave it to us — we never edit it
-blocks/<block>/skills/<skill>/references/   theirs — we never edit these either
-blocks/<block>/skills/<skill>/evals/        OURS: the ruler we judge their skill by
-blocks/<block>/tests/                       what we ask of the block
-blocks/<block>/findings/                    defects we found, one file per defect, numbered
-```
-
-The split inside `skills/` matters. Their text is evidence and changing it destroys the
-evidence. The rubric beside it is our instrument, and we change it whenever it measures the
-wrong thing.
-
-`blocks/_standard/` is the exception: `building-a-block` is ours, and it is the contract we ask
-every block to meet.
-
-The rule that matters: **a defect in a block's skill is reported, not fixed.** The block team
-owns the skill and owns the MCP tools it calls, and they ship both together. A skill we edited
-is a skill that no longer matches the block.
 
 ### `scripts/` vs `testing/` vs `packages/tools/src`
 
@@ -431,7 +407,6 @@ smaller set: what the gate holds about where things LIVE.
 | `kind` is gone; `shelved` is `true` or absent | `check "every catalog entry has a flow.json and declares what it is"` |
 | A Surface carries its own system prompt | nothing checks it — **[convention]**, §3b |
 | Nothing in `testing/` computes — it drives | `check "nothing in testing/ computes — it drives, and the computing lives in packages/tools"` |
-| No skill under `blocks/<block>/` is edited by us | `check "a skill that changed says so in its version"` hashes every `SKILL.md` including `blocks/`, so an edit shows up as a changed sha with no version bump. It reports the edit; nothing REFUSES one — **[convention]** |
 | No `tests/` fixture directory enters the image | `check "no fixture directory enters the image"` |
 | No source file is over 700 lines | `check "no source file is larger than one subject usually is"` — `.md` is outside it, so the documents this repository ships are held by `checks/docs-current.mjs` instead |
 | The written record matches the delivered surface | `check "the written record matches the delivered surface, and no document outgrew the ceiling"` |

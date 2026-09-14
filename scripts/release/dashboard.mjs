@@ -3,10 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, published, run, ssh } from "../deployment.mjs";
-import { dashArg, skipDash, version } from "./config.mjs";
+import { dashArg, version } from "./config.mjs";
 
 export function resolveDashboard() {
-  if (skipDash) return { release: false, why: "--no-dashboard" };
   if (!existsSync(DASH_SRC)) {
     return { release: false, why: `no console checkout beside this repo at ${DASH_SRC}` };
   }

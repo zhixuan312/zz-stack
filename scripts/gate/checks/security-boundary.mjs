@@ -415,7 +415,9 @@ check("the paths documented as public are the ones the gateway exempts", () => {
   const want = [...exact, ...prefixes.map((p) => p.replace(/\/$/, ""))];
 
   const bad = [];
-  for (const rel of ["STATE.md", "deploy/README.md", "README.md"]) {
+  // STATE.md was the third source here and is removed; the two that remain are the ones
+  // somebody actually reads before opening a port.
+  for (const rel of ["deploy/README.md", "README.md"]) {
     const doc = readFileSync(join(root, rel), "utf8");
     // Only where the document actually makes the claim. A file that never lists them is not
     // wrong about them, and inventing a duty to list them would be this check picking a

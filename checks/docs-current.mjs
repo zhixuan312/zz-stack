@@ -28,11 +28,13 @@ const walk = (d) => readdirSync(d).flatMap((f) => {
 
 // EVERY ROOT DOCUMENT, DISCOVERED — not the two this check was written naming.
 //
-// STATE.md was 1309 lines when this check first ran, and the fix was to split it into
-// HISTORY.md and HISTORY-PRE-0.23.md. A list naming STATE.md and ARCHITECTURE.md would have
-// measured neither of the files the fix created, so the ceiling would have been enforced on
-// the document that broke it and on nothing the repair produced. That is the shape of
-// satisfiable-without-the-feature: the rule passes because the rule stopped looking.
+// STATE.md was 1309 lines when this check first ran, and the fix was to split it into two
+// history files. A list naming the documents that existed then would have measured neither of
+// the files the fix created, so the ceiling would have been enforced on the document that broke
+// it and on nothing the repair produced. That is the shape of satisfiable-without-the-feature:
+// the rule passes because the rule stopped looking. All three of those documents have since
+// been removed in favour of the changelog; the discovery is what survived, and it is the part
+// that was worth keeping.
 //
 // CHANGELOG.md IS THE ONE EXEMPTION, and it is the same one `deploy-release.mjs` already
 // grants it for the same reason: it is an append-only transaction log, so a ceiling on it
@@ -49,8 +51,12 @@ const rootDocs = readdirSync(".")
   .filter((f) => f.endsWith(".md") && f !== "CHANGELOG.md" && (!carried || carried.has(f)))
   .sort();
 const touched = [...rootDocs, ...walk("skills"), ...walk("scripts/gate/checks"), ...walk("checks")];
-if (!rootDocs.includes("STATE.md") || !rootDocs.includes("ARCHITECTURE.md")) {
-  fail.push("the root document discovery found neither STATE.md nor ARCHITECTURE.md — it is broken");
+// A DISCOVERY THAT FINDS NOTHING PASSES FOR THE WRONG REASON, so it is asserted against the two
+// root documents that remain. It named STATE.md until that file was removed — the changelog is
+// the record now — and README.md takes its place here because a repository without one is a
+// repository whose discovery is broken rather than whose documents are gone.
+if (!rootDocs.includes("README.md") || !rootDocs.includes("ARCHITECTURE.md")) {
+  fail.push("the root document discovery found neither README.md nor ARCHITECTURE.md — it is broken");
 }
 for (const p of touched) {
   if (!/\.(md|mjs|ts)$/.test(p)) continue;
@@ -89,13 +95,11 @@ if (!existsSync("scripts/release/fit-for-purpose.mjs")) {
   if (drive(true) !== 0) fail.push("the fit-for-purpose step refuses a release that WAS reviewed");
 }
 
-// STATE.md puts unproven work in 6b, not 6.
-//
-// ANCHORED TO THE HEADING. `/6b/` over the whole file matched the sentence in STATE.md's
-// header that PROMISES a §6b, so the section could have been deleted outright and this would
-// still have passed — a check satisfied by the promise instead of by the thing.
-const state = readFileSync("STATE.md", "utf8");
-if (!/^## 6b\./m.test(state)) fail.push("STATE.md has no 6b section for what has not yet run in front of anyone");
+// THE §6b RULE WENT WITH STATE.md. It required a section separating work that had been
+// delivered from work that had run in front of somebody, which was the most valuable thing
+// that file did. The changelog draws the same line per release in its own words — an entry is
+// written when a release ships and is not maintained between them — so there is no standing
+// section for this to anchor to. Recorded as a property that was being enforced and now is not.
 // Control: zz-platform keeps its prose. A rewrite that replaced the law with a table
 // would pass a check that only looked for the table.
 const plat = readFileSync("skills/zz-platform/SKILL.md", "utf8");

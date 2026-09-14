@@ -342,6 +342,15 @@ check("a gate check cited elsewhere is cited by a name that exists", () => {
                  ...sourceFiles(["catalog", "skills", "docs"], [".md"])];
   const bad = [];
   for (const rel of files) {
+    // CHANGELOG.md IS EXEMPT, and it is the same exemption this repository already grants it
+    // for the line ceiling and for the derived-count rule, for the same reason: it is an
+    // append-only transaction log. An entry says what a PAST release did, and a release that
+    // added a check named it correctly at the time. When that check is later removed — as the
+    // two STATE.md checks were, with the file they policed — the entry does not become wrong;
+    // it becomes history. Enforcing this rule over it would be a standing instruction to
+    // rewrite the record whenever the present stops matching it, which is the one thing a
+    // changelog must never have done to it.
+    if (rel === "CHANGELOG.md") continue;
     const f = join(root, rel);
     if (!existsSync(f)) continue;
     const text = readFileSync(f, "utf8");
@@ -390,70 +399,9 @@ check("a document's links point at something that exists", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the standard names the requirements its own battery settles", () => {
-  // §6 of the building-block contract replaced a hand-written table of met and unmet
-  // requirements with a battery a block team runs themselves — because the table "was true
-  // when someone looked, nothing re-checked it, and it read as current for as long as it sat
-  // here". The sentence describing WHICH requirements the battery settles was then written by
-  // hand, and drifted the same way: it listed eight, block-conformance measures nine, and R10
-  // was missing from it while a paragraph two below cited R10 as something measurement found.
-  //
-  // This is the document handed to every block team. A requirement the standard says is not
-  // measured is one nobody expects a verdict on, so the omission is a block shipping unchecked
-  // against a check that runs.
-  const doc = readFileSync(join(root, "blocks/_standard/skills/building-a-block/references/contract.md"), "utf8");
-  const eng = readFileSync(join(root, "packages/tools/src/testing/block-conformance.ts"), "utf8");
-  const bad = [];
+// THE BUILDING-BLOCK CONTRACT IS GONE, and this check with it. It held the plugin standard
+// against blocks/_standard/.../references/contract.md — that a requirement the battery settles
+// is a requirement the contract states. The whole blocks/ tree was removed: the mock stand-ins
+// for other teams' services live in their own repository, and the contract documenting them
+// went with the documents rather than staying here describing something this repo does not ship.
 
-  // The engine's own two sets. NOT_MEASURED is a named constant; everything the engine
-  // assigns a verdict to is measured, whether it is written into the requirement object or
-  // set afterwards — R6 is set afterwards, which a check reading only the object literal
-  // would have missed.
-  const notMeasured = new Set(
-    [...(/const NOT_MEASURED[^{]*\{([\s\S]*?)^\}/m.exec(eng)?.[1] ?? "")
-      .matchAll(/^\s*(R\d+):/gm)].map((m) => m[1]));
-  const measured = new Set([...eng.matchAll(/^\s*(?:req\.)?(R\d+)\s*[:=]\s*\{/gm)]
-    .map((m) => m[1]).filter((r) => !notMeasured.has(r)));
-  if (!measured.size || !notMeasured.size) {
-    return "block-conformance no longer states which requirements it measures — this check cannot run";
-  }
-
-  const sentence = /settles ((?:R\d+[,\s]+(?:and\s+)?)+R\d+) mechanically\.\s*((?:R\d+[,\s]+(?:and\s+)?)+R\d+) are behavioural/
-    .exec(doc.replace(/\n/g, " "));
-  if (!sentence) {
-    return "§6 no longer says which requirements the battery settles and which it does not — " +
-           "that sentence is what tells a block team where a verdict is coming from";
-  }
-  const ids = (t) => new Set([...t.matchAll(/R\d+/g)].map((m) => m[0]));
-  const said = ids(sentence[1]), saidNot = ids(sentence[2]);
-
-  for (const r of measured) {
-    if (!said.has(r)) {
-      bad.push(`block-conformance settles ${r} and the standard does not say so — a block team ` +
-               "reading this expects no verdict on it");
-    }
-  }
-  for (const r of said) {
-    if (!measured.has(r)) bad.push(`the standard says the battery settles ${r}; it does not`);
-  }
-  for (const r of notMeasured) {
-    if (!saidNot.has(r)) bad.push(`${r} is reported as not measured and the standard omits it`);
-  }
-  for (const r of saidNot) {
-    if (!notMeasured.has(r)) bad.push(`the standard calls ${r} behavioural; the battery scores it`);
-  }
-
-  // And every requirement is in exactly one of the two, because the table above numbers them
-  // R1..RN and a requirement in neither list is one nobody is told anything about.
-  const all = new Set([...doc.matchAll(/^\| (R\d+) \|/gm)].map((m) => m[1]));
-  for (const r of all) {
-    if (!said.has(r) && !saidNot.has(r)) {
-      bad.push(`${r} is a requirement in the table and appears in neither half of §6`);
-    }
-  }
-  if (all.size && all.size !== measured.size + notMeasured.size) {
-    bad.push(`the table has ${all.size} requirements and the battery accounts for ` +
-             `${measured.size + notMeasured.size}`);
-  }
-  return bad.length ? bad.join("; ") : null;
-});

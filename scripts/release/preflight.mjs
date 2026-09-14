@@ -54,7 +54,7 @@ export function preflight() {
   row(null, `zz-stack: ${commits.length} commit(s) since ${tag || "(no tag)"}`);
   const d = resolveDashboard();
   row(d.blocked ? false : null, `console: ${d.why}`,
-      d.blocked ? "or --no-dashboard to leave it behind deliberately" : null);
+      null);
   // What is live NOW, which is the fact this repo cannot answer for itself: the console was
   // deployed by building on the host, so `local` here means the host is running something no
   // registry has a copy of and no version names.

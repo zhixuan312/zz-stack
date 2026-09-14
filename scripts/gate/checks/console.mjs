@@ -288,7 +288,57 @@ check("every console write route records the door it came through", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the console's version and its compose literal move together", () => {
+check("a claim that states no verdict says so, rather than stating an empty one", () => {
+  // zz.decision's text columns are `not null default \'\'` — migration 011 — so the DATABASE
+  // cannot tell "this row states no verdict" from "this row\'s verdict is the empty string".
+  // The API can, and for a while did not: it returned the rows raw, so every one of the 478
+  // on the production store arrived carrying `verdict: ""`, which reads as a field that is
+  // broken rather than as four readers of which only two produce a verdict at all.
+  //
+  // THE SAME RULE THIS CONSOLE ALREADY HOLDS FOR NUMBERS. An unmeasured average is reported
+  // as null and never as a confident zero (console/skills.ts, and checks/console-nulls.mjs,
+  // which opens by recording what happened the last time this property was left uncovered:
+  // a `git checkout` reverted it and nothing went red). "" is the text-shaped version of the
+  // same confident value, and it was the uncovered one.
+  //
+  // NARROW ON PURPOSE, AND SAYING SO. This names one endpoint and three fields rather than
+  // deriving every `not null default \'\'` column the console projects. That broader rule is
+  // the right one and it is not written; naming the gap is better than implying it is covered.
+  const f = "services/gateway/src/console/initiatives.ts";
+  const src = readFileSync(join(root, f), "utf8");
+  const bad = [];
+  for (const field of ["verdict", "qualifier", "checker"]) {
+    // `row.x || null` is the projection. Asked as "does the file contain the field name",
+    // this would pass on the SELECT list alone — which is exactly the state it is guarding
+    // against, since the raw rows carried all three names and none of the coercions.
+    if (!new RegExp(`${field}:\\s*row\\.${field}\\s*\\|\\|\\s*null`).test(src)) {
+      bad.push(`${f} returns ${field} without mapping an empty value to null — a claim that ` +
+               "states none is indistinguishable from one whose value is the empty string");
+    }
+  }
+  // EVERY READER OF THE LEDGER, not the one that was fixed first. Two endpoints select these
+  // columns — the initiative view and the document view — and a mutation of the first is what
+  // revealed the second still returning them raw. Counted rather than named: a third reader
+  // added later is covered without anyone remembering this check exists.
+  const readers = (src.match(/from zz\.decision\b/g) ?? []).length;
+  const mapped = (src.match(/\.map\(claimRow\)/g) ?? []).length;
+  if (!readers) {
+    bad.push(`${f} no longer queries zz.decision — this check is reading the wrong file`);
+  } else if (mapped !== readers) {
+    bad.push(`${f} queries zz.decision ${readers} time(s) and maps ${mapped} of them through ` +
+             "claimRow — a reader that returns the rows raw states an empty verdict as a value");
+  }
+  // And the counts, which are what make a blank column legible as a fact about the documents.
+  // ANCHORED WITH ITS COLON: written as a bare name this passed on `decisionCountsGone`, which
+  // is what renaming the field to break it produced. Measured, not supposed.
+  if (!/decisionCounts:/.test(src)) {
+    bad.push(`${f} no longer reports how many rows carry a verdict, a qualifier or a checker — ` +
+             "a column of nulls cannot then be told from a derivation that has stopped running");
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
+check("the console\'s version and its compose literal move together", () => {
   // The same claim the check above makes for the blocks, for the third component. The
   // console is a separate repository with its own compose file, and that file goes to the
   // host on its own — so a version that moved in package.json and not in the literal ships

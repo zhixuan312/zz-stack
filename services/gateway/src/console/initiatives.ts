@@ -78,12 +78,48 @@ export function mountInitiatives(app: Express): void {
     res.json({ initiatives });
   }));
 
+  /** One row of the claim ledger, with the fields that cannot state absence stating it.
+   *
+   * zz.decision's text columns are `not null default \'\'` (migration 011), so the database
+   * has one spelling for "this row states no verdict" and for "this row\'s verdict is the
+   * empty string". Only two of the four readers that write these rows produce a verdict at
+   * all — a plan\'s task and a spec\'s acceptance criterion have none to give — so the empty
+   * value is the ordinary case rather than the broken one, and it must not read as a value.
+   *
+   * ONE FUNCTION, TWO ENDPOINTS. The initiative view and the document view both return these
+   * rows, and both had them raw; fixed inline they would have been two copies of one rule,
+   * which is how the first of them came to be fixed and the second missed. */
+  const claimRow = (d: unknown) => {
+    const row = d as { verdict: string; qualifier: string; checker: string };
+    return { ...row, verdict: row.verdict || null, qualifier: row.qualifier || null,
+             checker: row.checker || null };
+  };
+
   /** One initiative: every document, and the acceptance-criterion ledger.
    *
-   * The ledger is `zz.decision` — one row per criterion with the verdict the
-   * selection step reached (native / achievable / workaround) and the qualifier
-   * that says how confident it is. It is the densest real content the platform
-   * holds and nothing has ever displayed it. */
+   * The ledger is `zz.decision` — one row per claim a stage document made, derived
+   * from what the stage already wrote. It is the densest real content the platform
+   * holds and nothing had ever displayed it.
+   *
+   * NOT EVERY ROW CARRIES A VERDICT, and this docblock used to say otherwise: "one
+   * row per criterion with the verdict the selection step reached". Four readers
+   * produce these rows and only two of them are reading a fit ledger. A plan's task
+   * has no verdict — its `qualifier` holds the criteria it discharges — and a spec's
+   * acceptance criterion has none either, because stating a criterion is not judging
+   * whether a block can meet it. On the production store that is every row: 374
+   * `agreement` and 104 `plan`, none of them a fit claim, because no selection
+   * document has ever been indexed there.
+   *
+   * So an empty verdict is reported as `null` rather than as `""`. The column is
+   * `not null default ''` and cannot express "this row states none"; the API can,
+   * and the same rule already governs every aggregate this console returns — see
+   * skills.ts, where an unmeasured average is null and never a confident zero.
+   * `counts` below is what makes the distinction legible without opening a row:
+   * a blank verdict column is then visibly "nothing here states a fit verdict"
+   * rather than "this field is broken", which is how it read.
+   *
+   * BREAKING: `verdict`, `qualifier` and `checker` are now `null` where they were
+   * `""`. A consumer testing truthiness is unaffected; one comparing to `""` is not. */
   app.get("/api/console/initiatives/:team/:slug", handler("the initiative", async (req, res, scope) => {
     const db = platformDb();
     const { team, slug } = req.params;
@@ -124,7 +160,15 @@ export function mountInitiatives(app: Express): void {
           requiredForClose: rule?.requiredForClose ?? false,
         };
       }),
-      decisions: decisions.rows,
+      decisions: decisions.rows.map(claimRow),
+      // What the ledger actually holds, so a column of blanks is readable as a fact
+      // about the documents rather than as a fault in the derivation.
+      decisionCounts: {
+        rows: decisions.rows.length,
+        withVerdict: decisions.rows.filter((d) => (d as { verdict: string }).verdict).length,
+        withQualifier: decisions.rows.filter((d) => (d as { qualifier: string }).qualifier).length,
+        withChecker: decisions.rows.filter((d) => (d as { checker: string }).checker).length,
+      },
       ...stageOf(docs.rows, docs.rows.map((d) => d.flow).find(Boolean) ?? null),
     });
   }));
@@ -210,7 +254,15 @@ export function mountInitiatives(app: Express): void {
       gated: rule ? rule.gate : null,
       closing: rule?.closing ?? false,
       requiredForClose: rule?.requiredForClose ?? false,
-      decisions: decisions.rows,
+      decisions: decisions.rows.map(claimRow),
+      // What the ledger actually holds, so a column of blanks is readable as a fact
+      // about the documents rather than as a fault in the derivation.
+      decisionCounts: {
+        rows: decisions.rows.length,
+        withVerdict: decisions.rows.filter((d) => (d as { verdict: string }).verdict).length,
+        withQualifier: decisions.rows.filter((d) => (d as { qualifier: string }).qualifier).length,
+        withChecker: decisions.rows.filter((d) => (d as { checker: string }).checker).length,
+      },
       versions: versions.rows.map((v) => ({ ...v, bytes: +v.bytes, version: +v.version })),
       sources: sources.rows.map((x) => ({ ...x, bytes: +x.bytes })),
     });

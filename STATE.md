@@ -452,7 +452,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 330 checks**, and fifteen of them RUN code rather than reading it: the
+- **The offline gate is 331 checks**, and fifteen of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through

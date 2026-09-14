@@ -9,8 +9,102 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { between, firstOf, gatewaySource, root, sourceFiles, zzCoreSource, zzCoreTools } from "../read.mjs";
-import { check } from "../run.mjs";
+import { check, note } from "../run.mjs";
 import { catalogRoot, flows, platformSkills, skillsOf } from "../facts.mjs";
+
+/**
+ * THE PLATFORM'S NAMESPACE, DERIVED FROM THE REGISTRATION LITERALS — which tools exist, which
+ * NOUNS they are registered under, and which identifiers those registrations declare as
+ * arguments rather than as tools.
+ *
+ * WHY THIS REPLACED TWO WRITTEN-OUT LISTS. Two checks below each carried a hand-kept roster:
+ * a `MANAGE` array of thirty names feeding an `OURS` regex, and a nineteen-name array of the
+ * platform tools a block's skill is allowed to name. Both were copies of what `registerTool`
+ * already says, and a copy of a registration is wrong from the first rename onwards — this
+ * repository has renamed its whole surface twice in a fortnight, and after the second pass not
+ * one of `my_credential`, `admin_`, `set_[a-z_]*credential` or `delete_[a-z_]*credential`
+ * matched a tool that existed. The lists still read as coverage and enforced nothing.
+ *
+ * THE NOUN IS THE DERIVABLE PART. The exact names in those lists could only ever equal the set
+ * of registered names, so a check comparing a name against them could never fire — the rule has
+ * to be wider than "is registered" to catch anything at all. Under the noun-first shape it is:
+ * a `<noun>_<verb>` name whose NOUN is one this platform registers tools under is a claim on
+ * our surface, and if we do not serve it nobody does. `plugin_invented` is ours and missing;
+ * `read_api_spec`, `get_platform_overview` and `create_rule_now` are blocks' and are left
+ * alone, because no door here registers anything under `read`, `get` or `create`. The stems it
+ * replaces (`journal_`, `okr_`, `render_`) vanish with it, and correctly so: not one of them
+ * matches a tool that still exists.
+ *
+ * ITS LIMIT, STATED. A noun the platform has deleted outright is no longer derivable as ours,
+ * so a skill still naming `render_agent_definition` would now read as a block's tool here. That
+ * ground belongs to the rename checks — "a file that resolves renamed tools never matches a
+ * pre-rename name" and "the core door speaks noun-first, and no caller still says the old
+ * name" — which read the frozen alias maps and know what the old names were. This one is about
+ * a name nobody has ever served.
+ */
+let SURFACE = null;
+function platformSurface() {
+  if (SURFACE) return SURFACE;
+  const served = new Set();
+  // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
+  // spread across modules, so a list of its files goes short the moment a door is added.
+  for (const { name } of zzCoreTools()) served.add(name);
+  // THE GATEWAY AS A SERVICE. Its access door moved out of server.ts into access-door.ts,
+  // and a list of files goes short the moment a door is added.
+  for (const m of gatewaySource().matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) served.add(m[1]);
+  // Served by a block only to someone who cannot reach it, so it is registered nowhere here
+  // and is still a real name a skill may explain. Pre-dates this derivation and survives it.
+  served.add("credential_required");
+  const nouns = new Set([...served].map((t) => t.split("_")[0]));
+
+  // AND WHAT THOSE REGISTRATIONS CALL THEIR ARGUMENTS. `source_content` is a parameter of
+  // `document_revise`, and zz-platform names it in backticks to teach an agent to pass it —
+  // which is the noun `source` in call shape, and would otherwise be reported as a tool the
+  // platform does not serve. A declared parameter is the same registration literal speaking;
+  // reading it is the difference between a rule and an exception.
+  //
+  // BRACE-MATCHED, NOT PATTERNED TO A CLOSING SHAPE. Written as `([\s\S]*?)\n\s*\},?\n\s*\},`
+  // this reached 22 of the 60 `inputSchema:` blocks in services/ and quietly missed the rest —
+  // the SILENT SKIP this gate has been caught by before. `closed` below is counted against the
+  // occurrences so a future shape change says so instead of shrinking the exclusion set.
+  const params = new Set();
+  let occurrences = 0, closed = 0;
+  for (const rel of sourceFiles(["services"], [".ts"])) {
+    const src = readFileSync(join(root, rel), "utf8");
+    for (const m of src.matchAll(/inputSchema:\s*\{/g)) {
+      occurrences++;
+      let depth = 0, i = m.index + m[0].length - 1;
+      for (; i < src.length; i++) {
+        if (src[i] === "{") depth++;
+        else if (src[i] === "}" && --depth === 0) break;
+      }
+      if (i >= src.length) continue;   // unbalanced: counted as not closed, reported below
+      closed++;
+      // `name: z.` — the one shape a zod field takes, on its own line or inline with siblings.
+      for (const p of src.slice(m.index, i).matchAll(/\b([a-z][a-z0-9_]*):\s*z\./g)) params.add(p[1]);
+    }
+  }
+
+  // FOREIGN VOCABULARY THAT COLLIDES WITH A NOUN OF OURS, and the only thing here that is
+  // written rather than derived. `tool_order` and `tool_used` are GRADER KINDS belonging to
+  // `claude plugin eval`, named beside `regex` and `file_exists` in zz-plugin-report; they are
+  // not tools, have never been tools, and are not this repository's to rename — so unlike the
+  // rosters this derivation replaced, these two do not rot when our surface moves. They are
+  // here because `tool_grant` and `tool_revoke` make `tool` a noun we register under, and for
+  // no other reason. Anything that belongs to US must never be added to this set: a missing
+  // tool of ours is precisely what the check exists to find.
+  const FOREIGN = new Set(["tool_order", "tool_used"]);
+
+  SURFACE = { served, nouns, params, foreign: FOREIGN, occurrences, closed };
+  return SURFACE;
+}
+
+/** Does this name claim a tool on the platform's own surface? A `<noun>_<verb>` shape whose
+ *  noun we register under, that is not one of our declared arguments and not foreign
+ *  vocabulary. Says nothing about whether the tool exists — that is the caller's question. */
+const claimsOurs = (name, s) =>
+  name.includes("_") && s.nouns.has(name.split("_")[0]) &&
+  !s.params.has(name) && !s.foreign.has(name);
 
 check("no tool description teaches a path form the platform refuses", () => {
   // document_read said "Read a file from your .zz artifact store" while safePath had just
@@ -76,63 +170,47 @@ check("a skill never names a platform tool that does not exist", () => {
   // repository has spent a day on what happens next — it reaches for a block's tool whose name
   // is close, then reports that the platform cannot do the thing.
   //
-  // Only the platform's own verb shapes are checked. A block tool named in a skill is that
-  // block's business and may be absent from this deployment; a `set_`/`approve_`/`journal_` name
-  // is ours, and if we do not serve it, nobody does.
-  // The PLATFORM'S OWN namespace, not every verb. `read_api_spec` and `get_platform_overview`
-  // are block tools that the building-block contract REQUIRES every block to publish, and
-  // skills name them properly; a rule wide enough to catch `set_credential` by its verb also
-  // catches those, and a check that cries wolf gets an exception list and then gets ignored.
-  // These stems are ours and no block publishes them.
-  // `render_` IS OURS AND WAS MISSING, which is how a skill kept telling an admin to call
-  // render_agent_definition for a whole session after that tool was deleted. Both tools that
-  // ever carried the stem — render_agent_definition and render_harness_config — were the
-  // platform's, and no block publishes it.
-  // `revise_` AND `reindex_` WERE STEMS AND ARE NOW NAMES. They earned their place as stems
-  // when the tools were `revise_document` and `reindex_knowledge`; the noun-first rename left
-  // both stems matching nothing of ours, so a block publishing `revise_booking` would have
-  // been reported as a platform tool that does not exist. The two names they covered are
-  // spelled out instead — the same coverage, and no stem staking a claim on a word we no
-  // longer own.
+  // Only the platform's own namespace is checked. A block tool named in a skill is that
+  // block's business and may be absent from this deployment; a name under a noun WE register
+  // tools under is ours, and if we do not serve it, nobody does. `read_api_spec` and
+  // `get_platform_overview` are block tools the building-block contract REQUIRES every block
+  // to publish, and no door here registers anything under `read` or `get`, so they are left
+  // alone without anybody having to list them.
   //
-  // THE SAME THING HAPPENED AGAIN TO /manage, one rename later. `my_credential`, `admin_`,
-  // `set_[a-z_]*credential` and `delete_[a-z_]*credential` were this door's stems, and after
-  // Task I-22 not one of them matched a tool that exists — so a skill naming a dead /manage
-  // tool would have been waved through by the check whose whole job is to catch that. The
-  // thirty names are written out for the same reason the two above are: a closed set we own
-  // outright, with no stem claiming `set_`, `admin_` or `my_` on behalf of a door that no
-  // longer speaks that way. They are exactly `Object.values(MANAGE_ALIAS)` plus `whoami`;
-  // checks/manage-surface.mjs is what keeps the door itself matching that list.
-  const MANAGE = ["whoami", "person_add", "person_deactivate", "person_list", "team_create",
-    "team_archive", "team_list", "team_switch", "team_mine", "member_add", "member_remove",
-    "pat_issue", "pat_revoke", "pat_list", "flow_install", "flow_uninstall", "install_list",
-    "tool_grant", "tool_revoke", "enrolment_issue", "block_connect", "block_disconnect",
-    "platform_list", "credential_set", "credential_list", "credential_delete",
-    "credential_admin_set", "credential_admin_delete", "client_setup", "catalog_list"];
-  const OURS = new RegExp(`^(journal_|okr_|document_revise|knowledge_reindex|initiative_|render_|skill_read$|skill_list$|document_write|document_read|document_patch|document_list|source_add|source_list|knowledge_search|${MANAGE.map((n) => `${n}$`).join("|")})`);
-  const served = new Set();
-  // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
-  // spread across modules, so a list of its files goes short the moment a door is added.
-  for (const { name } of zzCoreTools()) served.add(name);
-  // THE GATEWAY AS A SERVICE. Its access door moved out of server.ts into access-door.ts,
-  // and a list of files goes short the moment a door is added.
-  for (const m of gatewaySource().matchAll(/registerTool\(\s*\n?\s*"([a-z_0-9]+)"/g)) served.add(m[1]);
-  if (served.size < 30) return null;   // the shape of those files changed; other checks say so
-  served.add("credential_required");   // served by a block only to someone who cannot reach it
+  // WHICH NAMES ARE OURS IS DERIVED — `platformSurface()` at the top of this file says what
+  // replaced the thirty-name `MANAGE` array and the `OURS` regex that consumed it, and why a
+  // written-out roster of our own tool names could never have made this check fire.
+  const s = platformSurface();
+  if (s.served.size < 30) return null;   // the shape of those files changed; other checks say so
+  // THE EXCLUSION IS DERIVED TOO, so its extraction failing quietly would WIDEN this check
+  // into every argument name a skill teaches an agent to pass. Said out loud instead.
+  if (s.closed < s.occurrences) {
+    return `${s.occurrences - s.closed} of ${s.occurrences} inputSchema blocks under services/ ` +
+           "could not be read, so the parameter names those registrations declare are not all " +
+           "known and an argument would be reported as a tool that does not exist";
+  }
   // A block's own tools are named in skills too and are that block's business, so anything a
   // block registers is left alone even where this deployment cannot reach it. That used to be
   // a loop over casebox/RuleMill/bookit reading blocks/<b>/skills — and its body was a single
   // `continue`, so it read nothing and decided nothing. It became a no-op when those blocks
   // moved to their own repository, and looked like the mechanism enforcing this paragraph.
-  // The `OURS` stems above are what actually does it: a name outside them is a block's.
+  // The derived noun set is what actually does it: a name under a noun this platform registers
+  // nothing beneath is somebody else's.
   const bad = [];
-  const every = [...platformSkills().map((s) => s.path)];
-  for (const f of flows) for (const s of skillsOf(f)) every.push(s.path);
+  const every = [...platformSkills().map((sk) => sk.path)];
+  for (const f of flows) for (const sk of skillsOf(f)) every.push(sk.path);
   for (const f of every) {
     const txt = readFileSync(f, "utf8");
-    for (const m of txt.matchAll(/`([a-z][a-z0-9_]{3,40})[`(]/g)) {
-      const name = m[1];
-      if (!OURS.test(name) || served.has(name)) continue;
+    // A CALL SHAPE, never a bare word: backticked, backtick-then-paren, or QUOTED. The quoted
+    // form is how a skill writes a tool name inside an example argument or a JSON fragment —
+    // `skill_read("zz-handover")` is quoted prose away from being written the other way, and a
+    // name that only ever appears in quotes was invisible here. Measured before it was added:
+    // across all thirty skills it introduces no finding of its own, so it widens the reach and
+    // not the noise. A bare word still cannot fire, which is the whole defence against a tool
+    // whose name is also English.
+    for (const m of txt.matchAll(/`([a-z][a-z0-9_]{3,40})[`(]|"([a-z][a-z0-9_]{3,40})"/g)) {
+      const name = m[1] ?? m[2];
+      if (s.served.has(name) || !claimsOurs(name, s)) continue;
       bad.push(`${f.replace(root + "/", "")} names \`${name}\`, which no platform server registers`);
     }
   }
@@ -317,12 +395,30 @@ check("a skill never instructs a tool its package cannot reach", () => {
   for (const t of registered(adm, 0)) surfaceOf.set(t, "/manage/mcp");
 
   const bad = [];
+  // THE OTHER DIRECTION IS REPORTED, NOT FAILED. A tool on a door a package reaches that none
+  // of that package's skills names is a fact worth a reader's eye and not a defect: the tool
+  // list reaches the agent with its own description, and a person may call it directly without
+  // any skill pointing there. Failing on it would make "nobody wrote a sentence about this
+  // yet" a release blocker. The two places where untaught IS fatal already fail on their own —
+  // "every tool on the access door is taught by a skill that ships with it", because zz-access
+  // is the only thing describing /manage, and "every zz-core tool is named by a skill somebody
+  // loads". This line is per-PACKAGE, which neither of those is.
+  //
+  // THE DOORS THE MANIFEST ITSELF DECLARES, not the baseline every package carries. A report
+  // that named the /core tools each package leaves unmentioned would say the same twenty
+  // things about all four of them — the baseline's own coverage is the check named above, once
+  // — and a report nobody reads is worth less than no report. What is left is the question a
+  // reader can act on: this package asked for a door, and ships nothing that points at part
+  // of it.
+  const unnamed = [];
   for (const f of flows) {
     const mf = join(f.dir, "flow.json");
     const m = JSON.parse(readFileSync(mf, "utf8"));
+    const declared = new Set((m.servers ?? []).map((sv) => sv.path).filter((p) => p !== "/core/mcp"));
     const reach = new Set(["/core/mcp", ...(m.servers ?? []).map((sv) => sv.path)]);
     const skillsDir = join(f.dir, "skills");
     if (!existsSync(skillsDir)) continue;
+    const named = new Set();
     for (const sk of readdirSync(skillsDir)) {
       const md = join(skillsDir, sk, "SKILL.md");
       if (!existsSync(md)) continue;
@@ -330,12 +426,21 @@ check("a skill never instructs a tool its package cannot reach", () => {
       for (const [tool, surface] of surfaceOf) {
         // Named as a CALL — `tool(` or `tool` in backticks — not merely mentioned in prose.
         if (!new RegExp("`" + tool + "[(`]").test(txt)) continue;
+        named.add(tool);
         if (!reach.has(surface)) {
           bad.push(`${f.owner}/${f.flow}/${sk} instructs ${tool} (${surface}), which its package cannot reach`);
         }
       }
     }
+    const quiet = [...surfaceOf].filter(([t, s]) => declared.has(s) && !named.has(t)).map(([t]) => t);
+    if (quiet.length) {
+      unnamed.push(`      ${f.owner}/${f.flow} declares ${[...declared].join(", ")} and no skill of ` +
+                   `its own names ${quiet.length} tool(s) there: ${quiet.sort().join(", ")}`);
+    }
   }
+  // NAMED IN THE LINE ITSELF. `check()` runs this function before it prints its own ✓, so an
+  // unattributed note appears ABOVE its check and reads as belonging to the one before.
+  if (unnamed.length) note(`      reachability — exposed and unnamed (reported, not failed):\n${unnamed.join("\n")}`);
   return bad.length
     ? `${bad.join("; ")} — declare the surface in the manifest's \`servers\`, or stop instructing the tool`
     : null;
@@ -509,6 +614,7 @@ check("a tool a block's own skill tells an agent to call is a tool the agent has
   //
   // A skill and an allowlist drifting apart is silent in both directions: the skill reads
   // fine, the allowlist reads fine, and only an agent standing between them finds out.
+  const coreTools = new Set(zzCoreTools().map((t) => t.name));
   const blocksSrc = readFileSync(join(root, "services/gateway/src/blocks.ts"), "utf8");
   const bad = [];
   const blocksDir = join(root, "blocks");
@@ -531,13 +637,13 @@ check("a tool a block's own skill tells an agent to call is a tool the agent has
       for (const m of text.matchAll(/`([a-z][a-z0-9_]{6,})\(/g)) {
         const name = m[1];
         // The platform's own tools are served by zz-core, not by the block, and are never on
-        // a block's allowlist. zz-platform enumerates them; these are the ones block skills
-        // actually reach for.
-        if (["skill_read", "knowledge_add", "document_write", "document_read", "document_patch",
-             "document_list", "document_approve", "initiative_close", "source_add", "source_list",
-             "knowledge_search", "initiative_status", "session_whoami",
-             "document_revise", "knowledge_reindex",
-             "knowledge_supersede", "document_present", "skill_list", "knowledge_reconcile"].includes(name)) continue;
+        // a block's allowlist. DERIVED from zz-core's registrations rather than written out:
+        // this was a nineteen-name array that had to be retyped at every rename, and the two
+        // renames this fortnight each left it naming tools that no longer existed while a newly
+        // named one read as a block tool the block had failed to allowlist. zz-core ONLY, not
+        // every door — a block skill naming a /manage tool is not reaching for something the
+        // block serves either, and widening this to the gateway would wave that through.
+        if (coreTools.has(name)) continue;
         if (!allow.includes(`"${name}"`)) {
           bad.push(`${slug}/${skill} tells an agent to call \`${name}()\` and it is not on ${slug}'s tools list in blocks.ts — the skill says take it, the platform never hands it over`);
         }

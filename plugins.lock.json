@@ -32,7 +32,7 @@
     }
   },
   "zz-core": {
-    "version": "0.35.0",
+    "version": "0.35.1",
     "digest": "39cc2984",
     "cases_digest": "f64bba10",
     "skills": {

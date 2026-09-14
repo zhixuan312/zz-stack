@@ -33,6 +33,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.35.1] — 2026-09-14
+
+A defect the 0.34.0 rename created for everybody except the person who ran it.
+
+### Fixed
+- **`/zz-access:update` now carries somebody through a plugin rename.** `claude plugin update
+  zz@zz-stack` fails once `zz` is off the shelf, and the updater printed `FAILED.` with the
+  CLI's error and nothing naming `zz-core` as its replacement. Anyone still on 0.31.0 runs the
+  one command they were told to run and is told their update is broken. It now installs the
+  replacement BEFORE removing the old one — so a failure leaves a working machine — and reports
+  a rename as a rename rather than as a plugin that left the shelf.
+
+  `PLUGIN_ALIAS` in `@zz/contracts` is the map, the fifth of its kind beside TOOL_ALIAS,
+  MANAGE_ALIAS, EVAL_ALIAS and SKILL_ALIAS. A plugin is the name a person types to install and
+  the name recorded in their installation, and it was the one surface where a rename simply
+  broke rather than resolving.
+
+### Upgrade notes
+- **This fix cannot reach you through the thing it fixes.** If you are on 0.33.x or earlier and
+  still have `zz@zz-stack` installed, run once, by hand:
+
+  ```
+  claude plugin marketplace update zz-stack
+  claude plugin install zz-core@zz-stack
+  claude plugin uninstall zz@zz-stack
+  ```
+
+  After that `/zz-access:update` handles everything, including the next rename.
+- **Two plugins are not installed by default and you may want them:**
+  `claude plugin install zz-access@zz-stack` (tokens, keys, client setup) and
+  `claude plugin install zz-plugin-eval@zz-stack` (evaluating a plugin).
+- **Restart Claude Code** after any plugin change.
+
 ## [0.35.0] — 2026-09-14 · console 0.7.0
 
 Two things that were each half-connected: the eval suite and the flow that judges it, and the

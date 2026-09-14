@@ -33,6 +33,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.36.0] — 2026-09-14 · console 0.7.1
+
+Two capabilities and a chart that was deciding the height of the page.
+
+### Added
+- **Bug reporting, as three tools on `/core`.** `bug_report` files one, `bug_list` reads what is
+  open, `bug_resolve` closes it with what was decided. Anybody in any flow can hit something
+  broken and no flow owns the act of saying so, which is this door's own rule for what belongs
+  on it. Only a title and a detail are required — somebody who has just hit a wall should not be
+  interviewed — and the platform version is recorded from the service answering the call rather
+  than asked, because a version somebody guesses at sends the next reader to the wrong diff.
+
+  Three tools and not one, because two would be a write-only table: `zz.decision` was derived on
+  every index and read by nothing for months, and nothing noticed it going wrong because nothing
+  looked. `bug_resolve` requires a resolution for every outcome including `not_a_bug` and
+  `duplicate` — enforced by a CHECK constraint, so a status with no reason cannot be stored —
+  and refuses a second close, naming who decided and what they said rather than overwriting it.
+- **A recorded eval suite is a piece of work.** `case_record` opens an initiative on the
+  zz-plugin-eval flow, named for what was measured, and records the run against it. Before this,
+  four suites could be run and $15.76 spent while the platform's record of "what is this team
+  doing" said nothing had happened — and `findings.md` had nowhere to be written, because no
+  initiative existed to write it into.
+
+### Fixed
+- **Console — the overview's distribution strip rendered 800 pixels tall and stretched every
+  tile beside it.** It stacked a dot upward on each collision, uncapped, on a linear axis; the
+  distribution it exists for spans orders of magnitude, so nine tenths of the observations
+  landed inside the first two percent of the width and collided. Measured on this deployment:
+  130 runs, 113 rows, 801 pixels — one vertical column of dots. The four tiles share a grid row,
+  so the page became four mostly-empty columns. Now a log axis and a bounded stack: 6 rows, 52
+  pixels, same data.
+
+### Upgrade notes
+- **Migrations run on start.** 055 links a case run to its initiative, 056 adds `zz.bug`.
+  Existing case runs keep a NULL initiative: a run recorded before the column is a fact about
+  how it was recorded, not a run that belonged to no work.
+- **Nothing else to do.** Both tools are additive; no argument, schema or command changed.
+
 ## [0.35.1] — 2026-09-14
 
 A defect the 0.34.0 rename created for everybody except the person who ran it.

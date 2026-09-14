@@ -29,8 +29,21 @@ import { db } from "./platform-db.js";
  * NOT A `tool_call` ROW. Those already exist for these tools and cannot serve: a tool_call
  * deliberately carries NO ACTOR — "no address on a measurement", see tool-telemetry.ts —
  * because it measures a skill, not a person. A journal entry is the opposite kind of record:
- * who recorded what, when. It also cannot be filtered out of tool_call rows honestly, since
- * those include `knowledge_search` reads, which are not log entries at all.
+ * who recorded what, when, and now who READ what.
+ *
+ * READS ARE ENTRIES TOO, and this paragraph used to argue the opposite — that a tool_call row
+ * could not be filtered honestly because it would sweep in `knowledge_search`, "which are not
+ * log entries at all". That was the wrong line to draw. A search is the only act in the
+ * knowledge base that had no record anywhere: `knowledge_add` and `knowledge_supersede` each
+ * wrote three (this table, `_knowledge/log.md`, the store's git history) and a search wrote
+ * none, so "which nodes does anyone actually read" — the question that says whether any of
+ * this is worth keeping — had no answer at all. The distinction that matters is not read
+ * versus write, it is whether the row names a PERSON; a tool_call deliberately does not, and
+ * all three of these do.
+ *
+ * ONLY HERE, never in `journalLog`. That file is the on-disk journal a person reads top to
+ * bottom, and a searchable store gets searched far more often than it gets written to — a
+ * read line per search would bury the eleven entries that record decisions.
  *
  * team_id AND team_slug, both. The slug alone is what zz.event carried for a week while
  * every console view that joins through `team_id` read empty — see 042_event_team_backfill.
@@ -44,7 +57,11 @@ import { db } from "./platform-db.js";
  * FIRE AND FORGET, catching everything: a journal entry that failed to write must never be
  * the reason a node the person already minted reports failure. */
 export function knowledgeEvent(e: {
-  actor: string; action: "add" | "supersede"; node: string;
+  actor: string; action: "add" | "supersede" | "search";
+  /** What the row is ABOUT, which is the `subject` column it lands in: the node id for an add
+   *  or a supersede, and the query itself for a search. Named for the column rather than for
+   *  one of the three actions — it was `node`, which a search has no single one of. */
+  subject: string;
   team: string | null; detail: Record<string, unknown>;
 }): void {
   const p = db();
@@ -52,7 +69,7 @@ export function knowledgeEvent(e: {
   void p.query(
     `insert into zz.event (actor, team_slug, team_id, kind, subject, detail)
      values (lower($1), $2, (select id from zz.team where slug = $2), $3, $4, $5)`,
-    [e.actor, e.team, `knowledge.${e.action}`, e.node, JSON.stringify(e.detail)],
+    [e.actor, e.team, `knowledge.${e.action}`, e.subject, JSON.stringify(e.detail)],
   ).catch(() => undefined);
 }
 /** Append a row to the journal's human-readable log. It is markdown, so it

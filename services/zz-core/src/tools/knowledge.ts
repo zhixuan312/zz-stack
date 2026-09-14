@@ -279,7 +279,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
       commitStore(root, who.email, "journal", id);
       const shelfName = scope === "platform" ? KNOWLEDGE_TEAM : team;
       knowledgeEvent({
-        actor: who.email, action: "add", node: id, team: shelfName,
+        actor: who.email, action: "add", subject: id, team: shelfName,
         detail: { title, type, scope, file },
       });
       const shelf = shelfName ? `${shelfName}'s shelf` : "your personal shelf";
@@ -410,7 +410,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
       // somebody with a team of their own belongs to the platform shelf and filing the
       // entry under their team would put it on a log nobody looking for it would read.
       knowledgeEvent({
-        actor: who.email, action: "supersede", node: old_id,
+        actor: who.email, action: "supersede", subject: old_id,
         team: root === knowledgeRoot() ? KNOWLEDGE_TEAM : team,
         detail: { supersededBy: new_id, file: oldFile },
       });
@@ -621,6 +621,35 @@ function subjectTagError(tags: string[] | undefined): string | null {
       }
 
       const superseded = results.filter((r) => (r as { status: string }).status === "superseded").length;
+
+      // WHAT CAME BACK, recorded against who asked. Until this line the knowledge base could
+      // say what had been written into it and nothing at all about what anyone read out —
+      // `knowledge_add` and `knowledge_supersede` each left three records and a search left
+      // none. "Which nodes does anybody actually read" is the question that decides whether a
+      // node earned its place, and it was unanswerable on a store with hundreds of them.
+      //
+      // THE IDS, not just the count. A row saying "someone searched and got nine results" is
+      // the same shape of half-measurement as a run that records that it happened and not what
+      // it did: it cannot tell a node nobody ever retrieves from one retrieved every day.
+      // `initiative/path` is the identifier the caller is handed back and the one
+      // `document_read` takes, so it is the id that joins to anything else.
+      //
+      // THE RETURNED SET, not the ranked one. `ranked` is everything retrieval considered,
+      // which is bounded by a candidate cap and says more about the query than about what
+      // reached a reader; `results` is what was actually put in front of the caller. Both
+      // numbers are kept so the difference stays visible.
+      knowledgeEvent({
+        actor: who.email, action: "search", subject: (query ?? "").slice(0, 200),
+        team,
+        detail: {
+          returned: results.map((r) => {
+            const row = r as { initiative: string; path: string; shelf: string };
+            return `${row.shelf}:${row.initiative}/${row.path}`;
+          }),
+          ranked_total: ranked.length, filters: { type, status, initiative, flow, tags },
+        },
+      });
+
       return text(JSON.stringify({
         team,
         query: query ?? null,

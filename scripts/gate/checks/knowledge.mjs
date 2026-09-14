@@ -339,6 +339,45 @@ check("a team-scoped node cannot be written by somebody in no team", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
+check("every act on the knowledge base leaves a record naming who did it", () => {
+  // WHAT THIS IS FOR. `knowledge_add` and `knowledge_supersede` each left three records — this
+  // table, `_knowledge/log.md`, and the store's git history — and `knowledge_search` left none,
+  // so the knowledge base could say what had been written into it and nothing whatever about
+  // what anyone read out. "Which nodes does anybody actually read" is the question that decides
+  // whether a node earned its place on a shelf of hundreds, and it had no answer.
+  //
+  // A tool_call row cannot serve, which is why this is a separate rule rather than a report:
+  // tool_call deliberately carries NO ACTOR (tool-telemetry.ts, "no address on a measurement")
+  // because it measures a skill rather than a person. The question here is about people.
+  //
+  // DERIVED FROM THE MODULE, not from a list of three names. The knowledge door's tools are
+  // whatever `tools/knowledge.ts` registers, so a fourth one added later inherits this without
+  // its author being told — which is the difference between a rule and a note. Scoped to that
+  // file on purpose: `knowledge_reconcile` lives elsewhere and reads zz.decision and zz.event
+  // rather than the shelves, so it is not an act on the knowledge base.
+  const src = zzCoreSource();
+  const MODULE = "services/zz-core/src/tools/knowledge.ts";
+  const mod = readFileSync(join(root, MODULE), "utf8");
+  const names = [...mod.matchAll(/registerTool\(\s*\n?\s*"(knowledge_[a-z_]+)"/g)].map((m) => m[1]);
+  // A walk that finds nothing passes for the wrong reason. This module registers the knowledge
+  // door; if it registers nothing, the check is reading a file that has moved.
+  if (names.length < 2) {
+    return `${MODULE} registers ${names.length} knowledge tool(s) — this check is reading the ` +
+           "wrong file, or the module has moved, and it is measuring nothing";
+  }
+  const bad = [];
+  for (const name of names) {
+    const at = src.indexOf(`registerTool(\n    "${name}"`);
+    if (at < 0) { bad.push(`${name} is no longer registered where this can read it`); continue; }
+    const body = src.slice(at, src.indexOf("\n  );", at));
+    if (!/knowledgeEvent\(/.test(body)) {
+      bad.push(`${name} leaves no record naming the caller — it acts on the knowledge base and ` +
+               "the journal cannot say who, when, or on what");
+    }
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
 check("supersession stays on one shelf and knows which", () => {
   // Ids restart at 0001 on each new shelf, so the same number exists in two places. A resolver
   // returning only a path would silently pick whichever it looked at first, and a cross-shelf

@@ -288,7 +288,7 @@ check("a tool that builds a path from an initiative name checks it first", () =>
   // outside the caller's store — proven on the live gateway, where a member of one team
   // listed the sources of a directory belonging to another."
   //
-  // Four of the five tools taking an `initiative` applied it. source_add did not, and built
+  // Every tool taking an `initiative` applied it but one. source_add did not, and built
   // `${initiative}/sources/…` from the raw argument. safePath still stopped it leaving the
   // store, which is why the gap read as harmless — but being inside the store and being an
   // initiative are different questions, and a name like `a/b` passed the first and is refused

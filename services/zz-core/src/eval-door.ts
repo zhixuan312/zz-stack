@@ -3,11 +3,11 @@
  *
  * WHY A DOOR AND NOT A TOOL GROUP. The core door is in the client package's REQUIRED baseline
  * plugin, so a tool registered there is on every account on this platform, whether or not that
- * person has ever evaluated anything. This door's ten tools are one flow's instrument:
+ * person has ever evaluated anything. The tools on THIS door are one flow's instrument:
  * `catalog/zz/zz-plugin-eval/flow.json` declares this path in its `servers`, so they arrive
  * with that flow's plugin and with nothing else. Somebody who has not installed
- * `zz-plugin-eval` now sees ten fewer tools to choose between — which is the whole point, since
- * a model picks a tool from the list it was given.
+ * `zz-plugin-eval` now sees every tool on this door gone from their list — which is the whole
+ * point, since a model picks a tool from the list it was given.
  *
  * ONE PROCESS, TWO DOORS — NOT A SECOND SERVICE. `serveMcp` takes a factory and runs it per
  * request, so two tool sets need no transport change, no new container, no duplicated
@@ -73,7 +73,7 @@ const EVAL_INSTRUCTIONS =
 /** The evaluation door, built the way the service mounts it.
  *
  * `recordingDoor` is not optional decoration: it is what makes a thrown `Refusal` arrive in
- * this platform's refusal shape, and what puts these ten names into the surface the service
+ * this platform's refusal shape, and what puts these names into the surface the service
  * records about itself. A door built without it serves tools that fail differently from every
  * other tool here and that `eval_block_surface('platform')` cannot see. */
 export function buildEvalServer(): McpServer {

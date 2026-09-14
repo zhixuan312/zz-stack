@@ -33,6 +33,7 @@ import "./gate/checks/build.mjs";
 import "./gate/checks/catalog-manifest.mjs";
 import "./gate/checks/plugin-declaration.mjs";
 import "./gate/checks/catalog-stages.mjs";
+import "./gate/checks/stage-produces.mjs";
 import "./gate/checks/marketplace.mjs";
 import "./gate/checks/catalog-servers.mjs";
 

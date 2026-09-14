@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.32
+version: 3.33
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -474,7 +474,7 @@ reading later can see one caused the other.
 **THE LAST ROW IS NOT ON YOUR LIST UNLESS YOU INSTALLED THAT FLOW.** `/core/mcp` is in the
 required baseline package, so every account on this platform carries every row above the last
 one. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that flow is not
-installed, those ten tools are not on your surface at all, and calling one answers "tool not
+installed, those tools are not on your surface at all, and calling one answers "tool not
 found" rather than refusing you. They are still the platform's tools and still zz-core's, which
 is why they are on this list and not mistaken for a building block's; what the door decides is
 who can reach them, not whose they are.

@@ -167,7 +167,7 @@ check("a skill that ships an asset does not say the asset is beside it", () => {
 
 check("every stage that writes a document names document_present, or says why not", () => {
   // ops-flow told its agent to present documents in full and its records show it did.
-  // sdlc-flow's eleven skill files never mentioned the subject, and its records show that
+  // sdlc-flow's skill files never mentioned the subject anywhere, and its records show that
   // too. The difference was never a decision — it was which prose happened to be loaded.
   // The departure regex is verified against ops-plan:177's actual wording.
   const bad = [];

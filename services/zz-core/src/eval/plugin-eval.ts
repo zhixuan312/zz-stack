@@ -83,7 +83,7 @@ function skillsDirOf(plugin: string): string {
  * the gate states at skill-tools.mjs:182-183: "Reachable = the baseline (/core, in every agent
  * and the required package) plus whatever the manifest declares."
  *
- * Reading `manifest.servers` alone reported sdlc as reaching NOTHING while its seventeen skills
+ * Reading `manifest.servers` alone reported sdlc as reaching NOTHING while the skills it ships
  * name eight zz-core tools between them. A plugin that names eight tools and reaches no server
  * is the "complete and unreachable" shape the gate exists to refuse — so the report said, of a
  * plugin that is entirely fine, the one thing this platform treats as most expensive.

@@ -17,7 +17,7 @@ import { flows, ourDocs } from "../facts.mjs";
 check("the README's map names every package, flow and script, and no others", () => {
   // The release command makes this map a release obligation — "a flow added or removed, a
   // scripts/ entry that is gone" — and nothing checked it, so it drifted on every axis at
-  // once: packages/catalog missing, the entire sdlc flow and its 16 skills missing, zz-access
+  // once: packages/catalog missing, the entire sdlc flow and every skill in it missing, zz-access
   // and zz-admin missing, and add-block.py still listed after it was deleted. A map that is
   // wrong in both directions is worse than none: it tells a newcomer a flow does not exist
   // and sends them to a script that does not.

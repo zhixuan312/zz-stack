@@ -223,20 +223,14 @@ for (const n of registered.keys()) {
   }
 }
 
-// ── no hand-maintained count describing the surface, in any of the three ────────────────
-//
-// Deleted rather than corrected: access-door.ts claimed 20/34 against a real 19/33, and
-// admin.ts claimed "all twenty tools" and "twenty-eight refusals" beside it. Task I-33 derives
-// the number; the numbers this door has live in this file, where they are measured.
-const WORDS = "(twenty|thirty|forty|eight|nineteen|sixteen|fourteen|thirty-four|twenty-eight)";
-for (const f of FILES) {
-  const src = readFileSync(f, "utf8");
-  const m = src.match(new RegExp(`\\b${WORDS}[- ](tools|refusals)\\b|\\b${WORDS}\\s+tools\\b`, "i"));
-  if (m) fail.push(`${f} still states a hand-maintained tool count: ${JSON.stringify(m[0])}`);
-}
+// NO HAND-MAINTAINED COUNT OF THIS DOOR, AND IT IS NO LONGER ASSERTED HERE. This file carried
+// its own rule for it — a list of the number-words that happened to be wrong, held against
+// three named files — which is the same hand-maintained thing it was refusing, one level up.
+// checks/derived-counts.mjs asks the question once, of everything git carries, by grammar
+// rather than by a list. The numbers this door has live BELOW, where they are measured.
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
-console.log(`manage surface: ok — 30 tools, ${MEMBER.length} for a member, ` +
+console.log(`manage surface: ok — ${registered.size} tools, ${MEMBER.length} for a member, ` +
             `+${LEAD.length} for a lead, +${SUPER.length} for a superadmin; ` +
             `${GONE.length} duplicates absent from ${scanned} files; ` +
             `${described.size} descriptions read`);

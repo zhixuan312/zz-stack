@@ -6,7 +6,7 @@ const size = (name, map, want) => {
   const n = Object.keys(map).length;
   if (n !== want) fail.push(`${name} has ${n} entries, expected ${want}`);
 };
-// 17, not 16. Sixteen is the RENAME count for /core — the 15 tools that stay plus
+// 17, not 16. Sixteen is the RENAME count for /core — the tools that rename and stay, plus
 // reindex_knowledge, which is renamed as it moves. block_skills is a MERGE, counted
 // separately from renames in the spec's own table, but it still needs an alias entry so
 // its history resolves. Renames and entries are different quantities and the plan's

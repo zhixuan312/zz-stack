@@ -338,3 +338,6 @@ check("the two misnamed core skills are renamed, every caller moved, and an old 
 
 check("every eval case is discovered once, from the tree its manifest declares",
       runsCheck("eval-suite-once.mjs"));
+
+check("no shipped file states a count of this platform's own surface",
+      runsCheck("derived-counts.mjs"));

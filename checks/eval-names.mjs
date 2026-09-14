@@ -49,7 +49,7 @@ for (const t of registered) {
   }
 }
 
-// The six skills name the new tools and none of the old ones.
+// Every skill that plugin ships names the new tools and none of the old ones.
 const skillsDir = "catalog/zz/zz-plugin-eval/skills";
 for (const s of readdirSync(skillsDir)) {
   const body = readFileSync(join(skillsDir, s, "SKILL.md"), "utf8");

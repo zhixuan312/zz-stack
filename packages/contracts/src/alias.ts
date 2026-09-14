@@ -9,7 +9,7 @@
 // mergers and exceptions (`get_my_info` → `session_whoami`, not `whoami`; `block_skills`
 // merged into `skill_list` rather than renamed to it).
 
-/** `/core`'s renames: the 15 tools that rename and stay on `/core`, plus `block_skills`
+/** `/core`'s renames: the tools that rename and stay on `/core`, plus `block_skills`
  * (merged into `skill_list` rather than renamed, but aliased anyway so its history still
  * resolves) and `reindex_knowledge` (renamed AND moved to `/manage`; its alias lives here
  * because the old name lived on `/core`).

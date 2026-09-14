@@ -19,8 +19,8 @@ check("no tool description teaches a path form the platform refuses", () => {
   // implementation rejects, in the sentence a model reads before deciding how to call it.
   // Three tools carried it.
   const bad = [];
-  // Every service source, not each service's server.ts. admin.ts registers twenty tools of
-  // its own and was never looked at, and a description there is read by exactly the same
+  // Every service source, not each service's server.ts. admin.ts registers a door's worth of
+  // tools of its own and was never looked at, and a description there is read by exactly the same
   // model, before exactly the same call.
   for (const f of sourceFiles(["services"], [".ts"])) {
     const src = readFileSync(join(root, f), "utf8");
@@ -113,7 +113,7 @@ check("a skill never names a platform tool that does not exist", () => {
     // form is how a skill writes a tool name inside an example argument or a JSON fragment —
     // `skill_read("zz-handover")` is quoted prose away from being written the other way, and a
     // name that only ever appears in quotes was invisible here. Measured before it was added:
-    // across all thirty skills it introduces no finding of its own, so it widens the reach and
+    // across every skill on the shelf it introduced no finding of its own, so it widens the reach and
     // not the noise. A bare word still cannot fire, which is the whole defence against a tool
     // whose name is also English.
     for (const m of txt.matchAll(/`([a-z][a-z0-9_]{3,40})[`(]|"([a-z][a-z0-9_]{3,40})"/g)) {

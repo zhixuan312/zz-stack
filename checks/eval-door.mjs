@@ -352,12 +352,16 @@ for (const [path, own, other] of [["/eval/mcp", "EVAL_URL", "CORE_URL"],
 // DOORS is unauthenticated and is how anyone who reaches this gateway learns what it offers;
 // the manifest is what puts the door into the `.mcp.json` of the plugin that ships the flow.
 // A door nobody can find and nobody installs is a door only this check knows about.
-const doorsBlock = /const DOORS = \[([\s\S]*?)\n\];/.exec(gwCode)?.[1] ?? null;
+// SHAPE CHANGED AT TASK I-33: DOORS was an array of `{ path: … }` a person typed, and is now a
+// record keyed by the express path each door is MOUNTED at, with `doorIndex()` reading the
+// mounted paths off the router. A regex still looking for the old shape would find nothing, so
+// not finding it is reported as this scan going BLIND rather than shrugged at.
+const doorsBlock = /const DOORS: Record<[\s\S]*?> = \{([\s\S]*?)\n\};/.exec(gwCode)?.[1] ?? null;
 if (gwSrc && !doorsBlock) {
   blind.push(`${GW_SRC_PATH} — DOORS could not be located, so nothing about what the gateway ` +
              "announces was checked");
 } else if (doorsBlock) {
-  const announced = new Set([...doorsBlock.matchAll(/path:\s*"([^"]+)"/g)].map((m) => m[1]));
+  const announced = new Set([...doorsBlock.matchAll(/^ {2}"([^"]+)":/gm)].map((m) => m[1]));
   for (const p of ["/eval/mcp", "/core/mcp"]) {          // the second is the control
     if (!announced.has(p)) fail.push(`DOORS does not announce ${p}`);
   }
@@ -386,12 +390,15 @@ if (mfRaw !== null) {
 // the surface name is how `/p/<block>/mcp` is routed. So a new door whose name was never added
 // to that set does not merely get a wrong label: every evaluation call is recorded as traffic
 // to a third-party block nobody granted and no registry has heard of.
-const telemetryMount = /app\.use\(\[([^\]]*)\]/.exec(gwCode)?.[1] ?? "";
-if (!telemetryMount) {
-  blind.push(`${GW_SRC_PATH} — the telemetry mount's path list could not be located`);
-} else if (!telemetryMount.includes('"/eval/mcp"')) {
-  fail.push("the evaluation door is not in the telemetry mount's path list, so not one call " +
-            "through it is recorded — the door is invisible to every question about usage");
+// AND IT TAKES ITS PATHS FROM DOORS, NOT FROM A LIST OF ITS OWN. It was a literal array of the
+// same four paths written a second time — which is how a door gets added to the routes and not
+// to the telemetry: nothing fails, nothing is empty, and every call through it is filed under
+// `core`. Asserting "/eval/mcp appears in that array" only ever caught the door this task
+// added; asserting the array IS DOORS catches every door anybody adds after it.
+if (!/app\.use\(Object\.keys\(DOORS\),/.test(gwCode)) {
+  fail.push("the telemetry mount does not take its paths from DOORS, so what this gateway " +
+            "serves and what it records are two lists again — and a door in the first and not " +
+            "the second has every call through it filed under the core door's name");
 }
 // AND THE NAME IS CALLED FOR, NOT READ. Being in the mount list above is half of it: the
 // middleware asks a function which door a request came through, and that function falls
@@ -462,5 +469,5 @@ console.log(`eval door: ok — zz-core serves two doors a client can open: /mcp 
             `/eval/mcp.\n` +
             `           NOT COVERED: which door a tool is on is absent from the surface record ` +
             `— zz.block_tool has no door column, so eval_block_surface('platform') will report ` +
-            `NO CHANGE when these ten tools move. That is Task I-39, and this check passing ` +
+            `NO CHANGE when the ${evalTools.size} tools on that door move. That is Task I-39, and this check passing ` +
             `does not speak to it.`);

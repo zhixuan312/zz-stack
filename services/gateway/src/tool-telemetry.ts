@@ -9,7 +9,7 @@
  * transport status is blind to exactly the outcomes we are trying to count.
  *
  * It was also blind to most of the platform. `tool_call` fired only for `/p/<block>/mcp`.
- * The 21 tools on zz-core — document_write, document_patch, the gates, initiative_status, the whole
+ * Every tool on zz-core — document_write, document_patch, the gates, initiative_status, the whole
  * flow — went through `/core/mcp`, which had no telemetry at all. The tools that do the
  * work were the tools nothing recorded.
  *

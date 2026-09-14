@@ -1,7 +1,7 @@
 // Seven skills move, their commands follow, and none is left behind or duplicated.
 //
 // THE PLAN'S VERSION OF THIS CHECK COULD NOT DISCRIMINATE, and the reason is worth writing
-// down because it is the same reason twice. It asserted the four skills arriving at the
+// down because it is the same reason twice. It asserted the skills arriving at the
 // baseline were at `catalog/zz/zz-core/skills/` — a path client-package.ts never reads. The
 // baseline is the ONE plugin whose files are not resolved from the catalog: `baselineFiles`
 // walks `ZZ_SKILLS_DIR` (this repository's `skills/`) and synthesises `zz-router` on top,

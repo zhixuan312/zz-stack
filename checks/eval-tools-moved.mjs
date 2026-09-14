@@ -162,7 +162,7 @@ for (const f of files) {
 
 // ── 2. Only the eval side reaches into the eval side ──────────────────────────────────────
 //
-// THE POINT OF THE MOVE. The ten tools are one flow's instrument; a core tool that imports the
+// THE POINT OF THE MOVE. Those tools are one flow's instrument; a core tool that imports the
 // judge puts that flow's machinery back into every account's process and back into the
 // directory checks/core-surface-19.mjs scans for the core door's surface. `eval-door.ts` is
 // the single exception and is named rather than pattern-matched: it is the function the

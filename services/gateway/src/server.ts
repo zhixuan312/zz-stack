@@ -6,10 +6,10 @@
  * request through to the real endpoint. Keys live in /data/credentials.json
  * (named volume, never leaves the host).
  *
- * Endpoints:
- *   /manage/mcp          MCP server with credential-management tools
- *   /p/<platform>/mcp    streaming reverse proxy to the platform's real MCP,
- *                        authenticated with the calling user's stored key
+ * Endpoints: DOORS below, which is also what `/` serves and what this process prints on boot.
+ * It is not restated here — this list named some of the MCP doors and not the rest, which is
+ * the same drift the boot line had, and a header that is a stale part of a list further down
+ * teaches nothing the list does not.
  */
 import { CatalogManifest, Envelope, jsonSchema } from "@zz/contracts";
 import { serveMcp } from "@zz/mcp-http";
@@ -164,26 +164,108 @@ app.use((req, res, next) => {
 // reaches this gateway — a person, an agent, a new team's engineer — must be
 // able to ask it what it offers without being told first. Unauthenticated by
 // design: it reveals the shape of the platform, never anything inside it.
-const DOORS = [
-  { path: "/core/mcp", name: "zz-core", who: "everyone",
+//
+// THE PATHS ARE READ OFF THE ROUTER, not kept here beside it. This was an array whose `path`
+// field a person typed, and it had already drifted: the boot line printed from it "named four
+// doors and the gateway serves six", so /app and /pkg — the two a person is most likely to be
+// looking for — appeared in no log. A description of what this gateway serves is now computed
+// from what it serves. `doorIndex` below asks express which routes were mounted; DOORS is what
+// each one MEANS, filed under the path it is mounted at.
+//
+// WHAT STAYS WRITTEN, AND WHY THAT IS RIGHT. `who`, `what` and `auth` are judgement — who
+// should reach this, what it is for, in a sentence a stranger can act on — and no derivation
+// produces them. `name` is editorial in the same way: "access (behind the ZZ Access agent)" is
+// how a person finds that door in a client, not an identifier anything resolves. The PATH was
+// the part that drifted, and the path is the part that is no longer written down twice.
+//
+// A KEY IS THE EXPRESS PATH, parameter syntax and all, because that is the string the route is
+// mounted at and matching it is the whole point. `/` prints it the way a person types it.
+const DOORS: Record<string, { name: string; who: string; what: string; auth: string }> = {
+  "/core/mcp": { name: "zz-core", who: "everyone",
     what: "The process layer: skills, your team's knowledge store, documents and their gates, the sources behind them, and where each initiative stands.",
     auth: "Bearer <your token>" },
-  { path: "/manage/mcp", name: "access (behind the ZZ Access agent)", who: "everyone; the tool list is your role",
+  "/manage/mcp": { name: "access (behind the ZZ Access agent)", who: "everyone; the tool list is your role",
     what: "Access, yours and everybody's: your own building-block keys, your platform token and your client setup \u2014 and, if your role carries them, people, teams, the flow registry, block grants and the projections into every client the platform serves. The tools you are offered are the ones your role can execute, so a tool you cannot see is a fact about you, not about the platform; whoami says which. Each tool still authorises per call, because a tool you can run for one team is not one you can run for another.",
     auth: "Bearer <your token>" },
-  { path: "/eval/mcp", name: "zz-plugin-eval", who: "teams that installed the zz-plugin-eval flow",
+  "/eval/mcp": { name: "zz-plugin-eval", who: "teams that installed the zz-plugin-eval flow",
     what: "Evaluating a plugin: what its real runs did, what a recorded ablation says installing it is worth, and the ruler both are scored against. Separate from /core/mcp because it is one flow's instrument rather than everybody's process layer — it is on the door you get by installing that flow, and on no other.",
     auth: "Bearer <your token>" },
-  { path: "/p/<block>/mcp", name: "building blocks", who: "teams granted that block",
+  "/p/:platform/mcp": { name: "building blocks", who: "teams granted that block",
     what: "A third-party platform, called with YOUR OWN key. Store the key first via /manage.",
     auth: "Bearer <your token>" },
-];
+};
+
+/** Every MCP path this app has actually mounted, in the order it mounted them.
+ *
+ * `_router` is express's own registration table and it is the only place that knows the
+ * answer: `serveMcp` and `app.all` both end in `app.all(path, …)`, so one read covers every
+ * door however it was mounted. Private API, which is why it is read in ONE function with a
+ * declared shape and why an empty answer is a failure rather than an empty list.
+ *
+ * A DOOR ANSWERS EVERY METHOD, AND THAT IS THE TEST — not the path alone. An MCP door takes
+ * POST and refuses GET and DELETE with 405, which is the spec's "this server does not push"
+ * and "there is no session to end"; `serveMcp` writes both, and `app.all` is what registers
+ * them. Something else may perfectly well live at a path ending in `/mcp` — the OAuth spec
+ * puts a door's resource metadata at `/.well-known/oauth-protected-resource/p/<block>/mcp`,
+ * and relay.ts already builds that URL — and those are GETs. A path-only test would read one
+ * as a fifth door, find no prose for it, and take the gateway down at boot. So the shape of
+ * the registration decides, and a single-method route is not a door however it is named. */
+const mountedDoors = (): string[] => {
+  const router = (app as unknown as {
+    _router?: { stack?: { route?: { path?: unknown; methods?: Record<string, boolean> } }[] };
+  })._router;
+  return (router?.stack ?? [])
+    .filter((layer) => {
+      const m = layer.route?.methods;
+      return Boolean(m?.post && m.get && m.delete);
+    })
+    .map((layer) => layer.route?.path)
+    .filter((path): path is string => typeof path === "string" && path.endsWith("/mcp"));
+};
+
+/** The door index a stranger reads at `/`, and the boot line prints.
+ *
+ * FAILS LOUDLY ON AN EMPTY LIST, AND ON EITHER HALF GOING SHORT. An empty index is not a
+ * smaller answer, it is a wrong one: it tells every caller that this platform offers nothing,
+ * and it would arrive with a 200 and no error anywhere. A mounted door nobody wrote prose for
+ * would otherwise be served and never announced; prose for a door nothing mounts would
+ * otherwise be announced and 404 the person who believed it.
+ *
+ * The express parameter is rewritten the way a person types it — `/p/:platform/mcp` is
+ * `/p/<platform>/mcp` to anyone who is not express — and that is the only difference between
+ * what is mounted and what is printed. */
+const doorIndex = (): { path: string; name: string; who: string; what: string; auth: string }[] => {
+  const mounted = mountedDoors();
+  if (mounted.length === 0) {
+    throw new Error("this gateway has mounted no MCP door: `/` would answer with an empty index, " +
+                    "which tells every caller the platform offers nothing.");
+  }
+  const undescribed = mounted.filter((path) => !DOORS[path]);
+  if (undescribed.length) {
+    throw new Error(`mounted and unannounced: ${undescribed.join(", ")} — a door nobody can be ` +
+                    "told about is a door nobody can use. Give it an entry in DOORS.");
+  }
+  const unmounted = Object.keys(DOORS).filter((path) => !mounted.includes(path));
+  if (unmounted.length) {
+    throw new Error(`announced and unmounted: ${unmounted.join(", ")} — the door index would ` +
+                    "send a caller to a path this process does not serve.");
+  }
+  // THE SET IS THE ROUTER'S; THE ORDER IS EDITORIAL. Both guards above have just proved the
+  // two sets identical, so iterating DOORS here cannot announce a path that is not mounted or
+  // omit one that is. What it buys is that the door a stranger should read first stays first:
+  // mount order puts /manage before /core, and the core door is the one almost every caller
+  // wants. Order is judgement, like `who` and `what`, and it is kept where the judgement is.
+  return Object.keys(DOORS).map((path) => ({
+    path: path.replace(/:([A-Za-z_]\w*)/g, "<$1>"),
+    ...DOORS[path],
+  }));
+};
 
 app.get("/", (req, res) => {
   const base = process.env.GATEWAY_PUBLIC_URL || `http://${req.headers.host ?? "this-host"}`;
   const wantsJson = (req.headers.accept ?? "").includes("application/json");
   if (wantsJson) {
-    res.json({ platform: "ZZ Stack", base, doors: DOORS,
+    res.json({ platform: "ZZ Stack", base, doors: doorIndex(),
                how_to_get_a_token: "Ask any agent on the platform: 'issue me an access token'. It is shown once." });
     return;
   }
@@ -194,7 +276,7 @@ app.get("/", (req, res) => {
     "describes itself: connect and call tools/list to see exactly what it",
     "offers, with each tool's arguments. Nothing here needs a manual.",
     "",
-    ...DOORS.flatMap((d) => [
+    ...doorIndex().flatMap((d) => [
       `${base}${d.path}`,
       `    ${d.name} — ${d.who}`,
       `    ${d.what}`,
@@ -287,7 +369,7 @@ mountSettings(app, {
 // as `core` — nothing fails, nothing is empty, and every number about it is wrong. See
 // doorSurface's own paragraph for what rides on the answer; checks/eval-door.mjs calls it per
 // door rather than reading this line.
-app.use(["/core/mcp", "/eval/mcp", "/manage/mcp", "/p/:platform/mcp"],
+app.use(Object.keys(DOORS),
         toolCallTelemetry((req) => doorSurface(req.originalUrl)));
 
 serveMcp(app, "/manage/mcp", buildAccessServer);
@@ -352,6 +434,6 @@ initPlatformDb()
       // Printed from DOORS, the same list served at `/`. Written by hand it had already
       // drifted: it named four doors and the gateway serves six, so /app and /pkg — the two
       // a person is most likely to be looking for — appeared nowhere in the logs.
-      console.log(`workspace-gateway (TS) listening on :8000 (${DOORS.map((d) => d.path).join(" ")})`),
+      console.log(`workspace-gateway (TS) listening on :8000 (${doorIndex().map((d) => d.path).join(" ")})`),
     );
   });

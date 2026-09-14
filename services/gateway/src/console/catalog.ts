@@ -303,8 +303,8 @@ export function mountCatalog(app: Express): void {
 
     const rows = diskPlugins().map((p) => {
       // EVERY SKILL IT SHIPS, not its stages. The flow routes allowed `stages` plus the entry,
-      // which is the method's running order and not its contents: sdlc ships thirteen skills
-      // and declares seven stages, so six of them — sdlc-method, sdlc-recall, the audit criteria —
+      // which is the method's running order and not its contents: sdlc ships more skills than
+      // it declares stages, so the difference — sdlc-method, sdlc-recall, the audit criteria —
       // were unlistable and unreadable in a console that packages them. Position is carried
       // where the method declares one, and is null where the skill is simply shipped.
       const shipped = skillsIn(p.skillsDir);

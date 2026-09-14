@@ -1,6 +1,6 @@
 # State — zz-stack
 
-Status: 0.34.0 (2026-09-14). What we believe, and what we have. The world as it stands at this
+Status: 0.35.0 (2026-09-14). What we believe, and what we have. The world as it stands at this
 version — not a record of how it got here.
 
 §6 is held to a stricter bar than the rest of this file: **verified, in production**. §6b
@@ -432,12 +432,18 @@ is the balance, and the balance is:
 - **One deployment**, whose address is read off the machine rather than written here — gateway
   on the `api.` subdomain of the host's own name, console on the bare host.
   `ssh <host> 'curl -s ifconfig.me'` is the one answer that cannot go stale. Four containers: zz-core, cred-proxy, postgres, and the console.
-- **Three flows in the catalog:** `sdlc-flow` (7 stages, 17 skills), `zz-plugin-eval`
-  (5 stages, 6 skills), and `zz-access`, which is shelved. The two component-level
-  evaluators, `zz-skill-eval` and `zz-block-eval`, were deleted when `zz-plugin-eval`
-  replaced them; the rows they registered on this deployment are still in `zz.skill`.
-- **The doors:** `/core/mcp`, `/manage/mcp` (the tool list IS the caller's role — 20 for a
-  member, 24 for a team admin, 34 for a superadmin), `/p/<block>/mcp`.
+- **Four packages in the catalog:** `sdlc-flow` and `zz-plugin-eval` are flows — they declare
+  documents — while `zz-core` (the baseline everyone gets) and `zz-access` declare none and are
+  surfaces rather than flows. `@zz/catalog`'s `isFlow()` decides on that field and nothing else.
+  The two component-level evaluators, `zz-skill-eval` and `zz-block-eval`, were deleted when
+  `zz-plugin-eval` replaced them; the rows they registered on this deployment are still in
+  `zz.skill`.
+- **Four doors**, counted against the live deployment on 2026-09-14 rather than from memory:
+  `/core/mcp` (19), `/manage/mcp` (31, and the tool list IS the caller's role — 16 for a member,
+  +4 for a team lead, +11 for a superadmin), `/eval/mcp` (10, which you get by installing the
+  zz-plugin-eval flow), and `/p/<block>/mcp`. This bullet said THREE doors and 20/24/34 until
+  0.35.0 — a section held to "verified, in production" describing the release before it, which
+  is the failure its own opening paragraph warns about.
   Every route the gateway serves has a caller; the gate holds that.
 - **One terminal client.** claude-code. The console is the one browser
   surface, and it is a separate repository; the gateway serves it no HTML of its own.
@@ -526,7 +532,15 @@ hand-kept count of this platform's own surface. It also invokes what is in `chec
 for months it did not: a check dropped in that directory is registered or named with a reason,
 and a new one that is neither turns the gate red naming the file.
 
-**What is NOT claimed.** No evaluation round has run against any of this; the eval tables still
+**What is no longer NOT claimed.** This said no evaluation round had run against any of it.
+One has: four suites were run on 2026-09-14 — eleven cases across all four plugins, both arms
+on every case, zero errored runs, $15.76 — and `case_record` carried all four into
+`zz.plugin_case_run`, which now holds eight recordings across eight plugin versions. What is
+still unclaimed is a JUDGED round: no ruler has been agreed and no `findings.md` has ever been
+written, so the flow's last two stages remain unexercised. The rest of this paragraph, which
+described the eval tables as empty, is kept below for the part of it that is still true.
+
+**What is NOT claimed.** The eval tables still
 hold zero rows, which is the same sentence 0.11.0 wrote. The renames are proven to resolve by
 checks that import the frozen maps, not by a caller having used an old name in anger. The
 telemetry columns are proven to be written and read by a check that drives the recorder against

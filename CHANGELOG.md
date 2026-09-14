@@ -33,6 +33,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.35.0] — 2026-09-14 · console 0.7.0
+
+Two things that were each half-connected: the eval suite and the flow that judges it, and the
+console's overview and the numbers the gateway had started sending it.
+
+### Added
+- **`plugin_profile` answers with its own next step.** The suite and this platform are one
+  pipeline and were reachable only as two: `claude plugin eval` measures, `case_record` stores
+  what it measured, and every stage after the profile judges what was stored — with nothing
+  joining them. A person ran the suite, read the numbers off their terminal and stopped, and
+  the platform went on serving a three-week-old measurement with twelve errored runs in it.
+  That happened here, with four suites run and eleven cases measured.
+
+  `sufficient_for_judging: false` was the whole answer, and a boolean is not an instruction.
+  The profile now returns `next_action` in the shape `initiative_status` already answers with:
+  the command with the plugin's name in it, the `case_record` call that follows, what it costs
+  before it is spent, and the one trap worth naming — point it at `marketplace/<plugin>`, never
+  the repository root. Null when the evidence is already there.
+- **Console — the overview leads with four questions**: is work progressing, is what we write
+  down worth reading, is the tool surface breaking, is the system straining. Each carries a
+  mark underneath — a stage bar, a distribution strip — and the API sends figures only, so the
+  page renders with no model in the path.
+
+### Changed
+- **zz-access's purpose admits the operator acts it already carries.** It said a tool belongs
+  on `/manage` when it "hands somebody a key or changes who holds one" — which `knowledge_reindex`
+  does not do. The placement was right and the sentence was wrong: rebuilding a derived table
+  for a team the caller need not be in is a superadmin's act on a deployment, not a step inside
+  one team's work. The rule now admits it by construction rather than by exception.
+- **zz-plugin-profile 0.5 → 0.6** reads the eval command out of the tool's answer instead of
+  restating it, so the instruction is generated from the plugin actually asked about.
+
+### Fixed
+- **Console — the initiative stage bar dropped two of its six stages.** It rendered
+  `stages.complete`, which this gateway has never sent: `gated` and `closed` are two rungs,
+  because an initiative can have every gate approved and still be open with nobody having said
+  what came of it. Measured against production, eleven of forty-one active initiatives were
+  invisible in that bar. The test fixture carried the same wrong key and was not typed against
+  the interface, so 158 tests passed while the contract was broken — it is typed now, and
+  putting the old key back fails the build by name.
+
+### Upgrade notes
+- **Nothing to do on the platform.** `next_action` is an added field; no tool argument, schema
+  or migration changed.
+- **Re-pull your client package** if you have not since 0.34.0 — that release renamed the
+  baseline plugin to `zz-core` and moved three command prefixes.
+
 ## [0.34.0] — 2026-09-14
 
 The platform's surface — every tool name, which door serves it, and which plugin ships each

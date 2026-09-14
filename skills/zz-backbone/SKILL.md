@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.30
+version: 3.31
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -467,7 +467,7 @@ reading later can see one caused the other.
   | knowledge | `/core/mcp` | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
   | skills | `/core/mcp` | `skill_list` `skill_read` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_cases_record` `plugin_conform` `plugin_ruler` `plugin_ruler_record` `plugin_affirm` `plugin_judge` `plugin_scores` `plugin_finding_record` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `case_record` `finding_record` |
 
 **THE LAST ROW IS NOT ON YOUR LIST UNLESS YOU INSTALLED THAT FLOW.** `/core/mcp` is in the
 required baseline package, so every account on this platform carries every row above the last
@@ -479,10 +479,10 @@ who can reach them, not whose they are.
 
 The evaluation tools belong to the evaluation flow. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Most only read; the four that write — `plugin_cases_record`, `plugin_ruler_record`,
-`plugin_affirm` and `plugin_finding_record` — record a fact or a decision and never a score.
+Most only read; the four that write — `case_record`, `ruler_record`, `ruler_affirm` and
+`finding_record` — record a fact or a decision and never a score.
 
-**The judge is not the agent.** `plugin_judge` takes identifiers and nothing else: it cannot be
+**The judge is not the agent.** `round_judge` takes identifiers and nothing else: it cannot be
 handed a ruler, an artifact or a model. The ruler comes from the registry, the artifacts from
 the store, and the model is pinned by deployment configuration and named on every row. That is
 what makes one round comparable with the next — a judge that varied with the conversation would

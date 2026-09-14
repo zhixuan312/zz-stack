@@ -50,7 +50,7 @@ This is the part that most often gets read wrong, so it is stated before anythin
 
 | | where it comes from | needs | answers |
 |---|---|---|---|
-| **cases** | `claude plugin eval`, recorded by `plugin_cases_record` | nothing — somebody writes them | does installing this beat not installing it? |
+| **cases** | `claude plugin eval`, recorded by `case_record` | nothing — somebody writes them | does installing this beat not installing it? |
 | **traces** | the event log, via `plugin_profile` | five usable runs | what did it actually do in real use? |
 
 **Cases need no history at all.** A plugin released this morning can be evaluated this
@@ -63,7 +63,7 @@ consequence of the design, not of the data.
 
 ## The one hard rule
 
-**You are not the judge.** Scoring is `plugin_judge`, which takes a plugin, a version and a
+**You are not the judge.** Scoring is `round_judge`, which takes a plugin, a version and a
 ruler id and nothing else: it assembles the subjects and runs a model pinned by the deployment.
 You orchestrate, you narrate, you write the documents. Your own reading of an artifact belongs
 in `findings.md` as an observation, never in the table as a score — a judge that varies with the
@@ -106,7 +106,7 @@ is never yours.
 
 ❌ **Stopping because the trace block is thin.** Read the case block. Only both empty is a stop.
 
-❌ **Scoring before `rulers.md` is approved.** `plugin_affirm` refuses, and the refusal is the
+❌ **Scoring before `rulers.md` is approved.** `ruler_affirm` refuses, and the refusal is the
 gate working.
 
 ❌ **Running the case suite because a profile looked stale.** It costs real money on the

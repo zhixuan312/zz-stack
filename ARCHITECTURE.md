@@ -76,13 +76,21 @@ tests/                          fixtures for this package — requirements, step
 
 ### `skills/` — carried by everyone
 
-`zz-backbone` and `zz-knowledge`, which a flow loads, and `zz-doctor`, `zz-update` and
-`zz-migrate`, which a person types — the last three name their command in their own
-frontmatter (`command: doctor`) and the baseline plugin promotes exactly those. A package in
-`catalog/` says the same thing in its manifest's `commands` map; this tree has no manifest,
-so each skill carries its own entry. These are not in `catalog/` because they
-belong to no package: everybody carries them regardless of which flow they run. A skill goes
-here only when that is true of it.
+`zz-backbone` and `zz-knowledge`, which a flow loads; `zz-deck`, `zz-tldr` and
+`zz-breakout`, which a person types; and `zz-authoring`, the library the first two of those
+load. The typed three are named in the baseline's own manifest at
+`catalog/zz/zz-core/flow.json`, in the same `commands` map every other package uses — the
+baseline had no manifest once and each skill carried its own `command:` line, and that is
+gone rather than kept as a second way of saying it.
+
+These are here and not under the baseline's catalog entry for one reason: `zz-router` is
+generated per person from the flows they installed, so the baseline's files are synthesised
+by `buildClientPackage` rather than read from a catalog everybody shares. A skill placed under
+`catalog/zz/zz-core/skills/` ships in no plugin at all.
+
+What does NOT belong here is anything about the machine or the credential rather than the
+record — a 401, a connection, a plugin version, a legacy import. `zz-doctor`, `zz-update` and
+`zz-migrate` are in `catalog/zz/zz-access/` with the rest of the credential door.
 
 ### `blocks/<block>/` — someone else's building block
 

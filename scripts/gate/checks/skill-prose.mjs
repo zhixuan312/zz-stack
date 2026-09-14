@@ -368,7 +368,7 @@ check("no skill template hands a model a field the platform owns", () => {
 check("a skill names the command a person would actually type", () => {
   // A command is `/<plugin>:<file>`. The plugin half is computed — a trailing `-flow` is
   // dropped — and the command half is DECLARED, in the manifest's `commands` map. So
-  // sdlc-flow's tldr skill is typed `/sdlc:tldr` because flow.json says `"tldr": "sdlc-tldr"`.
+  // zz-core's tldr skill is typed `/zz-core:tldr` because flow.json says `"tldr": "zz-tldr"`.
   //
   // Twelve places said `/zz:sdlc-tldr` — the namespace from when every flow shipped inside
   // one `zz` plugin. The `zz` plugin carries the router skill and NO commands, so every one

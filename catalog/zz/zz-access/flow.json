@@ -14,7 +14,10 @@
   ],
   "commands": {
     "connect": "zz-access",
-    "admin": "zz-admin"
+    "admin": "zz-admin",
+    "doctor": "zz-doctor",
+    "migrate": "zz-migrate",
+    "update": "zz-update"
   },
   "agentName": "ZZ Access",
   "license": "MIT"

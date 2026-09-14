@@ -60,19 +60,55 @@ if (dupes.length) bad.push(`the package emits the same path twice: ${[...new Set
 if (!paths.some((f) => /(^|\/)commands\//.test(f))) bad.push("the package carries no commands");
 
 // A promoted skill's ASSETS still travel — only its SKILL.md moves into commands/.
-// sdlc-deck resolves its chassis relative to the plugin root, and a deck built without the
+// zz-deck resolves its chassis relative to the plugin root, and a deck built without the
 // chassis is the one failure that skill says to stop on. The guidebook travels too: it's the
 // reference material a person reaches for, and gate.mjs reads it directly.
+//
+// EVERY PATH IS PLUGIN-QUALIFIED, and that is the half this probe was missing. The deck moved
+// from sdlc-flow to the baseline on 2026-09-14, and the baseline is built from a DIFFERENT
+// branch of client-package.ts — `baselineFiles`, over the tree at `skills/`, not
+// `residentFiles` over the catalog. An unqualified `commands/deck.md$` is satisfied by either
+// branch, so it would have gone on passing had the deck shipped from the flow, from the
+// baseline, or from both at once. `zz-core/` in front of it is what makes it an assertion
+// about where the deck actually is.
 for (const [re, why] of [
-  [/skills\/sdlc-deck\/deck-chassis\.html$/, "the deck chassis did not travel with the promoted skill"],
-  [/skills\/sdlc-deck\/deck-guidebook\.html$/, "the deck guidebook did not travel with the promoted skill"],
-  [/commands\/deck\.md$/, "sdlc-deck was not promoted to commands/deck.md"],
+  [/^zz-core\/skills\/zz-deck\/deck-chassis\.html$/, "the deck chassis did not travel with the promoted skill"],
+  [/^zz-core\/skills\/zz-deck\/deck-guidebook\.html$/, "the deck guidebook did not travel with the promoted skill"],
+  [/^zz-core\/commands\/deck\.md$/, "zz-deck was not promoted to zz-core/commands/deck.md"],
+  [/^zz-core\/commands\/tldr\.md$/, "zz-tldr was not promoted to zz-core/commands/tldr.md"],
+  [/^zz-core\/commands\/breakout\.md$/, "zz-breakout was not promoted to zz-core/commands/breakout.md"],
 ]) {
   if (!paths.some((f) => re.test(f))) bad.push(why);
 }
+// zz-authoring is a LIBRARY: loaded by the other two, never typed. It ships as a skill and
+// must not become a command — the manifest is the only thing that decides which, so a stray
+// entry in the commands map would silently add a command nobody meant to publish.
+if (paths.some((f) => /^zz-core\/commands\/authoring\.md$/.test(f))) {
+  bad.push("zz-authoring is a library and shipped as a command");
+}
+if (!paths.some((f) => /^zz-core\/skills\/zz-authoring\/SKILL\.md$/.test(f))) {
+  bad.push("zz-authoring did not ship as a skill");
+}
+// The three that went the other way: machine and credential, out of the baseline into
+// zz-access. Asserted on BOTH sides — present there, absent here — because a move that left a
+// copy behind ships two of everything and the shelf renders both without complaint.
+for (const cmd of ["doctor", "update", "migrate"]) {
+  if (!paths.some((f) => f === `zz-access/commands/${cmd}.md`)) {
+    bad.push(`zz-${cmd} was not promoted to zz-access/commands/${cmd}.md`);
+  }
+  if (paths.some((f) => f === `zz-core/commands/${cmd}.md`)) {
+    bad.push(`zz-core still ships commands/${cmd}.md — the skill moved to zz-access`);
+  }
+}
+// And their scripts, which are the whole of what those three skills do.
+for (const asset of ["zz-doctor/doctor.mjs", "zz-update/update.mjs", "zz-migrate/migrate.mjs"]) {
+  if (!paths.some((f) => f === `zz-access/skills/${asset}`)) {
+    bad.push(`zz-access/skills/${asset} did not travel with the promoted skill`);
+  }
+}
 // And the command must resolve the chassis from where it actually sits.
-const deck = pkg.files.find((f) => /commands\/deck\.md$/.test(f.path));
-if (deck && !deck.content.includes("../skills/sdlc-deck/deck-chassis.html")) {
+const deck = pkg.files.find((f) => /^zz-core\/commands\/deck\.md$/.test(f.path));
+if (deck && !deck.content.includes("../skills/zz-deck/deck-chassis.html")) {
   bad.push("commands/deck.md no longer points at the chassis's real location");
 }
 

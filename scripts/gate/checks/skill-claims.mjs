@@ -314,7 +314,7 @@ check("a skill's coverage contract matches the list it enumerates", () => {
 });
 
 check("the deck skill counts the template's slides correctly", () => {
-  // sdlc-deck tells the writer to replace "the 53 guidebook `<section>` elements carrying the
+  // zz-deck tells the writer to replace "the 53 guidebook `<section>` elements carrying the
   // `slide` class". That number is a fact about deck-guidebook.html — a 172KB file shipped
   // beside the skill — and nothing tied the two together, so editing the guidebook silently
   // makes the instruction wrong.
@@ -323,19 +323,23 @@ check("the deck skill counts the template's slides correctly", () => {
   // cover carries `class="slide active slide--cover"`, so an agent searching for that string
   // finds 52 of the 53 and leaves the guidebook's own title page as the first thing a reader
   // sees. The count and the matching rule are one fact, which is why both are checked here.
-  const dir = join(catalogRoot, "sdlc/sdlc-flow/skills/sdlc-deck");
+  // `skills/zz-deck`, NOT a catalog path. The deck moved to the baseline on 2026-09-14, and the
+  // baseline's skills are the tree beside the catalog rather than inside it — a catalog path
+  // here would resolve to nothing, and the two `existsSync` guards below return a STRING, so
+  // the whole check would report "zz-deck is missing" for ever instead of counting anything.
+  const dir = join(root, "skills/zz-deck");
   const skill = join(dir, "SKILL.md"), tpl = join(dir, "deck-guidebook.html");
-  if (!existsSync(skill)) return "sdlc-deck is missing";
+  if (!existsSync(skill)) return "zz-deck is missing";
   if (!existsSync(tpl)) return "deck-guidebook.html is missing — the skill tells the writer to read it";
   const html = readFileSync(tpl, "utf8");
   // A class TOKEN, the way a browser matches it, not a literal attribute value.
   const slides = [...html.matchAll(/<section\b[^>]*\bclass="([^"]*)"/g)]
     .filter((m) => m[1].split(/\s+/).includes("slide")).length;
   const said = /\b(\d+) guidebook `<section>` elements/.exec(readFileSync(skill, "utf8"))?.[1];
-  if (!said) return "sdlc-deck no longer states how many guidebook sections the template has";
+  if (!said) return "zz-deck no longer states how many guidebook sections the template has";
   const bad = [];
   if (Number(said) !== slides) {
-    bad.push(`sdlc-deck says the template has ${said} guidebook slides and it has ${slides}`);
+    bad.push(`zz-deck says the template has ${said} guidebook slides and it has ${slides}`);
   }
   // A THIRD STATEMENT OF THE SAME LIST, inside the template itself. `#housebook-manifest`
   // is JSON the page parses at runtime: renderVersion reports "N reference pages across M
@@ -373,7 +377,7 @@ check("the deck skill counts the template's slides correctly", () => {
   }
   // AND THE VERSION THE SKILL TELLS AN AUTHOR TO STAMP. The template states its edition in 55
   // places: once in #housebook-manifest and once on each of the 53 slides, which is one file
-  // and one edit — plus once more in sdlc-deck's worked example, which is a different file and
+  // and one edit — plus once more in zz-deck's worked example, which is a different file and
   // the only copy that can drift alone. Every slide a deck emits carries `data-version`, so a
   // stale example mislabels the provenance of every deck built from it, and nothing downstream
   // would contradict it.
@@ -388,10 +392,10 @@ check("the deck skill counts the template's slides correctly", () => {
     }
     const example = /data-version="([^"]*)"/.exec(readFileSync(skill, "utf8"))?.[1];
     if (!example) {
-      bad.push("sdlc-deck's worked example no longer stamps data-version, so an author has " +
+      bad.push("zz-deck's worked example no longer stamps data-version, so an author has " +
                "nothing to copy and every emitted slide loses its provenance");
     } else if (example !== version) {
-      bad.push(`sdlc-deck's example stamps data-version ${JSON.stringify(example)} and the ` +
+      bad.push(`zz-deck's example stamps data-version ${JSON.stringify(example)} and the ` +
                `template is ${JSON.stringify(version)} — an author following it mislabels every slide`);
     }
   }

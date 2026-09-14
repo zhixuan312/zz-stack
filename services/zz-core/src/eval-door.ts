@@ -3,7 +3,7 @@
  *
  * WHY A DOOR AND NOT A TOOL GROUP. The core door is in the client package's REQUIRED baseline
  * plugin, so a tool registered there is on every account on this platform, whether or not that
- * person has ever evaluated anything. The ten `plugin_*` tools are one flow's instrument:
+ * person has ever evaluated anything. This door's ten tools are one flow's instrument:
  * `catalog/zz/zz-plugin-eval/flow.json` declares this path in its `servers`, so they arrive
  * with that flow's plugin and with nothing else. Somebody who has not installed
  * `zz-plugin-eval` now sees ten fewer tools to choose between — which is the whole point, since
@@ -40,9 +40,11 @@ import { registerPluginRecordTools } from "./eval/plugin-record.js";
  *
  * THE NOUNS ARE THE NOUNS THIS DOOR SERVES, and checks/orientation.mjs derives that set from
  * the live `tools/list` and compares it with this text in both directions. This door serves
- * one noun, which makes that clause easy to satisfy and not worth skipping: the day an
- * eleventh tool arrives under a different prefix, this paragraph goes red rather than quietly
- * describing the door it used to be.
+ * five nouns — plugin, ruler, round, case and finding — and it served one until the renames
+ * of Task I-21 split them out. That is exactly why the clause earns its keep: the paragraph
+ * below had to change in the same commit as the registrations or this door would have gone on
+ * announcing a vocabulary it no longer speaks. The day an eleventh tool arrives under a sixth
+ * prefix, the same thing happens again.
  *
  * IT NAMES THE OTHER DOOR ON PURPOSE. Everyone holding this one also holds `/core/mcp`, and a
  * paragraph that said only what is here would leave a reader to discover the rest by calling
@@ -55,8 +57,13 @@ const EVAL_INSTRUCTIONS =
   "tools go in and what each kind of evidence is worth. The ruler is agreed BEFORE any scoring, " +
   "in a gated rulers.md; a score produced before that gate is evidence of nothing.\n\n" +
   "The nouns, one line each:\n" +
-  "  plugin_*  find a plugin, profile what its runs did, agree a ruler, judge against it, and " +
-  "record what was found\n\n" +
+  "  plugin_*   identify the plugin an evaluation is about, profile what its runs did, and " +
+  "read it against the building-block contract\n" +
+  "  ruler_*    the three-step gate, in this order: read what a ruler is written from, record " +
+  "the ruler, record the stakeholder's approval of it\n" +
+  "  round_*    score one version against the ruler in force, and read one round's marks back\n" +
+  "  case_*     record what a `claude plugin eval` run cost and found\n" +
+  "  finding_*  record what a round concluded, as rows the next round can read\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +

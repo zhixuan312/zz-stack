@@ -474,8 +474,8 @@ export const CatalogManifest = z.object({
   tools: z.array(z.string()).optional(),
   install: z.enum(["auto", "opt-in"]).optional(),
   /** THE COMMANDS A PERSON CAN TYPE: the name they type, mapped to the skill that carries
-   * the method. `{ "flow": "sdlc-flow", "deck": "sdlc-deck" }` ships `/sdlc:flow` and
-   * `/sdlc:deck`, each carrying that skill's own text.
+   * the method. `{ "flow": "sdlc-flow" }` ships `/sdlc:flow`, and `{ "deck": "zz-deck" }` ships
+   * `/zz-core:deck`, each carrying that skill's own text.
    *
    * DECLARED, NEVER DERIVED, and keyed by the command so JSON itself enforces that two
    * skills cannot claim one name. This replaced `standalone`, a list of skill names from
@@ -492,8 +492,8 @@ export const CatalogManifest = z.object({
   commands: z.record(z.string().min(1)).optional(),
   /** SKILLS THAT ARE NEITHER A STAGE NOR A COMMAND: the ones another skill loads.
    *
-   * sdlc-flow ships `sdlc-method`, `sdlc-audit-criteria` and `sdlc-authoring`, none of which
-   * a person types and none of which is a stage — they are the shared text the stage skills
+   * sdlc-flow ships `sdlc-method` and `sdlc-audit-criteria`, and zz-core ships `zz-authoring`,
+   * none of which a person types and none of which is a stage — they are the shared text the stage skills
    * load. Without this field they were the residue: everything in `skills/` that `entry`,
    * `stages` and `commands` did not account for, which is indistinguishable from a skill
    * somebody forgot to declare. Naming them makes "every shipped skill is declared

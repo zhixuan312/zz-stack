@@ -123,7 +123,7 @@ export function readSkillAt(dir: string, name: string, origin: "theirs" | "ours"
     // these; the reference tab was almost entirely our own test data.
     //
     // Excluded by name rather than by allowing only `references/`: a skill may legitimately
-    // ship a loose asset it names — sdlc-deck has a deck-template.html — and an allowlist
+    // ship a loose asset it names — zz-deck has a deck-chassis.html — and an allowlist
     // would hide it. What is ours is the one thing worth naming.
     if (rel.startsWith("evals/")) return;
     let entries: Dirent[];

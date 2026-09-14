@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 0.2
+version: 0.3
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into rulers.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.md, which is gated — judging does not start until somebody approves it."
 ---
@@ -8,7 +8,7 @@ when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.
 # zz-plugin-define
 
 ```
-plugin_ruler(plugin, version)   the profile, the cases, and the unscored artifacts
+ruler_read(plugin, version)   the profile, the cases, and the unscored artifacts
 ```
 
 Then you write `rulers.md`, and **a person approves it before anything is scored.**
@@ -46,7 +46,7 @@ The tool said `never_called: 6`. Only a person can say whether six is too many. 
 the whole design: **facts from the tool, the line from you.**
 
 **`why` is not decoration.** A threshold with no stated reason is a number somebody can move
-later to make a result come out differently, and nobody would be able to tell. `plugin_affirm`
+later to make a result come out differently, and nobody would be able to tell. `ruler_affirm`
 refuses a quantitative dimension whose threshold is empty; nothing but this document refuses one
 whose reason is empty, so refuse it yourself.
 
@@ -87,7 +87,7 @@ the same measurement, and a reader six months later cannot tell them apart unles
 The ruler has to exist in two places and they are not the same act.
 
 ```
-plugin_ruler_record(plugin, version, rubric_version, subject, dimensions)
+ruler_record(plugin, version, rubric_version, subject, dimensions)
 ```
 
 puts it in the registry, where the judge reads it. It refuses a quantitative dimension with no
@@ -97,7 +97,7 @@ line with no stated reason is a number somebody can move later to make a result 
 differently.
 
 **Record before the person reads it, approve after.** Recording is not approving — nothing is
-scored until `plugin_affirm` says a person agreed.
+scored until `ruler_affirm` says a person agreed.
 
 ## Writing it
 
@@ -122,4 +122,4 @@ under their name, in the same turn — `zz-backbone` carries that rule and it ho
 
 ❌ **A dimension that does not say which evidence block it reads.**
 
-❌ **Proceeding to judge on a draft.** `plugin_affirm` will refuse, and it is right to.
+❌ **Proceeding to judge on a draft.** `ruler_affirm` will refuse, and it is right to.

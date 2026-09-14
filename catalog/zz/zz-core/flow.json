@@ -5,11 +5,12 @@
   "purpose": "To own the record every flow writes into — identity, documents, gates, knowledge and telemetry — and the method for using it. A capability belongs here when every flow needs it and no flow owns it; anything one flow owns belongs in that flow.",
   "shelved": true,
   "commands": {
-    "doctor": "zz-doctor",
-    "migrate": "zz-migrate",
-    "update": "zz-update"
+    "breakout": "zz-breakout",
+    "deck": "zz-deck",
+    "tldr": "zz-tldr"
   },
   "libraries": [
+    "zz-authoring",
     "zz-backbone",
     "zz-knowledge"
   ],

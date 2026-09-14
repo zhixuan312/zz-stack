@@ -15,15 +15,11 @@
   "entry": "sdlc-flow",
   "tools": [],
   "commands": {
-    "flow": "sdlc-flow",
-    "deck": "sdlc-deck",
-    "tldr": "sdlc-tldr",
-    "breakout": "sdlc-breakout"
+    "flow": "sdlc-flow"
   },
   "libraries": [
     "sdlc-method",
     "sdlc-audit-criteria",
-    "sdlc-authoring",
     "sdlc-investigate",
     "sdlc-recall",
     "sdlc-research"

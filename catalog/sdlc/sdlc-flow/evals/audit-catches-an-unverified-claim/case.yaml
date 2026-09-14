@@ -8,10 +8,15 @@
 #
 # The false claim below is the same shape, aimed at a file that ships INSIDE this plugin
 #   so the case needs no repository: it says flow.json declares no `standalone` entry.
-#   flow.json declares three — sdlc-deck, sdlc-tldr, sdlc-breakout — and sdlc-flow's own
-#   SKILL.md says of them "No order, no gate, no initiative required." Either file
-#   disproves it, which is deliberate: if `flow.json` is not present in the eval scaffold,
-#   the SKILL.md tools table still is.
+#   flow.json's own `libraries` array declares five — sdlc-method, sdlc-audit-criteria,
+#   sdlc-investigate, sdlc-recall, sdlc-research — none of which is a stage, and sdlc-method
+#   is loaded BEFORE any stage runs. Either file disproves it, which is deliberate: if
+#   `flow.json` is not present in the eval scaffold, sdlc-method's own text still is.
+#
+#   THE DISPROOF MOVED ON 2026-09-14. It used to be the three standalone commands the flow
+#   declared — sdlc-deck, sdlc-tldr, sdlc-breakout — and those ship from zz-core now. A
+#   grader still matching `sdlc-tldr` could never fire again, and nothing here runs in the
+#   gate to say so.
 #
 # Framing: this prompt addresses the agent AS the dispatched auditor, which is literally
 #   sdlc-audit-criteria's `when_to_use`. That is on purpose — sdlc-method dispatches audits
@@ -30,14 +35,14 @@
 #     in the baseline arm too (Δ ≈ 0). It has been REMOVED; the ordered form below keeps
 #     the signal and fails the baseline for want of any Skill call at all.
 #   - The bare agent matched a `standalone` pattern, because the word is quoted in the
-#     prompt. Narrowed to `sdlc-tldr`, which appears nowhere in the prompt and can only
-#     come from reading the plugin.
+#     prompt. Narrowed to the library skills' names, which appear nowhere in the prompt and
+#     can only come from reading the plugin.
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   spec-audit-skill-fired       ~1.0 — measured 0 in baseline; the skill does not exist there.
 #   read-after-loading-the-skill ~1.0 — measured 0 in baseline (no Skill call to order against).
-#   found-the-disproof           ~0.9 — naming `sdlc-tldr` means it found the contradicting
-#                                       fact rather than hedging about the claim.
+#   found-the-disproof           ~0.9 — naming a library skill means it found the
+#                                       contradicting fact rather than hedging about the claim.
 #   returned-the-round-envelope  ~1.0 — measured 0 in baseline; `criteriaCovered` is the
 #                                       audit's required output shape and nothing outside
 #                                       the plugin emits it.
@@ -74,7 +79,7 @@ graders:
     after: Read
   - name: found-the-disproof
     type: regex
-    pattern: 'sdlc-tldr'
+    pattern: 'sdlc-method|sdlc-audit-criteria|sdlc-investigate|sdlc-recall|sdlc-research'
   - name: returned-the-round-envelope
     type: regex
     pattern: 'criteriaCovered'

@@ -66,18 +66,23 @@ services/gateway/     the ONE door: identity (PATs, and a passkey for the consol
 catalog/    the flows and platform capabilities, one directory per owner. A
             flow.json says what each is; `shelved: true` marks a capability
             every person gets from the shelf rather than one a team installs:
-            sdlc/sdlc-flow      software delivery, 17 skills — explore, spec,
+            sdlc/sdlc-flow      software delivery, 13 skills — explore, spec,
                                 audit, plan, audit, execute, review (closing
-                                the initiative is an act, not a stage), plus
-                                the deck / tldr / breakout tools
+                                the initiative is an act, not a stage), plus the
+                                libraries the stages load. One command, /sdlc:flow;
+                                deck, tldr and breakout moved to the baseline
             zz/zz-access        access, on one door: a person's own token, block
                                 keys and client setup (zz-access), and the platform
                                 register behind them — people, teams, installs,
                                 grants (zz-admin). Which tools a caller is offered
-                                is their role
+                                is their role. It also carries the three skills
+                                about the MACHINE and the CREDENTIAL rather than
+                                the record — zz-doctor, zz-update, zz-migrate —
+                                each shipping as a typed command with its own
+                                script beside it
             zz/zz-core          the baseline every account carries: the manifest
                                 only. It declares what the platform's own plugin is
-                                and what a person types — doctor, migrate, update —
+                                and what a person types — deck, tldr, breakout —
                                 while its SKILLS are the tree at skills/ below,
                                 because one of them (zz-router) is generated per
                                 person from the flows they installed and cannot live
@@ -92,24 +97,30 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 history, and traces from real runs, which need five.
                                 locate, profile, define (the gate: what good means for
                                 THIS plugin), judge, report. Measures; never changes
-skills/     platform skills, served whatever flow a team runs. Two are UNIVERSAL and
-            bookend every flow: zz-backbone (the spine, loaded first — file tools,
-            gates, documents, credentials, the tag kinds the knowledge base
-            enforces, and what a team overlay may and may not do) and zz-knowledge
-            (the handover, run last — one closed initiative's documents and
-            telemetry turned into what the next team should know). Three more
-            are TYPED rather than loaded, and ship as the baseline's commands:
-            zz-doctor (can this machine reach the platform), zz-update (one
-            command to bring every installed plugin level) and zz-migrate
-            (an mma repository's journal and history, brought over). Each
-            carries its own script beside it, because what they do is
-            mechanical and a script is the part that cannot drift. What an
+skills/     the baseline plugin's skills, served whatever flow a team runs. They
+            live here rather than under the baseline's catalog entry because the
+            router skill is generated per person from the flows they installed and
+            cannot live in a catalog shared by everyone. Two are
+            UNIVERSAL and bookend every flow: zz-backbone (the spine, loaded first
+            — file tools, gates, documents, credentials, the tag kinds the
+            knowledge base enforces, and what a team overlay may and may not do)
+            and zz-knowledge (the handover, run last — one closed initiative's
+            documents and telemetry turned into what the next team should know).
+            Three more are TYPED rather than loaded, and ship as the baseline's
+            commands: zz-deck (turn something already written into a slide deck
+            that makes an argument), zz-tldr (compress a long source to what the
+            reader must act on) and zz-breakout (one bounded expert dialogue,
+            closing into the knowledge base). None is about software delivery;
+            all three are operations on the core's own nouns, which is why they
+            are here rather than in a flow. zz-authoring is a LIBRARY behind the
+            first two — never typed, loaded by both, and the one place the rules
+            they share are written down. What an
             evaluation calls for is not a skill: the report SPECIFIES one change
             and its expected effect, and a repository edit plus a release applies
             it, because /catalog and /skills are read-only wherever this runs.
             A PLUGIN carries its eval CASE SUITE beside its skills — evals/
-            under the catalog package, and evals/ at the repository root for zz,
-            which has no catalog directory. One directory per case, holding a
+            under the catalog package, and evals/ at the repository root for the
+            baseline, whose skills are not in the catalog either. One directory per case, holding a
             case.yaml: the prompt, and the graders that read what came back. It
             ships with the plugin, so anyone who installs it can run the same
             ablation. What a round FOUND is not here — findings.md lives in the

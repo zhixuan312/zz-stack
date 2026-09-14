@@ -7,7 +7,7 @@ This product includes work derived from third parties, listed below.
 cathrynlavery/diagram-design — https://github.com/cathrynlavery/diagram-design
 
 The deck chassis and guidebook under
-catalog/sdlc/sdlc-flow/skills/sdlc-deck/ adapt that project's geometry
+skills/zz-deck/ adapt that project's geometry
 conventions — proportions and viewBox conventions. No markup, asset or data URI
 was copied; every SVG here is drawn from primitives against this project's own
 token set.

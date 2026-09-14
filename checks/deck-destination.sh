@@ -2,7 +2,7 @@
 # AC-1.8: the deck skill names one destination, and never the platform's document-write tool.
 # Run from the workspace root (zz-parent/).
 set -u
-skill="zz-stack/catalog/sdlc/sdlc-flow/skills/sdlc-deck/SKILL.md"
+skill="zz-stack/skills/zz-deck/SKILL.md"
 fail=0
 if [ ! -f "$skill" ]; then echo "FAIL: $skill not found"; exit 1; fi
 if grep -n "document_write" "$skill"; then

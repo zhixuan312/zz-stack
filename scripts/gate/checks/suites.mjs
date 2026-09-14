@@ -297,3 +297,9 @@ check("the evaluation modules are on the evaluation side, and attest stays on th
 
 check("the three verification stages leave a document, and keep their independence",
       runsCheck("verification-stages-write.mjs"));
+
+check("the evaluation door speaks four nouns, three names are deliberately untouched, and the graders and the chain check follow",
+      runsCheck("eval-names.mjs"));
+
+check("seven skills ship from the plugin that owns them, and their commands follow",
+      runsCheck("skill-homes.mjs"));

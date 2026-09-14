@@ -2,7 +2,7 @@
 # AC-2.1: the chassis carries no slides; the guidebook carries all of them and the manifest.
 # Run from the workspace root (zz-parent/).
 set -u
-d="zz-stack/catalog/sdlc/sdlc-flow/skills/sdlc-deck"
+d="zz-stack/skills/zz-deck"
 fail=0
 for f in "$d/deck-chassis.html" "$d/deck-guidebook.html"; do
   if [ ! -f "$f" ]; then echo "FAIL: $f not found"; exit 1; fi

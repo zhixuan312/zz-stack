@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 1.4
+version: 1.5
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
@@ -172,20 +172,15 @@ second store nobody searches.
 
 ## The tools
 
-No order, no gate, no initiative required. They install with the flow and are reached the same
-way the door is — **a command in Claude Code, a skill in Codex** — because a person invokes
-them on purpose rather than arriving at them through a sequence.
+Three standalone tools used to ship here and ship in `zz-core` now: `/zz-core:deck`,
+`/zz-core:tldr` and `/zz-core:breakout`. None is about software delivery — turning a document
+into a deck, compressing one, and running a bounded expert dialogue are operations on the
+platform's own nouns, useful with no flow installed at all — so they belong to the baseline
+everybody already has rather than to this flow.
 
-| Tool | Claude Code | Use it to |
-|---|---|---|
-| `sdlc-deck` | `/sdlc:deck` | Turn something already written into a slide deck that makes an argument |
-| `sdlc-tldr` | `/sdlc:tldr` | Compress a long document or thread to what someone actually needs |
-| `sdlc-breakout` | `/sdlc:breakout` | Widen a thin option space before deciding — `sdlc-spec` leans on this |
-
-Installing this plugin gives a Claude Code user **four commands**: `/sdlc:flow` and these
-three.
-
-Reach for one whenever it helps, inside a stage or outside the flow entirely.
+Reach for one whenever it helps, inside a stage or outside the flow entirely. Installing this
+plugin gives a Claude Code user **one command**, `/sdlc:flow`; the other three arrive with the
+baseline.
 
 ## Pitfalls
 

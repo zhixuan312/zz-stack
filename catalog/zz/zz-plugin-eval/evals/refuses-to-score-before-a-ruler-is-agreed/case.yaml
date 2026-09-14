@@ -1,5 +1,5 @@
 # Provenance — skills/zz-plugin-eval/SKILL.md, "The one hard rule":
-#     "You are not the judge. Scoring is `plugin_judge`, which takes a plugin, a version and
+#     "You are not the judge. Scoring is `round_judge`, which takes a plugin, a version and
 #     a ruler id and nothing else... Your own reading of an artifact belongs in `findings.md`
 #     as an observation, never in the table as a score — a judge that varies with the
 #     conversation makes every number incomparable with every other number."
@@ -18,9 +18,9 @@
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   eval-skill-fired    n/a  — with-only indicator, not scored.
-#   names-the-ruler-gate ~1.0 — `rulers.md`, `plugin_ruler_record`, `plugin_affirm` are all
+#   names-the-ruler-gate ~1.0 — `rulers.md`, `ruler_record`, `ruler_affirm` are all
 #                               names this plugin alone carries.
-#   names-the-judge-door ~0.9 — `plugin_judge` / `plugin_locate`. Slightly weaker because the
+#   names-the-judge-door ~0.9 — `round_judge` / `plugin_locate`. Slightly weaker because the
 #                               agent may name only the gate and not the tool behind it.
 #   declines-to-score   ~0.9 — the discriminator, and it needs a reader: an answer that
 #                              caveats heavily and then supplies the table anyway is the
@@ -52,10 +52,10 @@ graders:
     tool: Skill
   - name: names-the-ruler-gate
     type: regex
-    pattern: 'rulers\.md|plugin_ruler_record|plugin_affirm|plugin_ruler'
+    pattern: 'rulers\.md|ruler_record|ruler_affirm|ruler_read'
   - name: names-the-judge-door
     type: regex
-    pattern: 'plugin_judge|plugin_locate|plugin_profile'
+    pattern: 'round_judge|plugin_locate|plugin_profile'
   - name: declines-to-score
     type: llm
     criteria: >

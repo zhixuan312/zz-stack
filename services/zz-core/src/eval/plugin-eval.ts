@@ -13,7 +13,7 @@
  * fact, the ruler says where the line is, and the tool may then apply that line. A field named
  * `healthy` here would be this file answering a question it cannot see the evidence for.
  *
- * READ-ONLY, with one exception that proves the rule. `plugin_cases_record` writes, because
+ * READ-ONLY, with one exception that proves the rule. `case_record` writes, because
  * `claude plugin eval` is a CLI on the person's own machine spending their own credential and
  * this service cannot see its output. The skill runs it where it can be run and hands the result
  * over; recording it is how a delta acquires a timestamp, which is the field that stops a
@@ -141,7 +141,8 @@ export function registerPluginEvalTools(server: McpServer): void {
         "content digest, the skill versions it shipped with, the MCP servers it declares and " +
         "the tools its skills name. Facts only. Call this first — every later tool takes the " +
         "plugin and version this returns, so that an evaluation cannot drift onto a different " +
-        "version of its own subject halfway through.",
+        "version of its own subject halfway through. Call it when an evaluation begins, and " +
+        "before any other tool on this door.",
       inputSchema: { plugin: z.string() },
     },
     async ({ plugin }) => {
@@ -196,7 +197,8 @@ export function registerPluginEvalTools(server: McpServer): void {
         "refusals, tools its skills name that were never called) and CASES from the recorded " +
         "ablation run (per-case delta against a no-plugin arm). Every figure carries the " +
         "coverage it was derived from. Returns are COUNTED AND NOT CLASSIFIED — whether a " +
-        "return is healthy re-grounding or thrash is the ruler's judgement, not this tool's.",
+        "return is healthy re-grounding or thrash is the ruler's judgement, not this tool's. " +
+        "Call it when a ruler is being written, and again when its figures are read.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {
@@ -219,16 +221,18 @@ export function registerPluginEvalTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "plugin_cases_record",
+    "case_record",
     {
       description:
-        "Record the JSON that `claude plugin eval <plugin>@zz-stack --json` produced. Run that " +
-        "command yourself first — it is a CLI on this machine, spending this account's own " +
-        "credential (roughly $0.40 per case), and nothing runs it for you. Pass its output " +
-        "here whole. Recording is what gives a delta a timestamp, so a profile can say how old " +
-        "the measurement is instead of presenting a three-week-old number as today's. Record a " +
-        "run whose cases all timed out as well: it is still stored for what it cost, and that " +
-        "answer is then free instead of costing another suite to find out.",
+        "WHEN you have run `claude plugin eval <plugin>@zz-stack --json` yourself and hold " +
+        "its output. Run that command first — it is a CLI on this machine, spending this " +
+        "account's own credential (roughly $0.40 per case), and nothing runs it for you. Pass " +
+        "its output here whole. RETURNS what was stored and what the run cost, which is what " +
+        "gives a delta a timestamp, so a profile can say how old the measurement is instead of " +
+        "presenting a three-week-old number as today's. REFUSES a payload carrying neither a " +
+        "readable case nor a cost, and refuses nothing else: a run whose cases all timed out is " +
+        "still stored for what it cost, and that answer is then free instead of costing another " +
+        "suite to find out.",
       inputSchema: {
         plugin: z.string(),
         version: z.string(),
@@ -264,7 +268,7 @@ export function registerPluginEvalTools(server: McpServer): void {
       // WHEN is provenance a later reader needs: a delta is only as good as the moment it was
       // measured, and the run cost somebody real money on their own credential.
       logActivity(await userRoot(), null,
-        { user: who, action: "plugin_cases_record", plugin, version, cases: read.count });
+        { user: who, action: "case_record", plugin, version, cases: read.count });
       // THE COST GOES BACK ON EVERY PATH, at the one moment the person has just spent it.
       // And when no case parsed, `recorded: 0` alone reads to an LLM caller like a failure it
       // should retry — so that path says both facts in a sentence: what could not be read, and
@@ -292,8 +296,10 @@ export function registerPluginEvalTools(server: McpServer): void {
         "or not_measured. Most clauses come back not_measured for most plugins, and that is " +
         "the honest answer rather than a gap: R1-R14 describes a BLOCK SERVER's tool surface, " +
         "and settling it needs that surface read through the gateway. A flow plugin serves no " +
-        "surface of its own, so the standard does not apply to it at all. Use what does come " +
-        "back as a starting ruler for a third-party plugin with no run history.",
+        "surface of its own, so the standard does not apply to it at all. Call it when a " +
+        "third-party plugin has no run history and a starting ruler has to come from " +
+        "somewhere: what it returns is that starting point. It never guesses a clause it " +
+        "cannot settle — that clause comes back not_measured.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {

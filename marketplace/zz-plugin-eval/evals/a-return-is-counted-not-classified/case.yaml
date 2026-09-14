@@ -19,7 +19,7 @@
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   eval-skill-fired    n/a  — with-only indicator, not scored.
-#   names-where-the-line-lives ~1.0 — `rulers.md`, `plugin_ruler_record`, `threshold` as the
+#   names-where-the-line-lives ~1.0 — `rulers.md`, `ruler_record`, `threshold` as the
 #                              thing a person writes down. Plugin vocabulary throughout.
 #   names-the-fact-source ~0.8 — `plugin_profile` is what produced the count; a baseline arm
 #                              has no name for it.
@@ -54,10 +54,10 @@ graders:
     tool: Skill
   - name: names-where-the-line-lives
     type: regex
-    pattern: 'rulers\.md|plugin_ruler_record|plugin_ruler|threshold'
+    pattern: 'rulers\.md|ruler_record|ruler_read|threshold'
   - name: names-the-fact-source
     type: regex
-    pattern: 'plugin_profile|plugin_judge|plugin_scores'
+    pattern: 'plugin_profile|round_judge|round_scores'
   - name: will-not-call-it-thrash
     type: llm
     criteria: >

@@ -520,7 +520,7 @@ async function main(): Promise<number> {
   // that case — "no released version is recorded", "declares no ruler", "is not an
   // evaluation" — rather than at manufacturing a real release, an approved rubric and a
   // scored round, which the model-scoring half of this surface needs a live judge to run at
-  // all: plugin_judge is explicit that a real subject "takes about thirty seconds" each,
+  // all: round_judge is explicit that a real subject "takes about thirty seconds" each,
   // which is the model cost and wall-clock time this whole file exists to not spend. Getting
   // this far exercises the door, the schema and every refusal branch that runs before a
   // model is ever reached — the part of "does the tool chain still work" that a rate-limited
@@ -534,28 +534,28 @@ async function main(): Promise<number> {
   eitherOr("plugin_profile answers or refuses by a named cause",
     await callEval("plugin_profile", { plugin: PLUGIN, version: "0" }),
     /no platform database/);
-  eitherOr("plugin_ruler answers or refuses by a named cause",
-    await callEval("plugin_ruler", { plugin: PLUGIN, version: "0" }),
+  eitherOr("ruler_read answers or refuses by a named cause",
+    await callEval("ruler_read", { plugin: PLUGIN, version: "0" }),
     /no platform database/);
-  eitherOr("plugin_affirm refuses a version this deployment never released",
-    await callEval("plugin_affirm", { plugin: PLUGIN, version: "0" }),
+  eitherOr("ruler_affirm refuses a version this deployment never released",
+    await callEval("ruler_affirm", { plugin: PLUGIN, version: "0" }),
     /no platform database|no released version/);
-  eitherOr("plugin_judge refuses a version that declares no ruler",
-    await callEval("plugin_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
+  eitherOr("round_judge refuses a version that declares no ruler",
+    await callEval("round_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
     /no platform database|declares no ruler/);
-  eitherOr("plugin_scores refuses an eval_id nothing minted",
-    await callEval("plugin_scores", { eval_id: randomUUID() }),
+  eitherOr("round_scores refuses an eval_id nothing minted",
+    await callEval("round_scores", { eval_id: randomUUID() }),
     /no platform database|is not an evaluation/);
-  eitherOr("plugin_cases_record refuses a result that is not JSON",
-    await callEval("plugin_cases_record", { plugin: PLUGIN, version: "0", result: "not json" }),
+  eitherOr("case_record refuses a result that is not JSON",
+    await callEval("case_record", { plugin: PLUGIN, version: "0", result: "not json" }),
     /no platform database|that is not JSON/);
-  eitherOr("plugin_ruler_record refuses a quantitative dimension with no threshold",
-    await callEval("plugin_ruler_record", {
+  eitherOr("ruler_record refuses a quantitative dimension with no threshold",
+    await callEval("ruler_record", {
       plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",
       dimensions: [{ name: "chain-check probe", kind: "quantitative" }],
     }), /no platform database|carries no threshold/);
-  eitherOr("plugin_finding_record refuses an eval_id nothing minted",
-    await callEval("plugin_finding_record", {
+  eitherOr("finding_record refuses an eval_id nothing minted",
+    await callEval("finding_record", {
       eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
     }), /no platform database|no evaluation/);
 

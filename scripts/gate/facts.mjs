@@ -238,8 +238,8 @@ export function ourDocs() {
         // `marketplace` is the rendered copy of `catalog` and `skills`, so it is excluded for
         // the reason they are, twice over: its documents are checked at their source, and the
         // paths inside them resolve against the PLUGIN root rather than this repository —
-        // `skills/sdlc-deck/deck-chassis.html` is a real file in the shipped plugin and has
-        // never been one here.
+        // `zz-core/skills/zz-deck/deck-chassis.html` is a real path in the shipped plugin and
+        // has never been one here.
         if (["catalog", "skills", "services", "packages", "testing", "marketplace"].includes(r)) continue;
         walk(r);
       } else if (e.name.endsWith(".md") && (!belongs || belongs.has(r))) {

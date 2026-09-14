@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-report
-version: 0.2
+version: 0.3
 description: Stage 5 of plugin evaluation. Read the scores back, say what the pattern is, propose the cases the next round should lock in, and write findings.md — which is gated and closes the initiative.
 when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation and what admits the proposed cases into the suite."
 ---
@@ -8,7 +8,7 @@ when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.m
 # zz-plugin-report
 
 ```
-plugin_scores(eval_id)     every score, the control's, and the findings
+round_scores(eval_id)     every score, the control's, and the findings
 ```
 
 Then `findings.md`, with the six sections the manifest declares.
@@ -49,7 +49,7 @@ A finding that mixes them without saying so is a claim nobody can check.
 ## Record the findings, not just write them
 
 ```
-plugin_finding_record(eval_id, findings)
+finding_record(eval_id, findings)
 ```
 
 `findings.md` is what a person reads. These rows are what the NEXT round reads — a finding that

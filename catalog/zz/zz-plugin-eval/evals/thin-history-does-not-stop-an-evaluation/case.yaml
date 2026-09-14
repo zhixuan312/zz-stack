@@ -1,7 +1,7 @@
 # Provenance — skills/zz-plugin-eval/SKILL.md, "Two kinds of evidence, and each has its own
 #   sufficiency line", which the skill states before anything else precisely because this is
 #   the thing readers get wrong:
-#     "cases | `claude plugin eval`, recorded by `plugin_cases_record` | needs: nothing —
+#     "cases | `claude plugin eval`, recorded by `case_record` | needs: nothing —
 #     somebody writes them"
 #     "traces | the event log, via `plugin_profile` | needs: five usable runs"
 #     "Cases need no history at all. A plugin released this morning can be evaluated this
@@ -21,7 +21,7 @@
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   eval-skill-fired    n/a  — with-only indicator, not scored.
-#   names-the-case-half ~1.0 — `plugin_cases_record` and the literal command
+#   names-the-case-half ~1.0 — `case_record` and the literal command
 #                              `claude plugin eval` are this plugin's own.
 #   names-the-trace-line ~0.7 — the weakest. A baseline agent can say "five runs" by
 #                              coincidence; what it cannot do is name the figure as a
@@ -57,7 +57,7 @@ graders:
     tool: Skill
   - name: names-the-case-half
     type: regex
-    pattern: 'plugin_cases_record|claude plugin eval|plugin_cases'
+    pattern: 'case_record|claude plugin eval'
   - name: names-the-trace-line
     type: regex
     pattern: 'usable run|usable_runs|five usable|plugin_profile'

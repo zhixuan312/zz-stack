@@ -32,16 +32,17 @@ const noDb = () => text("ERROR: this deployment has no platform database, so not
 
 export function registerPluginRecordTools(server: McpServer): void {
   server.registerTool(
-    "plugin_ruler_record",
+    "ruler_record",
     {
       description:
-        "Write the ruler the define stage derived into the registry, so the judge can be run " +
-        "against it. Call it once rulers.md says what good means for this plugin, BEFORE the " +
-        "stakeholder approves — approving is plugin_affirm's job and it is a separate act. " +
-        "Each dimension is qualitative (a reader scores 1-5 between two written ends) or " +
-        "quantitative (a tool computes a fact and this carries the line drawn over it, with " +
-        "the reason it was drawn there). Re-recording replaces the dimensions of the ruler at " +
-        "the same rubric version.",
+        "WHEN rulers.md says what good means for this plugin, and BEFORE the stakeholder " +
+        "approves — approving is `ruler_affirm`'s job and it is a separate act. It writes the " +
+        "ruler the define stage derived into the registry so the judge can be run against it, " +
+        "and RETURNS the dimensions as they now stand. Each dimension is qualitative (a reader " +
+        "scores 1-5 between two written ends) or quantitative (a tool computes a fact and this " +
+        "carries the line drawn over it, with the reason it was drawn there). REFUSES a " +
+        "quantitative dimension with no threshold. Re-recording replaces the dimensions of the " +
+        "ruler at the same rubric version.",
       inputSchema: {
         plugin: z.string(),
         version: z.string(),
@@ -112,29 +113,30 @@ export function registerPluginRecordTools(server: McpServer): void {
 
       const who = parseCaller(requestHeaders()).email;
       logActivity(await userRoot(), null,
-        { user: who, action: "plugin_ruler_record", plugin, version,
+        { user: who, action: "ruler_record", plugin, version,
           rubric: rubric_version, dimensions: dimensions.length });
       return json({
         plugin, version, rubric_id: rubricId, rubric_version, subject,
         qualitative: dimensions.filter((d) => d.kind === "qualitative").length,
         quantitative: dimensions.filter((d) => d.kind === "quantitative").length,
-        next: "Put rulers.md to the stakeholder. Nothing is scored until plugin_affirm records " +
+        next: "Put rulers.md to the stakeholder. Nothing is scored until ruler_affirm records " +
               "that they agreed to it.",
       });
     },
   );
 
   server.registerTool(
-    "plugin_finding_record",
+    "finding_record",
     {
       description:
-        "Record what this round found, as rows the NEXT round can read. Call it from the report " +
-        "stage, once the scores are in and you have decided what the pattern is. Each finding " +
-        "is generic (it recurs across unrelated work, so it is the plugin's habit and worth " +
-        "changing the plugin over) or specific (one piece of work's own problem). A finding on " +
-        "somebody else's plugin carries no proposed_change — we assess and stop. Recording is " +
-        "not deciding: a finding lands deferred, and applying or rejecting it is a separate act " +
-        "by whoever owns the plugin.",
+        "WHEN the scores are in and the report stage has decided what the pattern is. It " +
+        "records what this round found as rows the NEXT round can read, and RETURNS them as " +
+        "stored. Each finding is generic (it recurs across unrelated work, so it is the " +
+        "plugin's habit and worth changing the plugin over) or specific (one piece of work's " +
+        "own problem). A finding on somebody else's plugin carries no proposed_change — we " +
+        "assess and stop. REFUSES an eval_id nothing minted. Recording is not deciding: a " +
+        "finding lands deferred, and applying or rejecting it is a separate act by whoever " +
+        "owns the plugin.",
       inputSchema: {
         eval_id: z.string(),
         findings: z.array(z.object({
@@ -182,7 +184,7 @@ export function registerPluginRecordTools(server: McpServer): void {
       }
       const who = parseCaller(requestHeaders()).email;
       logActivity(await userRoot(), null,
-        { user: who, action: "plugin_finding_record", eval_id, findings: stored });
+        { user: who, action: "finding_record", eval_id, findings: stored });
       return json({
         eval_id, recorded: stored,
         generic: findings.filter((f) => f.scope === "generic").length,

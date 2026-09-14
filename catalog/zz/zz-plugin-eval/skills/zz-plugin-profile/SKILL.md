@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.3
+version: 0.4
 description: Stage 2 of plugin evaluation. Compute the two evidence blocks — traces from real runs and cases from the ablation suite — each with its own sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -74,7 +74,7 @@ machine spending this account's own credential, roughly $0.40 a case.
 
 ```
 claude plugin eval <plugin>@zz-stack --json <path>
-plugin_cases_record(plugin, version, result: "<the JSON at that path, verbatim>")
+case_record(plugin, version, result: "<the JSON at that path, verbatim>")
 ```
 
 Recording is what gives a delta a timestamp. Ask before spending; do not run it because a

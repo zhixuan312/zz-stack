@@ -99,7 +99,7 @@ const strip = (p, src) => {
 // ── A COSTED PAYLOAD CAN ACTUALLY BE STORED ───────────────────────────────────────────────
 //
 // The parser above is unreachable for the run it was written for unless the recording door
-// admits it. `plugin_cases_record` is the only writer of zz.plugin_case_run, and it refused on
+// admits it. `case_record` is the only writer of zz.plugin_case_run, and it refused on
 // `!read.count`: no readable delta, no row, and the $4.27 the suite spent thrown away at the
 // door that 047 keeps the payload whole to protect.
 //
@@ -120,10 +120,10 @@ if (worthRecording(asRead({}))) {
 // And the door uses it. A rule that is correct and uncalled is the defect this closes.
 const door = strip("x.ts", readFileSync("services/zz-core/src/eval/plugin-eval.ts", "utf8"));
 if (!/worthRecording\s*\(/.test(door)) {
-  fail.push("plugin_cases_record does not decide with worthRecording");
+  fail.push("case_record does not decide with worthRecording");
 }
 if (/if\s*\(\s*!\s*read\.count\s*\)/.test(door)) {
-  fail.push("plugin_cases_record still refuses on !read.count, which discards a costed payload");
+  fail.push("case_record still refuses on !read.count, which discards a costed payload");
 }
 // What it just cost comes back to the caller, on the path where no case parsed as well as the
 // one where some did — that is the moment the person has spent the money.
@@ -132,7 +132,7 @@ if (/if\s*\(\s*!\s*read\.count\s*\)/.test(door)) {
 // was the first spelling of this and it stayed green while `...spend` was deleted from the
 // response, because the sentence built for the note mentions `read.cost_usd` too. A whole-file
 // grep cannot tell a value that is returned from one that is merely computed.
-// Scoped to the tool by its guard, not by position: plugin_cases_record is one of several
+// Scoped to the tool by its guard, not by position: case_record is one of several
 // tools in that file and every one of them ends in a `return json(`.
 const returned = (src) => {
   const from = src.indexOf("worthRecording(read)");
@@ -146,12 +146,12 @@ const returned = (src) => {
   return "";
 };
 const answer = returned(door);
-if (!answer) fail.push("plugin_cases_record no longer answers with a json object");
+if (!answer) fail.push("case_record no longer answers with a json object");
 for (const f of ["cost_usd", "judge_cost_usd"]) {
-  if (!answer.includes(f)) fail.push(`plugin_cases_record does not return ${f}`);
+  if (!answer.includes(f)) fail.push(`case_record does not return ${f}`);
 }
 if (!/note\s*:/.test(answer)) {
-  fail.push("plugin_cases_record answers a stored-but-unreadable run with bare counts");
+  fail.push("case_record answers a stored-but-unreadable run with bare counts");
 }
 
 // ── NO SPEND CEILING ANYWHERE THE PLATFORM CONTROLS (FR-8a) ───────────────────────────────

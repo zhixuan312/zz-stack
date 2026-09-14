@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-judge
-version: 0.1
+version: 0.2
 description: Stage 4 of plugin evaluation. Confirm the ruler was approved, then score the plugin's usage artifacts against it with a pinned model outside this conversation. Writes scores; decides nothing.
 when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Never before — the affirm call refuses, and that refusal is the gate working."
 ---
@@ -8,15 +8,15 @@ when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Ne
 # zz-plugin-judge
 
 ```
-plugin_affirm(plugin, version)                    is there an approved ruler?
-plugin_judge(plugin, version, rubric_id)          score against it
+ruler_affirm(plugin, version)                    is there an approved ruler?
+round_judge(plugin, version, rubric_id)          score against it
 ```
 
 **You are not the judge, and this stage is where that matters most.**
 
 ## Why the judge is not you
 
-`plugin_judge` takes identifiers and nothing else. It assembles the ruler and the subjects
+`round_judge` takes identifiers and nothing else. It assembles the ruler and the subjects
 itself and runs a model the deployment pins. The caller cannot supply the artifact, cannot
 supply the ruler, and cannot supply the model.
 

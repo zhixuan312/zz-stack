@@ -48,7 +48,7 @@ services:
       # The deployment's own timezone, which is what every DATE the platform stamps is local
       # to. UTC put a Singapore morning's work under yesterday's date, every day.
       - ZZ_TZ=${ZZ_TZ:-}
-      # The judge — plugin_judge scores a plugin's work against its ruler, and it needs a
+      # The judge — round_judge scores a plugin's work against its ruler, and it needs a
       # model to do it with. Same endpoint the front end talks to, a DIFFERENT model: the
       # base model is what the flows' own agents run on, and a ruler exactly as good as the
       # thing it measures measures nothing. Without these the tool refuses rather than

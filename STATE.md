@@ -530,8 +530,10 @@ gap between "the platform can evaluate a plugin" and "the platform can evaluate 
 
 **And the same lesson twice, from two directions: a capability that ships as a COMMAND cannot be
 reached by a case that asks in words.** `zz-doctor` does not ship as a skill at all —
-`marketplace/zz-core/skills/zz-doctor/` holds `doctor.mjs` and no SKILL.md, because zz's three typed
-capabilities render as commands with `disable-model-invocation: true`. A case grading
+`marketplace/zz-access/skills/zz-doctor/` holds `doctor.mjs` and no SKILL.md, because the three
+typed capabilities of the plugin that ships it render as commands with
+`disable-model-invocation: true`. (It was `marketplace/zz-core/` when this was measured; the
+skill moved to zz-access on 2026-09-14 and the finding travelled with it unchanged.) A case grading
 `Skill(zz-doctor)` therefore scored 0.00 on every grader in the with arm, for a capability that
 is present and works. What makes this worth a section rather than a footnote is that the failure
 is silent in the direction that matters: the suite reports a delta, the delta is zero, and zero

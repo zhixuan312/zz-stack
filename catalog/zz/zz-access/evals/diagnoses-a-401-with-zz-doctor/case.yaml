@@ -1,0 +1,86 @@
+# The `zz-access` plugin's suite. RUN IT AGAINST `marketplace/zz-access`, NOT AGAINST THE
+# REPOSITORY ROOT.
+#
+# This header used to say the root, on the reasoning that the baseline has no catalog directory and the
+# root resolves as a skills-dir plugin over `skills/`. It does — and it resolves the other three
+# plugins at the same time. Measured 2026-09-13: `claude plugin eval .` loaded sdlc, zz-access,
+# zz-plugin-eval and zz together and started all TWELVE cases in one suite. It ran for two hours
+# and twenty minutes, never reached a single baseline arm, and had to be killed; what it wrote
+# was `partial: true` with a with-arm only, which is not a measurement of anything. 89MB of
+# repository against 144KB of built plugin.
+#
+# `marketplace/zz-access` is the plugin as a person actually installs it. zz-doctor moved here
+# from the baseline with the rest of the machine-and-credential skills, so this case moved with
+# it — a suite left behind in zz-core would type a command zz-core no longer declares, and the
+# WITH arm would score exactly what the baseline arm does.
+#
+# Provenance — catalog/zz/zz-access/skills/zz-doctor/SKILL.md, which exists precisely because this question
+#   used to be answered by guessing:
+#     "It answers ONE question: can this laptop, with the token it has, reach the platform
+#     through the plugins it installed?"
+#     "FAIL on a door — a 401 is the token, a 404 is the plugin declaring a path this
+#     gateway does not serve, and no answer at all is the network or the platform being
+#     down."
+#   The skill's whole instruction is: run the deterministic script, report what it
+#   printed, add no judgement. That is the behaviour under test — a bare agent handed a
+#   401 and a dead MCP server improvises a differential diagnosis, reads config files, and
+#   suggests things to try. The plugin hands over one command that answers it.
+#
+# THE PROMPT TYPES THE COMMAND, and that is forced rather than chosen. zz-doctor does NOT
+#   ship as a skill: measured 2026-09-13, `marketplace/zz-access/skills/zz-doctor/` contains
+#   `doctor.mjs` and no SKILL.md at all, because buildClientPackage renders zz-access's three
+#   typed capabilities (doctor, update, migrate) as COMMANDS — and a command carries
+#   `disable-model-invocation: true`, so no model can open it whatever the prompt says.
+#
+#   The first version of this case asked the question in ordinary words and graded
+#   `Skill(zz-doctor)`. Every grader scored 0.00 in the WITH arm, across three runs: the
+#   skill it named does not exist in the shipped plugin, and nothing told the agent the
+#   script was there. Delta 0.00 — a case about a capability that is genuinely present,
+#   measuring nothing, because it reached for it the one way that cannot work.
+#
+#   Typing `/zz-access:doctor` is what a person does, and it costs the baseline arm nothing: with no
+#   such command installed, the line is just text.
+#
+# `regex` matches the run's LAST MESSAGE only (measured on the sdlc suite, 2026-09-13),
+#   and any string quoted in the prompt is free to the baseline arm. `doctor.mjs` and `zzp_`
+#   below appear nowhere in the prompt; `/zz-access:doctor` DOES, so it is not graded.
+#
+# What it tests: given the exact symptom pair the skill names, does the agent reach for
+#   zz-doctor and hand over the script, instead of improvising a diagnosis?
+#
+# Bash is not granted by default, so the agent cannot RUN doctor.mjs. Quoting the command
+#   for the person to run is the intended observable and is what the skill tells it to do
+#   anyway when it cannot execute — do not add `--allow-tools Bash` to make it run, that
+#   would put a live network call inside an eval.
+#
+# Expected Δ (with-plugin minus no-plugin):
+#   (doctor-skill-fired was removed: it graded `Skill(zz-doctor)`, and there is no such
+#    skill in the shipped plugin. See the note above.)
+#   hands-over-the-script ~1.0 — `doctor.mjs` is a filename that exists only inside this
+#                                plugin. The baseline arm cannot produce it by guessing.
+#   plugin-only-vocabulary ~0.9 — `zzp_` (the platform's token prefix), `/zz-access:update` (the
+#                                fix the skill names for a version mismatch) and
+#                                `CLAUDE_PLUGIN_ROOT` (how the skill spells the path) are
+#                                all facts carried by the skill text. Weaker than the
+#                                other two only because the agent may pick just one of the
+#                                three and phrase it differently.
+schema_version: "1.0"
+name: diagnoses-a-401-with-zz-doctor
+execution:
+  prompt: |
+    /zz-access:doctor
+
+    Something is wrong with my ZZ setup in Claude Code. The MCP server will not connect at
+    all, and one of the doors that did answer came back 401. I have no idea which half is
+    broken. What is wrong, and how do I find out for certain?
+  max_turns: 15
+graders:
+  # `/zz-access:doctor` was in this alternation and has been removed: the prompt now types it, so
+  # the baseline arm gets it for free by quoting the request back. `doctor.mjs` is the file
+  # name only this plugin carries.
+  - name: hands-over-the-script
+    type: regex
+    pattern: 'doctor\.mjs'
+  - name: plugin-only-vocabulary
+    type: regex
+    pattern: 'zzp_|/zz-access:update|CLAUDE_PLUGIN_ROOT'

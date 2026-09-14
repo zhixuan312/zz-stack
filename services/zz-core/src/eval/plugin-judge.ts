@@ -10,7 +10,7 @@
  *
  * THE JUDGE IS NOT THE AGENT, and this door keeps that the same way judge.ts does: every tool
  * here takes identifiers. The ruler comes from the plugin version, the artifacts from the
- * database and the artifact store, the model from deployment configuration. `plugin_judge`
+ * database and the artifact store, the model from deployment configuration. `round_judge`
  * takes a rubric_id and it is a GUARD, not a supply — see the tool.
  *
  * TWO KINDS OF DIMENSION, and the split is why this subject needed anything new at all. A
@@ -85,7 +85,7 @@ async function usageRuns(p: pg.Pool, plugin: string, version: string) {
 
 /** The ruler this plugin VERSION declares, dimension by dimension. Through
  *  zz.plugin_version.rubric_id and never through zz.rubric.plugin_id: a plugin may carry more
- *  than one ruler over its life, and which one judges THIS version is a decision plugin_affirm
+ *  than one ruler over its life, and which one judges THIS version is a decision ruler_affirm
  *  records rather than a lookup anybody can shortcut. */
 async function pluginRuler(p: pg.Pool, plugin: string, version: string) {
   return (await p.query<Dim & { version_id: string; rubric_id: string; rubric_version: string; subject: string }>(`
@@ -132,14 +132,17 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
 
 export function registerPluginJudgeTools(server: McpServer): void {
   server.registerTool(
-    "plugin_ruler",
+    "ruler_read",
     {
       description:
-        "Everything a ruler for this plugin version is written FROM, and no ruler: the computed " +
-        "profile (traces and recorded cases), the documents and runs its use has left behind " +
-        "with whether each has already been scored, and any ruler the plugin already has. " +
-        "Facts only — nothing here says whether the plugin is any good, which is the question " +
-        "the ruler you write from it will answer. Read-only.",
+        "WHEN the define stage is writing rulers.md and needs everything a ruler for this " +
+        "plugin version is written FROM. RETURNS the computed profile (traces and recorded " +
+        "cases), the documents and runs its use has left behind with whether each has already " +
+        "been scored, and any ruler the plugin already has — and no ruler. REFUSES only a " +
+        "deployment with no platform database: a version nothing has been recorded against " +
+        "comes back as empty facts, because \"nothing recorded\" is an answer. It decides " +
+        "nothing and never says whether the plugin is any good, which is the question the " +
+        "ruler you write from it will answer. Read-only.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {
@@ -180,20 +183,20 @@ export function registerPluginJudgeTools(server: McpServer): void {
             "still holds, and affirm it — a new one beside it starts a second scale, and the " +
             "two can never be compared afterwards."
           : "No ruler yet. Write rulers.md from the facts above, put it to the stakeholder, " +
-            "and record their approval with plugin_affirm.",
+            "and record their approval with ruler_affirm.",
       });
     },
   );
 
   server.registerTool(
-    "plugin_affirm",
+    "ruler_affirm",
     {
       description:
-        "Record that this plugin version is judged by the ruler the stakeholder approved, and " +
-        "return the rubric it now declares, who approved it and when. It records a decision; " +
-        "it does not make one. It REFUSES when the plugin has no ruler at all, and when any " +
-        "quantitative dimension carries no threshold — a line written after the figure is " +
-        "known is not a threshold. Call it after rulers.md is approved, never before.",
+        "WHEN rulers.md has been approved and the stakeholder has agreed what good means " +
+        "here — after that, never before. RETURNS the rubric this version now declares, who " +
+        "approved it and when. It records a decision; it does not make one. REFUSES when the " +
+        "plugin has no ruler at all, and when any quantitative dimension carries no " +
+        "threshold — a line written after the figure is known is not a threshold.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {
@@ -214,7 +217,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
         return text(
           `REFUSED: the define stage's document — rulers.md for ${plugin} ${version} — has not ` +
           "been approved, so there is no ruler for this version to be judged by. Write it from " +
-          "plugin_ruler's facts, put it to the stakeholder, and call this once they have agreed " +
+          "ruler_read's facts, put it to the stakeholder, and call this once they have agreed " +
           "it. Scores taken under a ruler nobody approved are indistinguishable afterwards from " +
           "scores taken under one that was.");
       }
@@ -242,7 +245,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
         "update zz.rubric set approved_by = $1 where id = $2::uuid returning now()::text as at",
         [who, rows[0].rubric_id])).rows[0].at;
       logActivity(await userRoot(), null,
-        { user: who, action: "plugin_affirm", plugin, version, rubric: rows[0].rv });
+        { user: who, action: "ruler_affirm", plugin, version, rubric: rows[0].rv });
       return json({
         plugin, version, rubric_id: rows[0].rubric_id, rubric_version: rows[0].rv,
         approved_by: who, approved_at: at,
@@ -255,24 +258,26 @@ export function registerPluginJudgeTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "plugin_judge",
+    "round_judge",
     {
       description:
-        "Score one version of one plugin against the ruler it declares, and store every mark. " +
-        "It returns what the PINNED judge recorded — subjects marked, what is left, and the " +
+        "WHEN a ruler is in force for this version and the round is ready to be scored: it " +
+        "scores one version of one plugin against the ruler it declares and stores every " +
+        "mark. It RETURNS what the PINNED judge recorded — subjects marked, what is left, and the " +
         "threshold results — not an opinion of yours or of this tool. YOU ARE NOT THE JUDGE: " +
         "you name a plugin, a version and the rubric you believe is in force, and you cannot " +
         "supply the artifact, the ruler or the model. Subjects are what the version's use left " +
         "behind: the documents its runs produced, or their traces where it produced none. Run " +
         "it once plainly and once with control: true — the control marks a DIFFERENT plugin's " +
         "work under this ruler, and a judge that is reading collapses on it; one without the " +
-        "other is not a measurement. IT MARKS ONE SUBJECT PER CALL: call again with the " +
-        "`eval_id` it returns until `remaining` is 0.",
+        "other is not a measurement. It REFUSES a rubric_id the version does not declare, and " +
+        "it MARKS ONE SUBJECT PER CALL: call again with the `eval_id` it returns until " +
+        "`remaining` is 0.",
       inputSchema: {
         plugin: z.string(),
         version: z.string(),
         rubric_id: z.string()
-          .describe("The ruler you believe judges this version, from plugin_affirm. It is " +
+          .describe("The ruler you believe judges this version, from ruler_affirm. It is " +
                     "CHECKED against what the version declares and refused on a mismatch — it " +
                     "cannot select a ruler, only catch a caller working from a stale one."),
         control: z.boolean().optional()
@@ -292,7 +297,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
           return text(
             `ERROR: ${plugin} ${version} declares no ruler, so nothing can be scored against ` +
             "it. That is the define stage's gate showing through: agree rulers.md, then " +
-            `plugin_affirm(plugin: "${plugin}", version: "${version}").`);
+            `ruler_affirm(plugin: "${plugin}", version: "${version}").`);
         }
         // THE RUBRIC ID IS A GUARD. The caller cannot choose a ruler — the version declares one
         // — but a caller working from an earlier turn can name one that has since been
@@ -301,7 +306,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
         if (rubric_id !== dims[0].rubric_id) {
           return text(
             `ERROR: ${plugin} ${version} is judged by rubric ${dims[0].rubric_id} ` +
-            `(v${dims[0].rubric_version}) and you named ${rubric_id}. Re-read plugin_affirm and ` +
+            `(v${dims[0].rubric_version}) and you named ${rubric_id}. Re-read ruler_affirm and ` +
             "call again with the ruler this version actually declares.");
         }
         // `body` was a fourth value here and is not one any more. It marked a skill's own text
@@ -471,7 +476,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
         // marked WHAT and WHEN is provenance a later reader needs, and it is the only record of
         // a call that timed out after spending most of it.
         logActivity(await userRoot(), null, {
-          user: parseCaller(requestHeaders()).email, action: "plugin_judge",
+          user: parseCaller(requestHeaders()).email, action: "round_judge",
           plugin, version, eval_id: got.eval_id, control: got.control, stored: got.stored,
         });
         // `subjects` names this plugin's documents even on a control round, because the loop
@@ -485,15 +490,16 @@ export function registerPluginJudgeTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "plugin_scores",
+    "round_scores",
     {
       description:
-        "Read one round's marks back: the round itself, the qualitative dimensions with their " +
-        "means, the judge on trial against its blind control, every quantitative dimension " +
-        "with the threshold it was held to and the figure it was read against, and the " +
-        "findings recorded so far. Stored facts, retrieved — every judgement in them was made " +
-        "by the pinned judge at the time and nothing is re-scored here. The control is counted " +
-        "separately and never averaged into the real mean.",
+        "WHEN a round's marks are in and the report stage needs to read them back. RETURNS " +
+        "the round itself, the qualitative dimensions with their means, the judge on trial " +
+        "against its blind control, every quantitative dimension with the threshold it was " +
+        "held to and the figure it was read against, and the findings recorded so far — " +
+        "stored facts, retrieved, every judgement made by the pinned judge at the time and " +
+        "nothing re-scored here. REFUSES an eval_id that is not a plugin evaluation, and the " +
+        "control is counted separately and never averaged into the real mean.",
       inputSchema: { eval_id: z.string() },
     },
     async ({ eval_id }) => {
@@ -511,7 +517,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
           join zz.rubric rb on rb.id = ev.rubric_id
          where ev.id = $1::uuid`, [eval_id])).rows[0];
       if (!round) {
-        return text(`ERROR: ${eval_id} is not an evaluation of a plugin. plugin_judge returns ` +
+        return text(`ERROR: ${eval_id} is not an evaluation of a plugin. round_judge returns ` +
                     "the id of the round it started; that is the only id this reads.");
       }
       const pvId = round.plugin_version_id;
@@ -581,7 +587,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
             "confident output. Below 1.5 the ruler failed to tell the right artifact from the " +
             "wrong one, and nothing else here establishes anything."
           : "NO CONTROL has been run against this plugin version, so nothing establishes the " +
-            "judge was reading. Treat every score above as unverified until plugin_judge has " +
+            "judge was reading. Treat every score above as unverified until round_judge has " +
             "run with control: true.",
       });
     },

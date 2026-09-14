@@ -42,6 +42,20 @@ function migrationsSince(tag) {
 }
 
 export function rollback(to) {
+  // NOTHING TO GO BACK TO is not a failure, and it must be said before the guard below speaks.
+  //
+  // `previous` is read off the host's own .env, so a redeploy of the version already running
+  // asks this function to roll back to the version it just deployed. That is a no-op, and it
+  // arrived as a wall of red text naming eleven destructive migrations — which reads as "your
+  // release broke something" when what happened is that there was no earlier version recorded
+  // to return to.
+  const current = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_VERSION=).*' .env || echo ''`).trim();
+  if (!to || to === current) {
+    log(`  · nothing to roll back to — the host was already on ${to || "(unset)"} before this ` +
+        `release, so there is no earlier version recorded. The deployment is left as it is.`);
+    return;
+  }
+
   // REFUSED BEFORE ANYTHING MOVES, when going back would break what is currently working.
   const added = migrationsSince(to);
   const destructive = added.filter((f) => {

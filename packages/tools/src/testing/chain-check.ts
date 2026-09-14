@@ -445,8 +445,14 @@ async function main(): Promise<number> {
   // An initiative closes ONCE. A second close used to overwrite the document's outcome while
   // ledgerOnClose skipped the second row, so the document said one word and the team's ledger
   // — which is what the OKR grading and the cross-flow comparison count — said another.
+  //
+  // THE SAME DISPOSITION, because `abandoned` never reaches this guard. An initiative whose
+  // gates are all approved is refused as a CONTRADICTION first — "does not look abandoned" —
+  // which is the platform being right about a different rule, and left this step reporting a
+  // failure against a close guard it had not managed to exercise.
   check("an initiative cannot be closed twice",
-    await call("initiative_close", { initiative: INIT, disposition: "abandoned" }), true, /already closed as/);
+    await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
+    true, /already closed as/);
 
   // AND THE WAY ROUND THAT GUARD. initiative_close() and ledgerOnClose both refuse a second close by
   // reading `outcome` off the document, so anything able to REMOVE that field reopens the
@@ -455,8 +461,27 @@ async function main(): Promise<number> {
   // one of the governance fields it puts back to draft, while leaving `closed_by` standing.
   // The check above cannot see that: it asks whether initiative_close() refuses, and after a revision
   // initiative_close() has nothing to refuse.
-  check("a document that records a close cannot be revised",
-    await call("document_revise", { path: `${INIT}/${closing}`, content: doc("reopened", closing) }),
+  //
+  // THE INVARIANT IS THE LEDGER, NOT THE REVISION. This asserted that document_revise REFUSES
+  // a document recording a close, because revise used to clear `outcome` as one of the
+  // governance fields it returns to draft — which reopened the initiative and let the close run
+  // again, putting a second row in the file the OKR grading and the cross-flow comparison count.
+  //
+  // Measured on the live platform: the revision is now ACCEPTED and `outcome: accepted` and
+  // `closed_by` both survive it, so the way round the guard is closed at the source rather than
+  // by forbidding the edit. Asserting the refusal would now pin an implementation detail that
+  // has been improved on, and would fail against a platform doing the better thing.
+  //
+  // So the probe does what the attack did — revise the closing document — and then asserts the
+  // property that actually matters: a second close is still refused. `self_edit` names what was
+  // changed; document_revise requires a cause and `because` is not one of its fields.
+  check("a closed document may be revised, and the outcome survives it",
+    await call("document_revise", {
+      path: `${INIT}/${closing}`, content: doc("reopened", closing),
+      self_edit: "chain-check rewriting its own closing document",
+    }), false);
+  check("revising the closing document does not let the initiative close twice",
+    await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
     true, /closes once/);
 
   // And the document says what the close recorded, not merely that the call was accepted.
@@ -553,8 +578,13 @@ async function main(): Promise<number> {
       { ...node, title: "chain-check subject probe (superseding)", tags: ["block:casebox"] });
     const newId = /journal node (\d+) created/.exec(superseding)?.[1];
     if (newId) {
+      // NAMING THE SHELF, because both shelves allocate from 0001 and a bare id meaning a
+      // node on each is the ordinary case rather than an edge one. The fixture above is minted
+      // with `scope: "team"`, so that is the shelf these two ids are on; without saying so this
+      // step failed the moment the platform's shelf happened to hold the same number, which is
+      // an accident of how many nodes each shelf has and not a fact about supersession.
       check("knowledge_supersede marks a node superseded by one that exists",
-        await call("knowledge_supersede", { old_id: oldId, new_id: newId }), false);
+        await call("knowledge_supersede", { old_id: oldId, new_id: newId, shelf: node.scope }), false);
     } else {
       record(false, "knowledge_supersede marks a node superseded by one that exists",
         `could not mint a second node to supersede with: ${superseding}`);
@@ -644,8 +674,14 @@ async function main(): Promise<number> {
       eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
     }), /no platform database|no evaluation/);
 
+  // MATCHED AS A CELL, NOT AS A SUBSTRING. This probe also opens `<INIT>-freeform`, whose name
+  // CONTAINS INIT — so closing the freeform one first put a row in the ledger that
+  // `before.includes(INIT)` read as "this initiative was already there", and the assertion
+  // failed on a ledger that was behaving perfectly. The ledger is a markdown table; a row names
+  // its initiative between pipes, and that is what distinguishes the two.
   const after = await call("document_read", { path: "_ledger.md" });
-  record(after.includes(INIT) && !before.includes(INIT),
+  const row = `| ${INIT} |`;
+  record(after.includes(row) && !before.includes(row),
     "closing appends a ledger row the model cannot write", after.slice(-160));
 
   const bad = RESULTS.filter((r) => !r.ok);

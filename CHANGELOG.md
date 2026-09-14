@@ -33,6 +33,103 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.34.0] — 2026-09-14
+
+The platform's surface — every tool name, which door serves it, and which plugin ships each
+skill — is now declared once and derived everywhere else. Thirty-nine tasks, and the reason
+they were one release rather than thirty-nine is that a name is not a local fact: renaming a
+tool touches the door that registers it, the alias map that resolves its history, the skills
+that teach it, the manifest that ships them, the lock that pins the manifest, and the prose
+that describes the lot. **Four breaking changes; read the upgrade notes before deploying.**
+
+The gate went from 296 checks to 331. That number is the honest summary of this release: most
+of the work was not writing behaviour, it was making the platform able to notice when a
+statement about itself stops being true.
+
+### Changed
+- **The baseline plugin is `zz-core`, not `zz`.** Its commands move with it: `/zz:doctor`,
+  `/zz:migrate` and `/zz:update` are now `/zz-core:...`. `zz` remains the Postgres schema name
+  and the platform's vocabulary prefix; only the plugin was renamed.
+- **Tool names are `<noun>_<verb>`, on every door.** `get_my_info` becomes `session_whoami`,
+  `search_knowledge` becomes `knowledge_search`, `close` becomes `initiative_close`, and so on
+  through fifty-three names. `whoami` on `/manage` is the one deliberate exception — it is the
+  question a person asks, not a noun they act on. Old names resolve for READING history
+  (`packages/contracts/src/alias.ts` holds 17 + 29 + 7 frozen entries); nothing writes one.
+- **A fourth door: `/eval/mcp`.** The ten `plugin_*` tools left `/core/mcp` for a door you get
+  by installing the `zz-plugin-eval` flow. `/core` is everybody's process layer; evaluating a
+  plugin is one flow's instrument, and a tool on the door everyone holds reads as a tool
+  everyone is meant to use.
+- **`/manage` is cut by role.** A member is offered 16 tools, a team lead 4 more, a superadmin
+  11 more. A tool you cannot see is a fact about you rather than about the platform, and
+  `whoami` says which. Every tool still authorises per call.
+- **Two core skills renamed** — `zz-backbone` to `zz-platform`, `zz-knowledge` to
+  `zz-handover` — and **seven skills now ship from the plugin that owns them** rather than from
+  the baseline: `sdlc-deck`, `sdlc-tldr`, `sdlc-breakout` and `sdlc-authoring` to sdlc-flow;
+  `zz-doctor`, `zz-update` and `zz-migrate` to zz-access.
+- **The console reports an unmeasured aggregate as null, never as zero.** A group nothing was
+  measured for rendered as instant and free. `zz.run.bytes_total` is nullable for the same
+  reason: a run nobody measured is not a run that moved nothing.
+
+### Added
+- **The knowledge base records what is READ.** `knowledge_add` and `knowledge_supersede` each
+  left three records and `knowledge_search` left none, so the shelf could say everything about
+  what went into it and nothing about what anyone took out. A search now writes a
+  `knowledge.search` event carrying the ids it returned — "which nodes does anybody actually
+  read" has an answer for the first time.
+- **`zz.block_tool.door`** records which door served a tool at the moment a version was built,
+  so a surface diff can say "the same tool, served somewhere else" instead of reporting no
+  change. Existing rows stay NULL, which means *not recorded* and never *the core door*.
+- **Every plugin declares where its eval suite is authored**, and the packaged suite is read
+  from that declaration rather than guessed at.
+- **The overview API carries a `metrics` field** — four figures the console will lead with.
+  Nothing renders it in this release; the console follows separately.
+
+### Fixed
+- **A half-fallen-over eval suite could read as clean.** `plugin_profile` reported
+  `errored_runs: 0` on a suite where twelve runs had died, because the module that builds an
+  empty result hardcoded the field. The recorded 2026-09-13 payload is 12 errored runs and
+  `partial: true`; it had been reporting 0 and false.
+- **The baseline plugin shipped one developer's run output to every installer** — 264KB of
+  `evals/results/` in the package everybody downloads.
+- **The committed lock hashed gitignored files**, so a fresh clone's gate was red for a
+  difference nothing in the repository carried.
+- **A claim that states no verdict now says so.** `zz.decision.verdict` is empty on all 478
+  rows of the production store, and that is correct: of the four readers that write those rows
+  only two produce a verdict, and no selection document has ever been indexed. The API reported
+  `""`, which reads as a broken field rather than as a fact about the documents.
+- **Three dormant columns removed** — `zz.initiative.closed_at`, `zz.initiative.deleted_at` and
+  `pat.scope`. Each was declared, never written, and read as an answer.
+
+### Security
+- **A token carries whatever its holder may do.** `pat.scope` was `member` or `admin` and three
+  authority checks asked the TOKEN rather than the person, so the same person was allowed or
+  forbidden the same act depending on which of their credentials they held — and the cure for
+  being refused was to mint a second token. Authority now reads from `principal.role` and
+  `membership` on every call, which costs nothing: it is the same query that resolves the token.
+  Binding a token to one team (`pat.team_id`) stays — that answers which team it acts INSIDE,
+  which is not a claim about what its holder may do.
+- **`zz-tool` finds the token instead of demanding it.** It read `$ZZ_TOKEN` and died otherwise,
+  on machines where the install step had already written `~/.zz/token` at mode 600. One
+  resolver now follows the order the platform publishes to its own clients — `$ZZ_TOKEN`, then
+  `$ZZ_TOKEN_FILE`, then `~/.zz/token` — and a missing token prints the onboarding step rather
+  than an error.
+
+### Upgrade notes
+- **Migrations run on start; nothing to do by hand.** 049 through 054 drop three columns and add
+  one. All 54 were applied in order to a fresh database before this release.
+- **BREAKING — command prefixes moved.** `/zz:doctor|migrate|update` are `/zz-core:...`, and
+  `/sdlc:deck|tldr|breakout` now come from sdlc-flow. **Re-pull your client package**; an
+  installed plugin from 0.33.x names commands that no longer exist.
+- **BREAKING — tool names.** Anything calling a platform tool by name needs the new spelling.
+  Old names resolve when READING recorded history and are not accepted as arguments.
+- **BREAKING — `pat_issue` no longer takes `scope`,** and `pat.scope` is dropped. Existing
+  tokens widen to their holder's real authority, which is what their holders always had. If you
+  relied on a deliberately reduced token, bind it to a team instead.
+- **BREAKING — the console initiative API** returns `null` rather than `""` for a decision's
+  `verdict`, `qualifier` and `checker`. A consumer testing truthiness is unaffected; one
+  comparing to `""` is not.
+- **The console is NOT in this release.** `zz-stack-dashboard` stays at 0.6.1.
+
 ## [0.33.1] — 2026-09-13
 
 A defect fix and two pieces of console presentation. Nothing to do on upgrade.

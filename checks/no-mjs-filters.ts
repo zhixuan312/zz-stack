@@ -33,7 +33,7 @@ const HUNTERS = new Set([
   "checks/lock-current.ts",          // asserts no .mjs survives in the lock
   "checks/skill-commands-runnable.ts", // flags a SKILL.md still instructing a .mjs
 ]);
-// Four files, and the list is explicit rather than a heuristic on purpose: each one hunts
+// Seven files, and the list is explicit rather than a heuristic on purpose: each one hunts
 // .mjs for a living, so each must spell it out, and a clever rule that inferred "this looks
 // like a hunter" would eventually excuse a file that is simply stale. A named list with a
 // reason per entry is auditable; a heuristic is not.

@@ -20,8 +20,8 @@
     }
   },
   "zz-access": {
-    "version": "2.2.0",
-    "digest": "4165c539",
+    "version": "2.2.1",
+    "digest": "4cfe2942",
     "cases_digest": "fdb69ec6",
     "skills": {
       "zz-access": "29467f7264e8",

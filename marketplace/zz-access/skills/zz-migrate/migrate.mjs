@@ -31,8 +31,8 @@
  *   copy of everything before it. 700 sends over a network is long enough that "what happens
  *   when it stops halfway" is a certainty, not a risk.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { Door, gateway, token } from "./mcp.mjs";
 import { survey } from "./read-mma.mjs";

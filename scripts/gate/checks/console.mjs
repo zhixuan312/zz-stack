@@ -331,9 +331,15 @@ check("a claim that states no verdict says so, rather than stating an empty one"
   // And the counts, which are what make a blank column legible as a fact about the documents.
   // ANCHORED WITH ITS COLON: written as a bare name this passed on `decisionCountsGone`, which
   // is what renaming the field to break it produced. Measured, not supposed.
-  if (!/decisionCounts:/.test(src)) {
-    bad.push(`${f} no longer reports how many rows carry a verdict, a qualifier or a checker — ` +
-             "a column of nulls cannot then be told from a derivation that has stopped running");
+  //
+  // COUNTED PER READER, for the same reason claimRow is. Asked as "does the file mention it
+  // anywhere", one endpoint reporting the counts would cover for the other saying nothing —
+  // which is the shape of the defect that made claimRow a helper in the first place.
+  const counted = (src.match(/decisionCounts:/g) ?? []).length;
+  if (counted !== readers) {
+    bad.push(`${f} queries zz.decision ${readers} time(s) and reports decisionCounts on ` +
+             `${counted} of them — a reader that returns no counts cannot tell a column of ` +
+             "nulls from a derivation that has stopped running");
   }
   return bad.length ? bad.join("; ") : null;
 });

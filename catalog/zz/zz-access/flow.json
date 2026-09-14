@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-access",
-  "version": "2.2.1",
+  "version": "2.2.0",
   "shelved": true,
   "description": "Access, yours and everybody's: your platform token, your keys for the building blocks, and the setup for whichever client you work in — plus, if your role carries them, the people, teams, flow installs and block grants behind them. One door; the tools you are offered are the ones your role can execute.",
   "purpose": "To be the one door for every credential and every question about who may do what — your platform token, your block keys, your client setup, and, if your role carries them, the people, teams, installs and grants behind them. A tool belongs here when it hands somebody a key or changes who holds one.",

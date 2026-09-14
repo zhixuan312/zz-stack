@@ -101,6 +101,35 @@ export interface Dim {
   threshold_reason: string;
 }
 
+/** WHAT THE PROVIDER SAID A CALL COST, read from the response's own `usage` block and from
+ *  nothing else. FR-10 forbids deriving a token figure from the bytes we sent: an estimate and
+ *  a measurement are not the same fact, and one column cannot say which of the two it holds.
+ *
+ *  `prompt_tokens_details.cached_tokens` IS THE PROVIDER'S DOCUMENTED SPELLING AND HAS NOT BEEN
+ *  SEEN ON A LIVE RESPONSE. The judge calls whatever LLM_BASE_URL names — z.ai's
+ *  OpenAI-compatible v4 API on this deployment, whose chat-completion reference documents
+ *  exactly this nesting under `usage`. It could not be confirmed against a real answer: there
+ *  is no LLM_API_KEY on the machine this was written on and ssh to the deployment timed out, so
+ *  the name comes from the reference rather than from a response, which is a weaker thing and
+ *  is said here rather than left to be assumed. If the spelling is wrong the column reads null,
+ *  which the schema defines as "not reported" — the truthful answer for a figure nobody managed
+ *  to read. The first real round after this deploys settles it: a populated column confirms the
+ *  name, a column that is null while input_tokens is not says the name is wrong. */
+interface Usage {
+  prompt_tokens?: unknown;
+  completion_tokens?: unknown;
+  prompt_tokens_details?: { cached_tokens?: unknown } | null;
+}
+
+/** A count the provider reported, or null. NEVER 0.
+ *
+ *  `?? 0` here is the exact conflation migration 050 exists to prevent: a provider that
+ *  reported nothing and a call that genuinely consumed nothing would land as the same row, and
+ *  a sum over the column would read as complete while it was silently short. A gap stays a gap.
+ */
+const count = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : null;
+
 /** One call to the pinned judge, answering JSON.
  *
  * ONE ATTEMPT, BOUNDED. This retried once on an unparseable answer, which is the right
@@ -115,49 +144,93 @@ export interface Dim {
  * The timeout is explicit because fetch has none: without it a stalled endpoint hangs the
  * request until something upstream gives up, and the reason never reaches anybody.
  */
-async function ask(system: string, user: string): Promise<Record<string, unknown> | null> {
+async function ask(p: pg.Pool, plugin: string | null,
+                   system: string, user: string): Promise<Record<string, unknown> | null> {
   if (!LLM_BASE || !LLM_KEY) throw new Error("no LLM endpoint configured for the judge");
   let body: string;
-  const r = await fetch(`${LLM_BASE}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${LLM_KEY}` },
-    // As long as the request that carries it can survive. Something between this tool and
-    // its caller closes an MCP request at about two minutes, so there is no point waiting
-    // longer than the answer could be delivered — and no point stopping earlier either,
-    // which 95 seconds did: a control that needed a hundred was abandoned three times with
-    // twenty-five seconds of the window unused.
-    signal: AbortSignal.timeout(110_000),
-    body: JSON.stringify({
-      // The model as the ENDPOINT knows it. JUDGE_MODEL carries the mode as well, because a
-      // mode is part of the judge's identity, and that is what lands in zz.eval.judge_model.
-      model: JUDGE_BASE,
-      ...(THINKING ? {} : { thinking: { type: "disabled" } }),
-      // Deterministic on purpose. A judge that samples gives two different numbers for one
-      // artifact, and the whole point of pinning it is that it does not.
-      temperature: 0,
-      // GENEROUS, because the cap was the bug. At 4000 this model spent most of the budget on
-      // reasoning tokens and returned `finish_reason: "length"` — JSON cut off mid-string,
-      // which is unparseable, which triggered the retry, which spent the request's whole
-      // remaining time. The symptom was a tool that returned nothing; the cause was a number.
-      max_tokens: 16000,
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    }),
-  });
+
+  /* WHAT THIS CALL COST, recorded on every path that actually sent a request.
+   *
+   * ONE INSERT SITE, and it is reached from four places rather than one: the fetch throwing,
+   * the endpoint answering non-2xx, the answer arriving truncated, and the answer arriving
+   * whole. A recorder wired only to the last of those would drop precisely the expensive
+   * failures — a truncated answer spent the ENTIRE output budget — and the total it produced
+   * would understate spend while looking complete. `ok` is what separates the four.
+   *
+   * The refusal above writes nothing, deliberately: no request was made, so there is no call
+   * to record. `started` is taken here so `duration_ms` measures the fetch and the reading of
+   * its body, which is what the caller waited for.
+   *
+   * An insert that fails propagates rather than being swallowed. Every other statement in this
+   * round already needs this pool, so a database that cannot take this row cannot store a score
+   * either — hiding the failure here would only lose the evidence that it happened. */
+  const started = Date.now();
+  const record = async (ok: boolean, u: Usage | undefined) => {
+    await p.query(`
+      insert into zz.model_call
+        (plugin, purpose, model, input_tokens, output_tokens, cache_read_tokens, duration_ms, ok)
+      values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [plugin, "plugin-judge", JUDGE_MODEL,
+       count(u?.prompt_tokens), count(u?.completion_tokens),
+       count(u?.prompt_tokens_details?.cached_tokens),
+       Date.now() - started, ok]);
+  };
+
+  let r: Response;
+  try {
+    r = await fetch(`${LLM_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${LLM_KEY}` },
+      // As long as the request that carries it can survive. Something between this tool and
+      // its caller closes an MCP request at about two minutes, so there is no point waiting
+      // longer than the answer could be delivered — and no point stopping earlier either,
+      // which 95 seconds did: a control that needed a hundred was abandoned three times with
+      // twenty-five seconds of the window unused.
+      signal: AbortSignal.timeout(110_000),
+      body: JSON.stringify({
+        // The model as the ENDPOINT knows it. JUDGE_MODEL carries the mode as well, because a
+        // mode is part of the judge's identity, and that is what lands in zz.eval.judge_model.
+        model: JUDGE_BASE,
+        ...(THINKING ? {} : { thinking: { type: "disabled" } }),
+        // Deterministic on purpose. A judge that samples gives two different numbers for one
+        // artifact, and the whole point of pinning it is that it does not.
+        temperature: 0,
+        // GENEROUS, because the cap was the bug. At 4000 this model spent most of the budget on
+        // reasoning tokens and returned `finish_reason: "length"` — JSON cut off mid-string,
+        // which is unparseable, which triggered the retry, which spent the request's whole
+        // remaining time. The symptom was a tool that returned nothing; the cause was a number.
+        max_tokens: 16000,
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      }),
+    });
+  } catch (err) {
+    // A timeout is a call that happened: it held the endpoint for 110 seconds and the provider
+    // may well have billed the prompt. It reports no usage, so the three token columns stay
+    // null — not reported, which is true — and the row still says a call was made and failed.
+    await record(false, undefined);
+    throw err;
+  }
   if (!r.ok) {
     const t = (await r.text()).slice(0, 300);
+    await record(false, undefined);
     // Quota is not a formatting slip: rediscovering it once per subject would spend a whole
     // round learning the same thing.
     if (r.status === 429 || /limit|quota/i.test(t)) throw new Error(`the judge is out of quota: ${t}`);
     throw new Error(`the judge answered ${r.status}: ${t}`);
   }
   const said = (await r.json()) as {
-    choices?: { finish_reason?: string; message?: { content?: string } }[] };
+    choices?: { finish_reason?: string; message?: { content?: string } }[]; usage?: Usage };
   // Said out loud, because a truncated answer is not a bad document and must never be scored
   // as one.
   if (said.choices?.[0]?.finish_reason === "length") {
+    // Recorded BEFORE the throw, and with the figures the provider reported rather than nulls.
+    // This is the most expensive failure the judge has — it burned the whole 16000-token output
+    // budget and stores no mark for it — so it is the last one that may go unrecorded.
+    await record(false, said.usage);
     throw new Error("the judge ran out of output budget mid-answer — the mark is incomplete " +
                     "and is not being stored");
   }
+  await record(true, said.usage);
   body = String(said.choices?.[0]?.message?.content ?? "");
   const m = /\{[\s\S]*\}/.exec(body);
   if (!m) return null;
@@ -356,7 +429,8 @@ function matcher(dims: Dim[]): (named: unknown) => string | null {
  * Met is 5 and unmet is 1 because a line is binary. A band between them would be this pass
  * inventing degrees the ruler did not write.
  */
-async function applyThresholds(dims: Dim[], facts: string): Promise<{ dimension: string; meets: boolean; fact: string }[]> {
+async function applyThresholds(p: pg.Pool, plugin: string | null, dims: Dim[], facts: string):
+    Promise<{ dimension: string; meets: boolean; fact: string }[]> {
   const system = [
     "The message below is a set of facts about one subject, computed by a tool with no model",
     "anywhere in the derivation. You are applying thresholds that were written down BEFORE any",
@@ -372,7 +446,7 @@ async function applyThresholds(dims: Dim[], facts: string): Promise<{ dimension:
     "",
     'Answer as JSON only: {"met": [{"dimension": string, "meets": boolean, "fact": string}]}',
   ].join("\n");
-  const got = await ask(system, facts);
+  const got = await ask(p, plugin, system, facts);
   const said = (got?.met as { dimension?: unknown; meets?: unknown; fact?: unknown }[] | undefined) ?? [];
   const dimOf = matcher(dims);
   const answered = new Map<string, { meets: boolean; fact: string }>();
@@ -430,6 +504,12 @@ export async function markAll(
   bodyOf: (teamSlug: string, initiative: string, path: string) => string | null,
 ): Promise<JudgeResult> {
   const { dims, kind, versionId } = m;
+  // WHOSE SPEND THIS IS. Every row zz.model_call takes from here is attributed to the plugin
+  // being judged, because that is the only plugin in the picture — the judge is the platform
+  // spending on somebody's behalf, and `plugin` is the column the per-plugin roll-up indexes.
+  // `noun` is the one field that says what a subject is, and today it is "plugin" at the single
+  // caller; anything else is a subject with no plugin to charge, and null says so.
+  const plugin = m.noun === "plugin" ? m.name : null;
 
   // The session. A caller that passes an id continues that evaluation; one that does not
   // starts a new one, which is what a fresh round is.
@@ -516,7 +596,7 @@ export async function markAll(
   const thresholds: JudgeResult["thresholds"] = [];
   if (!control && quant.length && m.facts && !done.has(factsKey(versionId))) {
     try {
-      const applied = await applyThresholds(quant, m.facts);
+      const applied = await applyThresholds(p, plugin, quant, m.facts);
       const subjId = await subjectRow("", factsKey(versionId), null, null);
       for (const t of applied) {
         const d = quant.find((x) => x.name === t.dimension);
@@ -538,7 +618,7 @@ export async function markAll(
     if (!text.trim()) { skipped.push(`${x.label} — nothing to read`); continue; }
     let marks: Mark[] = [];
     try {
-      const got = await ask(system, text);
+      const got = await ask(p, plugin, system, text);
       marks = (got?.marks as Mark[] | undefined) ?? [];
     } catch (err) {
       // Out of quota stops the round; anything else is this subject's problem, and the next

@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { type CatalogManifest, type FlowDoc, parseEnvelope } from "@zz/contracts";
-import { catalogManifest } from "@zz/catalog";
+import { catalogManifest, isFlow } from "@zz/catalog";
 
 import { db } from "./platform-db.js";
 import { type Chain } from "./write-guards.js";
@@ -103,7 +103,17 @@ function chainForFlow(declared: string): Chain | null {
   // `includePlatform` is true because a platform package may declare a chain of its own, and
   // an initiative that names one is asking for exactly that.
   const m = catalogManifest(name, true);
-  if (m?.documents) chain = deriveChain(m.documents, m.name ?? name);
+  // isFlow, NOT a truthiness test on `documents`. These are one question, not two: a chain
+  // IS a flow's discipline over its documents, so "is there a chain to derive" and "is this
+  // a flow" have the same answer by construction, and deriving one for a package that is not
+  // a flow is the bug rather than a tolerated edge.
+  //
+  // `if (m?.documents)` was that bug. `[]` is truthy, so a manifest declaring an empty list
+  // resolved to a NAMED chain with nothing in it — and a named chain is exactly what
+  // initiative_status takes as "a flow governs this", so it walked an empty document list and
+  // answered `action: "close", document: ""`. The honest answer is no chain, which is what an
+  // unresolvable flow already gets.
+  if (m && isFlow(m)) chain = deriveChain(m.documents, m.name ?? name);
   chainCache.set(name, { chain, expires: Date.now() + 60_000 });
   return chain;
 }
@@ -147,7 +157,9 @@ async function chainForTeam(team: string | null): Promise<Chain | null> {
       // preserves is the shape of a flow as it was on the day somebody ran install_flow, and
       // what it costs is every rule added since. The registry row still records what was
       // installed and when; it is simply not the thing a write is judged against.
-      chain = chainForFlow(rows[0].flow) ?? (m?.documents ? deriveChain(m.documents, rows[0].flow) : null);
+      // isFlow here too, and for the same reason as chainForFlow: an installed manifest
+      // carrying `documents: []` is a package with no chain, not a chain with no documents.
+      chain = chainForFlow(rows[0].flow) ?? (m && isFlow(m) ? deriveChain(m.documents, rows[0].flow) : null);
     }
   } catch { /* registry unreachable or absent: no chain, so no discipline is enforced */ }
   installCache.set(team, { chain, expires: Date.now() + 60_000 });

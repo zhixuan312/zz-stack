@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 
 import { MARKETPLACE, type ClientPackage } from "../client-package.js";
 import type { Plugin } from "../client-package.js";
-import { commandName, pluginName } from "./skills.js";
+import { entryCommand, pluginName } from "./skills.js";
 
 /** A short, stable digest of everything on this person's shelf — the plugin names and the
  * bytes of every file. Two people with the same shelf get the same digest; one changed
@@ -89,31 +89,34 @@ export function describePackage(pkg: ClientPackage, target: string): string {
   ];
 
   // THE BASELINE'S OWN COMMANDS COME FIRST, and they are listed whether or not a flow is
-  // installed — they are the three that work on an empty account. `/zz:doctor` especially:
+  // installed — they are the three that work on an empty account. `/zz-core:doctor` especially:
   // the moment this setup text is wrong about anything, it is the thing that says so, and a
   // person whose install did not take is exactly the person who cannot reach a flow to ask.
   lines.push(
-    `\`/zz:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
-    `\`/zz:update\` brings every ZZ plugin you have up to date, in one command.`,
+    `\`/zz-core:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
+    `\`/zz-core:update\` brings every ZZ plugin you have up to date, in one command.`,
     ``,
   );
 
   if (pkg.flows.length === 0) {
     lines.push(`No flow is installed for your team yet — ask a platform admin to install one.`);
   } else {
-    // DERIVED from the same two functions that name the commands, never spelled out here.
-    // This said `/zz:<flow>` — the namespace from when every flow shipped inside one `zz`
-    // plugin — so the setup text a person reads told them to type a command that does not
-    // exist: the real one is /sm:flow, not /zz:ops-flow. commandFile's frontmatter carries a
-    // comment about this exact mistake, because it was fixed there and not here. Two places
-    // deciding one name is how one of them stays wrong.
-    const typed = pkg.flows.map((f) => {
-      const plugin = pluginName(f.flow);
-      return `\`/${plugin}:${commandName(plugin, f.entry || f.flow)}\``;
+    // READ FROM THE MANIFEST, the same declaration the packager emits from, never spelled
+    // out here. This said `/zz:<flow>` — the namespace from when every flow shipped inside
+    // one `zz` plugin — so the setup text a person reads told them to type a command that
+    // does not exist: the real one is /sm:flow, not /zz:ops-flow. commandFile's frontmatter
+    // carries a comment about this exact mistake, because it was fixed there and not here.
+    // Two places deciding one name is how one of them stays wrong.
+    //
+    // A flow that declares no command for its entry is LEFT OUT rather than given an invented
+    // name: it has no front door to type, and the router sentence below is how it is reached.
+    const typed = pkg.flows.flatMap((f) => {
+      const cmd = entryCommand(f.flow, f.entry || f.flow);
+      return cmd ? [`\`/${pluginName(f.flow)}:${cmd}\``] : [];
     });
     lines.push(
-      `Type ${typed.join(" or ")} when you know what you want,`,
-      `or just describe the work and the \`zz-router\` skill will pick the flow.`,
+      ...(typed.length ? [`Type ${typed.join(" or ")} when you know what you want,`] : []),
+      `${typed.length ? "or just describe" : "Describe"} the work and the \`zz-router\` skill will pick the flow.`,
     );
   }
 

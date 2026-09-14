@@ -107,6 +107,34 @@ export function logEvent(e: {
   blockVersion?: string;
   ok?: boolean;
   refusal?: string;
+
+  /* ── what a tool call cost (AC-2.2) ────────────────────────────────────────
+   *
+   * Was `detail.ms` / `detail.bytes` — read once and never filtered on, until a latency or a
+   * payload-size percentile turned out to be exactly the kind of question a column answers
+   * and a jsonb reach does not. Nullable, and null means "not measured", never a guessed
+   * zero: `requestBytes` is null whenever a caller's request carried no Content-Length (a
+   * chunked body, or none at all), which is the one case tool-telemetry.ts cannot measure
+   * today. `durationMs` and `responseBytes` are written on every tool_call row it produces —
+   * `started` and `bytes` are both set before anything that call handles can fail — so their
+   * being nullable here is future-proofing for a caller shape this file does not have, not a
+   * gap in this one. `batched` is the one exception to nullable at all — the gateway always
+   * knows whether a request carried more than one call, so it is `not null default false` at
+   * the schema and always written here. */
+  durationMs?: number;
+  requestBytes?: number | null;
+  responseBytes?: number;
+  batched?: boolean;
+
+  /* ── plugin attribution (AC-1.5, AC-1.6) ───────────────────────────────────
+   *
+   * Resolved by the caller from the loaded skill, through zz.plugin_version_skill — never
+   * from `flow` and never from the x-zz-client header, both of which answer a different
+   * question. Left unset when unresolvable; this insert writes that as a plain SQL null,
+   * never a guessed value. */
+  plugin?: string;
+  pluginVersion?: string;
+  toolKey?: string;
 }): void {
   // ONE SPELLING OF A PERSON, folded here because this is the one place every gateway event
   // passes through. Eleven call sites reach it, all of them handing over a canonical address
@@ -146,11 +174,16 @@ export function logEvent(e: {
   void platformDb()
     .query(
       `insert into event (actor, team_slug, team_id, kind, subject, detail,
-                          initiative, flow, step, step_version, block, block_version, ok, refusal)
-       values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+                          initiative, flow, step, step_version, block, block_version, ok, refusal,
+                          plugin, plugin_version, tool_key,
+                          duration_ms, request_bytes, response_bytes, batched)
+       values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+               $14,$15,$16,$17,$18,$19,$20)`,
       [actor, e.teamSlug ?? null, e.kind, e.subject ?? "", JSON.stringify(e.detail ?? {}),
        e.initiative ?? null, e.flow ?? null, e.step ?? null, e.stepVersion ?? null,
-       e.block ?? null, e.blockVersion ?? null, e.ok ?? null, e.refusal ?? null],
+       e.block ?? null, e.blockVersion ?? null, e.ok ?? null, e.refusal ?? null,
+       e.plugin ?? null, e.pluginVersion ?? null, e.toolKey ?? null,
+       e.durationMs ?? null, e.requestBytes ?? null, e.responseBytes ?? null, e.batched ?? false],
     )
     .catch((err: unknown) => { stranded(record, err); });
 }

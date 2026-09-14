@@ -1,13 +1,13 @@
 /** The catalog, read in one place.
  *
  * "Find this flow's directory" was written seven times across two files — once per thing
- * anyone wanted out of it: the manifest, a description, the standalone list, the skills, the
+ * anyone wanted out of it: the manifest, a description, the commands map, the skills, the
  * entry skill's when_to_use, the platform entries, the installable list. Each spelled the
  * same walk over /catalog/<owner>/<flow>/ and each decided for itself what a missing
  * directory or an unparseable manifest meant, so they did not all decide the same way.
  *
  * The manifest shape lived in admin.ts while client-package.ts read the same file with its
- * own inline types, which is how `servers` and `standalone` came to be read by one and
+ * own inline types, which is how `servers` and the commands map came to be read by one and
  * unknown to the other.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -34,7 +34,7 @@ export const CATALOG_DIR = process.env.ZZ_CATALOG_DIR || "/catalog";
  * gateway/server.ts took it from the contract and admin.ts and zz-core took it from this
  * façade — and both services already depend on @zz/contracts directly. A second path to one
  * definition is the thing this package was made to remove, one level up. */
-import { CatalogManifest as CatalogManifestSchema, type CatalogManifest, whyNot } from "@zz/contracts";
+import { CatalogManifest as CatalogManifestSchema, type CatalogManifest, type FlowDoc, whyNot } from "@zz/contracts";
 
 interface CatalogEntry {
   owner: string;
@@ -70,7 +70,36 @@ export function manifestAt(file: string): { manifest: CatalogManifest; why: null
     return { manifest: null, why: `could not be read as JSON — ${(err as Error).message}` };
   }
   const parsed = CatalogManifestSchema.safeParse(raw);
-  if (parsed.success) return { manifest: parsed.data, why: null };
+  if (parsed.success) {
+    // THE ONE LAW THE SCHEMA CANNOT STATE, checked here because this is the only reader that
+    // validates. `documents` is what makes a package a flow (see isFlow), and a document has
+    // to be PRODUCED by something: `stages` is where `produces` hangs and where a stage's
+    // block authority is declared, so a manifest promising documents with no stage to write
+    // them describes a flow nobody can run. zod says no to a shape; this is a relation
+    // between two fields, and z.object() has no spelling for one that survives `.shape`,
+    // `_def.unknownKeys` and jsonSchema() — all three of which the gate reads off
+    // CatalogManifest, and all three of which a `.superRefine()` would turn into undefined.
+    //
+    // The converse is NOT an error. `stages` and no `documents` is an ordinary non-flow
+    // package: a method somebody follows that leaves no governed document behind. So is
+    // declaring neither, which is what zz-access is. Refusing either here would be the old
+    // rule reinstated under a new name.
+    //
+    // THROUGH isFlow, not through a fourth copy of its expression. The rule this initiative
+    // replaced was scattered across the sites that asked it, which is why changing it meant
+    // finding them all; restating it inline here — in the function that enforces the
+    // obligation it creates — would rebuild that exact problem one file from the classifier.
+    const m = parsed.data;
+    if (isFlow(m) && !(m.stages?.length ?? 0)) {
+      return {
+        manifest: null,
+        why: "declares documents and no `stages` — a document has to be produced by " +
+             "something, and `stages` is what produces it. Add the stage that writes each " +
+             "document, naming it in that document's `stage`",
+      };
+    }
+    return { manifest: m, why: null };
+  }
   // The schema is strict, so the commonest failure is one mistyped key. safeParse gives the
   // issues without throwing, so the line says which field, at which path.
   return {
@@ -162,7 +191,7 @@ export function catalogEntry(flow: string, includePlatform = false): CatalogEntr
     // ownership rather than shape. The field used to be `kind: "platform"` and this
     // line used to carry a comment saying "ANY kind means not a flow", which was
     // false: zz-skill-eval is shelved and has five stages, two documents and a gate.
-    // Shape is `stages` and lives nowhere else. See CatalogManifest.shelved.
+    // Shape is `documents` and lives nowhere else. See isFlow and CatalogManifest.shelved.
     if (e.manifest.shelved && !includePlatform) return null;
     return e;
   }
@@ -172,6 +201,36 @@ export function catalogEntry(flow: string, includePlatform = false): CatalogEntr
 /** Just the manifest, for the many callers that want one field out of it. */
 export function catalogManifest(flow: string, includePlatform = false): CatalogManifest | null {
   return catalogEntry(flow, includePlatform)?.manifest ?? null;
+}
+
+/** IS THIS PACKAGE A FLOW? It is, if and only if it declares at least one document.
+ *
+ * The one classifier, so that "what is this package" has one answer and no caller
+ * reconstructs it. It replaces `stages.length > 0`, which was the rule for exactly the
+ * reason this one is — the console had been guessing shape from contents, and a DECLARED
+ * shape is what stops that — but which does not discriminate: `zz-access` is a surface, an
+ * agent and an MCP door with no method, and it declared one stage whose name repeated its
+ * own entry, so the rule called it a flow and the console gave it a stepper over a single
+ * step that produced nothing.
+ *
+ * `documents` discriminates because a flow is a discipline over documents: gates, order,
+ * a closing document, a chain that refuses a write. A package with none of those has
+ * nothing for the platform to govern, whatever its stage count. `stages` keeps every job
+ * it already had — `produces` hangs off it, `stage-access.ts` reads a stage's `blocks`, the
+ * console's stepper walks it — it simply no longer decides what the package IS.
+ *
+ * A flow must still declare stages, and manifestAt refuses one that does not: documents
+ * with nothing to produce them is a flow nobody can run. The converse is a legal package
+ * with no stages at all, which is what `zz-access` now is.
+ *
+ * A TYPE PREDICATE, not a plain boolean, because a flow's `documents` is exactly what every
+ * caller reaches for next. Without the narrowing each one wrote its own
+ * `(m.documents?.length ?? 0) > 0` so that TypeScript would let it read the field — which is
+ * how one rule came to have four spellings, in the very initiative that exists to give it
+ * one. `chainForFlow` then passes `m.documents` straight to `deriveChain` with no `?? []`
+ * standing in for a case the predicate has already ruled out. */
+export function isFlow(manifest: CatalogManifest): manifest is CatalogManifest & { documents: FlowDoc[] } {
+  return (manifest.documents?.length ?? 0) > 0;
 }
 
 /** Flows a team can install. NOT every catalog entry: platform capabilities live here too,
@@ -191,10 +250,12 @@ export function installableFlows(): string[] {
  * package is uninstallable because the shelf already ships it to everyone; that says nothing
  * about whether it OWNS DOCUMENTS, which is what governing means here.
  *
- * `documents` is the right test and `stages` is not, even though `stages` is what makes a
- * package a flow. zz-access declares one stage and no documents: it is a flow, and it still
- * cannot govern an initiative, because a governor with no documents gates nothing — which is
- * precisely the permanent-ungoverned failure the next paragraph records.
+ * The test is `isFlow` plus ownership, and it is the same `documents` question the classifier
+ * asks — deliberately, now that it is one question. It was two: this filtered on `documents`
+ * while the platform classified on `stages`, so `zz-access` was a flow that could not govern
+ * anything, and the comment here had to explain the gap rather than the rule. A governor with
+ * no documents gates nothing, which is precisely the permanent-ungoverned failure the next
+ * paragraph records — and a package with no documents is not a flow, so the two collapse.
  *
  * It exists because "which flows could govern this initiative" was answered from
  * zz.flow_install alone, and that table has no row for a platform package by construction.
@@ -205,7 +266,7 @@ export function installableFlows(): string[] {
  */
 export function governingPlatformFlows(): string[] {
   return catalogEntries()
-    .filter((e) => e.manifest.shelved && (e.manifest.documents?.length ?? 0) > 0)
+    .filter((e) => e.manifest.shelved && isFlow(e.manifest))
     .map((e) => e.flow);
 }
 

@@ -77,8 +77,10 @@ tests/                          fixtures for this package — requirements, step
 ### `skills/` — carried by everyone
 
 `zz-backbone` and `zz-knowledge`, which a flow loads, and `zz-doctor`, `zz-update` and
-`zz-migrate`, which a person types — the last three declare `standalone: true` and the
-baseline plugin promotes exactly those to commands. These are not in `catalog/` because they
+`zz-migrate`, which a person types — the last three name their command in their own
+frontmatter (`command: doctor`) and the baseline plugin promotes exactly those. A package in
+`catalog/` says the same thing in its manifest's `commands` map; this tree has no manifest,
+so each skill carries its own entry. These are not in `catalog/` because they
 belong to no package: everybody carries them regardless of which flow they run. A skill goes
 here only when that is true of it.
 
@@ -198,36 +200,46 @@ somebody is most likely to act on it. That is not hypothetical: it is what rolle
 
 ## 3. What a manifest declares
 
-`flow.json` is the package manifest. Four fields carry meaning; the rest is description.
+`flow.json` is the package manifest. Five fields carry meaning; the rest is description.
 
-### `stages` — is this a flow?
+### `documents` — is this a flow?
 
-**A package is a flow if and only if it declares a non-empty `stages`.**
+**A package is a flow if and only if it declares `documents`.**
 
-This is the whole rule. Not gates, not documents, not skills — a flow with one stage, no gate
-and no document is a flow (`casebox-assist`), and a package with an agent and an MCP server but no
-stages is not. `zz-admin` was that second shape and is the reason the rule is written down;
-every package in the catalog today declares stages, so the shape currently has no example and
-the rule is what stops the next one being guessed at.
+This is the whole rule. Not skills, not stages, not an MCP door — a flow is a discipline over
+documents: which ones exist, in what order, which of them gate, which one closes. A package
+that governs no documents has nothing for the platform to enforce, and is a **surface**: an
+agent and its doors, no steps, no position, never in a flow menu. `zz-access` is one.
 
-A flow appears in flow menus, gets a stepper, and is installed for a team. A package without
-stages is a **surface**: an agent and its doors, no steps, no position, never in a flow menu.
+It was `stages`, and the change is worth writing down because the *kind* of answer was right
+both times. A declared field, never inference — that part never moved. But `stages` does not
+discriminate: every package whose agent opens a skill does work with a beginning, so every
+package could claim a stage, and one did. `zz-access` declared a single stage whose name
+repeated its own `entry` and which produced nothing, purely to satisfy the rule, and was
+rewarded with a stepper over one meaningless step. A declaration written to pass a check is
+exactly the failure a declared rule exists to prevent.
+
+`stages` keeps every other job it had, and they are real ones: it is what `produces` hangs
+off, what a stage's `blocks` authority is read from, and what the console's stepper walks.
+It simply no longer decides what the package *is*.
+
+### `stages` and `documents` travel together, in one direction
+
+- `documents` without `stages` is an error. A document has to be produced by something, and
+  `stages` is what produces it. `manifestAt` refuses such a manifest, naming `stages`.
+- `stages` without `documents` is **not** an error. It is an ordinary non-flow package: a
+  method somebody follows that leaves no governed document behind.
 
 ### `entry` — the skill the agent opens first
 
-`entry` and `stages` travel together, in both directions:
-
-- `entry` without `stages` is an error. The agent opens a skill and does work; work with a
-  beginning has at least one step, and the package must say so.
-- `stages` without `entry` is an error. A flow needs a door.
-
-This pair is checked by the gate. It is the check that would have caught `zz-admin` in the flow
-menu, and it is the check that catches the next one.
+`entry` is orthogonal to shape. A flow needs a door — `stages` without `entry` is an error,
+checked by the gate — but an `entry` says nothing about whether the package is a flow.
+`zz-access` has one, declares no stages at all, and that is a supported shape.
 
 ### `servers` — which MCP doors this package's agent gets
 
-Orthogonal to shape. A flow may have none (`sdlc-flow`); a one-stage package may have one
-(`zz-access`, which carries `/manage/mcp` — the platform's only non-`zz-core` door).
+Orthogonal to shape. A flow may have none (`sdlc-flow`); a package that is not a flow may have
+one (`zz-access`, which carries `/manage/mcp` — the platform's only non-`zz-core` door).
 
 Tools that flows need live in **one** server, `zz-core`. A package does not ship its own server
 to add a tool; it adds the tool to `zz-core` and asks for the door.
@@ -236,8 +248,8 @@ to add a tool; it adds the tool to `zz-core` and asks for the door.
 
 `shelved: true` means *ZZ owns this and every account already has it* — a team cannot install
 it, and it is hidden from the installable listing. It says nothing about shape: `zz-access`
-is shelved and is a flow with a stage, while `zz-plugin-eval` is not shelved and has five
-stages, two documents and two gates.
+is shelved and is not a flow, while `zz-plugin-eval` is not shelved and has five stages, two
+documents and two gates.
 
 It was `kind: "platform"`, and that name is what put `zz-admin` in the flow menu — the one field
 that could have said "not a flow" was already spoken for by ownership, so the console guessed
@@ -254,7 +266,7 @@ has one, otherwise a generated router. The generated router ends every agent wit
 `skill_view("<entry>")` and describes running a flow for a team.
 
 That is right for a flow and wrong for a surface. **A surface package must carry its own
-system prompt.** `zz-access` does — it is one stage and an agent rather than a method run for a
+system prompt.** `zz-access` does — it is a door and an agent rather than a method run for a
 team, and its `agents/zz-access/system-prompt.md` says so in its own words instead of being
 described as a flow it is not.
 

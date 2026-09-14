@@ -99,6 +99,14 @@ function firstDocument(): string {
 }
 const OPENS_ON = firstDocument();
 
+/**
+ * The plugin the plugin-eval tools are exercised against, below. `entryOf` on the core
+ * resolves a plugin from a flow the same way — `e.flow.replace(/-flow$/, "") === plugin` —
+ * so this names the same catalog entry FLOW already had to resolve for `firstDocument()` to
+ * succeed, rather than a second identifier this script would have to keep in sync with it.
+ */
+const PLUGIN = FLOW.replace(/-flow$/, "");
+
 const core = new Mcp(`${GW}/core/mcp`, { pat: PAT, client: "chain-check" });
 
 /** A tool's text, refusals included — a refusal is what most checks here assert on. */
@@ -133,6 +141,23 @@ function check(name: string, got: string, wantError: boolean, because?: RegExp):
   if (!ok && err !== wantError) {
     console.log(`        wanted ${wantError ? "an ERROR" : "success"}, got: ${body.slice(0, 200)}`);
   }
+}
+
+/**
+ * A tool whose real subject is not this run's throwaway initiative — a plugin's release
+ * history, a skill's install state, an evaluation nobody has started — cannot be asserted on
+ * the way `check` does: which of "did the work" or "refused" is correct depends on state this
+ * script does not control and a fresh initiative does not create. So this asserts on the
+ * SHAPE of the answer instead: either the tool did its work, or it refused for a cause it
+ * names. An unnamed refusal, or the call throwing at all, is what actually says the tool is
+ * broken.
+ */
+function eitherOr(name: string, got: string, acceptableRefusal: RegExp): void {
+  const body = got.trim();
+  const refused = /^(ERROR|REFUSED):/i.test(body);
+  const ok = !refused || acceptableRefusal.test(body);
+  record(ok, name, got);
+  if (!ok) console.log(`        refused for an unnamed reason: ${body.slice(0, 200)}`);
 }
 
 /**
@@ -313,6 +338,48 @@ async function main(): Promise<number> {
   const rec = await call("reconcile", { initiative: INIT });
   record(!rec.trim().toUpperCase().startsWith("ERROR"), "reconcile answers for an initiative", rec);
 
+  // ── the rest of the artifact-store door: reading, sourcing, listing, the skill shelf ──
+  //
+  // The closing document is still readable, still listed, and still a valid `supports`
+  // target after close — none of these tools gate on the initiative's own lifecycle, and
+  // asserting that stays true is the point: a reader reaching for the record of what just
+  // happened here should not discover these tools quietly stopped working once it did.
+
+  check("show_document renders the closing document for a person",
+    await call("show_document", { path: `${INIT}/${closing}` }), false);
+
+  const listed = await call("list_files", { prefix: INIT });
+  record(!listed.trim().toUpperCase().startsWith("ERROR") && listed.includes(closing),
+    "list_files finds what this run just wrote", listed);
+
+  check("add_source attaches material to the initiative",
+    await call("add_source", {
+      initiative: INIT, title: "chain-check source", content: "material chain-check attached.",
+      supports: closing,
+    }), false);
+  const sourced = await call("list_sources", { initiative: INIT });
+  record(!sourced.trim().toUpperCase().startsWith("ERROR") && sourced.includes("chain-check source"),
+    "list_sources reads back what add_source just wrote", sourced);
+
+  // Deterministic arithmetic, and a genuine round trip rather than a call that merely
+  // returns without error — decode(encode(x)) === x is the whole claim the tool makes.
+  const encoded = await call("encode_base64", { text: "chain-check", direction: "encode" });
+  const decoded = await call("encode_base64", { text: encoded, direction: "decode" });
+  record(decoded.trim() === "chain-check", "encode_base64 round-trips its own output", `${encoded} -> ${decoded}`);
+
+  // list_skills and skill_view degrade (a named ERROR) rather than fail outright when this
+  // deployment has no platform database — get_my_info's own team lookup already treats that
+  // as ordinary above, and these two tools document the identical fallback.
+  eitherOr("list_skills lists what this caller can reach",
+    await call("list_skills", {}), /platform database is unreachable/);
+  // zz-backbone ships with the `zz` plugin, which every account carries — get_my_info points
+  // here itself ("skill_view(\"zz-backbone\")"), so this is the one skill name the door can
+  // promise exists without reading this deployment's own catalog first.
+  check("skill_view reads the platform's own backbone skill",
+    await call("skill_view", { name: "zz-backbone" }), false);
+  eitherOr("block_skills answers the shelf of building blocks",
+    await call("block_skills", {}), /platform database is unreachable/);
+
   // A subject tag says WHAT KIND of thing a piece of knowledge is about, and the kinds are a
   // closed set. Open, it becomes a free-text field that agrees with nothing.
   //
@@ -325,15 +392,100 @@ async function main(): Promise<number> {
   // never have passed, and the negative control above passed for a reason that was not the
   // one it names: subjectTagError runs before the evidence loop, so the unknown kind was
   // refused first and the fixture's own invalidity never showed.
+  // `scope` has no default — knowledge_add's own schema refuses a call that omits it, before
+  // the handler runs at all. This was missing here, so both calls below threw a schema error
+  // rather than reaching subjectTagError: the negative control passed on the WRONG refusal
+  // ("`scope` says which shelf ..." never matches /is not a kind/) and would have been caught
+  // by `because`, except the throw never let it get that far. `scope: "team"` is what makes
+  // this the case the comments below actually describe.
   const node = {
     title: "chain-check subject probe",
     type: "knowledge",
     body: "written by chain-check; safe to supersede.",
     evidence: [INIT],
+    scope: "team" as const,
   };
   check("a knowledge subject must be a kind the platform knows",
     await call("knowledge_add", { ...node, tags: ["nonesuch:casebox"] }), true, /is not a kind/);
-  check("a known kind is accepted", await call("knowledge_add", { ...node, tags: ["block:casebox"] }), false);
+  const added = await call("knowledge_add", { ...node, tags: ["block:casebox"] });
+  check("a known kind is accepted", added, false);
+
+  // knowledge_supersede needs two nodes that actually exist, on the same shelf. The id is
+  // this tool's own account of what it just did — "journal node 0007 created (...)" — read
+  // back rather than guessed, because a fixture id increments differently on every store.
+  const oldId = /journal node (\d+) created/.exec(added)?.[1];
+  if (oldId) {
+    const superseding = await call("knowledge_add",
+      { ...node, title: "chain-check subject probe (superseding)", tags: ["block:casebox"] });
+    const newId = /journal node (\d+) created/.exec(superseding)?.[1];
+    if (newId) {
+      check("knowledge_supersede marks a node superseded by one that exists",
+        await call("knowledge_supersede", { old_id: oldId, new_id: newId }), false);
+    } else {
+      record(false, "knowledge_supersede marks a node superseded by one that exists",
+        `could not mint a second node to supersede with: ${superseding}`);
+    }
+  } else {
+    record(false, "knowledge_supersede marks a node superseded by one that exists",
+      `could not read an id back from knowledge_add: ${added}`);
+  }
+
+  // search_knowledge and reindex_knowledge both refuse the identical way get_my_info's team
+  // lookup and knowledge_add's own team-scope guard do — no platform database, or no team —
+  // and that is ordinary on a deployment run without either, not a broken tool.
+  eitherOr("search_knowledge finds the node this run just wrote",
+    await call("search_knowledge", { query: "chain-check subject probe" }),
+    /no platform database|no platform db|not in a team/);
+  eitherOr("reindex_knowledge rebuilds the team's index",
+    await call("reindex_knowledge", {}), /no platform database|no platform db|not in a team/);
+
+  // ── the plugin-eval surface: a plugin's release history, not this run's initiative ──
+  //
+  // Every tool here takes `plugin`/`version`/`eval_id` identifiers, and whether THIS
+  // deployment has ever released PLUGIN, run a judge round, or even holds a platform
+  // database at all is state this throwaway initiative does not create and this script does
+  // not control. So each call below is aimed at a REFUSAL these tools document for exactly
+  // that case — "no released version is recorded", "declares no ruler", "is not an
+  // evaluation" — rather than at manufacturing a real release, an approved rubric and a
+  // scored round, which the model-scoring half of this surface needs a live judge to run at
+  // all: plugin_judge is explicit that a real subject "takes about thirty seconds" each,
+  // which is the model cost and wall-clock time this whole file exists to not spend. Getting
+  // this far exercises the door, the schema and every refusal branch that runs before a
+  // model is ever reached — the part of "does the tool chain still work" that a rate-limited
+  // model provider cannot take down.
+  eitherOr("plugin_locate answers or refuses by a named cause",
+    await call("plugin_locate", { plugin: PLUGIN }),
+    /no platform database|no released version/);
+  eitherOr("plugin_conform reads this plugin's own catalog entry",
+    await call("plugin_conform", { plugin: PLUGIN, version: "0" }),
+    /is not in the catalog/);
+  eitherOr("plugin_profile answers or refuses by a named cause",
+    await call("plugin_profile", { plugin: PLUGIN, version: "0" }),
+    /no platform database/);
+  eitherOr("plugin_ruler answers or refuses by a named cause",
+    await call("plugin_ruler", { plugin: PLUGIN, version: "0" }),
+    /no platform database/);
+  eitherOr("plugin_affirm refuses a version this deployment never released",
+    await call("plugin_affirm", { plugin: PLUGIN, version: "0" }),
+    /no platform database|no released version/);
+  eitherOr("plugin_judge refuses a version that declares no ruler",
+    await call("plugin_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
+    /no platform database|declares no ruler/);
+  eitherOr("plugin_scores refuses an eval_id nothing minted",
+    await call("plugin_scores", { eval_id: randomUUID() }),
+    /no platform database|is not an evaluation/);
+  eitherOr("plugin_cases_record refuses a result that is not JSON",
+    await call("plugin_cases_record", { plugin: PLUGIN, version: "0", result: "not json" }),
+    /no platform database|that is not JSON/);
+  eitherOr("plugin_ruler_record refuses a quantitative dimension with no threshold",
+    await call("plugin_ruler_record", {
+      plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",
+      dimensions: [{ name: "chain-check probe", kind: "quantitative" }],
+    }), /no platform database|carries no threshold/);
+  eitherOr("plugin_finding_record refuses an eval_id nothing minted",
+    await call("plugin_finding_record", {
+      eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
+    }), /no platform database|no evaluation/);
 
   const after = await call("read_file", { path: "_ledger.md" });
   record(after.includes(INIT) && !before.includes(INIT),

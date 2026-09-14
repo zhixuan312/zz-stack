@@ -34,7 +34,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseEnvelope } from "@zz/contracts";
+import { parseEnvelope, resolveStep } from "@zz/contracts";
 
 import { parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
@@ -178,7 +178,9 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
 
   for (const r of rows) {
     if (r.step) {
-      const k = `${r.step} ${r.step_version ?? ""}`;
+      // Resolved through SKILL_ALIAS (FR-37a) so a step renamed mid-window scores as one
+      // series — a step is a known skill name, matched against the same map tool-report uses.
+      const k = `${resolveStep(r.step)} ${r.step_version ?? ""}`;
       const s = perStep.get(k) ?? {
         calls: 0, ours: 0, theirs: 0, guardrail: 0,
         runs: new Set<string>(), initiatives: new Set<string>(),

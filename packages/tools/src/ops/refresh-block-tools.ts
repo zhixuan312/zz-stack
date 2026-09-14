@@ -78,13 +78,13 @@ function main(argv: string[]): number {
   const rows = psqlRows<Row>(psql, `
     select b.name as block, bv.version, split_part(e.subject, ':', 2) as tool,
            count(*)::text as calls,
-           round(avg((e.detail->>'bytes')::bigint))::text as avg_bytes,
-           max((e.detail->>'bytes')::bigint)::text as max_bytes,
-           max((e.detail->>'ms')::bigint)::text as max_ms
+           round(avg(e.response_bytes))::text as avg_bytes,
+           max(e.response_bytes)::text as max_bytes,
+           max(e.duration_ms)::text as max_ms
       from zz.event e
       join zz.block_version bv on bv.id = e.block_version_id
       join zz.block b on b.id = bv.block_id
-     where e.detail ? 'bytes' and e.ok is not false and e.subject like '%:%'
+     where e.response_bytes is not null and e.ok is not false and e.subject like '%:%'
      group by 1,2,3`);
 
   if (!rows.length) {

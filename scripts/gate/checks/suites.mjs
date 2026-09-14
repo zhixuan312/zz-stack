@@ -40,6 +40,35 @@ const runsClean = (tool) => () => {
   }
 };
 
+/** Run a check that lives in `checks/`, the same way `runsClean` runs one that lives in dist.
+ *
+ * WHY THIS EXISTS. Everything in `checks/` was invoked by hand and nothing else: the gate
+ * registered three of them and the other forty-one ran only when somebody typed their name.
+ * Five checks this initiative wrote were mutation-tested, reported green, and were never once
+ * executed by `scripts/gate.mjs` — so "the gate passes" and "the checks pass" were two
+ * separate claims that sounded like one. A check nobody runs automatically is documentation.
+ *
+ * NOT EVERY FILE IN `checks/` BELONGS HERE. Three kinds live in that directory:
+ *   - plain checks, which assert a property by reading or importing — these, registered below;
+ *   - `gate-*.mjs` break-tests, which plant a defect and SPAWN `scripts/gate.mjs` to prove it
+ *     goes red — registering one of those here makes the gate invoke itself, forever;
+ *   - host-dependent checks (`returns-sees-a-backtrack.mjs` reaches the live database over
+ *     ssh) — those belong to the release, which has a deployment to reach.
+ * The `gate-` prefix is the marker for the second kind. */
+const runsCheck = (file) => () => {
+  const nothingToRun = unbuilt();
+  if (nothingToRun) return nothingToRun;
+  try {
+    execFileSync("node", [join(root, `checks/${file}`)],
+                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return null;
+  } catch (err) {
+    const out = `${err.stdout ?? ""}${err.stderr ?? ""}`.trim();
+    return out.split("\n").filter((l) => l.trim()).join("; ").slice(0, 400)
+      || `checks/${file} exited non-zero`;
+  }
+};
+
 check("a hostile document cannot become script in a reader's browser", () => {
   const nothingToRun = unbuilt();
   if (nothingToRun) return nothingToRun;
@@ -165,4 +194,70 @@ check("the version that shipped has a changelog section of its own", () => {
       "[Unreleased], where the next release will write beside it";
 });
 
+// ── the initiative's own checks, each registered the moment its task completed ────────────
+//
+// One `check()` per line, deliberately not a loop: STATE.md counts `^check(` and a loop would
+// collapse these seven into one, drifting the declared total by six.
 
+check("a plugin's content identity moves with its content and not with its address",
+      runsCheck("digest-per-plugin.mjs"));
+
+check("a check that works is a check the gate runs",
+      runsCheck("working-checks-registered.mjs"));
+
+check("a file that resolves renamed tools never matches a pre-rename name",
+      runsCheck("pre-rename-literals.mjs"));
+
+check("an aggregate nothing measured renders as null, never a confident zero",
+      runsCheck("console-nulls.mjs"));
+
+check("every check this gate registers is a file git will carry", () => {
+  // suites.mjs is TRACKED and the files it names were not. Eight registered checks existed only
+  // in the working tree, so `scripts/gate.mjs` was green here and would have failed on a fresh
+  // clone with "cannot find module" — eight times. Wiring a tracked runner to an untracked file
+  // is a worse failure than leaving the check unwired: unwired is merely inert, this is a gate
+  // that passes for the author and breaks for everybody else.
+  if (!trackedFiles()) return null;              // not a checkout; nothing to be tracked in
+  const known = new Set(execFileSync("git", ["ls-files", "checks/"], { cwd: root, encoding: "utf8" })
+    .split("\n").filter(Boolean).map((f) => f.replace(/^checks\//, "")));
+  const missing = [...readFileSync(join(root, "scripts/gate/checks/suites.mjs"), "utf8")
+    .matchAll(/runsCheck\("([^"]+)"\)/g)].map((m) => m[1]).filter((f) => !known.has(f));
+  return missing.length
+    ? `registered but not tracked by git: ${missing.join(", ")} — green here, "cannot find ` +
+      'module" on a fresh clone. `git add` them by path (never `git add -A`).'
+    : null;
+});
+
+check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.mjs"));
+
+check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.mjs"));
+
+check("a column nothing reads is not proof a column nothing needs", runsCheck("tool-key-read.mjs"));
+
+check("the record's own columns exist, and a gap is nullable", runsCheck("migration-050.mjs"));
+
+check("every tool call says which plugin it was made for", runsCheck("attribution.mjs"));
+
+check("what a call cost is a column, and detail keeps no second copy",
+      runsCheck("telemetry-columns.mjs"));
+
+check("the chain check runs where a deployment exists, and not in this gate",
+      runsCheck("chain-check-wiring.mjs"));
+
+check("every completion the judge asks for is recorded, and an unreported figure stays null",
+      runsCheck("judge-usage.mjs"));
+
+check("what a recorded eval run cost is readable without paying for it again, and nothing caps spend",
+      runsCheck("eval-cost.mjs"));
+
+check("the manifest can express what the standard requires, and not what it replaced",
+      runsCheck("contract-fields.mjs"));
+
+check("a command is what a manifest declares, not what a function derives from a skill name",
+      runsCheck("commands-declared.mjs"));
+
+check("a flow is a plugin that declares documents, and zz-access is not one",
+      runsCheck("flow-classification.mjs"));
+
+check("every plugin declares what it is, what it ships, and what each stage leaves behind",
+      runsCheck("manifests-conform.mjs"));

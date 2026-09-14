@@ -11,6 +11,12 @@ import { z } from "zod";
 export { actingTeam, addressResolver, mintPat, parseCaller, PAT_TOKEN,
          peerAddress } from "./identity.js";
 
+// The per-door rename history is a static lookup, not runtime state, but it is still reached
+// through this one door rather than a deep import — the same reason identity.ts is re-exported
+// above instead of letting callers reach it directly.
+export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
+         resolveTool, resolveToolKey, resolveStep } from "./alias.js";
+
 /** A building-block platform reachable through the credential gateway. */
 const PlatformConfig = z.object({
   url: z.string().url(),
@@ -419,19 +425,80 @@ export const FlowStage = z.object({
    * of the selection document is that a person approved a shorter list — so `"selected"`
    * resolves, per call, to the blocks that document actually names. */
   blocks: z.union([z.array(z.string().min(1)), z.literal("selected")]).optional(),
+  /** WHAT THIS STAGE LEAVES BEHIND, in one of three shapes: the name of a document it
+   * writes (`"spec.md"`), the literal `"record"` for a stage whose result is stored by the
+   * platform rather than written as a document, or the literal `"nothing"` for a stage that
+   * reads and reports and stores neither.
+   *
+   * REQUIRED, and that is the whole point of the third value. An optional field answers "the
+   * author forgot" and "this stage genuinely produces nothing" with the same absence, and
+   * those are different facts about a flow — the first is a manifest to fix, the second is a
+   * design decision somebody made. `"nothing"` is how a stage says the second one out loud.
+   *
+   * A document name here is a CLAIM the rest of the manifest can be held to: `documents`
+   * already says which stage writes each document, so a stage that names a document the
+   * flow does not declare is a stage nobody can verify. `"record"` is for the stages that
+   * write into the platform's own tables — an audit's findings, a judge's scores — where
+   * there is a durable result and no document and no gate. */
+  produces: z.union([z.string().min(1), z.literal("record"), z.literal("nothing")]),
 }).strict();
 export type FlowStage = z.infer<typeof FlowStage>;
 
 export const CatalogManifest = z.object({
   name: z.string().optional(),
+  /** THE DOCUMENTS THIS PACKAGE GOVERNS — and therefore whether it is a flow at all.
+   *
+   * A package is a flow if and only if this is non-empty. `@zz/catalog`'s `isFlow` is the
+   * one place that asks; see `shelved` below for why the field that used to answer did not.
+   * Optional, and absent is the ordinary answer: a package with an agent, a door and no
+   * discipline over documents is a surface, not a flow, and zz-access is one.
+   *
+   * Declaring documents obliges the manifest to declare `stages` too — something has to
+   * produce them — and `manifestAt` refuses one that does not. The reverse is not an
+   * obligation: stages without documents is a legal non-flow package. */
   documents: z.array(FlowDoc).optional(),
   entry: z.string().optional(),
   version: z.string().optional(),
   description: z.string().optional(),
+  /** WHY THIS PACKAGE EXISTS, in the author's own words — the one sentence that says what
+   * problem it is here to solve.
+   *
+   * Separate from `description`, which is what the package DOES, written for the marketplace
+   * card a person scans while choosing. Both are prose and they are not the same prose: a
+   * card that reads "measure a whole plugin" tells a reader what they get, and it does not
+   * tell the next author whether their idea belongs in this package or a new one. That
+   * second question is the one that decides whether a catalog stays coherent, and nothing in
+   * the manifest asked it. */
+  purpose: z.string().min(1).optional(),
   /** BUILDING BLOCKS — gateway platform ids, never skill names. */
   tools: z.array(z.string()).optional(),
   install: z.enum(["auto", "opt-in"]).optional(),
-  standalone: z.array(z.string()).optional(),
+  /** THE COMMANDS A PERSON CAN TYPE: the name they type, mapped to the skill that carries
+   * the method. `{ "flow": "sdlc-flow", "deck": "sdlc-deck" }` ships `/sdlc:flow` and
+   * `/sdlc:deck`, each carrying that skill's own text.
+   *
+   * DECLARED, NEVER DERIVED, and keyed by the command so JSON itself enforces that two
+   * skills cannot claim one name. This replaced `standalone`, a list of skill names from
+   * which the command name was computed by stripping the plugin's prefix — a derivation that
+   * gave three of four front doors the same name (`flow`), because an entry skill is named
+   * after its plugin and nothing survives the strip. A command is a naming choice somebody
+   * makes; a skill name is an identifier `plugin-profile.ts` attributes historical runs by,
+   * so the two cannot be one string.
+   *
+   * A skill named here is PROMOTED: it ships as the command and not also as a skill, because
+   * the same method arriving twice under two names is the router problem this avoided. Codex
+   * has no commands and keeps the skill. A package that declares no command for a skill
+   * ships it as a skill, which is the right answer for a stage nobody types. */
+  commands: z.record(z.string().min(1)).optional(),
+  /** SKILLS THAT ARE NEITHER A STAGE NOR A COMMAND: the ones another skill loads.
+   *
+   * sdlc-flow ships `sdlc-method`, `sdlc-audit-criteria` and `sdlc-authoring`, none of which
+   * a person types and none of which is a stage — they are the shared text the stage skills
+   * load. Without this field they were the residue: everything in `skills/` that `entry`,
+   * `stages` and `commands` did not account for, which is indistinguishable from a skill
+   * somebody forgot to declare. Naming them makes "every shipped skill is declared
+   * somewhere" a question a check can ask. */
+  libraries: z.array(z.string().min(1)).optional(),
   servers: z.array(z.object({ name: z.string(), path: z.string() })).optional(),
   agentName: z.string().optional(),
   /** ZZ owns this and it sits on the shelf: every account already has it, so a team cannot
@@ -439,24 +506,41 @@ export const CatalogManifest = z.object({
    *
    * OWNERSHIP, NOT SHAPE. This was `kind: "platform"`, and the name is what put zz-admin in
    * the flow menu beside ops-flow: the one field that could have said "not a flow" was already
-   * spoken for, so the console guessed shape from contents instead. Shape is `stages` and
-   * nothing else — a shelved package is a flow when it declares stages and is not when it
+   * spoken for, so the console guessed shape from contents instead. Shape is `documents` and
+   * nothing else — a shelved package is a flow when it declares documents and is not when it
    * does not.
+   *
+   * It was `stages`, which was the right kind of answer — one declared field, never inferred —
+   * and the wrong field. Every package that opens a skill has steps, so `stages` said yes to
+   * all of them: zz-access declared a single stage repeating its own entry, produced nothing,
+   * and got a stepper. A flow is a discipline over documents — gates, order, a closing
+   * document — so the packages that have one are the packages that declare documents.
    *
    * Separate from `install`, which answers a different question: `install: "auto"` means every
    * team automatically HAS this flow. All three evaluation-track packages declare both, which
    * is why the two cannot be one field. */
   shelved: z.literal(true).optional(),
   /** The flow's stages IN ORDER, each naming a skill, and each able to declare which
-   * building blocks it may call. See FlowStage. */
+   * building blocks it may call. See FlowStage.
+   *
+   * NOT the flow test — `documents` is. This still carries everything it always did: it is
+   * what `produces` hangs off, what `stage-access.ts` reads a stage's block authority from,
+   * and what the console's stepper walks. It simply does not answer "is this a flow", because
+   * every package with a door has steps and the answer was therefore always yes. */
   stages: z.array(FlowStage).optional(),
   license: z.string().optional(),
   keywords: z.array(z.string()).optional(),
   $schema: z.string().optional(),
   // STRICT, on both this and FlowDoc. zod's default silently DROPS a key it does not know, so
-  // `standalon: ["zz-okr"]` validated, installed, and produced no command — a flow author's
-  // instruction ignored with nothing anywhere saying why, which is the shape this repository
-  // keeps finding. It matters most here because this schema is PUBLISHED at
+  // a misspelt `standalon: ["zz-okr"]` — against the field `commands` has since replaced —
+  // validated, installed, and produced no command: a flow author's instruction ignored with
+  // nothing anywhere saying why, which is the shape this repository keeps finding. Strict is
+  // also what retires a field: `standalone` is not listed above, so a manifest still carrying
+  // it is REFUSED rather than quietly ignored. The message zod gives for that is
+  // `Unrecognized key(s): 'standalone'`, which says the key is not legal and does not say what
+  // to write instead — `catalog-manifest.mjs` carries that sentence, beside the one it already
+  // carries for `clients`, because a schema published as JSON cannot carry advice.
+  // It matters most here because this schema is PUBLISHED at
   // /schemas/manifest.json as the rules for writing a flow, precisely so a tenant can be told
   // their manifest is not legal BEFORE a write is refused; a rulebook that accepts a typo is
   // not telling them. Every manifest and every declared document in the catalog already uses

@@ -28,7 +28,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseEnvelope, refusalClass } from "@zz/contracts";
+import { parseEnvelope, refusalClass, resolveStep, resolveTool } from "@zz/contracts";
 
 import { parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
@@ -141,7 +141,10 @@ function main(): number {
   const versions = new Map<string, Map<string, { calls: number; refusals: number }>>();
 
   for (const e of rows) {
-    const tool = e.tool;
+    // Resolved through the alias for its surface so a window spanning a rename does not read
+    // as a second tool — the same fold `tool-report` applies to `subject`, applied here to
+    // `surface`/`tool` kept as separate columns.
+    const tool = resolveTool(e.surface, e.tool);
     const ids = e.ids ?? {};
     // THE ROW SAYS WHICH STEP, when it was written by a gateway that knew. Attribution is
     // decided at the door now — per conversation, with an expiry, and with the hash of the
@@ -154,9 +157,11 @@ function main(): number {
     // marked, because a number that mixes an exact attribution with a heuristic one and says
     // neither is the kind of measurement this whole report exists to replace.
     if (e.block && e.block_version) blockVersions.set(e.block, e.block_version);
-    const stamped = e.step ?? "";
-    if (tool === "skill_view" && !stamped) {
-      if (ids.name) following.set(e.caller ?? "", ids.name);
+    // Resolved through SKILL_ALIAS (FR-37a) so a step renamed mid-window is one series, not
+    // two — a step is matched against a known skill name on both sides below.
+    const stamped = e.step ? resolveStep(e.step) : "";
+    if (tool === "skill_read" && !stamped) {
+      if (ids.name) following.set(e.caller ?? "", resolveStep(ids.name));
       continue;
     }
     if (stamped) derivedFromRow += 1; else derivedByTrace += 1;
@@ -193,8 +198,8 @@ function main(): number {
     // no_signoff_reason — and reading those into a platform report would carry a tenant's
     // words across a boundary that is deliberately one-way: conclusions cross, files do not.
     // The count says WHICH STEP to go and read; the reading needs the team's own access.
-    if (tool === "revise_document" && e.ok) s.revisions += 1;
-    if (tool === "add_source" && e.ok) s.lateSources += 1;
+    if (tool === "document_revise" && e.ok) s.revisions += 1;
+    if (tool === "source_add" && e.ok) s.lateSources += 1;
     if (!e.refusal) continue;
     s.refusals += 1;
     const cls = refusalClass(e.refusal);

@@ -26,12 +26,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntries } from "@zz/catalog";
+import { catalogEntries, isFlow } from "@zz/catalog";
 import type { Express } from "express";
 
 import { PLATFORM_VERSION } from "../client-package.js";
 import { platformDb } from "../db.js";
-import { pluginName } from "../package/skills.js";
+import { BASELINE, pluginName } from "../package/skills.js";
 import { teamless } from "./shared.js";
 import { PLATFORM_SKILLS_DIR, type ShippedSkill, blockSkills, readSkillAt, skillsIn } from "./skill-source.js";
 
@@ -47,6 +47,11 @@ interface DiskPlugin {
   /** The MCP servers this plugin's skills reach. */
   servers: string[];
   documents: { name: string; role: string | null; gate: boolean; stage: string | null }[];
+  /** IS IT A FLOW? Read from the manifest through the one classifier, never reconstructed
+   * here. The console used to carry only `stages` and let the reader draw the conclusion from
+   * its emptiness — which is inference, moved from the server to whoever is looking, and it
+   * is what put a stepper on a package that had one stage and no method. */
+  flow: boolean;
   /** Stage names in declared order; empty for a plugin that declares no method. */
   stages: string[];
   /** The front door, which `stages` never contains. */
@@ -63,15 +68,18 @@ interface DiskPlugin {
  * inviting a reader to ask why nobody adopted it. A PLUGINS list has no such problem: a
  * package with no stages is still a plugin somebody installs, zz-access is exactly that, and
  * plugins.lock.json has always counted it. The distinction the old filter drew is still
- * carried, by `stages` being empty.
+ * carried, by the `flow` field on each row — declared by the manifest and read through
+ * `isFlow`, rather than left for the reader to infer from an empty `stages`.
  *
- * `zz` IS A PLUGIN ROW LIKE ANY OTHER. It has no flow.json — client-package.ts synthesises it
- * per caller — and it is the one plugin every account carries, so leaving it out would show a
- * platform smaller than the one running. Its skills are read from the same directory
+ * `zz-core` IS A PLUGIN ROW LIKE ANY OTHER, and it is built BELOW rather than in the walk. It
+ * has a flow.json — so the walk finds it — but client-package.ts synthesises its files per
+ * caller, and its skills are the tree beside the catalog rather than that entry's `skills/`. A
+ * row from the walk would therefore report the plugin every account carries as shipping nothing
+ * at all, beside a second row of the same name. Its skills are read from the same directory
  * plugin-lock.ts walks to compute its digest, so the two cannot disagree about what it ships.
  */
 function diskPlugins(): DiskPlugin[] {
-  const out: DiskPlugin[] = catalogEntries().map((e) => {
+  const out: DiskPlugin[] = catalogEntries().filter((e) => e.flow !== BASELINE).map((e) => {
     const docs = e.manifest.documents ?? [];
     return {
       plugin: pluginName(e.flow),
@@ -98,6 +106,7 @@ function diskPlugins(): DiskPlugin[] {
       documents: docs.map((d) => ({
         name: d.name, role: d.role ?? null, gate: d.gate === true, stage: d.stage ?? null,
       })),
+      flow: isFlow(e.manifest),
       stages: (e.manifest.stages ?? []).map((x) => x.name),
       entry: e.manifest.entry ?? null,
       skillsDir: join(e.dir, "skills"),
@@ -105,13 +114,16 @@ function diskPlugins(): DiskPlugin[] {
   });
   if (existsSync(PLATFORM_SKILLS_DIR)) {
     out.push({
-      plugin: "zz",
+      plugin: BASELINE,
       owner: null,
       agentName: null,
       description: "The platform itself: its MCP surface and the method for using it. Every account has it.",
       version: PLATFORM_VERSION,
       servers: ["zz-core"],
       documents: [],
+      // The baseline governs no documents of its own, so it is not a flow — and its manifest
+      // says so by declaring none, which is the same answer `isFlow` would give.
+      flow: false,
       stages: [],
       entry: null,
       skillsDir: PLATFORM_SKILLS_DIR,
@@ -272,6 +284,7 @@ export function mountCatalog(app: Express): void {
         kind: null as string | null,
         version: p.version,
         servers: p.servers,
+        flow: p.flow,
         stages: p.stages,
         entry: p.entry,
         documents: p.documents,
@@ -314,6 +327,8 @@ export function mountCatalog(app: Express): void {
         kind: (b.kind as string) || null,
         version: null,
         servers: [b.block as string],
+        // A registered block is somebody else's server, not a package of ours with a method.
+        flow: false,
         stages: [] as string[],
         entry: null,
         documents: [] as DiskPlugin["documents"],

@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 
 import { firstOf, root, sourceFiles } from "../read.mjs";
 import { check } from "../run.mjs";
-import { NAMING, catalogPackages, everyShippedSkill, flows, ownedFields, platformSkills, skillsOf } from "../facts.mjs";
+import { NAMING, catalogPackages, declaredCommands, everyShippedSkill, flows, ownedFields, platformSkills, skillsOf } from "../facts.mjs";
 
 check("a skill_view a skill spells out names a skill that exists", () => {
   // THE DIRECT INSTRUCTION, checked directly. The prefix check below covers a backticked
@@ -139,10 +139,10 @@ check("no skill writes a document with a local-file tool", () => {
 });
 
 check("a skill that ships an asset does not say the asset is beside it", () => {
-  // On Claude Code a standalone skill is PROMOTED: its SKILL.md becomes commands/<name>.md
-  // and only the text moves — assets stay in skills/<name>/. So "next to this file" is true
-  // in Codex and false on Claude Code, which is the client where the promotion happens and
-  // the one most people use.
+  // On Claude Code a skill the manifest declares as a command is PROMOTED: its SKILL.md
+  // becomes commands/<command>.md and only the text moves — assets stay in skills/<name>/. So
+  // "next to this file" is true in Codex and false on Claude Code, which is the client where
+  // the promotion happens and the one most people use.
   //
   // sdlc-deck said exactly that about a 250KB template, added "that is the only place to
   // look — no probing, no fallbacks", and instructed the model to stop rather than improvise
@@ -150,7 +150,7 @@ check("a skill that ships an asset does not say the asset is beside it", () => {
   const bad = [];
   for (const f of flows) {
     const m = JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8"));
-    for (const name of m.standalone ?? []) {
+    for (const name of Object.values(m.commands ?? {})) {
       const dir = join(f.dir, "skills", name);
       if (!existsSync(dir)) continue;
       const assets = readdirSync(dir).filter((e) => e !== "SKILL.md");
@@ -366,9 +366,9 @@ check("no skill template hands a model a field the platform owns", () => {
 });
 
 check("a skill names the command a person would actually type", () => {
-  // A command is `/<plugin>:<file>`, and both halves are computed: the plugin drops a
-  // trailing `-flow`, the command drops the plugin's own prefix. So sdlc-flow's tldr skill
-  // is typed `/sdlc:tldr`.
+  // A command is `/<plugin>:<file>`. The plugin half is computed — a trailing `-flow` is
+  // dropped — and the command half is DECLARED, in the manifest's `commands` map. So
+  // sdlc-flow's tldr skill is typed `/sdlc:tldr` because flow.json says `"tldr": "sdlc-tldr"`.
   //
   // Twelve places said `/zz:sdlc-tldr` — the namespace from when every flow shipped inside
   // one `zz` plugin. The `zz` plugin carries the router skill and NO commands, so every one
@@ -377,28 +377,39 @@ check("a skill names the command a person would actually type", () => {
   // about the mistake; the skills describing those commands had not, and neither had the
   // setup text the package hands a person on install.
   //
-  // Checked against the real derivation rather than against a list of known-bad strings.
+  // Checked against the real declaration rather than against a list of known-bad strings.
+  // TWO WAYS TO BE WRONG NOW, where the derivation could only produce one: a skill can name
+  // the wrong string for a command that exists, and it can name a command for a skill the
+  // manifest declares none for — which the strip could not detect, because it invented a
+  // name for every skill whether one shipped or not.
   if (NAMING.error) return NAMING.error;
-  const { pluginName, commandName } = NAMING;
+  const { pluginName } = NAMING;
   const bad = [];
   // Every package with skills, INCLUDING one that ships no manifest: a skills-only package
-  // is packaged too, and its skills become commands the same way.
+  // is packaged too, and it declares no commands, so naming one of its skills as a command
+  // is naming a file the packager does not write.
   for (const pkg of catalogPackages) {
     const skillsDir = join(pkg.dir, "skills");
     if (!existsSync(skillsDir)) continue;
     const plugin = pluginName(pkg.flow);
-    const right = new Map(readdirSync(skillsDir).map((sk) => [sk, `/${plugin}:${commandName(plugin, sk)}`]));
-    for (const sk of readdirSync(skillsDir)) {
+    const cmds = declaredCommands(pkg);
+    const shipped = readdirSync(skillsDir);
+    const right = new Map([...cmds].map(([sk, cmd]) => [sk, `/${plugin}:${cmd}`]));
+    for (const sk of shipped) {
       const md = join(skillsDir, sk, "SKILL.md");
       if (!existsSync(md)) continue;
       for (const m of readFileSync(md, "utf8").matchAll(/\/([a-z0-9-]+):([a-z0-9-]+)/g)) {
         const named = `/${m[1]}:${m[2]}`;
         // Only claims about THIS package's own skills. A skill may legitimately name
         // another plugin's command, and a URL scheme is not a command at all.
-        const target = [...right.keys()].find((k) => right.get(k) === named || named.endsWith(`:${k}`));
+        const target = shipped.find((k) => right.get(k) === named || named.endsWith(`:${k}`));
         if (!target) continue;
-        if (right.get(target) !== named) {
-          bad.push(`${pkg.owner}/${pkg.flow}/${sk} says ${named}; the command is ${right.get(target)}`);
+        const want = right.get(target);
+        if (!want) {
+          bad.push(`${pkg.owner}/${pkg.flow}/${sk} says ${named}; ${pkg.flow} declares no ` +
+                   `command for '${target}', so no such command exists`);
+        } else if (want !== named) {
+          bad.push(`${pkg.owner}/${pkg.flow}/${sk} says ${named}; the command is ${want}`);
         }
       }
     }
@@ -410,37 +421,39 @@ check("no skill names a package file the packager does not emit", () => {
   // The check above reads `/plugin:command` strings. A skill can also name the FILE — and
   // sdlc-deck did, telling the reader it is installed as `commands/sdlc-deck.md` so it can
   // resolve its template relative to the plugin root. The packager emits
-  // `commands/${commandName(plugin, skill)}.md`, which is `commands/deck.md`; the prefix the
-  // command name drops is dropped from the filename too, because they are the same name.
+  // `commands/<the manifest's key>.md`, which is `commands/deck.md`; the file is named by the
+  // command, not by the skill, because the key IS the command.
   //
   // The consequence is not cosmetic. That table exists so the skill can find
   // `../skills/sdlc-deck/deck-chassis.html` from where it is actually reading, and a deck
   // built without the chassis is the one failure the skill says to stop on. The string form
   // had already been corrected across twelve places; this form reads as a path rather than a
   // command, so the same sweep did not see it.
-  if (NAMING.error) return NAMING.error;
-  const { pluginName, commandName } = NAMING;
   const bad = [];
   for (const pkg of catalogPackages) {
     const skillsDir = join(pkg.dir, "skills");
     if (!existsSync(skillsDir)) continue;
-    const plugin = pluginName(pkg.flow);
+    const cmds = declaredCommands(pkg);
     const own = readdirSync(skillsDir).filter((sk) => existsSync(join(skillsDir, sk, "SKILL.md")));
     for (const sk of own) {
       const text = readFileSync(join(skillsDir, sk, "SKILL.md"), "utf8");
       for (const m of text.matchAll(/commands\/([a-z0-9-]+)\.md/g)) {
         // Only claims about a skill THIS package ships. Naming another plugin's file is
         // somebody else's business, and an unrelated path is not a claim at all.
-        const target = own.find((k) => k === m[1] || commandName(plugin, k) === m[1]);
+        const target = own.find((k) => k === m[1] || cmds.get(k) === m[1]);
         if (!target) continue;
-        const right = `commands/${commandName(plugin, target)}.md`;
-        if (`commands/${m[1]}.md` !== right) {
-          bad.push(`${pkg.owner}/${pkg.flow}/${sk} names commands/${m[1]}.md; the packager writes ${right}`);
+        const cmd = cmds.get(target);
+        if (!cmd) {
+          bad.push(`${pkg.owner}/${pkg.flow}/${sk} names commands/${m[1]}.md; ${pkg.flow} ` +
+                   `declares no command for '${target}', so the packager writes no such file`);
+        } else if (m[1] !== cmd) {
+          bad.push(`${pkg.owner}/${pkg.flow}/${sk} names commands/${m[1]}.md; the packager ` +
+                   `writes commands/${cmd}.md`);
         }
       }
       for (const m of text.matchAll(/skills\/([a-z0-9-]+)\/SKILL\.md/g)) {
-        // Skills keep their full name in the package; only the command form is shortened.
-        if (!own.includes(m[1]) && own.some((k) => commandName(plugin, k) === m[1])) {
+        // Skills keep their full name in the package; only the command form is the map's key.
+        if (!own.includes(m[1]) && own.some((k) => cmds.get(k) === m[1])) {
           bad.push(`${pkg.owner}/${pkg.flow}/${sk} names skills/${m[1]}/SKILL.md; skills keep their full name`);
         }
       }
@@ -550,33 +563,33 @@ check("no skill offers a choice the manifest does not allow", () => {
 });
 
 check("a skill a person types is not one a model is told to load", () => {
-  // `standalone` promotes a skill into a Claude Code command, and the promotion is not
+  // `commands` promotes a skill into a Claude Code command, and the promotion is not
   // additive: standaloneCommandFile writes `disable-model-invocation: true` and the SKILL.md
   // is dropped from the package, because the method ships exactly once. So a skill that
-  // ANOTHER skill instructs a model to load must never be standalone — the command still
-  // exists, the person can still type it, and the instruction to load it silently stops
+  // ANOTHER skill instructs a model to load must never be named in `commands` — the command
+  // still exists, the person can still type it, and the instruction to load it silently stops
   // working. Nothing about the package build fails; the route just goes quiet.
   //
-  // Nearly shipped: zz-journal was declared standalone here while `zz-kb-usage` says "read
+  // Nearly shipped: zz-journal was declared a command here while `zz-kb-usage` says "read
   // `zz-journal` first", which is the platform's own flow-agnostic path into the journal.
   //
   // A reference that names the COMMAND (`/sdlc:deck`) is the correct way to point at a
-  // standalone skill and is not a load, which is why this reads the verb rather than the name.
-  const standalone = new Map();   // skill -> flow that declares it
+  // promoted skill and is not a load, which is why this reads the verb rather than the name.
+  const promoted = new Map();   // skill -> flow that declares a command for it
   for (const f of flows) {
     const m = JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8"));
-    for (const n of m.standalone ?? []) standalone.set(n, f.flow);
+    for (const n of Object.values(m.commands ?? {})) promoted.set(n, f.flow);
   }
-  if (!standalone.size) return null;
+  if (!promoted.size) return null;
   const bad = [];
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     const src = readFileSync(join(root, rel), "utf8");
     const self = rel.split("/").at(-2);
     for (const m of src.matchAll(/\b(?:load|read)\s+`([a-z][a-z0-9-]+)`/gi)) {
       const target = m[1];
-      if (target === self || !standalone.has(target)) continue;
-      bad.push(`${rel} tells a model to load '${target}', which ${standalone.get(target)} ` +
-               `declares standalone — promotion makes it person-typed only`);
+      if (target === self || !promoted.has(target)) continue;
+      bad.push(`${rel} tells a model to load '${target}', which ${promoted.get(target)} ` +
+               `declares as a command — promotion makes it person-typed only`);
     }
   }
   return bad.length ? bad.join("; ") : null;

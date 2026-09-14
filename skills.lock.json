@@ -84,8 +84,8 @@
     "sha": "a3c6baa250d1"
   },
   "zz-plugin-eval": {
-    "version": "0.2",
-    "sha": "1d0a715dd045"
+    "version": "0.3",
+    "sha": "7f3a38205833"
   },
   "zz-plugin-judge": {
     "version": "0.1",
@@ -96,8 +96,8 @@
     "sha": "641a2d2e8a99"
   },
   "zz-plugin-profile": {
-    "version": "0.2",
-    "sha": "2dbbe1e0d91d"
+    "version": "0.3",
+    "sha": "b4d171f5a477"
   },
   "zz-plugin-report": {
     "version": "0.1",
@@ -108,19 +108,19 @@
     "sha": "4e39db5d39ec"
   },
   "zz-doctor": {
-    "version": "1.1",
-    "sha": "c13c9f3f378c"
+    "version": "1.2",
+    "sha": "32f46223e8d2"
   },
   "zz-knowledge": {
     "version": "2.4",
     "sha": "93465dacc57f"
   },
   "zz-migrate": {
-    "version": "1.1",
-    "sha": "da3351179981"
+    "version": "1.2",
+    "sha": "61cc51fe863c"
   },
   "zz-update": {
-    "version": "1.1",
-    "sha": "35dff1aca787"
+    "version": "1.2",
+    "sha": "fe649922ad45"
   }
 }

@@ -1,9 +1,8 @@
 ---
 name: zz-migrate
-version: 1.0
-standalone: true
+version: 1.2
 description: "Bring one mma repository's history onto this platform: its journal becomes knowledge nodes, and its specs, plans, explorations, audits and the rest become the sources of one archive initiative that every migrated node cites as evidence. Resumable, and safe to run twice."
-when_to_use: "The person typed /zz:migrate, or has a repository with a .mma/ directory whose history they want on the platform. Run it from inside that repository."
+when_to_use: "The person typed /zz-core:migrate, or has a repository with a .mma/ directory whose history they want on the platform. Run it from inside that repository."
 ---
 
 # zz-migrate

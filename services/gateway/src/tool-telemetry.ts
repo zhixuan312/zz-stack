@@ -48,10 +48,17 @@ import type { NextFunction, Request, Response } from "express";
 import { catalogManifest } from "@zz/catalog";
 import { refusalClass } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
+// The alias resolver, from @zz/contracts, where the maps it reads also live. It briefly lived
+// in @zz/tools instead, which made a service depend on a package carrying pg, @zz/catalog and
+// @zz/mcp-client in order to reach a pure function — and split one concept across two packages,
+// which is how a second implementation starts. Maps and resolvers now share one door.
+// `tool_key` must fold onto the exact same series a reader building one from historical
+// `subject` values would, so it cannot be resolved by anything but this.
+import { resolveStep, resolveToolKey } from "@zz/contracts";
 
 import { logEvent } from "./events.js";
 import { blockHandshake, blockOf, blockVersion, callerKey, currentStep, flowFor, initiativeSeen,
-         stepLoaded } from "./step-trace.js";
+         pluginFor, stepLoaded } from "./step-trace.js";
 
 /** The most we will hold of ONE answer. Answers are classified as they stream, so nothing
  * accumulates past this.
@@ -303,6 +310,13 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     // point at — and that file's frontmatter is not the skill's version. Reading one out of it
     // wrote an empty step_version onto every call that followed, or a document template's
     // version, under the skill's name. See stepLoaded.
+    // RAW NAME: this is the tool name the CLIENT sent, before any resolution, so the
+    // pre-rename spelling is the correct one here and `resolveToolKey` would be wrong —
+    // fifteen lines below, :490 puts the same field through the resolver for `tool_key`,
+    // because that answers a different question. The hazard is real and deferred, not absent:
+    // when `skill_view` is renamed at the REGISTRATION, this predicate silently stops matching
+    // and every call loses `step_version` and `step_sha` — attribution, not display. It must
+    // move in the same commit as the registration, and no resolver can do it for us.
     const loading = wanted.filter((m) => m.params?.name === "skill_view")
       .map((m) => {
         const a = m.params?.arguments as Record<string, unknown> | undefined;
@@ -395,6 +409,13 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
       // those rows out of its latency percentiles rather than averaging a batch total in
       // sixty-two times. `bytes` is the same: one response, one size.
       const ms = Date.now() - started;
+      // REQUEST BYTES, from Content-Length — the one honest measure available here. The body
+      // is already parsed into `req.body` by the time this middleware runs, and
+      // re-serializing it would measure our own JSON.stringify of it, not what the caller
+      // actually put on the wire. A request with no Content-Length (chunked, or none at all)
+      // is not measured, and null says so rather than a guessed zero.
+      const rawLength = req.headers["content-length"];
+      const requestBytes = rawLength !== undefined && /^\d+$/.test(rawLength) ? Number(rawLength) : null;
       const where = surface(req);
 
       // WHICH FLOW, WHICH STEP, WHICH BLOCK — the three questions an improvement loop asks,
@@ -458,6 +479,22 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
               .find((d) => d.name === docName)?.stage
           : undefined;
         const stepName = owedBy ?? step?.step;
+        // WHICH PLUGIN — from `currentStep()`'s own trace, per the contract's Inputs clause,
+        // and DELIBERATELY NOT from `stepName` above. `stepName` can be `owedBy`, the
+        // manifest's declared owner of a document being written, which is a statement about
+        // which STAGE owes a document, not about which skill the caller actually loaded — and
+        // routing plugin attribution through it would still be one hop from `zz.flow_install`
+        // (owedBy comes from `catalogManifest(flow.flow, ...)`), which AC-1.6 rules out.
+        // Resolved through SKILL_ALIAS first, so a renamed skill still matches the plugin that
+        // owns it today, then through the same zz.plugin_version_skill join plugin-profile.ts
+        // already prefers (see pluginFor's own comment for why it cannot start from a zz.run
+        // row the way that one does). A caller with no step loaded, or one naming no known
+        // skill, comes back undefined and is written as null — never guessed at.
+        const plugin = await pluginFor(step?.step ? resolveStep(step.step) : undefined);
+        // THE ALIAS-RESOLVED TOOL NAME, Task I-2's resolver, so `tool_key` already reads as
+        // one series across a rename rather than needing every future reader to resolve
+        // `subject` itself.
+        const toolKey = resolveToolKey(`${where}:${call.params?.name ?? ""}`);
         // An id that answered nothing is unreadable, not refused — the same distinction the
         // report depends on to keep its accepted rate from being a guess.
         const outcome = transport
@@ -496,17 +533,30 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           flow: flow?.flow,
           step: stepName,
           stepVersion: step?.step_version,
+          // WHICH PLUGIN, AND WHICH RELEASE OF IT — the answer this task adds. Never `flow`
+          // (a team's last install, not a skill's owner) and never `x-zz-client` in `detail`
+          // below (which program made the call, not which plugin's skill it was following).
+          plugin: plugin?.plugin,
+          pluginVersion: plugin?.plugin_version,
+          toolKey,
           block,
           blockVersion: block ? blockVersion(block) : undefined,
           ok: outcome.ok,
           // The platform's own sentence saying which rule was broken — the one thing a skill
           // can actually be edited from.
           refusal: outcome.reason,
+          // WHAT THE CALL COST — duration_ms, request_bytes and response_bytes, so a latency
+          // or a payload-size percentile is a WHERE/GROUP BY rather than a detail->>'' reach.
+          // `batched` says whether this row's duration and response size belong to it alone
+          // or were shared with the rest of `wanted`; tool-report now reads the column
+          // instead of inferring it from an entry that used to live in the bag below.
+          durationMs: ms,
+          requestBytes,
+          responseBytes: bytes,
+          batched: wanted.length > 1,
 
           // ── THE BAG: read, never filtered on ────────────────────────────────
           detail: {
-            ms,
-            bytes,
             caller: callerHash,
             // WHICH OF OUR OWN TOOLS MADE THE CALL — `zz-plugin` for a person's chat session,
             // `zz-doctor`, `zz-update`, `zz-migrate` for the commands, `provision`/`smoke` for
@@ -532,7 +582,6 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
             ...(outcome.reason ? { shapes: shapes(given) } : {}),
             ...(outcome.unreadable ? { unreadable: true } : {}),
             ...(res.writableFinished ? {} : { aborted: true }),
-            ...(wanted.length > 1 ? { batched: wanted.length } : {}),
           },
         });
       }

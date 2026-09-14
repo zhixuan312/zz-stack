@@ -24,14 +24,20 @@
  */
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { refusalClass } from "@zz/contracts";
+import { refusalClass, resolveStep, resolveToolKey } from "@zz/contracts";
 
 import { die, optional, parseArgs } from "../lib/cli.js";
 import { teachesTheRule } from "../lib/refusal.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 import { localStamp } from "../lib/shell.js";
 
+// Re-exported so the resolvers this file groups `perTool` through are importable from the one
+// place the alias-applied and skill-renames checks already look for them. The maps and the
+// actual resolution live in @zz/contracts/alias.ts — this is read-side wiring, not a second
+// implementation.
+export { resolveToolKey, resolveStep };
 
 // R6 of the building-block contract: "validation errors in prose that teach the rule — no
 // silent coercion, no bare status codes". A refusal that names a status and stops is the
@@ -50,28 +56,50 @@ interface CallRow {
   ts: string;
   subject: string;                       // `<surface>:<tool>`
 
-  /* ── COLUMNS: the three dimensions and the outcome ────────────────────────────
-   * Which flow, which of its steps and which revision of that step; which block and its own
-   * account of itself; whether the call worked and, when it did not, the platform's own
-   * sentence saying which rule was broken. These are columns because somebody groups by them.
+  /* ── COLUMNS: the dimensions and the outcome ────────────────────────────────
+   * Which of a step's revisions ran, which block, and its own account of itself; whether the
+   * call worked and, when it did not, the platform's own sentence saying which rule was
+   * broken. These are columns because somebody groups by them.
    *
    * `initiative` and `team_slug` are the JOIN KEYS to zz.doc and zz.decision — without them a
    * refusal cannot be connected to the document it was made for or the claim it was testing,
-   * which is why the reconciliation between prediction and outcome had almost nothing to read. */
+   * which is why the reconciliation between prediction and outcome had almost nothing to read.
+   *
+   * `flow` is TEAM CONTEXT, not attribution — the team's most recently installed flow, so a
+   * team running two of them reads every row as whichever was installed last. `plugin` below
+   * is the answer to "which plugin", resolved from the skill actually loaded. */
   team_slug: string | null;
   initiative: string | null;
   flow: string | null;
   step: string | null;
   step_version: string | null;
+  /** Which plugin owns the skill `step` names, and its released version — resolved at write
+   * time through zz.plugin_version_skill, never from `flow` (a team's last install, not a
+   * skill's owner) and never guessed at: an unresolvable step leaves both null. */
+  plugin: string | null;
+  plugin_version: string | null;
+  /** `<surface>:<tool>`, alias-resolved as of WRITE time — a snapshot, not a live answer. A
+   * row older than this column carries none and falls back to `subject`. Either way it still
+   * passes through `resolveToolKey` below, not trusted outright: a tool renamed AGAIN after
+   * the snapshot would otherwise stay stuck under the now-superseded name. A no-op when it
+   * is already current. */
+  tool_key: string | null;
   block: string | null;
   block_version: string | null;
   ok: boolean | null;
   refusal: string | null;
+  /** What the call cost. Null means not measured, never a guessed zero — a request that
+   * failed before tool-telemetry.ts started timing it leaves these unset. `batched` is the
+   * one column that is never null: the gateway always knows whether a request carried more
+   * than one call, and a row's duration and response size belong to it alone only when this
+   * is false. */
+  duration_ms: number | null;
+  request_bytes: number | null;
+  response_bytes: number | null;
+  batched: boolean;
 
   /** Read, never filtered on — which is exactly what a jsonb column is good at. */
   detail: {
-    ms?: number;
-    bytes?: number;
     /** A stable hash, never a person: it correlates one conversation and identifies nobody. */
     caller?: string;
     /** Which of our own tools made the call — the chat plugin, a command, a harness. Names a
@@ -90,8 +118,6 @@ interface CallRow {
     /** The response never finished — the client hung up, or the upstream died mid-stream.
      * Distinct from `unreadable`, which is an answer we could not parse. */
     aborted?: boolean;
-    /** How many calls shared this request. Absent unless more than one did. */
-    batched?: number;
   };
 }
 
@@ -125,8 +151,10 @@ function rows(psql: string, since: string, surface: string | null, actor: string
     // written by acts that belong to a person rather than a team — a self-issued PAT, a package
     // download — so a reader of that column has to say which kinds it means, and a scope hidden
     // in a joined array is a scope nothing can check.
-    "select ts, subject, team_slug, initiative, flow, step, step_version, block, block_version," +
-    " ok, refusal, detail from zz.event where kind = 'tool_call'" +
+    "select ts, subject, team_slug, initiative, flow, step, step_version, plugin, plugin_version," +
+    " tool_key, block, block_version," +
+    " ok, refusal, duration_ms, request_bytes, response_bytes, batched, detail" +
+    " from zz.event where kind = 'tool_call'" +
     ` and ${where.join(" and ")} order by id`;
 
   const vars: Record<string, string> = { since };
@@ -182,6 +210,9 @@ interface ReportShape {
   unreadable: number;
   accepted_rate: number;
   aborted: number;
+  /** A `subject` with no colon to split — counted under its own raw value in `tools` rather
+   * than dropped, and named here so an operator can see the row exists and go read it. */
+  unparseable: number;
   tools: Record<string, ToolStat>;
   /** One row per client — which of the things we ship actually get run, and how often they are
    * refused. Named software, never a person. */
@@ -420,12 +451,16 @@ function main(argv: string[]): number {
   const perClient = new Map<string, { calls: number; refused: number; tools: Set<string> }>();
   let aborted = 0;
   let batched = 0;
+  let unparseable = 0;
   const example = new Map<string, { tool: string; args: string[]; shapes: Record<string, string>; text: string }>();
 
   for (const e of events) {
-    // The tool, named as the table names it. `<surface>:<tool>` is kept as the display key so
-    // the report still reads `casebox:list_records` rather than losing which door a tool was behind.
-    const subject = e.subject;
+    // `tool_key` preferred when the row has one, but RESOLVED AGAIN rather than trusted
+    // outright — it is a write-time snapshot, and a second rename after that row was written
+    // would otherwise leave it stuck under a now-superseded name. `<surface>:<tool>` stays
+    // the display key either way, so the report still reads `casebox:list_records`.
+    if (!(e.tool_key ?? e.subject).includes(":")) unparseable++;
+    const subject = resolveToolKey(e.tool_key ?? e.subject);
     const d = e.detail ?? {};
     if (!perTool.has(subject)) perTool.set(subject, { calls: 0, ok: 0, refused: 0, unreadable: 0, ms: [], bytes: [] });
     const t = perTool.get(subject)!;
@@ -445,10 +480,10 @@ function main(argv: string[]): number {
       pc.tools.add(subject);
       if (e.ok === false) pc.refused++;
     }
-    if (d.batched) batched++;
+    if (e.batched) batched++;
     else {
-      if (typeof d.ms === "number" && Number.isInteger(d.ms)) t.ms.push(d.ms);
-      if (typeof d.bytes === "number" && d.bytes > 0) t.bytes.push(d.bytes);
+      if (typeof e.duration_ms === "number" && Number.isInteger(e.duration_ms)) t.ms.push(e.duration_ms);
+      if (typeof e.response_bytes === "number" && e.response_bytes > 0) t.bytes.push(e.response_bytes);
     }
     if (d.aborted) aborted++;
     for (const [k, v] of Object.entries(d.ids ?? {})) {
@@ -487,6 +522,7 @@ function main(argv: string[]): number {
     unreadable: [...perTool.values()].reduce((a, v) => a + v.unreadable, 0),
     accepted_rate: Math.round(rate * 10) / 10,
     aborted,
+    unparseable,
     clients: [...perClient]
       .sort((a, b) => b[1].calls - a[1].calls)
       .map(([client, v]) => ({ client, calls: v.calls, refused: v.refused, tools: v.tools.size })),
@@ -524,7 +560,10 @@ function main(argv: string[]): number {
         // A call that never came back is the failure most worth seeing and the one least
         // visible: it is not refused, not accepted, and leaves no answer to classify. The
         // gateway has recorded it since the "close" listener was wired; nothing showed it.
-        (report.aborted ? `, ${report.aborted} never came back` : ""),
+        (report.aborted ? `, ${report.aborted} never came back` : "") +
+        // A subject with no colon to split — counted under its own raw value above rather
+        // than dropped, and said out loud so an operator goes and reads that row.
+        (report.unparseable ? `, ${report.unparseable} unparseable subject(s)` : ""),
     );
     // Said out loud, because a silently narrowed denominator is how a timing number lies.
     if (batched) {
@@ -584,7 +623,10 @@ function main(argv: string[]): number {
       }
     }
     if (report.named.length) {
-      const skills = report.named.filter((n) => n.key === "name" && n.tools.some((t) => t.includes("skill_view")));
+      // `skill_read`, THE RESOLVED NAME: `named.tools` holds subjects already folded through
+      // resolveToolKey, so `skill_view` matches no row at all and this section would stop
+      // rendering. evolve-report.ts folds the same rename the same way.
+      const skills = report.named.filter((n) => n.key === "name" && n.tools.some((t) => t.includes("skill_read")));
       // Capped for the terminal, and the cap is stated. A listing that quietly stops at
       // twelve reads as "that is all of them", which is the shape this file objects to three
       // paragraphs up about a narrowed denominator. --json carries every row.
@@ -648,4 +690,9 @@ function main(argv: string[]): number {
   return 0;
 }
 
-process.exit(main(process.argv.slice(2)));
+// Only when run as the CLI. evolve-report and step-score import resolvers, and the checks
+// that verify them import this file too — an import must not also run the CLI's own psql
+// query and exit the process under it.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  process.exit(main(process.argv.slice(2)));
+}

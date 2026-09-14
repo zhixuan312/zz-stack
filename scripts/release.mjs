@@ -92,6 +92,44 @@ import { preflight } from "./release/preflight.mjs";
 import { rollback } from "./release/rollback.mjs";
 import { verifyLive } from "./release/verify.mjs";
 
+/**
+ * chain-check.ts, run against the LIVE deployment, right here rather than from
+ * scripts/gate.mjs.
+ *
+ * verifyLive()'s `doors` and `contract` layers prove a tool answers and the surface matches
+ * source; neither proves a tool actually COMPLETES what it claims to. chain-check.ts writes a
+ * document, approves it, closes the initiative and supersedes a knowledge node for real,
+ * against this deployment — in seconds, with no model in the loop — so a tool that mounts but
+ * is broken end to end fails a release here instead of surfacing as a support ticket next
+ * week. It needs a running deployment and a real token, which is exactly why it is not in the
+ * gate: the gate is offline and proves things about the source.
+ *
+ * Same three-verdict rule the doctor's own probes hold to (scripts/doctor/run.mjs): a missing
+ * credential is `unknown` — this checker could not look, which is not a claim about the
+ * deployment — and only a run that actually happened and disagreed is `wrong`, the one a
+ * release may roll back on.
+ */
+function chainCheck() {
+  const gw = publicUrl();
+  const pat = envToken();
+  if (!gw || !pat) {
+    return { verdict: "unknown", detail: "chain-check: no ZZ_PUBLIC_URL/ZZ_TOKEN to walk the chain with" };
+  }
+  try {
+    run("node", [join(root, "packages/tools/dist/testing/chain-check.js")],
+        { env: { ...process.env, ZZ_GATEWAY: gw, ZZ_PAT: pat } });
+    return null;
+  } catch (err) {
+    // What chain-check itself printed, not the exception execFileSync wraps a nonzero exit
+    // in — its own FAILED lines already name the tool and the rule, which is worth more than
+    // this script restating "it exited 1".
+    const out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    const failing = out.split("\n").filter((l) => l.includes("FAILED:")).map((l) => l.trim());
+    return { verdict: "wrong",
+      detail: failing.length ? `chain-check: ${failing.join(" | ")}` : `chain-check exited nonzero: ${out.slice(-300)}` };
+  }
+}
+
 if (preflightMode) { preflight(); process.exit(0); }
 
 if (args.includes("--verify-only")) {
@@ -99,6 +137,9 @@ if (args.includes("--verify-only")) {
   const live = ssh(`cd ${REMOTE}/deploy && grep -oP '(?<=^ZZ_VERSION=).*' .env || echo ''`);
   log(`  host ZZ_VERSION=${live || "(unset — compose literal applies)"}`);
   const found = verifyLive();
+  const chained = chainCheck();
+  if (chained?.verdict === "wrong") found.wrong.push(chained.detail);
+  if (chained?.verdict === "unknown") found.unknown.push(chained.detail);
   if (found.wrong.length) {
     die(`${found.wrong.length} check(s) failed:\n` + found.wrong.map((x) => `        - ${x}`).join("\n"));
   }
@@ -524,6 +565,11 @@ step(5, "verify");
 execSync("sleep 12");
 const verdict = verifyLive();
 const problems = verdict.wrong;
+
+// The tool CHAIN, not only the door and the surface — see chainCheck()'s own docstring.
+const chained = chainCheck();
+if (chained?.verdict === "wrong") problems.push(chained.detail);
+if (chained?.verdict === "unknown") verdict.unknown.push(chained.detail);
 
 /* ── 5a · deployed, and nothing could look at it ───────────────────────────
  * THE THIRD OUTCOME, and the release could not produce it until 0.26.1 needed it.

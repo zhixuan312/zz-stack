@@ -53,7 +53,17 @@ export function registerInitiativeStatusTools(server: McpServer): void {
     // installed flow to fall back on. Say that, and say how to fix it. The alternative was
     // a crash — EISDIR, from reading the folder as if it were the closing document — on the
     // one call zz-backbone tells every agent to make before continuing any work.
-    if (!chain.name && docs.length === 0) {
+    //
+    // THE TEST IS THE EMPTY CHAIN, not the missing name. It was `!chain.name && !docs.length`,
+    // and a named chain with no documents slipped past it into the walk below: every branch
+    // there reads `states`, which is empty, so `pending` and `awaiting` are both undefined and
+    // the fallthrough answered `action: "close", document: ""` — the platform telling an agent
+    // to close an initiative naming no document, off a flow that declares none. chain.ts no
+    // longer produces such a chain, and this is the second half of the same fix: with nothing
+    // declared there is nothing to compute a next move over, whatever resolved the chain.
+    // `chain.name` is therefore null whenever this fires, which is what makes `flow: null`
+    // below still the truth rather than a guess.
+    if (docs.length === 0) {
       const files = existsSync(dir)
         ? readdirSync(dir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort()
         : [];

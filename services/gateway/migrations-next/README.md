@@ -19,6 +19,14 @@ through `run_id`, 140 documents resolve to the skill version that produced them,
 comes out as `id, ts, actor, kind, subject, detail, ok, refusal, run_id, block_version_id,
 team_id`.
 
+**The `event_bytes` index in this file was changed after that end-to-end test, and the test has
+not been re-run over it.** It indexed `(detail->>'bytes')::bigint`; migration 050 moved that
+figure into the real column `response_bytes` and the gateway stopped writing the bag key, so the
+expression would have indexed only pre-050 history. It is now `(response_bytes desc) where
+response_bytes is not null`. Nothing else in this file was touched, and 050 is applied ahead of
+it, so the column exists by the time this runs — but the sentence above about a clean end-to-end
+apply predates the edit, and should not be read as covering it.
+
 **Everything that must land with it** — all of it, or the platform answers errors:
 
     services/zz-core/src/indexing.ts

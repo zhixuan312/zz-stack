@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 0.2
+version: 0.3
 description: The front door to plugin evaluation. Five stages — locate, profile, define, judge, report — over one plugin at one released version. Two kinds of evidence, two gates, evidence about whether a plugin does the job it claims; never a change.
 when_to_use: "Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
@@ -30,7 +30,7 @@ separate piece of work with its own initiative.
 
 **A PERSON OPENS THIS FLOW. NOTHING OPENS IT FOR THEM, and that is worth knowing before you
 write a case about it.** This skill is a flow's `entry`, so the shelf renders it as the command
-`/zz-plugin-eval:flow` carrying `disable-model-invocation: true` — a model cannot invoke it at
+`/zz-plugin-eval:eval` carrying `disable-model-invocation: true` — a model cannot invoke it at
 all, whatever its `when_to_use` says. The five stage skills beside it each say "never on its
 own", which is right: a stage that fires out of order is worse than one that does not fire.
 

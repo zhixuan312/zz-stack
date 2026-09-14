@@ -94,10 +94,11 @@ for (const f of pkg.files.filter((x) => /scripts\/zz-mcp-headers\.sh$/.test(x.pa
 // The allowance names the BASELINE PLUGIN, not the shelf it sits on. It was the literal
 // `zz@zz-platform`, so renaming the marketplace to `zz-stack` turned a correct install block
 // red — the probe was asserting which marketplace exists, a fact it has no business holding,
-// on its way to asserting which plugin may install itself. `zz@` matches only the baseline:
-// `zz-access@zz-stack` and the rest have no `zz@` in them.
+// on its way to asserting which plugin may install itself. `zz-core@` matches only the baseline:
+// The baseline has since been renamed `zz` -> `zz-core`, so the name here moved with it;
+// `zz-access@zz-stack` and the rest have no `zz-core@` in them.
 const live = pkg.install.filter((l) => /^\s*claude plugin install /.test(l));
-const wrong = live.filter((l) => !/\bzz@[A-Za-z0-9._-]+\b/.test(l));
+const wrong = live.filter((l) => !/\bzz-core@[A-Za-z0-9._-]+\b/.test(l));
 if (wrong.length) {
   bad.push(`the install block installs without being asked: ${wrong.join(" | ")}`);
 }

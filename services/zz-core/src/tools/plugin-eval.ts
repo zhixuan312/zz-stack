@@ -29,7 +29,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { logActivity } from "../persist.js";
-import { pluginCases, parseCaseRun } from "../plugin-cases.js";
+import { pluginCases, parseCaseRun, worthRecording } from "../plugin-cases.js";
 import { pluginTraces } from "../plugin-profile.js";
 import { db } from "../platform-db.js";
 import { userRoot } from "../paths.js";
@@ -47,7 +47,7 @@ export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[numbe
   return catalogEntries().find((e) => e.flow.replace(/-flow$/, "") === plugin);
 }
 
-/** The platform's own skills — the `zz` plugin's content. The same constant plugin-lock.ts
+/** The platform's own skills — the `zz-core` plugin's content. The same constant plugin-lock.ts
  *  keeps on the gateway side, spelled again here because zz-core does not depend on the
  *  gateway, and honouring the same override for the same reason: the gate runs on a machine
  *  where /skills does not exist. */
@@ -55,20 +55,25 @@ const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 
 /** Where a plugin's skills are on disk, or "" if this deployment holds none.
  *
- * `zz` IS A PLUGIN AND HAS NO CATALOG ENTRY, and every caller of toolsNamedBy used to guard the
- * call with a ternary on the catalog entry, falling back to the empty list. The consequence
- * was not an error anywhere: zz reported `tools_named: []`, so `reachable` was empty, so
+ * `zz-core` HAS A CATALOG ENTRY AND ITS SKILLS ARE NOT IN IT, which is why the baseline is
+ * answered FIRST and not as a fallback. Every caller of toolsNamedBy used to guard the call
+ * with a ternary on the catalog entry, falling back to the empty list. The consequence was not
+ * an error anywhere: the baseline reported `tools_named: []`, so `reachable` was empty, so
  * `never_called` was empty, so the one finding this whole half exists to produce — a tool a
  * skill tells an agent to call and no agent ever called — was structurally impossible for the
  * plugin every account installs, and read as a clean bill of health. The `tool fit` dimension
  * found `knowledge_add` for sdlc on its first real round; zz-knowledge names `knowledge_add`
  * too, and the question could never have been asked of it.
  *
+ * Asking the catalog first would restore that failure by a new route rather than by an absence:
+ * `catalog/zz/zz-core/` carries the manifest and no `skills/`, so an entry-first order resolves
+ * the baseline to a directory that does not exist and returns the same empty list.
+ *
  * Resolved here rather than at each call site so there is one answer to it. */
 function skillsDirOf(plugin: string): string {
+  if (plugin === "zz-core") return SKILLS_DIR;
   const entry = entryOf(plugin);
-  if (entry) return join(entry.dir, "skills");
-  return plugin === "zz" ? SKILLS_DIR : "";
+  return entry ? join(entry.dir, "skills") : "";
 }
 
 /** The MCP surfaces this plugin can actually reach.
@@ -221,7 +226,9 @@ export function registerPluginEvalTools(server: McpServer): void {
         "command yourself first — it is a CLI on this machine, spending this account's own " +
         "credential (roughly $0.40 per case), and nothing runs it for you. Pass its output " +
         "here whole. Recording is what gives a delta a timestamp, so a profile can say how old " +
-        "the measurement is instead of presenting a three-week-old number as today's.",
+        "the measurement is instead of presenting a three-week-old number as today's. Record a " +
+        "run whose cases all timed out as well: it is still stored for what it cost, and that " +
+        "answer is then free instead of costing another suite to find out.",
       inputSchema: {
         plugin: z.string(),
         version: z.string(),
@@ -237,7 +244,11 @@ export function registerPluginEvalTools(server: McpServer): void {
       // Validated BEFORE it is stored. A result whose shape moved is worth knowing about now,
       // at the moment somebody can re-run the command, rather than at read time weeks later.
       const read = parseCaseRun(parsed, new Date().toISOString(), "");
-      if (!read.count) return text(`ERROR: nothing was recorded — ${read.reason}`);
+      // A CASE OR A COST IS ENOUGH TO STORE IT. This refused on `!read.count` alone, which
+      // turned away the one kind of payload the raw column exists for: a suite that spent real
+      // money and produced no readable delta. `worthRecording` owns the rule so it can be
+      // tested; the refusal below still fires for a payload carrying neither.
+      if (!worthRecording(read)) return text(`ERROR: nothing was recorded — ${read.reason}`);
       const { rows } = await pool.query<{ id: string; cases_digest: string }>(`
         select pv.id, pv.cases_digest from zz.plugin_version pv
           join zz.plugin p on p.id = pv.plugin_id
@@ -254,7 +265,22 @@ export function registerPluginEvalTools(server: McpServer): void {
       // measured, and the run cost somebody real money on their own credential.
       logActivity(await userRoot(), null,
         { user: who, action: "plugin_cases_record", plugin, version, cases: read.count });
-      return json({ recorded: read.count, mean_delta: read.mean_delta, plugin, version });
+      // THE COST GOES BACK ON EVERY PATH, at the one moment the person has just spent it.
+      // And when no case parsed, `recorded: 0` alone reads to an LLM caller like a failure it
+      // should retry — so that path says both facts in a sentence: what could not be read, and
+      // what was kept anyway.
+      const money = read.cost_usd === null
+        ? "the payload carries no cost figure"
+        : `it cost $${read.cost_usd} to run` +
+          (read.judge_cost_usd === null ? "" : `, plus $${read.judge_cost_usd} to grade`);
+      return json({
+        recorded: read.count, mean_delta: read.mean_delta,
+        cost_usd: read.cost_usd, judge_cost_usd: read.judge_cost_usd, plugin, version,
+        ...(read.count ? {} : {
+          note: `no case was readable — ${read.reason}. The result was stored whole anyway ` +
+                `and ${money}, so nothing has to be re-run to ask about it.`,
+        }),
+      });
     },
   );
 

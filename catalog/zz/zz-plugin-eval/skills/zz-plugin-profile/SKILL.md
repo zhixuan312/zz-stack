@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.2
+version: 0.3
 description: Stage 2 of plugin evaluation. Compute the two evidence blocks — traces from real runs and cases from the ablation suite — each with its own sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -82,7 +82,7 @@ profile looked thin.
 
 **The target is ONE built plugin directory: `marketplace/<plugin>`.** From a checkout of this
 repository that is `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-plugin-eval` or
-`marketplace/zz` — not the `@zz-stack` form, and above all **not the repository root.**
+`marketplace/zz-core` — not the `@zz-stack` form, and above all **not the repository root.**
 
 The root resolves too, which is the trap. It resolves ALL FOUR plugins at once and runs every
 case in the repository as a single suite: measured 2026-09-13, that ran for two hours and twenty

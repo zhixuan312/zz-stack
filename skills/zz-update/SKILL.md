@@ -1,9 +1,8 @@
 ---
 name: zz-update
-version: 1.0
-standalone: true
+version: 1.2
 description: "Bring every ZZ plugin on this machine up to date in one command — refresh the marketplace, update each plugin that is actually installed, and print the version on both sides so 'nothing changed' is a result rather than a silent tick."
-when_to_use: "The person typed /zz:update, or asked how to update, or is on a version that does not have something they were told they have."
+when_to_use: "The person typed /zz-core:update, or asked how to update, or is on a version that does not have something they were told they have."
 ---
 
 # zz-update
@@ -34,7 +33,7 @@ a list written down somewhere, and prints each plugin's version before and after
 - **Nothing moved** — say so. "Already up to date at `<version>`" is a complete answer and
   needs no follow-up.
 - **It ends with plugins on different versions** — that is not a normal outcome of an update.
-  Run `/zz:doctor`, which checks the rest of the picture.
+  Run `/zz-core:doctor`, which checks the rest of the picture.
 
 If the person is not installed yet, the script says so and prints the two commands that
 install the marketplace and the baseline. Pass those on unchanged.

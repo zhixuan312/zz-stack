@@ -439,7 +439,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 297 checks**, and twelve of them RUN code rather than reading it: the
+- **The offline gate is 303 checks**, and twelve of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through
@@ -514,7 +514,7 @@ gap between "the platform can evaluate a plugin" and "the platform can evaluate 
 
 **And the same lesson twice, from two directions: a capability that ships as a COMMAND cannot be
 reached by a case that asks in words.** `zz-doctor` does not ship as a skill at all —
-`marketplace/zz/skills/zz-doctor/` holds `doctor.mjs` and no SKILL.md, because zz's three typed
+`marketplace/zz-core/skills/zz-doctor/` holds `doctor.mjs` and no SKILL.md, because zz's three typed
 capabilities render as commands with `disable-model-invocation: true`. A case grading
 `Skill(zz-doctor)` therefore scored 0.00 on every grader in the with arm, for a capability that
 is present and works. What makes this worth a section rather than a footnote is that the failure
@@ -673,7 +673,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **297 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **303 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".
@@ -1008,12 +1008,15 @@ five packages that had it, since `zz-skill-eval` is shelved and has five stages,
 and a gate. `governingPlatformFlows` then re-inferred flowness from `documents.length > 0` to
 work around it.
 
-**What is true now:** a package is a flow if and only if it declares a non-empty `stages`, and
-`entry` and `stages` travel together in both directions — the gate refuses either alone.
-Ownership is `shelved: true`, a separate axis from `install: "auto"` (all three evaluation
-packages declare both, which is why one field could not carry them). `zz-access` declares its
-stage; `zz-admin` stays a surface and carries its own prompt, because the generated router
-assumes a flow and told it to `skill_view` an entry it does not have.
+**What was true then:** a package was a flow if and only if it declared a non-empty `stages`,
+and `entry` and `stages` travelled together in both directions — so `zz-access` declared one
+stage, named after its own entry and producing nothing, to satisfy a rule it had no method for.
+**What is true now (0.34.0):** the declaration is `documents`, and ARCHITECTURE.md §3 carries
+the rule — a flow is a discipline over documents, so the packages that have one are the packages
+that declare documents; `zz-access`'s phantom stage is deleted and it has no stages at all. Ownership is still
+`shelved: true`, a separate axis from `install: "auto"` (all three evaluation packages declare
+both, which is why one field could not carry them), and `zz-admin` still carries its own prompt,
+because the generated router assumes a flow and told it to `skill_view` an entry it does not have.
 
 `ARCHITECTURE.md` is the definition the repository is now checked against, and
 three gate checks enforce the parts a machine can read.

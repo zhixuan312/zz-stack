@@ -30,7 +30,7 @@
 #
 # THE PROMPT NAMES THE FLOW, and that is a deliberate narrowing rather than a hint leaked to
 #   the baseline arm. This plugin's entry is a flow entry, so the shelf renders it as the
-#   command `/zz-plugin-eval:flow` with `disable-model-invocation: true`, and its five stage
+#   command `/zz-plugin-eval:eval` with `disable-model-invocation: true`, and its five stage
 #   skills each say "never on its own" — so nothing in it can be reached by a model from an
 #   ordinary question. Measured 2026-09-13, before this line was added: over nine runs across
 #   these three cases, with the plugin installed, the delta was zero on all three because

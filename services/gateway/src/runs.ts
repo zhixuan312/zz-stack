@@ -118,9 +118,12 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   const r = await db.query(`
     insert into zz.run (initiative_id, skill_version_id, caller_session,
                         calls, refusals, bytes_total, started_at, ended_at)
+    -- sum() over all-null is null, and 051 made the column accept that: a run nobody measured
+    -- has no total, which is a different fact from a run that transferred nothing. It is NOT
+    -- coalesced to 0 — that is what made the two indistinguishable before.
     select i.id, sv.id, e.detail->>'run',
            count(*), count(*) filter (where e.ok is false),
-           coalesce(sum((e.detail->>'bytes')::bigint), 0),
+           sum(e.response_bytes),
            min(e.ts), max(e.ts)
       from zz.event e
       join zz.team t       on t.slug = e.team_slug
@@ -144,7 +147,7 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
                         calls, refusals, bytes_total, started_at, ended_at)
     select null, sv.id, e.detail->>'run',
            count(*), count(*) filter (where e.ok is false),
-           coalesce(sum((e.detail->>'bytes')::bigint), 0),
+           sum(e.response_bytes),
            min(e.ts), max(e.ts)
       from zz.event e
       join zz.skill s on s.name = e.step${VERSION_AT_EVENT}

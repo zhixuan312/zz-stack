@@ -118,7 +118,7 @@ check("the evolution loop is closed, and separate from what it measures", () => 
   for (const f of flows) {
     const m = JSON.parse(readFileSync(join(f.dir, "flow.json"), "utf8"));
     if ((m.stages ?? []).some((x) => x.name === "zz-skill-evolve")
-        || (m.standalone ?? []).includes("zz-skill-evolve")) {
+        || Object.values(m.commands ?? {}).includes("zz-skill-evolve")) {
       bad.push(`${f.owner}/${f.flow} lists zz-skill-evolve — the measured must not run the measure`);
     }
   }

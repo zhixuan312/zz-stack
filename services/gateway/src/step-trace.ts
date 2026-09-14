@@ -195,7 +195,18 @@ export function currentStep(caller: string):
 }
 
 /** The flow a team is running, cached briefly. Recorded per call so a later reinstall cannot
- * rewrite what an earlier call was doing — the failure the team-lookup-at-read-time has. */
+ * rewrite what an earlier call was doing — the failure the team-lookup-at-read-time has.
+ *
+ * TEAM CONTEXT ONLY — NOT ATTRIBUTION. This used to be the closest thing a row had to an
+ * answer for "which plugin owns this call", and it was the wrong answer: `flow_install` names
+ * the team's most recently installed flow, so a team running two flows has every row read as
+ * whichever was installed last, and a call made while working a block usage skill (no flow
+ * open at all) got nothing. `plugin` / `plugin_version` on `zz.event` (Task I-4) answer that
+ * question properly, resolved from the loaded skill through `zz.plugin_version_skill` rather
+ * than from this lookup. `flow` keeps its column and keeps being written — it is still real
+ * team context, and `migrations-next/022_drop_denormalized.sql` is the migration that will
+ * eventually remove it, once every reader has moved off it — but nothing may treat it as the
+ * plugin, here or anywhere added after this comment. */
 const flowCache = new Map<string, { flow: string; version: string; at: number }>();
 const FLOW_TTL_MS = 60_000;
 
@@ -218,6 +229,68 @@ export async function flowFor(teamSlug: string | null): Promise<{ flow: string; 
   } catch {
     // A lookup failure must not cost the row. An event that vanishes because a side lookup
     // failed is a hole in the record, and the record is the thing being defended here.
+    return undefined;
+  }
+}
+
+/** WHICH PLUGIN OWNS THE SKILL A CALLER IS FOLLOWING — the attribution key itself (AC-1.5,
+ * AC-1.6), and deliberately not derived from `flowFor` above or from `zz.flow_install`.
+ *
+ * The join is the one `plugin-profile.ts` already prefers for exactly this question —
+ * `zz.plugin_version_skill` joined to `zz.plugin_version` and `zz.plugin` — except that join
+ * starts from a `zz.run` row, and a run is reconciled from the event log on a timer
+ * (`runs.ts`), not written at the moment a call happens. There is no run yet for the call this
+ * function is being asked about, so the entry point here is the skill itself: the caller's
+ * current step, resolved to a skill name, resolved to the version of it that was RELEASED at
+ * the time of the call — same rule `runs.ts`'s `VERSION_AT_EVENT` uses, and for the same
+ * reason: `skill_version` on a served skill is stamped only when the whole skill text was
+ * served, so it is sparse, and a time-based lookup is right both for a declared version and
+ * for the far more common case of none.
+ *
+ * Takes the ALREADY ALIAS-RESOLVED step name — `resolveStep` is the caller's job, once, on the
+ * value it already has, not this function's, so a single step-name resolution rule keeps
+ * living in one place (Task I-2's resolver).
+ *
+ * `plugin` IS DETERMINISTIC — a skill belongs to one plugin — `plugin_version` IS NOT, AND
+ * THAT IS A GAP IN THE SCHEMA, NOT SOMETHING GUESSED AT HERE. `zz.plugin_version_skill` is
+ * many-to-many: an untouched skill can ship unchanged in several plugin releases, so more than
+ * one `plugin_version` row can match the one `skill_version_id` this resolves to, and
+ * `zz.plugin_version` carries no timestamp to order candidates by the way `zz.skill_version`
+ * does — `released_at` lives one table over. Ordered by `version` text as the best available
+ * tiebreak, which is right for the common `x.y.z` shape and not a real ordering in general;
+ * fixing it needs a column this migration does not add. */
+const pluginCache = new Map<string, { plugin: string; version: string; at: number } | { at: number }>();
+const PLUGIN_TTL_MS = 60_000;
+
+export async function pluginFor(step: string | undefined): Promise<{ plugin: string; plugin_version: string } | undefined> {
+  if (!step || !platformDbReady()) return undefined;
+  const now = Date.now();
+  const hit = pluginCache.get(step);
+  if (hit && now - hit.at < PLUGIN_TTL_MS) {
+    return "plugin" in hit ? { plugin: hit.plugin, plugin_version: hit.version } : undefined;
+  }
+  try {
+    const { rows } = await platformDb().query<{ plugin: string; version: string }>(
+      `select p.name as plugin, pv.version as version
+         from zz.skill s
+         join lateral (
+                select v.id from zz.skill_version v
+                 where v.skill_id = s.id and v.released_at <= now()
+                 order by v.released_at desc limit 1
+              ) sv on true
+         join zz.plugin_version_skill pvs on pvs.skill_version_id = sv.id
+         join zz.plugin_version pv on pv.id = pvs.plugin_version_id
+         join zz.plugin p on p.id = pv.plugin_id
+        where s.name = $1
+        order by pv.version desc
+        limit 1`, [step]);
+    const row = rows[0];
+    if (!row) { pluginCache.set(step, { at: now }); return undefined; }
+    pluginCache.set(step, { plugin: row.plugin, version: row.version, at: now });
+    return { plugin: row.plugin, plugin_version: row.version };
+  } catch {
+    // Unresolvable is a null on the row, never a guess — see the check's own comment on this.
+    // A lookup failure must not cost the row either, for the same reason flowFor's does not.
     return undefined;
   }
 }

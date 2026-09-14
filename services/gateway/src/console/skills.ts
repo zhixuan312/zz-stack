@@ -10,6 +10,12 @@ import type { Express } from "express";
 import { platformDb } from "../db.js";
 import { teamless } from "./shared.js";
 
+/** A SQL aggregate that saw nothing measurable, kept as null instead of becoming 0.
+ *  `avg`/`sum` skip nulls and return null when every input was null, and `+null` is 0 — so
+ *  the unary plus this replaces was quietly reporting "nothing was spent" for a group where
+ *  the honest answer is "nothing was measured". */
+const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
 export function mountSkills(app: Express): void {
   /** Every skill the platform has run or evaluated, with what it cost to run.
    *
@@ -74,8 +80,13 @@ export function mountSkills(app: Express): void {
         // event log holds turn events with no run id, so a 0 here would read as
         // "this skill used no LLM turns" — which is false, not merely unknown.
         turns: +r.turns > 0 ? +r.turns : null,
-        durationAvg: +r.dur_avg, durationMedian: +r.dur_med, durationMax: +r.dur_max,
-        kbPerRun: +r.kb_avg, mbTotal: +r.mb_total,
+        // Same rule as `turns` above, for the aggregates that can come back SQL-null.
+        // `+null` is 0, so a plain `+r.x` turns "no run in this group was ever measured"
+        // into "this skill is instant and free" — the exact conflation migration 051 removed
+        // from zz.run.bytes_total, one layer up. Tested against null rather than against 0,
+        // because unlike `turns` a real zero is meaningful here: measured, and empty.
+        durationAvg: num(r.dur_avg), durationMedian: num(r.dur_med), durationMax: num(r.dur_max),
+        kbPerRun: num(r.kb_avg), mbTotal: num(r.mb_total),
         logged: ev ? { calls: +ev.calls, failed: +ev.failed, tools: +ev.tools } : null,
       };
     }) });
@@ -151,7 +162,7 @@ export function mountSkills(app: Express): void {
     ]);
     const t = totals.rows[0];
     res.json({
-      totals: { runs: +t.runs, calls: +t.calls, refusals: +t.refusals, mb: +t.mb },
+      totals: { runs: +t.runs, calls: +t.calls, refusals: +t.refusals, mb: num(t.mb) },
       gaps: {
         // Both stated as data so the front end never has to hardcode a caveat
         // that stops being true the day the platform starts recording them.

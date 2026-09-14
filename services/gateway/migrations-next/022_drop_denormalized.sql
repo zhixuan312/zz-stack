@@ -33,8 +33,13 @@ create index if not exists event_block on zz.event (block_version_id) where bloc
 create index if not exists event_team_ts on zz.event (team_id, ts desc);
 -- Response size is how the expensive tools were found (casebox:read_api_spec, a very large payload bytes average).
 -- Indexed so that stays a cheap question rather than a full scan.
-create index if not exists event_bytes on zz.event (((detail->>'bytes')::bigint) desc)
-  where detail ? 'bytes';
+-- Was an expression index over `detail->>'bytes'`. Migration 050 moved that figure into the
+-- real column `response_bytes` and the gateway stopped writing the bag key, so the old
+-- expression would have indexed nothing but pre-050 history and grown no further. The partial
+-- predicate is kept for the same reason it was there: unmeasured calls are null and belong
+-- out of the index, not in it as zeros.
+create index if not exists event_bytes on zz.event (response_bytes desc)
+  where response_bytes is not null;
 
 
 -- ── documents ──

@@ -1,9 +1,8 @@
 ---
 name: zz-doctor
-version: 1.0
-standalone: true
+version: 1.2
 description: "Check that this machine can reach the ZZ platform: the token it will send, the doors that token opens, and whether the installed plugins are whole and on one version. Needs no repository and no setup — it reads the machine it runs on."
-when_to_use: "The person typed /zz:doctor, or something on the platform is not working and nobody knows which half is broken — a 401, an MCP server that will not connect, a tool that is not there, a skill that disagrees with the tool it calls."
+when_to_use: "The person typed /zz-core:doctor, or something on the platform is not working and nobody knows which half is broken — a 401, an MCP server that will not connect, a tool that is not there, a skill that disagrees with the tool it calls."
 ---
 
 # zz-doctor
@@ -38,7 +37,7 @@ the command that fixes it; pass that on rather than inventing your own.
 - **FAIL on a door** — a 401 is the token, a 404 is the plugin declaring a path this gateway
   does not serve, and no answer at all is the network or the platform being down.
 - **WARN on plugin versions** — they should be one number, because one build stamps them all.
-  Two numbers means one plugin did not update: `/zz:update` is the fix.
+  Two numbers means one plugin did not update: `/zz-core:update` is the fix.
 
 If every line passes and the person still has a problem, it is not on this machine. Say that
 plainly instead of guessing — what is left is the platform itself, and it is not diagnosable

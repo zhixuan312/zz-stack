@@ -7,8 +7,8 @@
   "description": "Delivery flows and platform tools for the ZZ platform. Every tool here is a door at the gateway and asks for your platform token; installing a plugin grants nothing on its own.",
   "plugins": [
     {
-      "name": "zz",
-      "source": "./marketplace/zz",
+      "name": "zz-core",
+      "source": "./marketplace/zz-core",
       "description": "REQUIRED — ZZ platform baseline for your team — identity, your team's documents and knowledge, the gates, and where each piece of work stands. Required by everything else."
     },
     {

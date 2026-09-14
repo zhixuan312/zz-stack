@@ -1,4 +1,4 @@
-import { catalogManifest, skillText } from "@zz/catalog";
+import { catalogManifest, isFlow, skillText } from "@zz/catalog";
 import type { Request, Response } from "express";
 
 import { platformDbReady } from "../db.js";
@@ -250,7 +250,11 @@ export function stageOf(docs: DocRow[], flow: string | null): {
   // declares as gates — so a flow that adds a stage tomorrow is described correctly with no
   // change here.
   const manifest = flow ? catalogManifest(flow, true) : null;
-  if (manifest?.documents?.length) {
+  // isFlow, because this is the flow question and not a second one: a stepper, a gate list
+  // and a position only mean anything for a package that governs documents. Asking the
+  // classifier rather than re-deriving it also narrows `documents` to a real list, which is
+  // what `declared` below reads.
+  if (manifest && isFlow(manifest)) {
     // THE STAGE LIST TRAVELS WITH THE ANSWER, because the console cannot know it. The
     // detail view draws a stepper with a name and a line of prose under every node, and both
     // were a constant in the front end — "Intent / what they want", "Select / which blocks" —

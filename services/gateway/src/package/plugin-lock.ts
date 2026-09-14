@@ -24,7 +24,7 @@ import { catalogEntries } from "@zz/catalog";
 
 import type { PackageFile } from "../client-package.js";
 import { digestOfPlugin } from "./describe.js";
-import { pluginName } from "./skills.js";
+import { BASELINE, pluginName } from "./skills.js";
 
 /** The platform's own skills — the `zz` plugin's content. Overridable because the gate builds
  *  real packages on a machine where /skills does not exist. */
@@ -135,7 +135,13 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
   const out: PluginLockEntry[] = [];
 
   // ── the catalog-resident plugins ───────────────────────────────────
+  //
+  // THE BASELINE IS SKIPPED HERE AND ADDED BELOW, because it is the one entry whose manifest
+  // and whose content live in different places. Taking it from this loop would lock a plugin
+  // whose `skills/` and `evals/` directories do not exist — an empty digest, no members, and a
+  // second entry of the same name beside the real one.
   for (const e of catalogEntries()) {
+    if (e.flow === BASELINE) continue;
     const name = pluginName(e.flow);
     const version = e.manifest.version;
     if (!version) {
@@ -159,11 +165,12 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
     });
   }
 
-  // ── zz, the one plugin everybody installs ──────────────────────────
+  // ── zz-core, the one plugin everybody installs ─────────────────────
   //
-  // It has no flow.json and is not catalog-resident: client-package.ts synthesises it per
-  // caller. Excluding it would be the easy call and the wrong one — it is the plugin every
-  // account carries, so it is the one most worth knowing about.
+  // Its CONTENT is not catalog-resident: client-package.ts synthesises it per caller. Its
+  // manifest is — `catalog/zz/zz-core/flow.json` — which is why the loop above skips it rather
+  // than never seeing it. Excluding it altogether would be the easy call and the wrong one: it
+  // is the plugin every account carries, so it is the one most worth knowing about.
   //
   // What makes it tractable is that its per-caller half is exactly one file. `routerSkill(flows)`
   // is GENERATED from this person's installed flows and is never on disk, so walking SKILLS_DIR
@@ -177,10 +184,10 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
   if (zzSkills.length) {
     const zzCases = walkTree(EVALS_DIR, "evals");
     out.push({
-      name: "zz",
+      name: BASELINE,
       version: platformVersion(repoRoot),
       digest: digestOfPlugin({
-        name: "zz",
+        name: BASELINE,
         // The description interpolates the caller's target, so it is deliberately NOT hashed:
         // it is addressed to a person, not part of what the plugin is.
         description: "",
@@ -189,7 +196,7 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
         files: [...zzSkills, ...zzCases],
       }),
       cases_digest: treeDigest(zzCases),
-      skills: lockedSkills(repoRoot, skillNames(SKILLS_DIR), "zz"),
+      skills: lockedSkills(repoRoot, skillNames(SKILLS_DIR), BASELINE),
     });
   }
 

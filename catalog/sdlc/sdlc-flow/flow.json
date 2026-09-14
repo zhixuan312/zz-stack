@@ -4,6 +4,7 @@
   "agentName": "SDLC Agent",
   "version": "0.2.0",
   "description": "Software delivery: explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge. sdlc-flow is the entry point, sdlc-method says how every stage is executed, and each stage is its own skill.",
+  "purpose": "To carry one piece of delivery work from a raw idea to a shipped, reviewed change without anybody having to remember the order — each stage a skill, each gate a document a person approves. Work belongs here when it changes a system somebody operates; a question with one answer is an investigation, not a flow.",
   "license": "MIT",
   "keywords": [
     "delivery",
@@ -13,32 +14,48 @@
   ],
   "entry": "sdlc-flow",
   "tools": [],
-  "standalone": [
-    "sdlc-deck",
-    "sdlc-tldr",
-    "sdlc-breakout"
+  "commands": {
+    "flow": "sdlc-flow",
+    "deck": "sdlc-deck",
+    "tldr": "sdlc-tldr",
+    "breakout": "sdlc-breakout"
+  },
+  "libraries": [
+    "sdlc-method",
+    "sdlc-audit-criteria",
+    "sdlc-authoring",
+    "sdlc-investigate",
+    "sdlc-recall",
+    "sdlc-research"
   ],
   "stages": [
     {
-      "name": "sdlc-explore"
+      "name": "sdlc-explore",
+      "produces": "explore.md"
     },
     {
-      "name": "sdlc-spec"
+      "name": "sdlc-spec",
+      "produces": "spec.md"
     },
     {
-      "name": "sdlc-spec-audit"
+      "name": "sdlc-spec-audit",
+      "produces": "nothing"
     },
     {
-      "name": "sdlc-plan"
+      "name": "sdlc-plan",
+      "produces": "plan.md"
     },
     {
-      "name": "sdlc-plan-audit"
+      "name": "sdlc-plan-audit",
+      "produces": "nothing"
     },
     {
-      "name": "sdlc-execute"
+      "name": "sdlc-execute",
+      "produces": "nothing"
     },
     {
-      "name": "sdlc-review"
+      "name": "sdlc-review",
+      "produces": "nothing"
     }
   ],
   "documents": [

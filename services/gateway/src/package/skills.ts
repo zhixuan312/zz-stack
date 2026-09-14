@@ -42,8 +42,14 @@ export function fmField(md: string, key: string): string | undefined {
  * command — but their description and their skills are catalog content either way, and
  * keeping that prose in TypeScript meant the shelf said one thing and the catalog another.
  *
- * `zz` is deliberately not one of these: its only skill is GENERATED from the person's
- * installed flows, so there is nothing in the catalog to read. */
+ * `zz-core` IS SHELVED AND IS DELIBERATELY NOT ONE OF THESE, and the exclusion is now explicit
+ * rather than incidental. It used to fall out of having no catalog entry at all; it has one at
+ * `catalog/zz/zz-core/flow.json`, so `shelved === true` alone would return the baseline here and
+ * buildClientPackage would emit it TWICE — once synthesised and once from the catalog, two
+ * plugins of one name writing over each other's files, which is the collision
+ * catalog-manifest.mjs already refuses for a catalog package that steals the baseline's name.
+ * Its manifest is read for what it DECLARES — the commands map, above all; its FILES are
+ * synthesised, because the router among them is generated per person. */
 interface PlatformPlugin {
   name: string;
   /** The catalog DIRECTORY, which is where its skills are. Separate from `name` because
@@ -54,9 +60,18 @@ interface PlatformPlugin {
   description: string;
   servers: { name: string; path: string }[];
 }
+/** The baseline plugin's name, which is also its catalog directory and its MCP server's name.
+ *
+ * Named once because three questions turn on it and each used to answer with its own literal:
+ * which catalog entry is the baseline's own manifest, which plugin the packager synthesises,
+ * and which skills tree that plugin ships. It was `zz` until the baseline was renamed to match
+ * the door it opens — the rule DESIGN-platform states as "a plugin's name is its server's
+ * name", which held for no plugin while the one that ships `zz-core` was called `zz`. */
+export const BASELINE = "zz-core";
+
 export function platformPlugins(): PlatformPlugin[] {
   return catalogEntries()
-    .filter((e) => e.manifest.shelved === true)
+    .filter((e) => e.manifest.shelved === true && e.flow !== BASELINE)
     .map((e) => ({
       name: e.manifest.name ?? e.flow,
       dir: e.flow,
@@ -94,14 +109,26 @@ function trimTo(text: string, max: number): string {
   const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
   return stop > max / 3 ? cut.slice(0, stop + 1) : cut.slice(0, cut.lastIndexOf(" ")) + "…";
 }
-/** Skills the flow declares as standing outside its sequence — deck, tldr and the like.
+/** The commands a package declares: the name a person types, mapped to the skill that
+ * carries the method.
  *
- * Read from the manifest rather than InstalledFlow because it is a property of the flow
+ * Read from the manifest rather than InstalledFlow because it is a property of the package
  * as authored, not of how a team installed it. NOT `tools`: that field already names the
- * flow's building blocks, and the installer grants MCP access from it. */
-function standaloneSkills(flow: string): string[] {
-  const v = catalogEntry(flow, true)?.manifest.standalone;
-  return Array.isArray(v) ? v : [];
+ * package's building blocks, and the installer grants MCP access from it. */
+function declaredCommands(flow: string): Record<string, string> {
+  const v = catalogEntry(flow, true)?.manifest.commands;
+  return v && typeof v === "object" ? v : {};
+}
+/** What a package's entry skill is TYPED AS, or undefined when it declares no command for it.
+ *
+ * Two different questions, and a package may answer one without the other. `entry` is which
+ * skill is the front door, which is what zz-router needs; this is the string a person types
+ * to reach it, which only exists if the manifest says so. A package that names no command for
+ * its entry ships the method as a skill to be loaded rather than typed, and the absence is the
+ * answer rather than a gap to fill in with a default. Every package in the catalog does name
+ * one today — zz-access was the last that did not, and its entry is `/zz-access:connect`. */
+export function entryCommand(flow: string, entry: string): string | undefined {
+  return Object.entries(declaredCommands(flow)).find(([, skill]) => skill === entry)?.[0];
 }
 /** The ONLY skill we ship. Everything it names is fetched at run time.
  *
@@ -197,23 +224,20 @@ export function routerSkill(flows: InstalledFlow[]): string {
 
   return fm.join("\n") + body.join("\n");
 }
-/** What a flow is called as a plugin, and what a skill is called as its command.
+/** What a flow is called as a plugin.
  *
  * A command is `/<plugin>:<file>`, so the two names are typed together every time. Taken
  * literally from the catalog they repeat themselves: the flow `sdlc-flow` and the skill
  * `sdlc-deck` gave `/sdlc-flow:sdlc-deck`, which says "sdlc" twice and "flow" once more than
- * anyone needs. The trailing `-flow` on the plugin and the leading `sdlc-` on the command are
- * both the same fact the namespace already carries.
+ * anyone needs. The trailing `-flow` is the same fact the namespace already carries.
  *
- * `/sdlc:deck`, `/sdlc:flow`, `/sm:flow`. A flow whose name does not end in `-flow` keeps it,
- * and an entry skill that would be left with nothing to say becomes `flow` — the front door
- * of every flow is called the same thing, which is what makes it guessable. */
+ * The COMMAND half of that name used to be derived here too, by stripping the plugin's
+ * prefix off the skill. It is declared now: see `declaredCommands`. The strip is gone rather
+ * than kept as a default, because an entry skill is named after its plugin and nothing
+ * survives the strip — so three of four front doors came out called `flow`, and none of them
+ * said what it did. A fallback that names most things the same thing is not a fallback. */
 export function pluginName(flow: string): string {
   return flow.endsWith("-flow") ? flow.slice(0, -"-flow".length) : flow;
-}
-export function commandName(plugin: string, skill: string): string {
-  const short = skill.startsWith(`${plugin}-`) ? skill.slice(plugin.length + 1) : skill;
-  return short === plugin || short === "" ? "flow" : short;
 }
 /** The flow's front door.
  *
@@ -231,17 +255,17 @@ export function commandName(plugin: string, skill: string): string {
  * skill for the entry: on Claude Code a flow's front door is a command, and having
  * both means the same router arrives twice under two names. Codex has no commands
  * and keeps the skill — same text, the door its runtime actually has. */
-export function commandFile(f: InstalledFlow, entryBody?: string): string {
+export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): string {
   const plugin = pluginName(f.flow);
-  const cmd = commandName(plugin, f.entry || f.flow);
   const head = [
     "---",
-    // QUOTED, like the two fields under it. `cmd` is derived from a catalog directory name,
-    // and every one of them today is [a-z0-9-]+ — but that is a fact about the catalog, not a
-    // property of this function, and the comment below records what happened the last time a
-    // field here trusted its input: a value with a quote in it closed the string early and the
-    // command silently did not exist. Quoting the generator's output is the fix that does not
-    // depend on anybody validating the input.
+    // QUOTED, like the two fields under it. `cmd` is now a key a flow author TYPED into
+    // flow.json rather than a name derived from a catalog directory, so the case for quoting
+    // it is stronger than it was: the schema requires a non-empty string and nothing else.
+    // The comment below records what happened the last time a field here trusted its input —
+    // a value with a quote in it closed the string early and the command silently did not
+    // exist. Quoting the generator's output is the fix that does not depend on anybody
+    // validating the input.
     `name: ${JSON.stringify(cmd)}`,
     // QUOTED WITH JSON.stringify, like the standalone command forty lines down. `agentName`
     // is free text an admin types at install_flow — "what the team sees" — and it went into
@@ -272,54 +296,33 @@ export function commandFile(f: InstalledFlow, entryBody?: string): string {
     "",
   ]).join("\n");
 }
-/** Promote the skills a manifest marks `standalone` into commands, and say which files moved.
+/** Promote the skills a manifest declares as commands, and say which files moved.
  *
- * A standalone skill is one a PERSON types on purpose, and that is a property of the skill,
- * not of the kind of plugin carrying it. This was inline on the flow branch only, so the same
+ * A command is one a PERSON types on purpose, and that is a property of the skill, not of
+ * the kind of plugin carrying it. This was inline on the flow branch only, so the same
  * manifest field was honoured for a delivery flow and silently ignored for a platform one —
- * zz-knowledge could declare zz-okr standalone, the JSON would validate, the package would build,
+ * zz-knowledge could declare zz-okr a command, the JSON would validate, the package would build,
  * and no command would exist. A field that means something in one branch and nothing in the
  * other is not one field.
  *
- * The entry skill's promotion stays on the flow branch: it needs the InstalledFlow to build a
- * pointer command, and a platform plugin has no front door of that kind. */
-export function promoteStandalone(flow: string, skills: PackageFile[], useCommands: boolean):
+ * `except` is the entry skill on the flow branch, which is promoted THERE: it needs the
+ * InstalledFlow to build a pointer command for the case where the skill did not ship, and a
+ * platform plugin has no front door of that kind. Excluded by SKILL name rather than by
+ * command name, because the entry's command is whatever the manifest chose to call it. */
+export function promoteCommands(flow: string, skills: PackageFile[], except: string[] = []):
     { commands: PackageFile[]; promoted: Set<PackageFile> } {
-  if (!useCommands) return { commands: [], promoted: new Set() };
-  const picked = standaloneSkills(flow)
-    .map((n) => ({ name: n, file: skills.find((sk) => sk.path === `skills/${n}/SKILL.md`) }))
-    .filter((x): x is { name: string; file: PackageFile } => x.file !== undefined);
+  const picked = Object.entries(declaredCommands(flow))
+    .filter(([, skill]) => !except.includes(skill))
+    .map(([cmd, skill]) => ({
+      cmd, name: skill, file: skills.find((sk) => sk.path === `skills/${skill}/SKILL.md`),
+    }))
+    .filter((x): x is { cmd: string; name: string; file: PackageFile } => x.file !== undefined);
   return {
     commands: picked.map((x) => ({
-      path: `commands/${commandName(pluginName(flow), x.name)}.md`,
-      content: standaloneCommandFile(flow, x.name, x.file.content),
+      path: `commands/${x.cmd}.md`,
+      content: standaloneCommandFile(flow, x.cmd, x.name, x.file.content),
     })),
     promoted: new Set(picked.map((x) => x.file)),
-  };
-}
-/** The platform's own standalone skills, as commands.
- *
- * A flow says which of its skills a person types by listing them in its manifest's
- * `standalone`. The platform's own skills have no manifest — they are a tree beside the
- * catalog — so each one declares it in its OWN frontmatter with `standalone: true`, and the
- * baseline plugin promotes exactly those. A second list here would be a place for the answer
- * to drift away from the skill it is about.
- *
- * zz-backbone and zz-knowledge declare nothing and stay skills, which is right: they are
- * loaded by a method, not typed by a person. */
-export function promotePlatformOwn(skills: PackageFile[]):
-    { commands: PackageFile[]; promoted: Set<PackageFile> } {
-  const picked = skills.filter((sk) =>
-    /^skills\/[^/]+\/SKILL\.md$/.test(sk.path) && fmField(sk.content, "standalone") === "true");
-  return {
-    commands: picked.map((sk) => {
-      const name = sk.path.split("/")[1];
-      return {
-        path: `commands/${commandName("zz", name)}.md`,
-        content: standaloneCommandFile("zz", name, sk.content),
-      };
-    }),
-    promoted: new Set(picked),
   };
 }
 /** A standalone skill, as a Claude Code command.
@@ -327,9 +330,8 @@ export function promotePlatformOwn(skills: PackageFile[]):
  * Same rule as the flow's front door: Claude Code has commands and Codex does not, so a
  * skill a person invokes on purpose becomes `/sdlc:deck` there and stays a skill here. The
  * body is the skill's own text, so there is one method however it is reached. */
-function standaloneCommandFile(flow: string, name: string, md: string): string {
+function standaloneCommandFile(flow: string, cmd: string, name: string, md: string): string {
   const plugin = pluginName(flow);
-  const cmd = commandName(plugin, name);
   const body = withoutFrontmatter(md);
   // The skill's OWN description, not "Run the <name> skill." That sentence is what a person
   // reads in the command list to decide whether this is the thing they want, and it told

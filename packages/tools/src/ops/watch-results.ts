@@ -38,6 +38,10 @@ const FLOOR = 5;
 
 interface EventRow {
   ts: string; team_slug: string | null; subject: string; detail: Record<string, unknown>;
+  /** Null means the call was never measured — a pre-column row, or a caller shape the
+   *  gateway cannot time. Never a zero: a zero would read as an instant call and drag a
+   *  median down, which is the opposite of the alert this file exists to raise. */
+  duration_ms: number | null;
 }
 interface DocRow {
   team_slug: string; initiative: string; path: string; status: string;
@@ -59,10 +63,10 @@ function main(): number {
   // This window and the one before it, so "worse" is measured against this platform's own
   // recent normal rather than against a number somebody guessed once.
   const evNow = psqlRows<EventRow>(psql,
-    "select ts, team_slug, subject, detail" +
+    "select ts, team_slug, subject, detail, duration_ms" +
     "  from zz.event where kind = 'tool_call' and ts > now() - (:'w')::interval", { w: window });
   const evPrev = psqlRows<EventRow>(psql,
-    "select ts, team_slug, subject, detail" +
+    "select ts, team_slug, subject, detail, duration_ms" +
     "  from zz.event where kind = 'tool_call'" +
     "   and ts <= now() - (:'w')::interval and ts > now() - 2 * (:'w')::interval", { w: window });
   const docs = psqlRows<DocRow>(psql,
@@ -127,8 +131,8 @@ function main(): number {
     const m = new Map<string, number[]>();
     for (const e of rows) {
       const surface = e.subject.split(":")[0];
-      if (typeof e.detail.ms !== "number") continue;
-      m.set(surface, [...(m.get(surface) ?? []), e.detail.ms]);
+      if (typeof e.duration_ms !== "number") continue;
+      m.set(surface, [...(m.get(surface) ?? []), e.duration_ms]);
     }
     return m;
   };

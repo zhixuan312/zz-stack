@@ -26,12 +26,12 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntry } from "@zz/catalog";
+import { catalogEntry, catalogManifest } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
 import { EVALS_DIR } from "./package/plugin-lock.js";
-import { cardDescription, commandFile, commandName, headersHelper, platformPlugins, pluginName, promotePlatformOwn, promoteStandalone, routerSkill, withoutFrontmatter } from "./package/skills.js";
+import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, pluginName, promoteCommands, routerSkill, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one
  * number and no second place to forget to update.
@@ -126,7 +126,8 @@ function platformOwnSkills(prefix: string): PackageFile[] {
 /** The baseline plugin's own eval cases. Same walk and the same directories-only rule as
  * `platformOwnSkills`, rooted at `evals/` because that is where the command looks.
  *
- * `zz` needs its own because it is the one plugin not read from the catalog — it is synthesised
+ * `zz-core` needs its own because it is the one plugin whose FILES are not read from the catalog —
+ * it is synthesised
  * per caller — so `residentFiles` has nothing to resolve for it. It is also the plugin everybody
  * installs, which makes it the one most worth having a suite for. */
 function platformOwnEvals(): PackageFile[] {
@@ -146,21 +147,53 @@ function platformOwnEvals(): PackageFile[] {
 }
 
 /** What the baseline plugin carries: the router, the platform's own skills, and a command
- * for each of those skills that declares itself standalone.
+ * for each skill its manifest declares one for.
  *
  * The baseline got skills and no commands, so `doctor`, `update` and `migrate` — the three a
  * person types rather than a method loads — had no way to be typed. Flows have promoted their
- * standalone skills to commands since they existed; this is the same rule applied to the one
- * plugin everybody has. */
+ * declared commands since they existed; this is the same rule applied to the one plugin
+ * everybody has, and now through the same function.
+ *
+ * `promoteCommands`, not a second promoter reading each skill's frontmatter. The baseline had
+ * no manifest to put a commands map in, so each skill carried `command: doctor` itself; it has
+ * one at `catalog/zz/zz-core/flow.json` now, so the map lives where every other package's map
+ * lives. Its SKILLS are still the tree beside the catalog rather than that entry's `skills/` —
+ * one of them is GENERATED per person and none of them can be read from a shared catalog. */
 function baselineFiles(flows: InstalledFlow[]): PackageFile[] {
   const skills = [
     { path: "skills/zz-router/SKILL.md", content: routerSkill(flows) },
     ...platformOwnSkills("skills"),
   ];
-  const { commands, promoted } = promotePlatformOwn(skills);
+  const { commands, promoted } = promoteCommands(BASELINE, skills);
   // Assets beside a promoted skill still travel: only its SKILL.md moves. That is what
   // carries each command's script, which lives in the skill's own directory.
   return [...commands, ...skills.filter((sk) => !promoted.has(sk)), ...platformOwnEvals()];
+}
+
+/** The baseline's marketplace card, addressed to whoever this package was built for.
+ *
+ * THE PROSE LIVES IN THE MANIFEST, like every other package's, and only the ADDRESS is spliced
+ * in here — because the address is the one part that is not a property of the package: on the
+ * gateway `target` is the person's email, and on the committed shelf it is "your team". This
+ * sentence was a template literal here while the manifest said nothing, which was fine while
+ * the baseline had no manifest; it has one now, and keeping both would leave the card a person
+ * receives and the card the catalog declares free to drift apart.
+ *
+ * THROWS rather than falling back. An empty card on the one plugin everybody must install is
+ * the failure nobody notices, and catalog-manifest.mjs already refuses a shelved entry with no
+ * description — so reaching this line means the manifest is not the one that check read. */
+function baselineCard(target: string): string {
+  const said = catalogManifest(BASELINE, true)?.description;
+  if (!said) {
+    throw new Error(
+      `${BASELINE} declares no description — the baseline's marketplace card is its manifest's, ` +
+      "and there is nothing else to show a person choosing what to install.");
+  }
+  // A FUNCTION, not a replacement string. `target` is the person's own email on the
+  // gateway, and `$&` or `$'` inside a replacement STRING are read as patterns — the
+  // defect security-boundary.mjs found in nine sites that put somebody's words into
+  // somebody's document.
+  return said.replace("ZZ platform baseline", () => `ZZ platform baseline for ${target}`);
 }
 
 /** Every file under one of a catalog entry's directories, as package files rooted at the same
@@ -290,8 +323,8 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
   const core = { name: "zz-core", url: `${base}/core/mcp` };
   const plugins: Plugin[] = [
     {
-      name: "zz",
-      description: `ZZ platform baseline for ${target} — identity, your team's documents and knowledge, the gates, and where each piece of work stands. Required by everything else.`,
+      name: BASELINE,
+      description: baselineCard(target),
       servers: [core],
       required: true,
       // The one plugin whose content is generated rather than read: the router describes
@@ -308,7 +341,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
     },
     ...platformPlugins().map((pp): Plugin => {
       const skills = residentFiles(pp.dir, "skills");
-      const { commands, promoted } = promoteStandalone(pp.dir, skills, true);
+      const { commands, promoted } = promoteCommands(pp.dir, skills);
       return {
         name: pp.name,
         description: pp.description,
@@ -321,15 +354,23 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
     ...flows.map((f): Plugin => {
       const skills = residentFiles(f.flow, "skills");
       const entry = skills.find((s) => s.path === `skills/${f.entry}/SKILL.md`);
-      // A skill a person invokes ON PURPOSE — the front door, and each standalone skill —
-      // becomes a command; it ships exactly once either way. Stage skills are never
-      // promoted: they are reached through the flow, not typed.
-      const asCommand = entry !== undefined;
-      const { commands: standaloneCommands, promoted: standalonePromoted } =
-        promoteStandalone(f.flow, skills, true);
+      // A skill a person invokes ON PURPOSE — the front door, and every other skill the
+      // manifest names in `commands` — becomes a command; it ships exactly once either way.
+      // Stage skills are never promoted: they are reached through the flow, not typed.
+      //
+      // BOTH HALVES HAVE TO HOLD for the entry. `entryCmd` is what the manifest says the
+      // front door is typed as, and it is undefined for a package that declares no command
+      // for its entry — there is no default to fall back to, and a flow reached only by
+      // loading its skill is a legal thing to be. `entry` is whether that skill actually
+      // shipped; when it did not, the command is still emitted, as a pointer that fetches
+      // the method at run time.
+      const entryCmd = entryCommand(f.flow, f.entry || f.flow);
+      const asCommand = entryCmd !== undefined && entry !== undefined;
+      const { commands: declaredCommands, promoted: declaredPromoted } =
+        promoteCommands(f.flow, skills, [f.entry || f.flow]);
       const promoted = new Set<PackageFile>([
         ...(asCommand && entry ? [entry] : []),
-        ...standalonePromoted,
+        ...declaredPromoted,
       ]);
       return {
         name: pluginName(f.flow),
@@ -341,11 +382,12 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
           ...f.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
         ],
         files: [
-          {
-            path: `commands/${commandName(pluginName(f.flow), f.entry || f.flow)}.md`,
-            content: commandFile(f, asCommand && entry ? withoutFrontmatter(entry.content) : undefined),
-          },
-          ...standaloneCommands,
+          ...(entryCmd ? [{
+            path: `commands/${entryCmd}.md`,
+            content: commandFile(f, entryCmd,
+                                 asCommand && entry ? withoutFrontmatter(entry.content) : undefined),
+          }] : []),
+          ...declaredCommands,
           // Assets beside a promoted skill still travel: only its SKILL.md moves.
           ...skills.filter((sk) => !promoted.has(sk)),
           // And the eval suite, for the reason residentFiles gives: a suite that did not travel
@@ -425,7 +467,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       // that could not exist yet. The shelf is public because it was never the boundary:
       // every tool below is a door at the gateway and the door still refuses.
       `claude plugin marketplace add ${MARKETPLACE_REPO}`,
-      `claude plugin install zz@${MARKETPLACE}     # the baseline — everything else needs it`,
+      `claude plugin install zz-core@${MARKETPLACE} # the baseline — everything else needs it`,
       ``,
       `# Then the token — it is what every tool above actually authenticates with.`,
       // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's
@@ -475,16 +517,16 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
     // into `zz-access`, listed by `claude plugin list` and pointing at a door that had
     // stopped answering, with nothing saying why.
     //
-    // AND IT IS NOT THE WHOLE JOB, which is why `/zz:update` leads. Refreshing the shelf
+    // AND IT IS NOT THE WHOLE JOB, which is why `/zz-core:update` leads. Refreshing the shelf
     // updates NO plugin: each one is resolved against the marketplace's copy, so a person who
     // runs only this is told, truthfully, that everything is up to date — at the version they
     // already had. This text said exactly that one command for as long as it existed, which
     // is the same failure mma shipped and had to name in its own release notes.
     refresh: [
-      `/zz:update    # the shelf AND every plugin you have, in the order that works`,
+      `/zz-core:update    # the shelf AND every plugin you have, in the order that works`,
       `# or, by hand — and the order is not optional:`,
       `claude plugin marketplace update ${MARKETPLACE}`,
-      `claude plugin update zz@${MARKETPLACE}      # ...and each plugin you installed`,
+      `claude plugin update zz-core@${MARKETPLACE} # ...and each plugin you installed`,
     ],
     // Every plugin, not just the baseline. This said `uninstall zz` alone, so a person
     // who followed it kept zz-access and every flow installed — pointing at a

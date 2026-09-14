@@ -101,6 +101,10 @@ export function schemaColumns() {
  * mirror of a derivation is the worst of both: it looks like the rule, so nobody re-reads
  * the real one, and it goes wrong silently the day the real one changes.
  *
+ * ONE RULE IS LEFT TO LIFT. The plugin half of a command's name is still derived, so it is
+ * mirrored here; the command half is not derived at all any more — each manifest declares it
+ * in a `commands` map, and `declaredCommands` below reads that declaration instead.
+ *
  * The bodies are lifted out of that file's source and evaluated. Source rather than dist,
  * — the gate runs before `tsc -b` has necessarily
  * produced anything — and the extraction fails loudly if the shape moves, which is the point:
@@ -120,16 +124,31 @@ export const NAMING = (() => {
     };
     return {
       pluginName: new Function("flow", grab("pluginName").slice(1, -1)),
-      commandName: new Function("plugin", "skill", grab("commandName").slice(1, -1)),
       error: null,
     };
   } catch (err) {
     // A SENTENCE, not a stack trace out of module scope. Three checks depend on this and each
     // reports the failure itself — an operator running the gate is told which file moved and
     // what to do, which is this file's own standard for every other failure it produces.
-    return { pluginName: null, commandName: null, error: String(err.message ?? err) };
+    return { pluginName: null, error: String(err.message ?? err) };
   }
 })();
+
+/** What a package DECLARES its skills are typed as: skill name → the command name.
+ *
+ * INVERTED from the manifest, which is keyed the other way round so that JSON itself refuses
+ * two skills claiming one command. The checks all arrive holding a skill and asking what it
+ * is called, so they would each invert it themselves otherwise.
+ *
+ * A package with no manifest, or one declaring no commands, has none — and that is an
+ * answer rather than a gap. A skill nobody types is a skill, and the packager ships it as
+ * one; the checks below say so instead of computing a name for it. */
+export function declaredCommands(pkg) {
+  const mf = join(pkg.dir, "flow.json");
+  if (!existsSync(mf)) return new Map();
+  const m = JSON.parse(readFileSync(mf, "utf8"));
+  return new Map(Object.entries(m.commands ?? {}).map(([cmd, skill]) => [skill, cmd]));
+}
 
 export const catalogRoot = join(root, "catalog");
 
@@ -159,6 +178,19 @@ for (const owner of readdirSync(catalogRoot)) {
   }
 }
 export const flows = catalogPackages.filter((p) => p.hasManifest);
+
+/** The baseline plugin, and WHERE ITS SKILLS ARE — which is not inside its catalog entry.
+ *
+ * `catalog/zz/zz-core/` carries the manifest and nothing else: the baseline's skills are the
+ * tree at `skills/`, beside the catalog rather than in it, because one of them is generated per
+ * person and none can be read from a catalog shared by everyone. Two checks in
+ * catalog-manifest.mjs need that fact — the one that asks whether a manifest names skills it
+ * ships, and the one that asks whether the lock's membership matches what is on disk — and each
+ * had its own literal for it. A fact spelled twice is a fact one of the two eventually gets
+ * wrong, which is this file's whole reason for existing. */
+export const BASELINE = "zz-core";
+export const skillsDirOf = (f) =>
+  (f.flow === BASELINE ? join(root, "skills") : join(f.dir, "skills"));
 
 export const skillsOf = (f) => {
   const dir = join(f.dir, "skills");

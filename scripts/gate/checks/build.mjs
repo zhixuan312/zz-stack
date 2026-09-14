@@ -65,7 +65,10 @@ check("every script parses", () => {
   // `release.mjs --preflight` — the first command of a release — as a SyntaxError from node's
   // module loader. Nothing here imports the doctor's layers, so nothing here loaded them.
   // node is the runtime that will actually run these files, so node is what gets asked.
-  const files = sourceFiles(["scripts"], [".mjs"]);
+  // `checks/` TOO: plain ESM outside every tsconfig exactly as `scripts/` is, and what the
+  // gate's own verdict rests on — a check whose failure branch carries a ReferenceError
+  // cannot report the defect it was written to find.
+  const files = sourceFiles(["scripts", "checks"], [".mjs"]);
   if (!files.length) return "this check is reading nothing — no .mjs found under scripts/";
   const bad = [];
   for (const f of files) {
@@ -80,7 +83,8 @@ check("every script parses", () => {
 });
 
 check("no script uses a name it never imported", () => {
-  const files = sourceFiles(["scripts"], [".mjs"]);
+  // `checks/` for the same reason as above.
+  const files = sourceFiles(["scripts", "checks"], [".mjs"]);
   if (!files.length) return "this check is reading nothing — no .mjs found under scripts/";
   let out = "";
   try {

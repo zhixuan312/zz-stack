@@ -82,7 +82,7 @@ const FLOW = (process.env.CHAIN_FLOW || "sdlc-flow").trim();
  * a flow's documents before the initiative exists, and the manifest is the same file the
  * platform resolves the chain from.
  */
-function firstDocument(): string {
+function flowDocuments(): { name: string; sections?: string[] }[] {
   const catalog = join(dirname(fileURLToPath(import.meta.url)), "../../../../catalog");
   if (existsSync(catalog)) {
     for (const owner of readdirSync(catalog)) {
@@ -99,12 +99,51 @@ function firstDocument(): string {
         continue;
       }
       const docs = read.manifest.documents ?? [];
-      if (docs[0]?.name) return docs[0].name;
+      if (docs[0]?.name) return docs;
     }
   }
   return die(`no catalog manifest for flow '${FLOW}' — set CHAIN_FLOW to a flow this checkout declares`);
 }
-const OPENS_ON = firstDocument();
+const DOCUMENTS = flowDocuments();
+const OPENS_ON = DOCUMENTS[0].name;
+
+/** THE HEADINGS A DOCUMENT MUST CARRY, from the manifest that requires them.
+ *
+ * Written as a fixed `# chain check` and a line of prose, this probe wrote a body that
+ * sdlc-flow refuses: the flow declares `sections` on explore.md, spec.md and plan.md, and
+ * document_write enforces them. So the first write failed, explore.md never existed, and the
+ * twenty-nine steps after it failed on a document that was never there — thirty-one failures
+ * with one cause, which is how this probe reported a release that had nothing wrong with it.
+ *
+ * It is the same defect this file already fixed one level up. `firstDocument()` above stopped
+ * hardcoding `intent.md` and read the flow's own first document; the BODY went on being a
+ * constant. A probe that reads a manifest for what to write into, and not for what that
+ * manifest requires, is still testing its author's memory of the flow. */
+const SECTIONS = new Map<string, string[]>(
+  DOCUMENTS.filter((d) => d.sections?.length).map((d) => [d.name, d.sections as string[]]));
+
+/** Replace the catalog's answer with the PLATFORM's, once an initiative exists.
+ *
+ * The manifest in this checkout is not the whole rule. `chain.ts` appends the handover
+ * document below every flow's own list, with sections of its own that appear in no flow.json
+ * — so a probe reading only the catalog wrote a handover the platform then refused, and the
+ * refusal named three headings nothing in the repository declares. initiative_status returns
+ * `sections` per document precisely so a caller does not have to know which half declared
+ * them. */
+async function loadSectionsFromPlatform(initiative: string): Promise<void> {
+  try {
+    const status = JSON.parse(await call("initiative_status", { initiative })) as {
+      documents?: { name: string; sections?: string[] }[];
+    };
+    for (const d of status.documents ?? []) {
+      if (d.sections?.length) SECTIONS.set(d.name, d.sections);
+    }
+  } catch {
+    // The catalog's answer stands. A probe that cannot read the status has bigger problems
+    // than its fixtures, and the steps below will say so in their own words.
+  }
+}
+const sectionsFor = (name: string): string[] => SECTIONS.get(name) ?? [];
 
 /**
  * The plugin the plugin-eval tools are exercised against, below. `entryOf` on the core
@@ -200,14 +239,21 @@ function eitherOr(name: string, got: string, acceptableRefusal: RegExp): void {
  * the model provider is down" could not complete one. It needs a live deployment, which is
  * why nothing caught it.
  */
-function doc(body: string): string {
-  return `# chain check\n\n${body}\n`;
+function doc(body: string, name = ""): string {
+  const wanted = sectionsFor(name);
+  // Each heading gets a line of its own under it: the platform refuses a declared section
+  // that is present as a heading and empty underneath, in as many words.
+  const sections = wanted.map((h) => `## ${h}\n\n${body}\n`).join("\n");
+  return `# chain check\n\n${body}\n${sections ? `\n${sections}` : ""}`;
 }
 
 /** A write. The flow is NOT an argument here any more — it is declared once, to
- * `initiative_open`, and `document_write` refuses one outright. */
+ * `initiative_open`, and `document_write` refuses one outright.
+ *
+ * The document's NAME reaches `doc()` so the body can carry the sections that document is
+ * declared to need. `path` is `<initiative>/<name>`, and the manifest keys on the name. */
 const writeDoc = (path: string, body: string): Promise<string> =>
-  call("document_write", { path, content: doc(body) });
+  call("document_write", { path, content: doc(body, path.split("/").pop() ?? "") });
 
 async function main(): Promise<number> {
   // OPENING IS ITS OWN ACT, and every write below depends on it. `document_write` refuses a
@@ -224,6 +270,8 @@ async function main(): Promise<number> {
     }
     INIT = parsed.initiative;
     console.log(`  ok    initiative_open("${SLUG}", "${FLOW}") -> ${INIT}`);
+    // Before the first write, so every body carries what the platform will demand of it.
+    await loadSectionsFromPlatform(INIT);
     // A SECOND OPEN OF THE SAME SLUG IS REFUSED, and this is the only place that can be
     // checked against a live door. Two folders for one slug diverge with nothing able to say
     // which was meant.
@@ -402,7 +450,7 @@ async function main(): Promise<number> {
   // The check above cannot see that: it asks whether initiative_close() refuses, and after a revision
   // initiative_close() has nothing to refuse.
   check("a document that records a close cannot be revised",
-    await call("document_revise", { path: `${INIT}/${closing}`, content: doc("reopened") }),
+    await call("document_revise", { path: `${INIT}/${closing}`, content: doc("reopened", closing) }),
     true, /closes once/);
 
   // And the document says what the close recorded, not merely that the call was accepted.

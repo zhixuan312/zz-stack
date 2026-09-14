@@ -27,6 +27,17 @@ import { type Chain } from "../write-guards.js";
 interface DocState {
   name: string; role?: string; exists: boolean; status: string | null;
   gate: boolean; approved_by?: string; approved_at?: string; requires?: string;
+  /** THE HEADINGS THIS DOCUMENT MUST CARRY, when its flow declares any.
+   *
+   * document_write REFUSES a body missing them, by name — and until this was returned here
+   * there was no way to ask what they were. A caller learned the list by being refused, one
+   * document at a time, which is a rule you can only discover by breaking it. The flow
+   * declares them; the platform enforces them; this is the platform saying so first.
+   *
+   * It covers the handover too, whose sections are appended by chain.ts rather than written
+   * in any flow's manifest — so a caller reading a catalog file would still not have found
+   * them. Omitted, rather than empty, when a document declares none. */
+  sections?: string[];
 }
 
 /** A document's frontmatter, or {} when there is no document there.
@@ -127,6 +138,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       status: env.status ?? null, gate: !!d.gate,
       approved_by: env.approved_by || undefined, approved_at: env.approved_at || undefined,
       requires: d.requires,
+      sections: d.sections?.length ? d.sections : undefined,
     };
   });
   const closingEnv = envelopeOf(join(dir, chain.closingDoc));

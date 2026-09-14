@@ -51,8 +51,18 @@ async function confirm(url) {
     if (res.status === 401 || res.status === 403) return { ok: false, why: `the platform refused the token (${res.status})` };
     if (!res.ok) return { ok: false, why: `the platform answered ${res.status}` };
     const body = await res.text();
-    return { ok: true, email: /\\"email\\":\\"([^\\"]*)/.exec(body)?.[1],
-             team: /\\"team\\":\\"([^\\"]*)/.exec(body)?.[1] };
+    // A 200 IS NOT AN ANSWER UNTIL IT PARSES. This returned ok on any 200 and left `email`
+    // undefined when the regex missed, so the caller printed "you are undefined" — a sentence
+    // that reads as an identity rather than as a failure, which is the direction this
+    // repository distrusts most. A door answering 200 with a body this cannot read is a real
+    // condition: it is what a renamed tool looks like from a script one release behind, and it
+    // is exactly what happened when 0.34.0 renamed get_my_info to session_whoami.
+    const email = /\\"email\\":\\"([^\\"]*)/.exec(body)?.[1];
+    if (!email) {
+      return { ok: false, why: `the platform answered 200 but nothing in its reply named a person — ` +
+                               `this script may be older than the door it is asking` };
+    }
+    return { ok: true, email, team: /\\"team\\":\\"([^\\"]*)/.exec(body)?.[1] };
   } catch (e) { return { ok: false, why: `the platform did not answer (${e.name})` }; }
 }
 

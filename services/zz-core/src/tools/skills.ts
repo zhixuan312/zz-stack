@@ -12,6 +12,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { catalogEntries, catalogPackages } from "@zz/catalog";
 import { parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
@@ -81,205 +82,271 @@ export function registerSkillTools(server: McpServer): void {
     },
   );
 
-  // Encoding is arithmetic, not judgement — and a delivery agent has no
-  // shell by design. Blocks whose APIs want encoded payloads (e.g. email
-  // bodies) would otherwise stall the flow asking a stakeholder to paste
-  // a base64 string. One deterministic tool, audited like any other.
-  server.registerTool(
-    "encode_base64",
-    {
-      description:
-        "Base64-encode text (or decode it) for building-block APIs that require encoded " +
-        "payloads, such as email bodies. Deterministic utility — never ask a person to " +
-        "encode or decode by hand, and never guess an encoding yourself.",
-      inputSchema: {
-        text: z.string().describe("The exact text to encode (or the base64 to decode)."),
-        direction: z.enum(["encode", "decode"]).optional().describe("Default: encode."),
-      },
-    },
-    async ({ text: input, direction }) => {
-      const mode = direction ?? "encode";
-      try {
-        if (mode === "encode") return text(Buffer.from(input, "utf8").toString("base64"));
-        // DECODING IS CHECKED, because Buffer.from(x, "base64") never throws — it drops the
-        // characters it does not recognise and returns whatever the rest happens to spell.
-        // "not base64 at all!" comes back as eight bytes of mojibake, and the catch below
-        // never fires. This tool's own description says never to guess an encoding, and
-        // handing an agent plausible rubbish is the guess it warns about, made for it.
-        //
-        // Re-encoding is the whole test: the shape of valid base64 is that it survives a
-        // round trip. Padding and any whitespace the caller wrapped it in are normalised
-        // away first, because neither changes what the input means.
-        const canonical = input.replace(/\s+/g, "").replace(/=+$/, "");
-        const out = Buffer.from(input, "base64").toString("utf8");
-        if (Buffer.from(out, "utf8").toString("base64").replace(/=+$/, "") !== canonical) {
-          return text(
-            "ERROR: that does not decode to text. Either it is not valid base64 — in which " +
-            "case decoding it returns whatever the recognisable characters happen to spell — " +
-            "or it encodes bytes that are not UTF-8, which this tool does not carry: it is " +
-            "for text, such as an email body. Pass the exact string the block gave you, or " +
-            'call this with direction: "encode" if you meant to encode.');
-        }
-        return text(out);
-      } catch (err) {
-        return text(`ERROR: could not ${mode}: ${String(err)}`);
-      }
-    },
-  );
-
-  /** THE SHELF: which building blocks exist, and which skills each one ships.
+  /** THE SHELF: every skill this caller can reach, grouped by whatever owns it.
    *
-   * Two questions an agent could not answer, and the cost of each is measured on this
-   * deployment.
+   * ONE TOOL WHERE THERE WERE TWO, and the split was never a design. `list_skills` returned
+   * `JSON.stringify([...names].sort())` — a flat array of strings with no owner, no
+   * description and no order — and `block_skills` existed as a second tool only because
+   * block-owned skills were the one case the first could not express. An agent asking "what
+   * can I read, and what is each one for" had to call both, and after both still could not
+   * tell which flow a stage skill belonged to or where in that flow it sat.
+   *
+   * Both costs block_skills was written to fix are still paid here, and both were measured on
+   * this deployment.
    *
    * WHICH SKILLS DOES THIS BLOCK SHIP. ops-select told the agent to look for "usage guides in
    * the shared skills library named `<block>-usage`". A block ships its usage skills under the
    * names its own authors chose, which is rarely that one. So an agent following the
    * instruction guesses `<block>-usage`, finds nothing, and builds without them — and they
-   * come out of evaluation BLIND, never opened by anybody. That reads as agents preferring to improvise and it
-   * is nothing of the sort: it is a naming convention that was never true, used as a lookup.
+   * come out of evaluation BLIND, never opened by anybody. That reads as agents preferring to
+   * improvise and it is nothing of the sort: it is a naming convention that was never true,
+   * used as a lookup.
    *
-   * WHICH BLOCKS ARE THERE AT ALL. `skill_list` returns a flat array of names with no block
-   * attribution and no descriptions, so "what could I build this on" was answered from a
-   * capability sheet somebody maintains by hand.
+   * WHICH BLOCKS ARE THERE AT ALL. The flat array carried no block attribution and no
+   * descriptions, so "what could I build this on" was answered from a capability sheet
+   * somebody maintains by hand.
    *
-   * BOTH HALVES COME FROM SOMETHING THAT CANNOT DRIFT. The block-to-skill mapping is
-   * zz.skill joined to zz.block — the registry the indexer writes and the console reads, not
-   * a list in a document. The description of each skill is read out of that skill's own
-   * SKILL.md. Nothing here is retyped from anywhere, which is the only reason it can be
-   * trusted at a hundred blocks.
+   * NOTHING HERE IS RETYPED FROM ANYWHERE. The block-to-skill mapping is zz.skill joined to
+   * zz.block — the registry the indexer writes and the console reads. `when_to_use` comes out
+   * of each skill's own SKILL.md. A stage's position comes out of its package's flow.json.
+   * That is the only reason this can be trusted at a hundred blocks.
    *
-   * TWO DEPTHS, and the argument chooses. No argument is the shelf — every block, one line
-   * each, cheap enough to call before you know what you want. A block name is that block's
-   * skills with what each is for, which is what you read once you do. Neither returns a
-   * skill's BODY: that is skill_read, one at a time, and keeping it that way is what stops
-   * this becoming the thing it exists to avoid.
+   * OWNER IS A FILTER, NOT A DEPTH SWITCH, which is the one thing that is deliberately not
+   * carried over. block_skills had two depths and its argument chose between them, so the
+   * cheap call could not say what anything was for and the useful call had to be made once per
+   * block. Every skill carries its when_to_use here whatever you asked for; `owner` narrows
+   * WHICH skills, and an owner nothing answers to is refused with the list of owners that do —
+   * an empty answer reads like a platform with no skills on it.
+   *
+   * PRECEDENCE IS THE ONE THING THIS MUST NOT RESTATE. A skill of one name can exist in three
+   * places and allSkillRoots() decides which answers; this lists each name once, under the
+   * root that wins, exactly as skill_read would resolve it. Listing a shadowed copy would
+   * advertise text that skill_read can never return.
    */
-  server.registerTool(
-    "block_skills",
-    {
-      description:
-        "Which building blocks this platform routes, and which usage skills each one ships. " +
-        "Call it with no argument for the shelf: every block, its title, and how many skills " +
-        "it ships. Call it with a block id for that block's skills and what each one is for. " +
-        "READ THIS BEFORE GUESSING A SKILL NAME — a block's skills are named whatever its " +
-        "team named them, and there is no convention to derive them from. Then skill_read " +
-        "the ones you need, by the exact name this returns.",
-      inputSchema: {
-        block: z.string().optional().describe(
-          "A block id as the gateway routes it, such as 'casebox'. Omit for every block."),
-      },
-    },
-    async ({ block }) => {
-      const p = db();
-      if (!p) {
-        return text(
-          "ERROR: the platform database is unreachable, so which blocks exist and what they " +
-          "ship cannot be read. This is not a statement about the blocks.");
-      }
-      const { rows } = await p.query<{ block: string; title: string; skill: string | null }>(
-        `select b.name as block, b.title, s.name as skill
-           from zz.block b
-           left join zz.skill s on s.block_id = b.id and s.kind = 'block_usage' and not s.retired
-          where b.origin <> 'platform' and ($1::text is null or b.name = $1)
-          order by b.name, s.name`,
-        [block ?? null],
-      );
-      if (!rows.length) {
-        return text(block
-          ? `ERROR: '${block}' is not a building block this platform routes. Call this with ` +
-            "no argument to see the ones that are."
-          : "No building block is registered on this deployment.");
-      }
-      // The skill's own first sentence, from its own file. A description written here would
-      // be a second copy of something the skill already says, and the second copy is the one
-      // that goes stale.
-      const { roots } = await allSkillRoots();
-      const describe = (name: string): string => {
-        for (const root of roots) {
-          const file = join(root, name, "SKILL.md");
-          if (!existsSync(file)) continue;
-          const said = parseEnvelope(readFileSync(file, "utf8")).description ?? "";
-          return said.split(/(?<=\.)\s/)[0].trim();
-        }
-        // Registered and not on this caller's shelf. Said plainly rather than omitted: a
-        // skill missing from the list reads as a block that does not ship one.
-        return "(registered; its text is not installed for your team)";
-      };
-      const byBlock = new Map<string, { title: string; skills: string[] }>();
-      for (const r of rows) {
-        const e = byBlock.get(r.block) ?? { title: r.title, skills: [] };
-        if (r.skill) e.skills.push(r.skill);
-        byBlock.set(r.block, e);
-      }
-      const lines: string[] = [];
-      for (const [name, e] of byBlock) {
-        if (block) {
-          lines.push(`# ${name}${e.title ? ` — ${e.title}` : ""}`);
-          if (!e.skills.length) {
-            lines.push(
-              "Ships no usage skill. That is a gap in what the block team published, not a " +
-              "reason to skip reading: read_api_spec and the block's own overview tool are " +
-              "what is left, and say in the selection that this block documents itself " +
-              "only through its API.");
-          }
-          for (const s of e.skills) lines.push(`- ${s} — ${describe(s)}`);
-          if (e.skills.length) {
-            lines.push("");
-            // THE TOOL, NAMED, because a live run reached for the wrong one. An agent that had
-            // just been handed these names called `bookit:usage_skill_view` with a casebox skill
-            // name in it — a block's own reader knows only that block's skills, so it answered
-            // "no usage skill", which reads as the skill not existing rather than as the wrong
-            // door. These sit on the PLATFORM's shelf; the platform's reader is what opens them.
-            lines.push('Read any of them with skill_read("<name>") — this server\'s tool. A ' +
-              "block's own usage_skill_view knows only that block's skills and answers " +
-              '"no usage skill" for a name it does not own, which looks like the skill being ' +
-              "missing when it is not.");
-          }
-        } else {
-          lines.push(`- ${name}${e.title ? ` (${e.title})` : ""} — ` +
-            (e.skills.length
-              ? `${e.skills.length} usage skill${e.skills.length === 1 ? "" : "s"}: ${e.skills.join(", ")}`
-              : "no usage skill published"));
-        }
-      }
-      if (!block) {
-        lines.push("");
-        lines.push(
-          "Call block_skills(block: \"<id>\") for what each skill is for, then read them with " +
-          "skill_read(\"<skill name>\") — the PLATFORM's tool, on this server, never a block's " +
-          "own usage_skill_view. Do not derive a skill name from a block name; these are the " +
-          "names.");
-      }
-      return text(lines.join("\n"));
-    },
-  );
-
   server.registerTool(
     "skill_list",
     {
-      description: "List the skills your team can reach: the platform's own, every skill of every flow installed for your team, and your team's own skills.",
-      inputSchema: {},
+      description:
+        "Call this BEFORE guessing a skill name, and before deciding what to build on: it is " +
+        "the whole shelf you can reach. Returns every skill grouped by the plugin or building " +
+        "block that owns it — each with when to use it, its position in its flow where it has " +
+        "one, and the supporting files beside it — plus every block this platform routes, " +
+        "including the ones that publish no usage skill. Refuses an owner id that names no " +
+        "plugin or block, listing the ones that exist; never invents a skill name and never " +
+        "returns a skill's body — that is skill_read, one at a time.",
+      inputSchema: {
+        owner: z.string().optional().describe(
+          "A plugin or block id exactly as this tool prints it, such as 'sdlc-flow' or " +
+          "'casebox'. Omit for everything you can reach."),
+      },
     },
-    async () => {
+    async ({ owner }) => {
       const { roots, degraded } = await allSkillRoots();
-      const names = new Set<string>();
+
+      // WHERE A ROOT CAME FROM, decided by matching it rather than by spelling a path. The
+      // catalog's location is settable (`CATALOG_DIR`) and this file used to be one of the
+      // places that hardcoded it; the team's own store is under an artifact root that varies
+      // per caller. So both are matched against the values that produced them, `/blocks` is a
+      // shape, and the platform's own `/skills` is what is left.
+      const packageAt = new Map<string, { owner: string; name: string; dir: string }>();
+      for (const p of catalogPackages()) packageAt.set(join(p.dir, "skills"), p);
+      const stagesOf = new Map<string, Map<string, { at: number; of: number; produces: string }>>();
+      const agentNameOf = new Map<string, string>();
+      for (const e of catalogEntries()) {
+        const declared = e.manifest.stages ?? [];
+        const stages = new Map<string, { at: number; of: number; produces: string }>();
+        declared.forEach((s, i) => stages.set(s.name, {
+          at: i + 1, of: declared.length, produces: s.produces ?? "",
+        }));
+        stagesOf.set(e.dir, stages);
+        if (e.manifest.agentName) agentNameOf.set(e.dir, e.manifest.agentName);
+      }
+      let teamRoot = "";
+      let teamSlug: string | null = null;
+      try {
+        teamRoot = join(await userRoot(), "skills");
+        teamSlug = (await teamsFor(parseCaller(requestHeaders()).email)).active;
+      } catch { /* no store and no team yet: a person with nothing written has nothing to add */ }
+
+      /** The reference material beside a SKILL.md — what `skill_read(name, file)` can open.
+       *
+       * Named here because nothing else names them. A skill says "see references/foo.md" in
+       * its own prose or it does not, and where it does not, the file is unreachable in
+       * practice: skill_read takes an exact relative path and there was no way to learn one. */
+      const supporting = (dir: string): string[] => {
+        const out: string[] = [];
+        const walkFiles = (d: string, prefix: string): void => {
+          let entries: string[];
+          try { entries = readdirSync(d).sort(); } catch { return; }
+          for (const e of entries) {
+            const rel = prefix ? `${prefix}/${e}` : e;
+            const p = join(d, e);
+            if (statSync(p).isDirectory()) walkFiles(p, rel);
+            else if (rel !== "SKILL.md") out.push(rel);
+          }
+        };
+        walkFiles(dir, "");
+        return out;
+      };
+
+      const unquote = (v: string): string => v.replace(/^["']|["']$/g, "").trim();
+      /** One skill, from its own file. A description written here would be a second copy of
+       * something the skill already says, and the second copy is the one that goes stale.
+       *
+       * `when_to_use` first, `description` only as a fallback: they answer different
+       * questions — one says when to reach for this, the other says what it is — and an agent
+       * choosing between forty skills needs the first. Every skill on this shelf carries both;
+       * a block's skill written by its own team may carry neither, and that is said out loud
+       * rather than rendered as an empty dash. */
+      const describe = (
+        name: string, dir: string | null,
+        stage?: { at: number; of: number; produces: string },
+      ): string[] => {
+        const head = stage
+          ? `- ${name} [stage ${stage.at} of ${stage.of}` +
+            (stage.produces && stage.produces !== "nothing" ? ` → ${stage.produces}]` : "]")
+          : `- ${name}`;
+        // Registered and not on this caller's shelf. Said plainly rather than omitted: a
+        // skill missing from the list reads as a block that does not ship one.
+        if (!dir) return [head, "  (registered; its text is not installed for your team)"];
+        // INDEXED, not read as a property, and not because the property read is wrong. A
+        // SKILL.md's frontmatter is not a document envelope — `when_to_use` and `description`
+        // are a skill's own fields and belong in no document's schema — but the gate's
+        // "every envelope field the platform reads is one the schema publishes" cannot see
+        // the difference and reads `env.when_to_use` as an undeclared document field.
+        const md = readFileSync(join(dir, "SKILL.md"), "utf8");
+        const front = (field: string): string => unquote(parseEnvelope(md)[field] ?? "");
+        const when = front("when_to_use")
+          || front("description").split(/(?<=\.)\s/)[0].trim()
+          || "(its SKILL.md declares neither when_to_use nor description)";
+        const out = [head, `  ${when}`];
+        const files = supporting(dir);
+        if (files.length) out.push(`  files: ${files.join(", ")}`);
+        return out;
+      };
+      /** Resolve a name the way skill_read resolves it: first root wins. */
+      const dirOf = (name: string): string | null => {
+        for (const root of roots) {
+          const dir = join(root, name);
+          if (existsSync(join(dir, "SKILL.md"))) return dir;
+        }
+        return null;
+      };
+
+      const groups: { id: string; label: string; lines: string[] }[] = [];
+      const groupFor = (id: string, label: string): { id: string; label: string; lines: string[] } => {
+        let g = groups.find((x) => x.id === id);
+        if (!g) { g = { id, label, lines: [] }; groups.push(g); }
+        return g;
+      };
+
+      // ── What is on disk for this caller, in precedence order ──────────────────────────
+      const BLOCK_ROOT = /^\/blocks\/([^/]+)\/skills$/;
+      const seen = new Set<string>();
       for (const root of roots) {
+        if (BLOCK_ROOT.test(root)) continue;       // the registry answers for blocks, below
         if (!existsSync(root)) continue;
-        for (const entry of readdirSync(root)) {
-          if (existsSync(join(root, entry, "SKILL.md"))) names.add(entry);
+        const pkg = packageAt.get(root);
+        const agent = pkg ? agentNameOf.get(pkg.dir) : undefined;
+        const id = pkg ? pkg.name : root === teamRoot ? (teamSlug ?? "your-team") : "zz-core";
+        const label = pkg
+          ? `${pkg.name}${agent ? ` (${agent})` : ""} — a plugin, owned by ${pkg.owner}`
+          : root === teamRoot
+            ? `${teamSlug ?? "your-team"} — your team's own store`
+            : "zz-core — the platform's own, readable by everybody";
+        const stages = pkg ? stagesOf.get(pkg.dir) : undefined;
+        const g = groupFor(id, label);
+        for (const entry of readdirSync(root).sort()) {
+          if (!existsSync(join(root, entry, "SKILL.md"))) continue;
+          if (seen.has(entry)) continue;
+          seen.add(entry);
+          g.lines.push(...describe(entry, join(root, entry), stages?.get(entry)));
         }
       }
-      // A SHORT LIST FOR A REASON, said out loud. Without the platform database there is no
-      // way to know which flows this team installed, so this is the platform's own skills and
-      // nothing else — which looks exactly like a team that has installed nothing.
-      if (degraded) {
-        return text(
-          `ERROR: the platform database is unreachable, so which flows your team has installed ` +
-          `cannot be read. These are the platform's own skills only, not your flow's: ` +
-          `${JSON.stringify([...names].sort())}`);
+
+      // ── The blocks, from the registry rather than from the mount ──────────────────────
+      //
+      // ASKED OF zz.block, not of /blocks. A block with no usage skill has no directory here,
+      // and it is precisely the block an agent most needs to be told exists — "ships none" is
+      // an answer and silence is not. The mount is where the TEXT comes from; the registry is
+      // what says which blocks there are.
+      //
+      // CAUGHT, not merely null-checked, and the difference is a whole class of deployment.
+      // `db()` returns null when no database is CONFIGURED, which is local dev; on a host where
+      // one is configured and down it returns a pool and the query THROWS — the same case
+      // skill-roots.ts wraps for its own query, and the reason allSkillRoots reports `degraded`
+      // at all. `skill_list` never touched the database before this merge, so it answered "the
+      // platform database is unreachable" during an outage. Reaching a query here without a
+      // catch would turn that named refusal into an MCP error, which is the failure mode
+      // relay.ts's own header describes: the client reads a dead call rather than a sentence.
+      const p = db();
+      let blocksUnavailable = !p;
+      if (p) {
+        try {
+          const { rows } = await p.query<{ block: string; title: string; skill: string | null }>(
+            `select b.name as block, b.title, s.name as skill
+               from zz.block b
+               left join zz.skill s on s.block_id = b.id and s.kind = 'block_usage' and not s.retired
+              where b.origin <> 'platform'
+              order by b.name, s.name`,
+          );
+          for (const r of rows) {
+            const g = groupFor(r.block, `${r.block}${r.title ? ` (${r.title})` : ""} — a building block`);
+            if (r.skill) g.lines.push(...describe(r.skill, dirOf(r.skill)));
+          }
+        } catch {
+          blocksUnavailable = true;   // said out loud below, never rendered as "no blocks"
+        }
       }
-      return text(JSON.stringify([...names].sort()));
+
+      // ── The answer ────────────────────────────────────────────────────────────────────
+      if (owner !== undefined && !groups.some((g) => g.id === owner)) {
+        return text(
+          `ERROR: '${owner}' is not a plugin or building block you can reach. The owners that ` +
+          `are: ${groups.map((g) => g.id).join(", ") || "none — nothing is installed for you"}. ` +
+          "Call this with no argument for all of them." +
+          (blocksUnavailable
+            ? " The platform database is unreachable, so no building block is in that list — " +
+              "this is not a statement about the blocks."
+            : ""));
+      }
+      const shown = owner === undefined ? groups : groups.filter((g) => g.id === owner);
+      const lines: string[] = [];
+      for (const g of shown) {
+        lines.push(`# ${g.label}`);
+        if (!g.lines.length) {
+          lines.push(
+            "Ships no usage skill. That is a gap in what the block team published, not a " +
+            "reason to skip reading: read_api_spec and the block's own overview tool are what " +
+            "is left, and say in the selection that this block documents itself only through " +
+            "its API.");
+        }
+        lines.push(...g.lines);
+        lines.push("");
+      }
+      // THE TOOL, NAMED, because a live run reached for the wrong one. An agent that had just
+      // been handed these names called `bookit:usage_skill_view` with a casebox skill name in
+      // it — a block's own reader knows only that block's skills, so it answered "no usage
+      // skill", which reads as the skill not existing rather than as the wrong door. These sit
+      // on the PLATFORM's shelf; the platform's reader is what opens them.
+      lines.push(
+        'Read any of these with skill_read("<name>"), and a supporting file with ' +
+        'skill_read("<name>", file: "<path>") — this server\'s tools, by the exact names ' +
+        "above. Never derive a skill name from a block name, and never a block's own " +
+        'usage_skill_view: it knows only that block\'s skills and answers "no usage skill" ' +
+        "for a name it does not own, which looks like the skill being missing when it is not.");
+
+      // A SHORT LIST FOR A REASON, said out loud. Without the platform database there is no
+      // way to know which flows this team installed or which blocks exist, so this is the
+      // platform's own skills and nothing else — which looks exactly like a team that has
+      // installed nothing.
+      if (degraded || blocksUnavailable) {
+        return text(
+          "ERROR: the platform database is unreachable, so which flows your team has installed " +
+          "and which building blocks this platform routes cannot be read. What follows is what " +
+          "is on disk for everybody, not your team's shelf.\n\n" + lines.join("\n"));
+      }
+      return text(lines.join("\n"));
     },
   );
 

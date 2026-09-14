@@ -192,8 +192,11 @@ const IDENTIFIER_ARGS = new Set([
   // and Hermes: my_client_setup takes no client any more, because there is one, and
   // install_flow no longer asks a team to choose between them.
   "old_id", "new_id", "slug", "role",
-  "scope", "status", "direction", "prefix", "version", "agent_name", "limit",
+  "scope", "status", "prefix", "version", "agent_name", "limit",
   "include_superseded",
+  // `direction` LEFT WITH encode_base64, the only tool that ever declared it — encode or
+  // decode, and nothing else on any door takes the name. An allowlist entry that cannot be
+  // reached is a decision that reads as considered and is only debris.
   // `disposition` — finished or abandoned, on initiative_close(), which is the most consequential act
   // this platform has. It is a two-value enum the platform itself defines, and it answers
   // "how did this end" from the telemetry rather than only from the ledger. It was being

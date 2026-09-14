@@ -189,8 +189,8 @@ export function firstOf(findings, n = 8) {
  *
  * Two things kept going wrong at each site that did this by hand. The name is written on the
  * same line as `registerTool(` for most tools and on the next line for the rest, and a regex
- * demanding the first form silently skipped the others — `encode_base64` was invisible to
- * both store-mutation checks for that reason. And the body was taken with
+ * demanding the first form silently skipped the others — `knowledge_reindex` is written the
+ * second way, and was invisible to both store-mutation checks for that reason. And the body was taken with
  * `indexOf("registerTool(", …)`, which returns -1 at the LAST tool, so `slice(from, -1)` gave
  * it the whole rest of the file: a mutating tool added at the end of a server would find some
  * other tool's writeGuard and pass.

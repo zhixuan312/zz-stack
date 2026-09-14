@@ -7,14 +7,15 @@
  * paths somebody remembered.
  *
  * `document_present` is the odd one: it returns the document rather than a rendering of it,
- * and every call appends a `shown` entry naming the path and version. Whether a document
- * was fetched before its gate was approved is answerable from the record because of it.
+ * and appends a `shown` entry naming the path and version FOR EACH DOCUMENT it fetched.
+ * Whether a document was fetched before its gate was approved is answerable from the record
+ * because of it — and stays answerable per document once a call may carry several.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { documentBody, parseCaller, parseEnvelope } from "@zz/contracts";
+import { parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -25,6 +26,7 @@ import { indexDoc, sourceDocument, walk } from "../indexing.js";
 import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { commitStore, logActivity, persistDocument } from "../persist.js";
 import { teamFor } from "../platform-db.js";
+import { documentVersions, presentDocument, versionRefusal } from "../versions.js";
 import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 
 export function registerArtifactTools(server: McpServer): void {
@@ -96,11 +98,18 @@ export function registerArtifactTools(server: McpServer): void {
     {
       description:
         "Read a file from your team's artifact store. Paths are relative to it — " +
-        "`<initiative>/spec.md`. A search result that came back with `shelf: \"platform\"` " +
+        "`<initiative>/spec.md`. Pass an ARRAY of paths to read several in one call; they " +
+        "come back in the order you asked, and a path that cannot be read names its own " +
+        "failure without costing you the others. `version: N` reads the copy filed when " +
+        "approval N landed instead of the current document — document_present lists which " +
+        "versions exist. A search result that came back with `shelf: \"platform\"` " +
         "lives in the journal every team shares, not in yours: pass `scope: \"platform\"` " +
         "with the same path to read it.",
       inputSchema: {
-        path: z.string(),
+        path: z.union([z.string(), z.array(z.string())])
+          .describe("One path, or an array of paths read in the order given."),
+        version: z.number().int().positive().optional()
+          .describe("Read the copy filed at approval N instead of the current document."),
         // READ-ONLY, and only here. document_write and document_patch stay on the caller's own team,
         // because a shared journal anyone may edit is not a journal. knowledge_add already
         // owns the writing side and already takes `scope`.
@@ -109,23 +118,62 @@ export function registerArtifactTools(server: McpServer): void {
                     "\"platform\" for the shared journal, as knowledge_search reports it."),
       },
     },
-    async ({ path, scope }) => {
-      // THE SEARCH SPANS TWO SHELVES AND THE READ REACHED ONE, which made the platform's own
-      // lessons visible and unreadable to every team agent. Observed end to end on a live
-      // ops-flow round: the agent searched, found the two nodes describing the exact casebox
-      // refusal it was about to hit, was told both "do not exist", hit the refusal, and asked
-      // a non-technical person to build the workflows by hand. Knowledge you can see and
-      // cannot open is worse than knowledge you do not have — it reads as a working store.
-      const target = scope === "platform"
-        ? platformPath(path)
-        : await safePath(path);
-      if (existsSync(target)) return text(readFileSync(target, "utf8"));
-      // NAMES THE OTHER SHELF, once, when the path looks like a journal node. The whole
-      // failure above was a caller who had no way to know a second shelf existed.
-      const hint = scope !== "platform" && path.startsWith("_knowledge/")
-        ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
-        : "";
-      return text(`ERROR: ${path} does not exist${hint}`);
+    async ({ path, version, scope }) => {
+      // AN ARGUMENT THAT DOES NOT APPLY, refused before the loop rather than once per entry.
+      // The shared journal holds no gated documents, so it files no approvals and has no
+      // `_versions/` — a version asked of it could only ever be answered "there are none",
+      // which reads as a missing file rather than as a request that does not make sense.
+      if (version !== undefined && scope === "platform") {
+        return text("ERROR: `version` reads a copy filed at an approval, and the platform " +
+                    "journal keeps none — its nodes are superseded, not versioned. Drop one " +
+                    "of the two.");
+      }
+      const root = await userRoot();
+      const single = !Array.isArray(path);
+      const rows: { rel: string; body: string }[] = [];
+      // ONE BAD ENTRY DOES NOT COST THE OTHERS, which is the whole reason an array is worth
+      // having: a caller reading a spec, a plan and a source in one call gets the two that
+      // exist and the name of the one that does not. So nothing returns from inside this
+      // loop — every outcome, refusal included, becomes a row.
+      for (const rel of (single ? [path as string] : path as string[])) {
+        try {
+          let readRel = rel;
+          if (version !== undefined) {
+            const refused = versionRefusal(root, rel, version);
+            if (refused) { rows.push({ rel, body: refused }); continue; }
+            readRel = documentVersions(root, rel).find((v) => v.version === version)?.rel ?? rel;
+          }
+          // THE SEARCH SPANS TWO SHELVES AND THE READ REACHED ONE, which made the platform's own
+          // lessons visible and unreadable to every team agent. Observed end to end on a live
+          // ops-flow round: the agent searched, found the two nodes describing the exact casebox
+          // refusal it was about to hit, was told both "do not exist", hit the refusal, and asked
+          // a non-technical person to build the workflows by hand. Knowledge you can see and
+          // cannot open is worse than knowledge you do not have — it reads as a working store.
+          const target = scope === "platform" ? platformPath(readRel) : await safePath(readRel);
+          if (!existsSync(target)) {
+            // NAMES THE OTHER SHELF, once, when the path looks like a journal node. The whole
+            // failure above was a caller who had no way to know a second shelf existed.
+            const hint = scope !== "platform" && rel.startsWith("_knowledge/")
+              ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
+              : "";
+            rows.push({ rel, body: `ERROR: ${rel} does not exist${hint}` });
+            continue;
+          }
+          rows.push({ rel: readRel, body: readFileSync(target, "utf8") });
+        } catch (err) {
+          // safePath throws a Refusal for a path that walks out of the store or is the wrong
+          // shape. Thrown, that ends the whole call — right when one path was asked for, and
+          // wrong for an array, where it would discard the entries that were fine.
+          rows.push({ rel, body: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      // THE RESPONSE SHAPE FOLLOWS THE REQUEST SHAPE, not the count. `path: "x"` is the bytes
+      // and nothing else, exactly as it has always been — console-write.ts and the chain check
+      // consume that string directly. `path: ["x"]` is labelled even at length one, so a
+      // caller that built its array in a loop never has to parse two different answers.
+      return text(single
+        ? rows[0]?.body ?? ""
+        : rows.map((r) => `── ${r.rel} ──\n${r.body}`).join("\n\n"));
     },
   );
 
@@ -153,83 +201,63 @@ export function registerArtifactTools(server: McpServer): void {
     {
       description:
         "Fetch a document from your team's artifact store to put in front of the person. " +
-        "Returns the document's body as markdown, with its path, version, status and " +
-        "approval stated separately — the document itself, never a summary or a judgement " +
-        "of it. Call it after writing a document and before asking anyone to decide on it — " +
+        "Returns the document's body as markdown, with its path, version, status, approval " +
+        "and the list of versions filed for it stated separately — the document itself, " +
+        "never a summary or a judgement of it. Pass an ARRAY of paths to put several in " +
+        "front of them at once; each is fetched and recorded in its own right. `version: N` " +
+        "shows the copy filed when approval N landed. Call it after writing a document and " +
+        "before asking anyone to decide on it — " +
         "in a SEPARATE call once the write has returned, never alongside the write in one " +
         "batch: parallel calls have no order between them, and a fetch that runs first " +
         "answers truthfully that the document is not there yet. " +
         "Paths are relative to the store — `<initiative>/spec.md`.",
-      inputSchema: { path: z.string() },
+      inputSchema: {
+        path: z.union([z.string(), z.array(z.string())])
+          .describe("One path, or an array of paths presented in the order given."),
+        version: z.number().int().positive().optional()
+          .describe("Show the copy filed at approval N instead of the current document."),
+      },
     },
-    async ({ path }) => {
-      const target = await safePath(path);
+    async ({ path, version }) => {
       const root = await userRoot();
-      // A DIRECTORY IS NOT A DOCUMENT, and `existsSync` alone says it is — readFileSync on one
-      // throws EISDIR, which reaches the caller as a raw error instead of this file's refusal.
-      if (!existsSync(target) || !statSync(target).isFile()) {
-        // The initiative is taken off the RESOLVED path, never off the argument. safePath has
-        // already refused anything that walks out of the store, and rebuilding a folder from
-        // the raw string is the shape safeName's docstring records going wrong on the live
-        // gateway.
-        const initiative = target.slice(root.length + 1).split(sep)[0];
-        const folder = join(root, initiative);
-        const held = existsSync(folder) && statSync(folder).isDirectory()
-          ? readdirSync(folder).filter((f) => f.endsWith(".md")).sort()
-          : [];
-        // TWO ANSWERS, because an empty list means two different things — the folder is there
-        // and holds no document, or there is no such folder at all — and they want different
-        // next moves. A refusal that reads the same either way sends someone looking for a
-        // typo in a name that was never there.
-        return text(held.length
-          ? `ERROR: no document at \`${path}\`. The initiative holds: ${held.join(", ")}. ` +
-            `Ask for one of those by its full path, \`${initiative}/<name>\`, or call ` +
-            "document_list to see the rest of the store."
-          : `ERROR: no document at \`${path}\`. The initiative holds: nothing this tool can ` +
-            `show — \`${initiative}\` is empty or is not a folder in your team's store. Call ` +
-            "document_list to see what the store does hold, then ask again by full path.");
+      const user = parseCaller(requestHeaders()).email;
+      const single = !Array.isArray(path);
+      const out: string[] = [];
+      // ONE ROW PER DOCUMENT, WHICH IS WHY THE LOOP CALLS presentDocument RATHER THAN
+      // RECORDING ANYTHING ITSELF. attest.ts shownSinceLastChange answers per document, so a
+      // single `shown` written for a batch would make an approval look attested when only the
+      // neighbouring document had been opened. Nothing in this registration touches the
+      // record; the per-document helper owns it, and the check asserts both halves.
+      for (const rel of (single ? [path as string] : path as string[])) {
+        const target = await safePath(rel);
+        // A DIRECTORY IS NOT A DOCUMENT, and `existsSync` alone says it is — readFileSync on one
+        // throws EISDIR, which reaches the caller as a raw error instead of this file's refusal.
+        if (!existsSync(target) || !statSync(target).isFile()) {
+          // The initiative is taken off the RESOLVED path, never off the argument. safePath has
+          // already refused anything that walks out of the store, and rebuilding a folder from
+          // the raw string is the shape safeName's docstring records going wrong on the live
+          // gateway.
+          const initiative = target.slice(root.length + 1).split(sep)[0];
+          const folder = join(root, initiative);
+          const held = existsSync(folder) && statSync(folder).isDirectory()
+            ? readdirSync(folder).filter((f) => f.endsWith(".md")).sort()
+            : [];
+          // TWO ANSWERS, because an empty list means two different things — the folder is there
+          // and holds no document, or there is no such folder at all — and they want different
+          // next moves. A refusal that reads the same either way sends someone looking for a
+          // typo in a name that was never there.
+          out.push(held.length
+            ? `ERROR: no document at \`${rel}\`. The initiative holds: ${held.join(", ")}. ` +
+              `Ask for one of those by its full path, \`${initiative}/<name>\`, or call ` +
+              "document_list to see the rest of the store."
+            : `ERROR: no document at \`${rel}\`. The initiative holds: nothing this tool can ` +
+              `show — \`${initiative}\` is empty or is not a folder in your team's store. Call ` +
+              "document_list to see what the store does hold, then ask again by full path.");
+          continue;
+        }
+        out.push(presentDocument(root, rel, version, user));
       }
-      const content = readFileSync(target, "utf8");
-      const env = parseEnvelope(content);
-      // ONLY WHAT THE DOCUMENT CARRIES. A source has no version and no status, and stating
-      // "version: none" for one is the platform asserting a lifecycle nothing governs — the
-      // same line stampEnvelope declines to cross for a document no manifest declares.
-      const facts = [`This is ${path}`];
-      if (env.version) facts.push(`version ${env.version}`);
-      if (env.status) facts.push(`status ${env.status}`);
-      const signed = env.approved_by
-        ? ` Approved by ${env.approved_by}${env.approved_at ? ` on ${env.approved_at}` : ""}.`
-        : "";
-      // THE FETCH IS THE HALF THE PLATFORM CAN ACTUALLY VOUCH FOR, so it is recorded. The
-      // record answers one question nothing could answer before: was this document ever
-      // fetched, and at which version, before its gate was approved. That is detection, not
-      // prevention — the refusal that would make an approval on an unfetched document
-      // impossible is a `shown` check inside the document guards, named in the spec as FR-14a
-      // and deliberately out of scope, because turning it on today would break every flow.
-      // Spelled without its call parentheses on purpose: "every document write runs the
-      // guards" counts that call shape across the whole file, comments included, and pairs it
-      // against persistDocument — so naming it the usual way here made a read-only tool look
-      // like a sixth guarded write path and failed the check.
-      //
-      // THE VERSION IS THE POINT of recording more than a path. A document fetched at v3 and
-      // approved at v5 was read, and what was read is not what was signed; a bare path cannot
-      // tell those apart. Empty when the document carries no version — a source has none, and
-      // stating one it does not have would put a fact into the record that is not true.
-      //
-      // ON SUCCESS ONLY. A refusal fetched nothing and has no version to name, and logging it
-      // as `shown` would let a mistyped path answer "yes, it was shown" for a document that
-      // was never opened.
-      //
-      // AND IT CANNOT FAIL THE FETCH: logActivity swallows its own errors by design —
-      // "telemetry must never break the operation it describes" — so an unwritable
-      // activity.jsonl costs the record, never the document.
-      logActivity(root, path, {
-        user: parseCaller(requestHeaders()).email,
-        action: "shown",
-        path,
-        version: env.version ?? "",
-      });
-      return text(`${facts.join(", ")}.${signed}\n\n${documentBody(content).trim()}\n`);
+      return text(out.join("\n\n────────\n\n"));
     },
   );
 

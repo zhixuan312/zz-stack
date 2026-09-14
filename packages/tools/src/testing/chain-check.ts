@@ -363,12 +363,6 @@ async function main(): Promise<number> {
   record(!sourced.trim().toUpperCase().startsWith("ERROR") && sourced.includes("chain-check source"),
     "source_list reads back what source_add just wrote", sourced);
 
-  // Deterministic arithmetic, and a genuine round trip rather than a call that merely
-  // returns without error — decode(encode(x)) === x is the whole claim the tool makes.
-  const encoded = await call("encode_base64", { text: "chain-check", direction: "encode" });
-  const decoded = await call("encode_base64", { text: encoded, direction: "decode" });
-  record(decoded.trim() === "chain-check", "encode_base64 round-trips its own output", `${encoded} -> ${decoded}`);
-
   // skill_list and skill_read degrade (a named ERROR) rather than fail outright when this
   // deployment has no platform database — session_whoami's own team lookup already treats that
   // as ordinary above, and these two tools document the identical fallback.
@@ -379,8 +373,14 @@ async function main(): Promise<number> {
   // promise exists without reading this deployment's own catalog first.
   check("skill_read reads the platform's own backbone skill",
     await call("skill_read", { name: "zz-backbone" }), false);
-  eitherOr("block_skills answers the shelf of building blocks",
-    await call("block_skills", {}), /platform database is unreachable/);
+  // THE MERGE, asserted on the half that has a right answer whatever this deployment holds.
+  // Which owners exist depends on which flows are installed and which blocks are routed, so
+  // the shelf itself can only be checked for shape (above). The refusal cannot: an owner id
+  // nothing answers to must be refused by name, listing the ones that do, and that is the
+  // behaviour skill_list took over from block_skills.
+  check("skill_list refuses an owner no plugin or block answers to",
+    await call("skill_list", { owner: "no-such-owner-chain-check" }), true,
+    /is not a plugin or building block/);
 
   // A subject tag says WHAT KIND of thing a piece of knowledge is about, and the kinds are a
   // closed set. Open, it becomes a free-text field that agrees with nothing.

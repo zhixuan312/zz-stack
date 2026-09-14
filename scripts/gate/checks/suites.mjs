@@ -267,3 +267,12 @@ check("every plugin declares what it is, what it ships, and what each stage leav
 
 check("the core door speaks noun-first, and no caller still says the old name",
       runsCheck("core-names.mjs"));
+
+check("a revision names its cause — one route or the other, never neither and never both",
+      runsCheck("revise-cause.mjs"));
+
+check("a document read takes a list and a version, and history never vouches for the present",
+      runsCheck("document-reads.mjs"));
+
+check("the two tools that left the core door are gone from it and from every caller",
+      runsCheck("core-surface-19.mjs"));

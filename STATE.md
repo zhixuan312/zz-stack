@@ -199,10 +199,14 @@ Stated once, in `zz-backbone`, inherited by every flow on every harness.
   it in one call: stores their words verbatim as a source, links it, bumps
   v1 → v2, puts `status` back to draft so the gate returns to a human, and
   leaves the approved v1 in `_versions/`.
-- **Capture is the goal, never a toll.** A person may edit their own
-  document and owes nobody a reason; an unexplained revision is allowed and
-  simply records no cause. We make the right thing the easy thing, not the
-  mandatory thing.
+- **A version says WHICH KIND of change it was; it still owes nobody a
+  reason.** `document_revise` refuses a revision naming neither a cause nor
+  a `self_edit`, and refuses one naming both. That is not a toll: `self_edit`
+  is a declaration of what you edited, so a typo fix costs a few words rather
+  than an invented source. What it buys is a record where silence is no
+  longer ambiguous — v2 arriving with nothing attached used to mean either
+  "nothing outside caused this" or "nobody wrote down what did", and the next
+  reader could not tell an incorporated decision from a second thought.
 - **Refinement is offered, not imposed.** Material that lands after an
   approval is reported (`sources_after_approval`) as a fact. Whether the
   document should change is the team's call.
@@ -439,7 +443,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 305 checks**, and twelve of them RUN code rather than reading it: the
+- **The offline gate is 308 checks**, and thirteen of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through
@@ -447,7 +451,9 @@ is the balance, and the balance is:
   imports `FlowStage` and `CatalogManifest` and parses fixtures through them, and the judge's
   own usage recorder, driven through `markAll` against a fake pool and a stubbed `fetch`
   because "every path out of the fetch writes exactly one row" is not a property a regex can
-  state.
+  state, and the document-reads check, which harvests the real zod schemas off a stub server
+  and drives `documentVersions`, `presentDocument` and `writeGuard` over a fixture store with
+  `shownSinceLastChange` as its oracle.
   (This number is hand-maintained and has been wrong twice in one session — two authors each
   adjusted it and both undercounted, because the enumeration silently omitted the
   fetched-before-approval record. It is the exact species Task I-33 removes: a count describing
@@ -673,7 +679,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **305 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **308 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".

@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.27
+version: 3.28
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -36,9 +36,10 @@ involves connecting anything:
   that selects blocks, and this page deliberately names none: there is no
   flow-agnostic sheet to name. What is flow-agnostic is the rule. Narrow to
   one or two candidates, then read those blocks' own documentation to confirm —
-  `block_skills()` with no argument lists every block this platform routes and how
-  many skills each ships; with a block id it names that block's skills and what each
-  one is for. That is the reading, and it is why you never have to guess a name.
+  `skill_list()` with no argument is the whole shelf, every block this platform
+  routes among it, each skill with when to use it; with an owner id it narrows to
+  that one block or plugin. That is the reading, and it is why you never have to
+  guess a name.
   Never read every block's tool surface to decide: a verb list tells you a call
   exists, not where the work belongs, and a hundred blocks is ten thousand tools.
 - **To USE a block you need to reach it, and you find that out by USING it.** Call
@@ -450,9 +451,8 @@ reading later can see one caused the other.
   | gates | `document_approve` `initiative_close` |
   | sources | `source_add` `source_list` |
   | knowledge | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
-  | skills | `skill_list` `skill_read` `block_skills` |
+  | skills | `skill_list` `skill_read` |
   | status | `initiative_status` `knowledge_reconcile` `session_whoami` |
-  | utility | `encode_base64` |
   | plugin evaluation | `plugin_locate` `plugin_profile` `plugin_cases_record` `plugin_conform` `plugin_ruler` `plugin_ruler_record` `plugin_affirm` `plugin_judge` `plugin_scores` `plugin_finding_record` |
 
 The evaluation tools belong to the evaluation flow. They exist because an agent here has MCP
@@ -510,12 +510,6 @@ make every number incomparable with every other number.
   for a missing key, or someone asks how to connect Claude Code, Codex or
   Hermes, name that agent and hold your position. Never ask anyone to paste a key
   to you: you cannot store it, and a key in a transcript is a leaked key.
-- When a block's API wants an encoded payload (a base64 email body, for
-  example), call `encode_base64`. Encoding in your head is a guess, and a
-  local shell — which only some of the clients that load this skill have —
-  would make the result depend on where the conversation happens to be
-  running. Never ask a stakeholder to encode or decode anything for you:
-  that is the platform's job, not theirs.
 
 ## What people write from the web is work
 

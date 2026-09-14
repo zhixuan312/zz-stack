@@ -94,7 +94,7 @@ check("a skill never names a platform tool that does not exist", () => {
   // been reported as a platform tool that does not exist. The two names they covered are
   // spelled out instead — the same coverage, and no stem staking a claim on a word we no
   // longer own.
-  const OURS = /^(journal_|okr_|document_revise|knowledge_reindex|initiative_|render_|connect_block$|issue_pat|revoke_pat|skill_read$|skill_list$|document_write|document_read|document_patch|document_list|source_add|source_list|knowledge_search|my_credential|admin_|set_[a-z_]*credential|delete_[a-z_]*credential|encode_base64)/;
+  const OURS = /^(journal_|okr_|document_revise|knowledge_reindex|initiative_|render_|connect_block$|issue_pat|revoke_pat|skill_read$|skill_list$|document_write|document_read|document_patch|document_list|source_add|source_list|knowledge_search|my_credential|admin_|set_[a-z_]*credential|delete_[a-z_]*credential)/;
   const served = new Set();
   // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
   // spread across modules, so a list of its files goes short the moment a door is added.
@@ -426,8 +426,8 @@ check("a tool a block's own skill tells an agent to call is a tool the agent has
         // actually reach for.
         if (["skill_read", "knowledge_add", "document_write", "document_read", "document_patch",
              "document_list", "document_approve", "initiative_close", "source_add", "source_list",
-             "knowledge_search", "initiative_status", "session_whoami", "block_skills",
-             "document_revise", "encode_base64", "knowledge_reindex",
+             "knowledge_search", "initiative_status", "session_whoami",
+             "document_revise", "knowledge_reindex",
              "knowledge_supersede", "document_present", "skill_list", "knowledge_reconcile"].includes(name)) continue;
         if (!allow.includes(`"${name}"`)) {
           bad.push(`${slug}/${skill} tells an agent to call \`${name}()\` and it is not on ${slug}'s tools list in blocks.ts — the skill says take it, the platform never hands it over`);

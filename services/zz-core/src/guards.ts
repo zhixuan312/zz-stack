@@ -426,7 +426,7 @@ async function selectionCheck(chain: Chain, relPath: string, content: string): P
       "built on, never the ones considered and rejected. It is an argument rather than one " +
       "of the flow's `fields` because the platform reads it: the stages after this one may " +
       "call these blocks and nothing else. The prose is for the reasoning; this is the " +
-      "decision. block_skills() names the blocks you can reach."
+      "decision. skill_list() names the blocks you can reach."
     );
   }
   const known = await blockVocabulary();
@@ -436,7 +436,7 @@ async function selectionCheck(chain: Chain, relPath: string, content: string): P
     return (
       `ERROR: ${parts[1]} selects ${unknown.map((u) => `\`${u}\``).join(", ")}, which ` +
       "this platform does not route. `blocks` takes block ids as the gateway knows them — " +
-      "the short name, not the product's title. block_skills() names the ones there are."
+      "the short name, not the product's title. skill_list() names the ones there are."
     );
   }
   if (named.length > MAX_SELECTED_BLOCKS) {

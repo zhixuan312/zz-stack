@@ -292,10 +292,11 @@ export function registerInitiativeActTools(server: McpServer): void {
         "`version` (v1 -> v2), puts `status` back to draft so the gate goes to a human again, " +
         "clears the stale approval, and links the material behind the change; the previously " +
         "approved version stays in _versions/. " +
-        "WHENEVER YOU CAN, capture what caused the change: if a person said something new — a " +
-        "second brain dump, pasted notes, a decision taken elsewhere — pass their words as " +
-        "source_content and they are stored as a source and linked, so v2 explains itself. It " +
-        "is not required; someone may simply edit their own document. " +
+        "EVERY VERSION SAYS WHY IT CHANGED, one way or the other. If a person said something " +
+        "new — a second brain dump, pasted notes, a decision taken elsewhere — pass their " +
+        "words as source_content and they are stored as a source and linked, so v2 explains " +
+        "itself. If you simply edited your own document, name WHAT you edited as self_edit. " +
+        "A revision naming neither is refused, and naming both is refused. " +
         "Never overwrite an approved document with document_write.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/intent.md'"),
@@ -356,6 +357,31 @@ export function registerInitiativeActTools(server: McpServer): void {
           "ERROR: `self_edit` says nothing external caused this version, but you also " +
           "supplied `" + causes.join("`, `") + "`. Send the cause, or send `self_edit`, " +
           "not both.");
+      }
+      // A VERSION THAT NAMES NOTHING IS A CHANGE NOBODY CAN REDO.
+      //
+      // Silence used to be accepted and nudged: the success text said the record could not
+      // tell "there was no cause" from "the cause was not captured", and one initiative
+      // received that sentence four times and changed nothing. A nudge on the way out is
+      // read after the write has already landed, which is the wrong end of the call.
+      //
+      // The gap it left is not tidiness. An approved spec is the thing the next reader
+      // reasons from, and v2 arriving with nothing attached means they cannot tell a
+      // decision taken elsewhere and incorporated from somebody's second thought — the two
+      // carry opposite weight and look identical in the record.
+      //
+      // `self_edit` is why this can be required at all, and it is kept for exactly that:
+      // the cost of the rule is one short declaration, not an invented source for a typo
+      // fix. Both routes are named here because a caller who reaches this refusal has a
+      // legitimate revision and the only question left is which claim to make.
+      if (!selfEdit && !causes.length) {
+        return text(
+          "ERROR: nothing says what caused this version. An approved document does not " +
+          "change with the reason left off the record: the next reader cannot tell a " +
+          "decision taken elsewhere from a second thought. If a person said something " +
+          "that made you change it, pass their words as `source_content`. If you simply " +
+          "edited your own document, name what you edited as `self_edit` — a declaration " +
+          "of WHAT changed, never a justification for changing it. Send one, not both.");
       }
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
@@ -456,17 +482,16 @@ export function registerInitiativeActTools(server: McpServer): void {
         linked.add(capturedSource);
       }
 
-      // Capturing what caused the change is the point, but it is never a
-      // condition: a person may simply edit their own document, and no one
-      // owes the platform a reason. An unexplained version is recorded as
-      // exactly that — links inherited from the previous version explain
-      // THAT version, not this one.
+      // WHETHER THE CAUSE WAS EXTERNAL, which by here is a real two-way question rather
+      // than a three-way one. The refusal above spent the third state: a version with
+      // nothing attached no longer reaches this line, so `explained` false means
+      // `self_edit` was sent and says so, not that nobody wrote anything down.
       //
-      // THAT GUARANTEE IS UNCHANGED BY `self_edit`. Supplying none of the four still
-      // succeeds and always will: `self_edit` is a way to SAY a version had no external
-      // cause, never a requirement to account for one. What it adds is a third state — the
-      // record can now distinguish "nothing caused this" from "nobody wrote down what did",
-      // which it previously could not, because both arrived as the same silence.
+      // Links inherited from the previous version explain THAT version, not this one, so
+      // they are not consulted here — a v1 with three sources does not make v2 explained.
+      //
+      // A reason is still not owed to anybody. What is required is which KIND of change
+      // this was, and `self_edit` answers that in a few words without inventing a source.
       const explained = causes.length > 0;
       const env: Record<string, string> = { ...prevEnv };
       if (stakeholder?.trim()) env.stakeholder = oneLine(stakeholder);
@@ -596,26 +621,18 @@ export function registerInitiativeActTools(server: McpServer): void {
           : "") +
         (capturedSource ? `The input behind it is stored as ${parts[0]}/${capturedSource}.\n` : "") +
         (linked.size ? `Linked sources: ${[...linked].join(", ")}\n` : "") +
-        // THREE STATES, THREE SENTENCES. The old line said "that is allowed — pass their
-        // words as source_content next time", and one initiative received it four times and
-        // changed nothing, because it asked for the one thing a self-edit does not have. A
-        // nudge that cannot be complied with is a nudge that trains the reader to skip it.
-        //
-        // What is said instead is what the RECORD now lacks, which is a fact about the
-        // record rather than an instruction to the caller: silence here is ambiguous, and
-        // there is a way to make it unambiguous that costs one field.
-        (explained ? ""
-          : selfEdit
+        // TWO STATES, TWO SENTENCES — and the third one is gone from here because it is
+        // gone from the tool. This branch used to carry a nudge for the version that named
+        // no cause at all: "pass their words as source_content next time", read after the
+        // write had landed, by a caller who in a third of cases had nothing to pass. One
+        // initiative received it four times and changed nothing. That case is refused on
+        // the way in now, so the only unexplained version reaching this line is one that
+        // declared itself as such, and what it gets back is a confirmation, not a nudge.
+        (selfEdit
           ? `Recorded as a self-edit: ${oneLine(selfEdit)}\n` +
             "Nothing outside the document caused this version, and the record says so — " +
             "which is a different fact from nobody having written the cause down.\n"
-          : "Nothing says what caused this version, and the record cannot now tell " +
-            "\"there was no cause\" from \"the cause was not captured\" — both arrive here " +
-            "as the same silence, and only the second is a gap anybody can close. If a " +
-            "person said something that made you change it, pass their words as " +
-            "`source_content`. If you simply edited your own document, name what you " +
-            "edited as `self_edit`: it is a declaration, not a justification, and it makes " +
-            "this version's silence a deliberate one.\n") +
+          : "") +
         "Nothing downstream may be written until this document is approved again.",
       );
     },

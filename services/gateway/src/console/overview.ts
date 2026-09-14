@@ -10,6 +10,7 @@ import type { Express } from "express";
 
 import { platformDb } from "../db.js";
 import { isSuper } from "../identity.js";
+import { readMetrics } from "./overview-metrics.js";
 import { grainForSpan, handler, mayReadConsole, periodCutoff } from "./shared.js";
 
 export function mountOverview(app: Express): void {
@@ -64,6 +65,10 @@ export function mountOverview(app: Express): void {
     // separate `now()`s.
     const db = platformDb();
     const since = periodCutoff(req);
+    // THE WINDOW BEFORE THIS ONE, of equal length, so every tile can say what it was
+    // rather than only what it is. Null for all time — there is no previous all time, and
+    // a tile with nothing to compare against draws no arrow at all.
+    const prevSince = since ? new Date(since.getTime() - (Date.now() - since.getTime())) : null;
     // MEASURED BEFORE THE REST, because it decides the shape of one of them. One indexed
     // min/max over the same rows the trend will group, so the grain is chosen from the
     // series that is about to be drawn rather than from the window somebody asked for —
@@ -206,7 +211,11 @@ export function mountOverview(app: Express): void {
         [scope.slug, since]),
     ]);
     const c = counts.rows[0], t = totals.rows[0];
+    // The four the page leads with. Read after the census rather than beside it: they
+    // share no statement with it, and a failure in one should name itself.
+    const metrics = await readMetrics(db, scope, since, prevSince);
     res.json({
+      metrics,
       counts: {
         teams: +c.teams, activeTeams: +c.active, people: +c.people, superadmins: +c.supers,
         documents: +c.docs, initiatives: +c.initiatives,

@@ -5,7 +5,7 @@
 // `GATE PASSED — 296 checks` with the conflation restored. The work that had a check came back
 // because a check demanded it; this came back only because someone happened to grep for it.
 // A property with no check is a property that survives exactly as long as nobody touches it.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const fail = [];
 const f = "services/gateway/src/console/skills.ts";
@@ -41,6 +41,44 @@ if (!helper) {
 // id — so a check that rewrote every coercion the same way would break a deliberate difference.
 if (!/turns:\s*\+r\.turns\s*>\s*0/.test(src)) {
   fail.push("turns lost its `> 0` form — there, 0 means unknown and the file says why");
+}
+
+// ── THE SAME PROPERTY, ON THE OVERVIEW ─────────────────────────────────────────────────
+// The status row reads `zz.run.bytes_total`, which migration 051 made nullable for exactly
+// the reason above: a run nobody measured is not a run that moved nothing. This file pinned
+// the property on skills.ts alone, so the overview reintroduced the conflation one layer up
+// with `Number(v ?? 0)` and nothing went red — the second time this gate has watched that
+// happen. A check that names one file protects one file.
+//
+// GUARDED, AND THE GUARD IS THE POINT. `readFileSync` on a path that is not there throws
+// ENOENT, and a check that throws does not fail — it takes the whole gate down before any
+// check reports, so a clone without this file gets no verdict instead of a red one. That is
+// the runtime twin of the unresolvable-import hole the tracked-check guard closed. The rule
+// arms itself when the file arrives, which also means this check and the source it reads can
+// be committed in either order without one breaking the other.
+const o = "services/gateway/src/console/overview-metrics.ts";
+if (existsSync(o)) {
+  const osrc = readFileSync(o, "utf8");
+
+  // The nullable column is tested for null, not coerced.
+  if (!/\.bytes\s*!==\s*null/.test(osrc)) {
+    fail.push(`${o} does not test run bytes for null — \`Number(null ?? 0)\` is 0, so a run ` +
+              `nobody measured renders as a measured zero and pulls the median down with it`);
+  }
+  // And the runs it could not measure are reported rather than silently dropped: a median over
+  // a set the reader cannot size is its own quiet lie.
+  if (!/unmeasured/.test(osrc)) {
+    fail.push(`${o} drops unmeasured runs without counting them — the tile cannot say how many ` +
+              `of its runs it could not see`);
+  }
+  // The count helper must stay keyed to counts. `?? 0` is right for an absent ROW and wrong for
+  // a null AGGREGATE, and one helper serving both is how this came back the first time.
+  if (!/const count\s*=/.test(osrc)) {
+    fail.push(`${o} has no count() helper — see the note there for why it is not called num()`);
+  }
+  if (/\bcount\(\s*r\.bytes/.test(osrc)) {
+    fail.push(`${o} points count() at a nullable aggregate — that helper is for count(*) only`);
+  }
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

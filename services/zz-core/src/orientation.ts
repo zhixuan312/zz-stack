@@ -47,6 +47,7 @@ const CORE_INSTRUCTIONS =
   "gates, the frontmatter every document needs, and how the store is laid out. Guessing " +
   "those costs a rewrite; reading them costs one call.\n\n" +
   "The nouns, one line each:\n" +
+  "  bug_*         report something broken, read what is open, close one with what was decided\n" +
   "  document_*    write, revise, read, present and approve a flow's documents\n" +
   "  initiative_*  open a piece of work, ask where it stands, close it with an outcome\n" +
   "  knowledge_*   search what earlier initiatives settled, and add to it — search first\n" +

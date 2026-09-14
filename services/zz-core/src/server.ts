@@ -27,6 +27,7 @@ import { buildEvalServer } from "./eval-door.js";
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
+import { registerBugTools } from "./tools/bugs.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
 import { registerInitiativeStatusTools } from "./tools/initiative-status.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
@@ -112,6 +113,9 @@ function buildServer(): McpServer {
   // they are served by eval-door.ts, on the door that flow declares. This door is what every
   // account on the platform carries, so what is registered here is what everybody gets.
   registerSkillTools(server);
+  // The version is handed in rather than read inside: the tool records which platform somebody
+  // was talking to, and the one place that knows is the line above that built the server.
+  registerBugTools(server, serviceVersion(import.meta.url));
   registerArtifactTools(server);
   registerKnowledgeTools(server);
   registerInitiativeStatusTools(server);

@@ -29,6 +29,7 @@
  * scrolling a file where §5 alone ran for 9,550 lines.
  */
 import "./gate/checks/build.mjs";
+import "./gate/checks/image.mjs";
 
 import "./gate/checks/catalog-manifest.mjs";
 import "./gate/checks/plugin-declaration.mjs";

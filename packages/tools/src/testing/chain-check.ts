@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { manifestAt } from "@zz/catalog";
 import { Mcp } from "@zz/mcp-client";
 
+import { walkBugs } from "./chain-bugs.js";
 import { die, envRequired, parseArgs } from "../lib/cli.js";
 
 const GW = envRequired("ZZ_GATEWAY", "the gateway to walk the chain against").replace(/\/+$/, "");
@@ -593,6 +594,8 @@ async function main(): Promise<number> {
     record(false, "knowledge_supersede marks a node superseded by one that exists",
       `could not read an id back from knowledge_add: ${added}`);
   }
+
+  await walkBugs({ call, check, record, INIT });
 
   // knowledge_search refuses the identical way session_whoami's team lookup and knowledge_add's
   // own team-scope guard do — no platform database, or no team — and that is ordinary on a

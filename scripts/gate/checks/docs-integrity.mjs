@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { between, gateCheckNames, gateOwnSource, root, sourceFiles, trackedFiles } from "../read.mjs";
 import { check, note } from "../run.mjs";
-import { flows, ourDocs } from "../facts.mjs";
+import { flows, ourDocs, toolEntryPoints } from "../facts.mjs";
 
 check("the README's map names every package, flow and script, and no others", () => {
   // The release command makes this map a release obligation — "a flow added or removed, a
@@ -292,10 +292,11 @@ check("the README describes the tree it ships with", () => {
     if (!onDisk.includes(m[1])) bad.push(`the README names skills/${m[1]}, which does not exist`);
   }
   // Every engine and ops tool, likewise — a tool nobody can find is one nobody runs.
+  // The ones somebody RUNS. A module an engine imports is not a tool anybody looks for by name,
+  // and naming it in the map would send a reader looking for a command that does not exist.
   for (const [dir, what] of [["packages/tools/src/testing", "engine"], ["packages/tools/src/ops", "ops tool"]]) {
-    for (const f of ls(dir)) {
-      if (!f.endsWith(".ts")) continue;
-      const name = f.replace(/\.ts$/, "");
+    for (const rel of toolEntryPoints(dir)) {
+      const name = rel.split("/").pop().replace(/\.ts$/, "");
       if (!readme.includes(name)) bad.push(`${what} ${name} ships and the README never names it`);
     }
   }

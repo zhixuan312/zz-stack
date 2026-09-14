@@ -28,10 +28,11 @@ import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { initiativeNameFor, recordOpen } from "../initiative-record.js";
 import { logActivity } from "../persist.js";
 import { pluginCases, parseCaseRun, worthRecording } from "./plugin-cases.js";
 import { pluginTraces } from "./plugin-profile.js";
-import { db } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { userRoot } from "../paths.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -266,9 +267,19 @@ export function registerPluginEvalTools(server: McpServer): void {
         plugin: z.string(),
         version: z.string(),
         result: z.string().describe("the command's --json output, verbatim"),
+        // RUNNING A SUITE IS A PIECE OF WORK, so it belongs to an initiative like any other.
+        //
+        // Omit it and one is opened, named for what was measured, on the zz-plugin-eval flow —
+        // which is the flow this run is the first evidence for. Before this, four suites could
+        // be run and $15.76 spent while the platform's record of "what is this team doing" said
+        // nothing had happened, and `findings.md` had nowhere to be written to because no
+        // initiative existed to write it into.
+        initiative: z.string().optional().describe(
+          "The initiative this run belongs to. Omit to open one for it — which is the ordinary " +
+          "case; pass one to record a second suite against a round already under way."),
       },
     },
-    async ({ plugin, version, result }) => {
+    async ({ plugin, version, result, initiative }) => {
       const pool = db();
       if (!pool) return noDb();
       let parsed: unknown;
@@ -289,10 +300,35 @@ export function registerPluginEvalTools(server: McpServer): void {
       const pv = rows[0];
       if (!pv) return text(`ERROR: no released version ${version} of "${plugin}" is recorded`);
       const who = parseCaller(requestHeaders()).email;
+
+      // THE RUN BECOMES A PIECE OF WORK, not just a row. An initiative on the zz-plugin-eval
+      // flow is what the stages after this one write into — `rulers.md` from define, and
+      // `findings.md` from report — so recording a suite outside one left the flow's own first
+      // evidence somewhere its later stages could not reach.
+      //
+      // OPENED ONLY WHEN NONE WAS GIVEN, and named for what was measured rather than for the
+      // clock alone, so two rounds on the same plugin and version are the same initiative asked
+      // for twice rather than two folders nobody can tell apart. `recordOpen` is the same act
+      // `initiative_open` performs; this does not reimplement it.
+      const team = await teamFor(who);
+      const root = await userRoot();
+      let round = initiative?.trim() || "";
+      let opened = false;
+      if (!round) {
+        round = initiativeNameFor(`eval-${plugin}-${version}`.replace(/[^a-z0-9-]+/gi, "-").toLowerCase());
+        if (!existsSync(join(root, round))) {
+          recordOpen(root, round, "zz-plugin-eval", who);
+          opened = true;
+          logActivity(root, `${round}/_open.json`,
+            { user: who, action: "initiative_open", initiative: round, flow: "zz-plugin-eval" });
+        }
+      }
+
       await pool.query(
-        `insert into zz.plugin_case_run (plugin_version_id, cases_digest, recorded_by, result)
-         values ($1::uuid, $2, $3, $4::jsonb)`,
-        [pv.id, pv.cases_digest, who, JSON.stringify(parsed)]);
+        `insert into zz.plugin_case_run (plugin_version_id, cases_digest, recorded_by, result,
+                                         team_slug, initiative)
+         values ($1::uuid, $2, $3, $4::jsonb, $5, $6)`,
+        [pv.id, pv.cases_digest, who, JSON.stringify(parsed), team, round]);
       // Recorded, because this is the one tool here that changes anything. WHO ran a suite and
       // WHEN is provenance a later reader needs: a delta is only as good as the moment it was
       // measured, and the run cost somebody real money on their own credential.
@@ -325,6 +361,17 @@ export function registerPluginEvalTools(server: McpServer): void {
         recorded: read.count, mean_delta: read.mean_delta,
         cost_usd: read.cost_usd, judge_cost_usd: read.judge_cost_usd,
         errored_runs: read.errored_runs, partial: read.partial, plugin, version,
+        // WHICH INITIATIVE THIS IS NOW PART OF, and whether asking for it created it. A caller
+        // that opened a round without meaning to should be told at the moment it happened,
+        // rather than finding an initiative in the console later that nobody remembers opening.
+        initiative: round,
+        initiative_opened: opened,
+        next_action: {
+          action: "judge_the_round",
+          why: "the suite is recorded; a delta is not a verdict until it is scored against a ruler somebody agreed",
+          then: `ruler_read(plugin: "${plugin}") to see what it would be judged against, then ` +
+                `ruler_record and round_judge against initiative "${round}"`,
+        },
         ...(damage.length ? {
           warning: `${damage.join("; ")}. Whatever was recorded is a measurement of a suite ` +
                    "that did not fully run; re-run it before reading a delta off it.",

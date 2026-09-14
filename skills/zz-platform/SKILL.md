@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.35
+version: 3.36
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -528,6 +528,7 @@ reading later can see one caused the other.
   | sources | `/core/mcp` | `source_add` `source_list` |
   | knowledge | `/core/mcp` | `knowledge_search` `knowledge_add` `knowledge_supersede` |
   | skills | `/core/mcp` | `skill_list` `skill_read` |
+  | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `case_record` `finding_record` |
   | rebuilding a team's index | `/manage/mcp` | `knowledge_reindex` |

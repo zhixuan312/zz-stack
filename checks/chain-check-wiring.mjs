@@ -26,7 +26,26 @@ const fail = [];
 // other tool zz-core registers is on the core door wherever its file happens to sit.
 const SRC = "services/zz-core/src";
 const EVAL_DOOR = `${SRC}/eval-door.ts`;
-const chain = readFileSync("packages/tools/src/testing/chain-check.ts", "utf8");
+/** chain-check AND WHAT IT WALKS THROUGH.
+ *
+ * The probe is one walk written across more than one file: the bug tracker moved into
+ * `chain-bugs.ts` because it is a different subject from the document chain, and reading only
+ * the entry point would have reported three tools as unexercised the moment they moved. What
+ * this rule is about is whether a live door gets called, not which file the call is written in.
+ *
+ * Followed by IMPORT rather than by reading the directory: a file sitting beside chain-check
+ * that nothing imports is not part of the walk, and counting it would let a tool look exercised
+ * by a module that never runs. */
+const CHAIN_DIR = "packages/tools/src/testing";
+const chain = (() => {
+  const entry = join(CHAIN_DIR, "chain-check.ts");
+  let text = readFileSync(entry, "utf8");
+  for (const m of text.matchAll(/^import\s[^"']*["']\.\/([\w.-]+)\.js["']/gm)) {
+    const part = join(CHAIN_DIR, `${m[1]}.ts`);
+    if (existsSync(part)) text += `\n${readFileSync(part, "utf8")}`;
+  }
+  return text;
+})();
 
 /** Every .ts under zz-core, so a registration in a module no door imports directly still
  *  counts — `initiative_open` is registered from `tools/initiative-open.ts`, which server.ts

@@ -426,3 +426,31 @@ export function ourDocs() {
  * Writing this pinned a rule stronger than the one I expected: `approved_by` and `approved_at`
  * are ATOMIC on a gated document. A signer with no date is refused — half a signature is the
  * shape that reads as signed and cannot be dated. */
+
+/** THE ENTRY POINTS UNDER packages/tools, and the parts they are built from.
+ *
+ * Everything in `testing/` and `ops/` used to be treated as a runnable tool: it must have a
+ * `main()` returning a status, and the README must name it. Both rules are right ABOUT AN
+ * ENGINE, and neither is true of a module an engine imports — a part has no exit status to get
+ * wrong and no operator looking for it by name.
+ *
+ * chain-check is the case that made this matter. It walks the document chain and, since the bug
+ * tracker arrived, a tracker too; those are two subjects, the file passed 700 lines holding
+ * both, and splitting it by subject produced `chain-bugs.ts` — which is not a tool anybody runs.
+ *
+ * AN ENGINE IS WHAT NOTHING IMPORTS. Asked that way round rather than by looking for `main()`,
+ * because "has a main()" is the very property one of these rules exists to enforce: a file that
+ * lost its main() would stop being counted as an engine and the rule would go quiet exactly
+ * when it should fire.
+ */
+export function toolEntryPoints(dir) {
+  const all = sourceFiles([dir], [".ts"]);
+  const imported = new Set();
+  for (const rel of all) {
+    const src = readFileSync(join(root, rel), "utf8");
+    for (const m of src.matchAll(/^import\s[^"']*["']\.\/([\w.-]+)\.js["']/gm)) {
+      imported.add(`${dir}/${m[1]}.ts`);
+    }
+  }
+  return all.filter((f) => !imported.has(f));
+}

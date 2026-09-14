@@ -15,6 +15,16 @@
  * `document_approve`. Measured against untouched code the plan's form reported 5 failures of
  * 6; the two that mattered most were the two a sentence could fix.
  *
+ * AND THE SAME SHAPE HID TWO REAL BUGS FROM THE SAME GREP. The contract's own sentence —
+ * "a freeform initiative accepts every document operation, gate and close that a governed one
+ * does" — was FALSE when this task started. `document_approve` and `document_revise` tested
+ * `!chain.docs.has(...)` against EMPTY_CHAIN's empty Set and refused every act on a freeform
+ * initiative; `initiative_close` refused every freeform close because `closingDoc` was `""`;
+ * `snapshotOnApproval` filed no frozen copy and `ledgerOnClose` appended no row. A grep for
+ * that sentence would have matched the PROMISE — in the plan, and in the comments this task
+ * necessarily writes — while the code did the exact opposite of it. That is the argument for
+ * driving the code rather than reading it, in its most concrete form available.
+ *
  * So this one RUNS the code, the way `checks/document-reads.mjs` and `checks/attest-shown.mjs`
  * do:
  *   - `initiativeState`, exported from initiative-status.ts and taking `root` explicitly, is
@@ -39,7 +49,7 @@
  *
  * Run: node checks/initiative-open.mjs   (also run by scripts/gate.mjs)
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -62,6 +72,20 @@ const { isoToday } = await load("services/zz-core/dist/write-guards.js");
 
 const fail = [];
 const is = (cond, why) => { if (!cond) fail.push(why); };
+
+/** Every path this check reads goes through here.
+ *
+ * A SCAN THAT GOES BLIND MUST NOT READ AS A SCAN THAT FOUND NOTHING WRONG. Three checks in
+ * this initiative have had unreachable failure paths, and the shape is always the same: a
+ * file moves or a directory is renamed, the read yields nothing, and every assertion over it
+ * passes on the empty string. Recorded FIRST, because a missing path invalidates everything
+ * below it rather than adding one more line to a list. Copied from checks/core-surface-19.mjs,
+ * which arrived at it the same way. */
+const blind = [];
+const readSrc = (p) => {
+  try { return readFileSync(p, "utf8"); }
+  catch { blind.push(p); return ""; }
+};
 
 // ── 1. The tool is on the core door, and its schema says what the contract says ───────────
 //
@@ -303,6 +327,25 @@ is((await chainFor(root, `${LEGACY}/other.md`, null)).name === "sdlc-flow",
    "an initiative with NO open record no longer resolves its flow from its own documents — " +
    "every initiative written before the record existed just became ungoverned");
 
+// 4d. THE DECLARATION SURVIVES A LOST LOG LINE.
+//
+// `logActivity` swallows every failure by design — persist.ts:135, "telemetry must never
+// break the operation it describes" — and an append that fails creates no file at all
+// (verified: an unwritable directory produces no throw and no log). So the flow declaration
+// cannot live only in the activity log: chainFor returns EMPTY_CHAIN for a record that says
+// freeform, and a lost line would silently convert an initiative somebody governed into one
+// governed by nothing, permanently, with nothing anywhere saying so — a failure "in the
+// direction that looks like success", which is the phrase chain.ts uses for exactly this.
+//
+// Driven by deleting the log and re-asking. The event is still logged beside the record,
+// because the open IS an event; what this asserts is that nothing READS the declaration from
+// there.
+rmSync(join(root, GOVERNED_NAME, "activity.jsonl"), { force: true });
+is((await chainFor(root, `${GOVERNED_NAME}/x.md`, null)).name === "sdlc-flow",
+   "with the activity log deleted the flow can no longer be resolved — the declaration is " +
+   "being read out of best-effort telemetry, so an append that silently failed leaves an " +
+   "initiative somebody governed reporting as freeform for the rest of its life");
+
 // ── 5. The slug is what is taken ─────────────────────────────────────────────────────────
 is(rec.takenRefusal(root, "hand-assembled") !== null,
    "a slug an existing initiative already uses is accepted — two folders with the same slug " +
@@ -334,7 +377,7 @@ is(rec.unopenedRefusal(root, "README.md") === null,
 // Neither can be run: `document_write` resolves through `safePath`, which resolves through
 // `userRoot`, which is rooted at the hard-coded `/artifacts`. Comments are stripped first, so
 // neither is satisfiable by an explanation of the change.
-const stripped = (p) => readFileSync(p, "utf8")
+const stripped = (p) => readSrc(p)
   .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n")
   .replace(/\/\*[\s\S]*?\*\//g, "");
 const arts = stripped("services/zz-core/src/tools/artifacts.ts");
@@ -373,12 +416,21 @@ is(arttools.get("document_write")?.inputSchema?.content !== undefined,
 
 // NO ADOPT-A-FLOW TOOL, per FR-30. Asserted over every source file rather than over the
 // tools directory: a registration moved one directory sideways is still a registration.
-const walk = (d) => readdirSync(d).flatMap((f) => {
-  const p = join(d, f);
-  return statSync(p).isDirectory() ? (f === "dist" || f === "node_modules" ? [] : walk(p)) : [p];
-});
-for (const p of walk("services/zz-core/src")) {
-  if (/registerTool\(\s*\n?\s*"initiative_adopt"/.test(readFileSync(p, "utf8"))) {
+const walk = (d) => {
+  let entries;
+  try { entries = readdirSync(d); } catch { blind.push(d); return []; }
+  return entries.flatMap((f) => {
+    const p = join(d, f);
+    return statSync(p).isDirectory() ? (f === "dist" || f === "node_modules" ? [] : walk(p)) : [p];
+  });
+};
+const swept = walk("services/zz-core/src");
+// The sweep's own control: a walk that returned nothing proves nothing about what is absent.
+is(swept.length > 20,
+   `the adopt-a-flow sweep walked ${swept.length} file(s) under services/zz-core/src — it has ` +
+   "gone blind, and an absence asserted over nothing is not an absence");
+for (const p of swept) {
+  if (/registerTool\(\s*\n?\s*"initiative_adopt"/.test(readSrc(p))) {
     fail.push(`an adopt-a-flow tool is registered in ${p}; FR-30 forbids one — retrofitting a ` +
               "manifest onto documents written without it is a migration dressed as a verb");
   }
@@ -450,5 +502,13 @@ is(/chain\.closingDoc && parts\[1\] !== chain\.closingDoc/.test(persist),
    "ledgerOnClose still requires a DECLARED closing document — a freeform close appends no " +
    "ledger row, so it is invisible to every total built on the ledger");
 
+// FIRST, ahead of everything else: if a path could not be read, every assertion over it
+// passed on the empty string and this run measured less than it appears to have measured.
+if (blind.length) {
+  console.error(
+    `could not read ${blind.join(", ")} — this check scans it, so every assertion about it ` +
+    "passed on nothing. Fix the path before reading anything below as a pass.");
+  process.exit(1);
+}
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
 console.log("initiative_open: ok");

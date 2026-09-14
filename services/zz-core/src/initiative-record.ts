@@ -27,14 +27,15 @@ import { isoToday } from "./write-guards.js";
 
 /** The declaration, beside the documents rather than among them.
  *
- * Not exported: nothing outside this file names the record, which is what keeps the two
- * questions below the only way to ask about it.
+ * Exported so `initiative_open` can log the event against this path and land the line in the
+ * initiative's OWN activity log rather than the team-wide one — logActivity places a line by
+ * the path it is given.
  *
  * A leading underscore, because every listing on this platform filters those out —
  * `initiative_status`, `chainFor`'s oldest-document walk and `document_list` all skip
  * `_`-prefixed entries. A record listed as a document would be reported as one with no
  * status, no gate and no place in any chain. */
-const OPEN_RECORD = "_open.json";
+export const OPEN_RECORD = "_open.json";
 
 interface OpenRecord {
   initiative: string;

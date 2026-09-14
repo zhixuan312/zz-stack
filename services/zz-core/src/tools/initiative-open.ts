@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { chainFor } from "../chain.js";
 import { slugRefusal } from "../document-rules.js";
-import { initiativeNameFor, recordOpen, takenRefusal } from "../initiative-record.js";
+import { initiativeNameFor, OPEN_RECORD, recordOpen, takenRefusal } from "../initiative-record.js";
 import { userRoot } from "../paths.js";
 import { logActivity } from "../persist.js";
 import { teamFor } from "../platform-db.js";
@@ -100,7 +100,20 @@ export function registerInitiativeOpenTool(server: McpServer): void {
 
       const name = initiativeNameFor(slug);
       const record = recordOpen(root, name, flow ?? null, who);
-      logActivity(root, null,
+      // INTO THE INITIATIVE'S OWN LOG, which is why this is called after recordOpen: the
+      // folder has to exist for logActivity to place the line there rather than in the
+      // team-wide `_activity.jsonl`, and `relPath: null` puts it in the team-wide one.
+      //
+      // THE LOG IS NOT WHERE THE DECLARATION LIVES, and that is deliberate rather than
+      // duplication. logActivity swallows every failure by design — "telemetry must never
+      // break the operation it describes" — so a line that fails to append is invisible. The
+      // flow declaration is not telemetry: chainFor returns EMPTY_CHAIN for a record saying
+      // freeform, so a lost line would turn an initiative somebody governed into one governed
+      // by nothing, permanently, with nothing anywhere saying so. That is the failure shape
+      // chain.ts already names — one that "fails in the direction that looks like success".
+      // The event is recorded here because it IS an event; the declaration is a file because
+      // it has to be readable back with certainty.
+      logActivity(root, `${name}/${OPEN_RECORD}`,
         { user: who, action: "initiative_open", initiative: name, flow: record.flow ?? "" });
 
       // ONE SOURCE FOR "WHAT COMES NEXT". The same `initiativeState` that `initiative_status`

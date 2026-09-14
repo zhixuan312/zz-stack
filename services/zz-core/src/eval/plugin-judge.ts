@@ -1,5 +1,5 @@
 /**
- * A PLUGIN AS THE SUBJECT OF THE JUDGE. Four tools: what a ruler is written from, the record
+ * A PLUGIN AS THE SUBJECT OF THE JUDGE: what a ruler is written from, the record
  * that one was approved, the marking itself, and reading the marks back.
  *
  * WHY THESE ARE NOT IN plugin-eval.ts. That file's whole rule is that nothing in it returns a

@@ -1,5 +1,7 @@
-// The /manage door: 31 tools, cut by role into 16 / +4 / +11, three duplicates gone,
-// one exception kept.
+// The /manage door: every tool it serves, cut by role, with the duplicates gone and one
+// exception kept. The counts are printed by the check below, where they are measured — this
+// line carried them as literals, on the file whose whole argument is that a number belongs
+// where it is derived.
 //
 // WHAT THE PLAN'S DRAFT OF THIS FILE COULD NOT SEE, measured against untouched code before a
 // line was changed. Three holes, all of which let a wrong implementation pass:

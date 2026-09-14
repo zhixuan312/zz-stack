@@ -1,4 +1,6 @@
-// Seven skills move, their commands follow, and none is left behind or duplicated.
+// Skills move to the plugin that owns them, their commands follow, and none is left behind
+// or duplicated. The count that opened this line said seven; `gone` below is the list, and a
+// list a reader can count is worth more than a number they have to trust.
 //
 // THE PLAN'S VERSION OF THIS CHECK COULD NOT DISCRIMINATE, and the reason is worth writing
 // down because it is the same reason twice. It asserted the skills arriving at the

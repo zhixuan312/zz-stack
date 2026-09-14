@@ -1,5 +1,5 @@
 /**
- * THE FACTS ABOUT ONE PLUGIN. Four tools, and not one of them returns a judgement.
+ * THE FACTS ABOUT ONE PLUGIN, and not one of these tools returns a judgement.
  *
  * A plugin is what a person installs — a flow's skills plus the MCP servers those skills call.
  * The platform used to evaluate the two halves separately and could therefore see neither of the

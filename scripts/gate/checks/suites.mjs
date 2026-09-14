@@ -363,7 +363,7 @@ check("the three verification stages leave a document, and keep their independen
 check("the evaluation door speaks four nouns, three names are deliberately untouched, and the graders and the chain check follow",
       runsCheck("eval-names.mjs"));
 
-check("seven skills ship from the plugin that owns them, and their commands follow",
+check("every skill ships from the plugin that owns it, and its commands follow with it",
       runsCheck("skill-homes.mjs"));
 
 check("the two misnamed core skills are renamed, every caller moved, and an old step still resolves",

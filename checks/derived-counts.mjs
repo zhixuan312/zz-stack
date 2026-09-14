@@ -65,13 +65,28 @@
 //
 // ── WHERE IT IS KNOWN TO BE BLIND ────────────────────────────────────────────────────────
 //
-// A count written NOUN-FIRST — "seven skills ship from the plugin that owns them" — matches
-// neither arm. That form is live at `scripts/gate/checks/suites.mjs`, in a check's own name,
-// and that file is off limits to this task, so an arm for it would hand back a red gate rather
-// than a fixed one. Named here instead of chased.
+// Two shapes were named here as blind and are not any more: a count written NOUN-FIRST ("seven
+// skills ship from the plugin that owns them", which was live in a check's own name) and a bare
+// count in a module header with no determiner and no verb ("Four tools, and not one of them
+// returns a judgement"). Both are the same shape — the count is the sentence's SUBJECT — and
+// the OPENS arm below reaches both. They were left alone because the files holding them were
+// off limits to the task that wrote this check, which is a reason about permissions and not
+// about the rule; it is recorded because a rule shaped by what its author was allowed to edit
+// should say so out loud.
 //
-// A bare count in a module header with no determiner and no verb — "Four tools, and not one of
-// them returns a judgement" — also matches neither. Same shape, same reason, not chased.
+// Closing them found a third site nothing had been looking at: `checks/manage-surface.mjs`
+// opened with "The /manage door: 31 tools, cut by role into 16 / +4 / +11" — three hand-kept
+// numbers in the header of the file that derives them. THAT ONE IS STILL OUT OF REACH and was
+// fixed by hand: the count follows a colon, and admitting a colon as a sentence boundary is what
+// made this rule report a fenced ruler definition. Found by reading, not by the rule — which is
+// the honest description of how it was found, and the reason this paragraph exists.
+//
+// STILL BLIND, and named for the same reason: a count that is neither bound to a whole, nor the
+// object of a present-tense claim, nor the subject of its own sentence — "the ten `plugin_*`
+// tools" puts a word between the number and the noun, and no arm here looks across it. Three of
+// those were found by hand while this check was being written. Reaching them means matching a
+// number near a noun with anything in between, which is the draft rule the controls above exist
+// to refuse.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,13 +113,58 @@ const WHOLE = "(the|these|those|all|every|its|our|your|[a-z]+['’]s)";
 const CLAIM = "(sees?|serves?|registers?|ships?|carries|carry|has|have|holds?|offers?|" +
               "lists?|exposes?|mounts?)";
 
+// THE COUNT AS THE SENTENCE'S SUBJECT, which is the noun-first form and the bare-header form
+// at once — the two shapes this check was written declaring itself blind to, because the sites
+// were in files that task could not edit. "Seven skills move, their commands follow" and "Four
+// tools, and not one of them returns a judgement" carry no determiner and no verb the arms
+// below look for, and both go stale the moment an eighth skill moves or a fifth tool is
+// registered. What they have in common is position: the sentence OPENS by counting the
+// surface, so the number is what the sentence is about.
+//
+// PAST TENSE IS EXCLUDED EXPLICITLY HERE, and only here, because this is the one arm with no
+// verb list of its own. The other three get "true now" from CLAIM; without the same discipline
+// this one reads a repository that documents its own history as full of defects. Measured, not
+// supposed: on the first run it flagged six lines and four were historical — "four skills that
+// moved in task I-25", "Five tools each carried this", "Four tool descriptions went on
+// offering", and a line quoting an error message that had been wrong. A rule that makes honest
+// history illegal is worse than the staleness it prevents.
+//
+// The window is the next few words because that is where the verb is in this shape: "Seven
+// skills move, their commands follow" puts it immediately after the noun, "Four tool
+// descriptions went on offering" puts it two words later, and `"29 tools" is the number that
+// was true before this` puts it four later. Five is what this tree needs; it is a measured
+// number and not a principled one, and widening it trades a false positive for the chance of
+// masking a real count that happens to sit near a past-tense word. `\w+ed` carries most of it; `went`
+// and the auxiliaries are the irregulars this tree actually contains.
+//
+// A SENTENCE MAY ALSO BEGIN MID-LINE, after a full stop. Both of the module headers this arm
+// was added for put a title first — "THE FACTS ABOUT ONE PLUGIN. Four tools, and not one of
+// them returns a judgement" — so anchoring at the start of the line alone reached neither of
+// the two sites the check had named as blind. A COLON IS DELIBERATELY NOT A BOUNDARY: it
+// introduces a clause or a field rather than ending a sentence, and admitting it made the rule
+// report `why: six tools this plugin's own skills tell an agent to call` — a line inside a
+// fenced ruler definition, illustrating a threshold rather than describing the surface.
+//
+// THE SEPARATOR IS NON-WORD, NOT WHITESPACE. Written `\s+`, the window could not step over a
+// comma, so `31 tools, expected 31` — a line quoting an error message that had been wrong —
+// was still reported: the past-tense verb was right there and one punctuation mark out of reach.
+const PAST = "(?:\\w+ed|was|were|had|went|grew|took|made|ran|came|got|left|lost|wrote|kept|held|gave|became)";
+//
+// A QUOTE OPENS A SENTENCE TOO. The first site this arm was written for is a check's own NAME —
+// `check("seven skills ship from the plugin that owns them", …)` — which the gate prints on
+// every run, so it is shipped prose by any reading. Anchored to the start of a LINE alone, the
+// arm could not see it: the line opens with `check("`. The count still has to be the first
+// thing in the sentence; the sentence is simply allowed to begin at a quotation mark.
+const OPENS = new RegExp(
+  `(?:^|["'\`]|\\.\\s+)\\W*${WORDS}\\s+${NEAR}\\b(?!(?:\\W+[\\w'’-]+){0,5}\\W+${PAST}\\b)`, "i");
+
 const BOUND = new RegExp(`\\b${WHOLE}\\s+${WORDS}\\s+${NEAR}\\b`, "i");
 const CLAIMED = new RegExp(`\\b${CLAIM}\\s+${WORDS}\\s+${NEAR}\\b`, "i");
 const PREDICATE = new RegExp(`\\b${NEAR}\\s+(are|is)\\s+(these\\s+)?${WORDS}\\b`, "i");
 
 /** Does this line assert a count of the platform's own surface? */
 const assertsACount = (line) =>
-  BOUND.test(line) || CLAIMED.test(line) || PREDICATE.test(line);
+  BOUND.test(line) || CLAIMED.test(line) || PREDICATE.test(line) || OPENS.test(line);
 
 // ── the controls, and they run BEFORE the sweep ──────────────────────────────────────────
 //
@@ -159,6 +219,42 @@ if (!floorless.test(ENUMERATING)) {
 if (assertsACount(ENUMERATING)) {
   fail.push(`the floor has gone: ${JSON.stringify(ENUMERATING)} is a count the sentence names ` +
             "its own members for, and this rule is not about those");
+}
+
+// THE SUBJECT ARM HAS CONTROLS OF ITS OWN, in both directions, because it is the only arm
+// whose tense test is written by hand rather than inherited from CLAIM.
+//
+// It must FIRE on the two spellings it was added for — one a comment header, one a check's own
+// name, which is why the quote case exists — and stay QUIET on the four historical lines that
+// the first draft of it reported. Those four are real lines from this tree, kept verbatim: a
+// control written to be easy is a control that proves the easy case.
+for (const subject of [
+  "// Seven skills move, their commands follow, and none is left behind or duplicated.",
+  'check("seven skills ship from the plugin that owns them, and their commands follow",',
+  " * THE FACTS ABOUT ONE PLUGIN. Four tools, and not one of them returns a judgement.",
+  " * A PLUGIN AS THE SUBJECT OF THE JUDGE. Four tools: what a ruler is written from, the record",
+]) {
+  if (!assertsACount(subject)) {
+    fail.push(`the subject arm no longer catches a count that opens its sentence: ${JSON.stringify(subject)}`);
+  }
+}
+for (const history of [
+  "// four skills that moved in task I-25, and its comment records it.",
+  " * Five tools each carried this: collect-turns, watch-results, evolve-report, flow-compare and",
+  "// Four tool descriptions went on offering `23-08-2026-sample-intake` as the example. That is",
+  '// 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.',
+  '// THE DOORS ARE IN THE LINE, because "29 tools" is the number that was true before this',
+]) {
+  // Capable of firing, or the quiet half proves nothing: each must match the same arm with its
+  // tense test removed, built from the same strings so it cannot drift from them.
+  const tenseless = new RegExp(`(?:^|["'\`]|\\.\\s+)\\W*${WORDS}\\s+${NEAR}\\b`, "i");
+  if (!tenseless.test(history)) {
+    fail.push(`a tense control is vacuous — it does not match the subject arm with the tense ` +
+              `test removed, so it could not tell you the test had gone: ${JSON.stringify(history)}`);
+  }
+  if (assertsACount(history)) {
+    fail.push(`the rule flags a past-tense line: ${JSON.stringify(history)}`);
+  }
 }
 
 // THE POSITIVE CONTROLS ARE THE TWO DEFECTS THIS TASK DELETED, in the spelling they shipped in.

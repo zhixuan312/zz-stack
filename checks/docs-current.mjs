@@ -6,13 +6,19 @@ import { join } from "node:path";
 import { trackedFiles } from "../scripts/gate/read.mjs";
 const fail = [];
 
-const arch = readFileSync("ARCHITECTURE.md", "utf8");
-const standalone = existsSync("PLUGIN-STANDARD.md") ? readFileSync("PLUGIN-STANDARD.md", "utf8") : "";
-const standard = arch + standalone;
+// ARCHITECTURE.md IS THE STANDARD, and there is no second document to concatenate.
+//
+// The plan offered a fallback — "or in its own root document with `ARCHITECTURE.md` pointing
+// at it if the ceiling would otherwise break" — and Task I-35 did not take it: the standard
+// went into ARCHITECTURE.md, which is 444 lines and well under the ceiling the fallback
+// existed for. What was left behind was an `existsSync("PLUGIN-STANDARD.md")` and a clause
+// guarded on its result, for a file this repository has never carried. So `standalone` was
+// always "", the concatenation always added nothing, and the clause below it could not fire
+// under any tree — a branch kept for a choice that was made.
+const standard = readFileSync("ARCHITECTURE.md", "utf8");
 for (const rule of ["produces", "documents", "libraries", "commands", "purpose"]) {
   if (!new RegExp(`\\b${rule}\\b`).test(standard)) fail.push(`the standard does not state ${rule}`);
 }
-if (standalone && !/PLUGIN-STANDARD/.test(arch)) fail.push("ARCHITECTURE.md does not point at the standard");
 
 // The 700-line ceiling, on every file this initiative writes or grows.
 const walk = (d) => readdirSync(d).flatMap((f) => {

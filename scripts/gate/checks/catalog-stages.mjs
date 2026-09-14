@@ -9,7 +9,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { between, root, sourceFiles, zzCoreSource } from "../read.mjs";
+import { between, root, sourceFiles, withoutComments, zzCoreSource } from "../read.mjs";
 import { check } from "../run.mjs";
 import { flows } from "../facts.mjs";
 
@@ -125,9 +125,11 @@ check("every flow declares which document closes it", () => {
 });
 
 check("a document's declared stage is a stage its flow has", () => {
-  // FlowDoc.stage is what the console draws its stepper from and what eval-grade reads its
-  // step-to-role map from. Nothing has ever checked that it resolves, so a typo has always been
-  // able to point a document at a stage that does not exist.
+  // FlowDoc.stage is what the console draws its stepper from — `console/shared.ts` derives
+  // what a stage writes from it. (This also named `eval-grade`, one of the two component-level
+  // evaluators retired at 0f6a24c; it has read nothing since.) Nothing has ever checked that
+  // the field resolves, so a typo has always been able to point a document at a stage that
+  // does not exist.
   const bad = [];
   for (const f of flows) {
     const mf = join(f.dir, "flow.json");
@@ -202,18 +204,26 @@ check("every flow that declares stages ships scenarios, or says why not", () => 
     // subject is a RELEASED plugin version with recorded runs, so a driven scenario would have
     // to cut a release to have anything to evaluate.
     { flow: "zz-plugin-eval", reason: "its subject is a released plugin version with recorded runs; a driven scenario would have to cut a release to have a subject at all", mayBeMissing: true, permanent: true },
-    { flow: "sdlc-flow", reason: "no browser agent: clients declares claude-code and codex only, so depth 2 cannot reach it", mayBeMissing: true, permanent: true },
-    // TWO STRUCTURAL EXEMPTIONS, AND THEY ARE EXEMPT FOR DIFFERENT REASONS.
     // sdlc-flow cannot be DRIVEN — it declares no browser client and the engine drives a
-    // LibreChat agent. casebox-assist can be driven and cannot be VERDICTED: it declares no
-    // documents at all, so `ledgerClosed()` has nothing to find and every run reports FAILED
-    // however well the agent performed. Its scenarios are readable evidence of what it should
-    // do, not a pass/fail — and without this entry the guard would be satisfied by a file that
-    // can only ever fail, which is the "exists and tests nothing" case this check exists to
-    // refuse, arriving through the check's own front door.
-    { flow: "casebox-assist", reason: "declares no documents, so no ledger close is reachable and depth 2 cannot verdict it — its scenarios are readable evidence, not a pass/fail", permanent: true },
+    // LibreChat agent. That is a property of what it declares, not of how far the mechanism
+    // has been proven, which is why it is `permanent`.
+    { flow: "sdlc-flow", reason: "no browser agent: clients declares claude-code and codex only, so depth 2 cannot reach it", mayBeMissing: true, permanent: true },
   ];
   const bad = [];
+  // AN EXEMPTION FOR A FLOW THE CATALOG DOES NOT SHIP EXCUSES NOTHING, and it reads as though
+  // it does. This list carried a `casebox-assist` entry — a flow this catalog has not held for
+  // some time — whose reason ran to three sentences and named `ledgerClosed()`, a function that
+  // exists nowhere. The loop below matches an entry to a flow it is iterating, so a stale entry
+  // is never consulted and never fails: exactly the "exists and tests nothing" shape this check
+  // refuses in a scenarios file, arriving through its own allowlist. The same guard
+  // `notRegistered` carries in suites.mjs, for the same reason.
+  const shipped = new Set(flows.map((f) => f.flow));
+  for (const a of ALLOW) {
+    if (!shipped.has(a.flow)) {
+      bad.push(`the coverage allowlist excuses ${a.flow}, which this catalog does not ship — ` +
+               "its reason stays readable, describes nothing, and the next person trusts it");
+    }
+  }
   for (const f of flows) {
     const mf = join(f.dir, "flow.json");
     if (!existsSync(mf)) continue;
@@ -379,18 +389,43 @@ check("no shell freezes one flow's fixture paths", () => {
 });
 
 check("no evaluation tool is wired to one flow", () => {
-  // Each of these could evaluate exactly one flow, and each was one literal. Literals are how
-  // a mechanism silently becomes a fixture.
+  // An evaluation tool that names one flow's directory can evaluate exactly that flow.
+  // Literals are how a mechanism silently becomes a fixture.
+  //
+  // THIS CHECK WAS GREEN ON NOTHING. It named three files by path —
+  // `packages/tools/src/testing/eval-{judge,grade,store}.ts` — and `continue`d past each one
+  // that was missing. All three were deleted at 0f6a24c ("Retire the two component-level
+  // evaluations, and drop what they were the last readers of"), so every iteration hit the
+  // `continue`, `bad` could never fill, and the check returned null having opened no file at
+  // all. It sat in the gate's total reading as coverage for the whole of the release that
+  // removed its subject. A list of paths is a check that stops looking the day one moves.
+  //
+  // SO THE SUBJECT IS DERIVED. The evaluation side is `services/zz-core/src/eval/` — the
+  // modules `eval-door.ts` mounts, which checks/eval-tools-moved.mjs pins there — plus the
+  // testing tools in `packages/tools`, which is where the deleted three lived and where a
+  // replacement would land. A tool added to either is covered without this file being edited.
+  //
+  // COMMENTS STRIPPED, because prose here legitimately names catalog paths: plugin-eval.ts
+  // explains resolution order with "catalog/zz/zz-core/ carries the manifest and no skills/".
+  // A comment describing a path is not a tool wired to one.
   const bad = [];
-  for (const rel of [
-    "packages/tools/src/testing/eval-judge.ts",
-    "packages/tools/src/testing/eval-grade.ts",
-    "packages/tools/src/testing/eval-store.ts",
-  ]) {
-    const p = join(root, rel);
-    if (!existsSync(p)) continue;
-    if (readFileSync(p, "utf8").includes("catalog/sdlc/sdlc-flow")) {
-      bad.push(`${rel} still hardcodes catalog/sdlc/sdlc-flow, so it can evaluate exactly one flow`);
+  const FLOW_PATH = /catalog\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+/;
+  const files = [...sourceFiles(["services/zz-core/src/eval"], [".ts"]),
+                 ...sourceFiles(["packages/tools/src"], [".ts"])];
+  // THE CONTROL, and it is the whole lesson of the version this replaces: an empty subject
+  // list is a check that passes having examined nothing, which is indistinguishable from a
+  // clean tree unless one of them says so.
+  if (files.length < 10) {
+    return `the evaluation surface scan found ${files.length} file(s), which is fewer than ` +
+           "this platform has ever had — the clause below iterates that list, so this run " +
+           "examined almost nothing. Point it at where the evaluation code went.";
+  }
+  for (const rel of files) {
+    const code = withoutComments(readFileSync(join(root, rel), "utf8"));
+    const hit = code.split("\n").findIndex((l) => FLOW_PATH.test(l));
+    if (hit >= 0) {
+      bad.push(`${rel}:${hit + 1} hardcodes ${FLOW_PATH.exec(code.split("\n")[hit])[0]}, so it ` +
+               "can evaluate exactly one flow — take the package as an argument");
     }
   }
   return bad.length ? bad.join("; ") : null;

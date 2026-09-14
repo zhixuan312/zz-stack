@@ -12,12 +12,11 @@
  * build to pass cannot be the thing that tells you the build is broken.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestPaths } from "../manifests.mjs";
-import { contractsSource, gatewaySource, root, scan, sourceFiles, trackedFiles, unbuilt, zzCoreTools } from "./read.mjs";
+import { contractsSource, gatewaySource, root, sourceFiles, trackedFiles, zzCoreTools } from "./read.mjs";
 
 export const MANIFESTS = manifestPaths(root);
 

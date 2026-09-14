@@ -125,7 +125,6 @@ const SKIP_DIR = new Set(["node_modules", ".git", "dist", "marketplace", "result
 // `migrations/` is applied SQL: its comments are the schema's history and are not re-run.
 const SKIP_FILE = new Set([
   "CHANGELOG.md",                     // the record of what happened, under the names it happened under
-  "DESIGN-platform.md",               // the design that PROPOSED the rename; it must keep both names
   "packages/contracts/src/alias.ts",  // the map itself
   "checks/alias-applied.mjs",         // feeds an old name to the resolver on purpose
   "checks/alias-maps.mjs",            // pins the map's entries, old half included

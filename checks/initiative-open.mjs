@@ -37,8 +37,10 @@
  *     `z.string()` accept `undefined`.
  *   - `initiativeNameFor` against `isoToday`, both loaded from dist, so "the date is the
  *     platform's" is an equality rather than a grep for the word.
- *   - `slugRefusal`, `takenRefusal`, `recordOpen`, `openRecord`, `declaredFlowContent` and
- *     `unopenedRefusal` called directly, each asserted to fire AND not to fire.
+ *   - `slugRefusal`, `takenRefusal`, `recordOpen`, `openRecord` and `unopenedRefusal` called
+ *     directly, each asserted to fire AND not to fire. (This list named a sixth,
+ *     `declaredFlowContent`, which is defined nowhere in this repository and which nothing
+ *     below calls — a docstring claiming coverage that could not exist.)
  *
  * WHAT IS NOT DRIVEN, and why. The flow-not-installed refusal reads `governingFlows(team)`,
  * which needs the platform database; there is none in the gate. The handler itself resolves

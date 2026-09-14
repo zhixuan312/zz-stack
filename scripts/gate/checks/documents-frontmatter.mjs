@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ONE_LINE, between, contractsSource, functionBody, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools } from "../read.mjs";
+import { ONE_LINE, between, contractsSource, functionBody, root, sourceFiles, zzCoreSource, zzCoreTools } from "../read.mjs";
 import { check } from "../run.mjs";
 
 // A VALUE SOMEBODY TYPED, INSIDE HAND-WRITTEN YAML QUOTES.

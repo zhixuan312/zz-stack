@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-
-
-
-
 /**
  * release.mjs — cut a release of the whole platform and deploy it, with a way back.
  *
@@ -80,13 +76,12 @@
  * reaches the host now, and this is it.
  */
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 
 import { buildAndSmoke } from "./release/build.mjs";
 import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.mjs";
-import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, PLATFORM, REMOTE, die, envToken, log, publicUrl, root, run, ssh, step, warn } from "./deployment.mjs";
+import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, die, envToken, log, publicUrl, root, run, ssh, step, warn } from "./deployment.mjs";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.mjs";
 import { consoleImage, resolveDashboard } from "./release/dashboard.mjs";
 import { preflight } from "./release/preflight.mjs";

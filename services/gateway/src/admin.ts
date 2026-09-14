@@ -28,35 +28,6 @@ import { addPerson, deactivatePerson, grantTool, issueEnrolmentLink, listPeople,
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
 import { platformDb } from "./db.js";
 import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, sha256, type Identity, TEAM_SLUG } from "./identity.js";
-
-
-
-
-
-// ── flow catalog + client projection helpers ─────────────────────────────
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /** The administrative tools, registered onto /manage/mcp according to what the caller's role
  *  can actually execute.
  *

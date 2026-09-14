@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, gateOwnSource, root, scan, sourceFiles, toolsIn, unbuilt, zzCoreSource, zzCoreTools } from "../read.mjs";
+import { between, firstOf, gateOwnSource, root, scan, sourceFiles, unbuilt, zzCoreSource, zzCoreTools } from "../read.mjs";
 import { check } from "../run.mjs";
 import { envelopeFields } from "../facts.mjs";
 

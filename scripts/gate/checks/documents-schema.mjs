@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { COMMENTS, between, contractsSource, firstOf, functionBody, root, sourceFiles, toolsIn, trackedFiles, unbuilt, zzCoreSource, zzCoreTools } from "../read.mjs";
+import { COMMENTS, between, contractsSource, firstOf, functionBody, root, sourceFiles, trackedFiles, unbuilt, zzCoreSource, zzCoreTools } from "../read.mjs";
 import { check, note } from "../run.mjs";
 import { NAMING, flows } from "../facts.mjs";
 

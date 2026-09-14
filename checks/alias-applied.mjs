@@ -1,7 +1,6 @@
 // A window spanning a rename must read as one series per tool.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail = [];
 

@@ -35,46 +35,6 @@ import { reconcileRuns } from "./runs.js";
 import { mountSettings } from "./settings.js";
 import { doorSurface, toolCallTelemetry } from "./tool-telemetry.js";
 
-
-
-
-
-
-
-
-// ---------------------------------------------------------------- shared "my_*" logic
-//
-// The query/mutation each of these does, extracted once so /manage/mcp's tools (below) and
-// settings.ts's browser routes (Task I-13) call the SAME function rather than two copies of
-// the same store read or SQL statement drifting apart. `settings.ts` never imports these as
-// VALUES — that would make server.ts and settings.ts import each other at runtime, a cycle
-// this codebase avoids everywhere else (console-write.ts depends on console.ts, never the
-// reverse) — so these are handed to `mountSettings` as a dependency object instead; see its
-// call below and `SettingsDeps` in settings.ts. (settings.ts does take a TYPE-ONLY import of
-// two of these functions' result shapes — erased by `tsc` before anything runs, so it is not
-// a runtime edge and not the cycle this paragraph is about.)
-//
-// EACH WRITE TAKES `extraDetail`, merged into its own `logEvent` call's `detail`. A tool
-// call passes none, so an agent-issued write logs exactly as it always has; settings.ts's
-// routes pass `{ via: "web" }` — see settings.ts's own header for why the marker must be
-// added by the CALLER rather than assumed here, and gate.mjs's "every console write route
-// records the door it came through" check for what reads that literal text back out of the
-// route body.
-
-
-
-
-
-
-
-
-
-
-// ---------------------------------------------------------------- proxy
-
-
-
-
 const app = express();
 /**
  * How many proxy hops sit in front of this gateway — ONE, Caddy, in every deployment.
@@ -355,6 +315,21 @@ mountConsole(app);
 mountConsoleWrite(app);
 mountConsoleAsk(app);
 mountDiscussion(app);
+// THE SIX `my_*` FUNCTIONS ARE HANDED OVER, NOT IMPORTED BY settings.ts. They live in
+// credentials.ts so that /manage/mcp's tools and settings.ts's browser routes call the SAME
+// function rather than two copies of one store read drifting apart. settings.ts never imports
+// them as VALUES — that would make server.ts and settings.ts import each other at runtime, a
+// cycle this codebase avoids everywhere else (console-write.ts depends on console.ts, never
+// the reverse) — so they arrive as this dependency object instead; see `SettingsDeps` in
+// settings.ts. (settings.ts does take a TYPE-ONLY import of two of their result shapes —
+// erased by `tsc` before anything runs, so it is not a runtime edge and not the cycle this
+// paragraph is about.)
+//
+// EACH WRITE TAKES `extraDetail`, merged into its own `logEvent` call's `detail`. A tool call
+// passes none, so an agent-issued write logs exactly as it always has; these routes pass
+// `{ via: "web" }` — see settings.ts's own header for why the marker must be added by the
+// CALLER rather than assumed, and the gate's "every console write route records the door it
+// came through" check for what reads that literal text back out of the route body.
 mountSettings(app, {
   myCredentialsFor, setMyCredentialFor, deleteMyCredentialFor,
   myAccessTokensFor, issueMyAccessTokenFor, revokeMyAccessTokenFor,

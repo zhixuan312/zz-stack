@@ -256,25 +256,6 @@ export interface ClientPackage {
   blocks: string[];
 }
 
-/* ── reading the catalog ─────────────────────────────────────────── */
-
-
-
-
-
-
-
-
-/* ── the three generated texts ───────────────────────────────────── */
-
-
-
-
-
-
-
-
-
 /* ── the package ─────────────────────────────────────────────────── */
 
 /** One installable unit inside the marketplace.

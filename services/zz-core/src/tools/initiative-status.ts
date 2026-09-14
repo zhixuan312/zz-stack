@@ -6,7 +6,7 @@
  * chat, by another person, on another harness, and continue from where it stopped rather
  * than from what anybody remembers.
  *
- * `reconcile` asks the other half: the stages PREDICTED certain blocks would be called, and
+ * `knowledge_reconcile` asks the other half: the stages PREDICTED certain blocks would be called, and
  * the gateway recorded what actually was. The gap between the two, refusal text included, is
  * the most useful thing an initiative leaves behind.
  */
@@ -76,7 +76,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
           waiting_on: "agent",
           why: "no flow governs this initiative: no document declares `flow:` and the team " +
                "runs more than one flow, so nothing can say which gates apply. Pass " +
-               "`flow: \"<name>\"` as an argument to write_file on the FIRST document " +
+               "`flow: \"<name>\"` as an argument to document_write on the FIRST document " +
                "— until then no gate, no " +
                "required document and no closing rule is being enforced here",
         },
@@ -94,7 +94,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
     const closingEnv = envelopeOf(join(dir, chain.closingDoc));
     const outcome = closingEnv.outcome || null;
     // WHO recorded the close, beside WHAT it was. Both are on the closing document's envelope
-    // and both are stamped by close(), and reporting one without the other left the smoke
+    // and both are stamped by initiative_close(), and reporting one without the other left the smoke
     // suite's per-lane attribution reading a field nothing emitted: it scanned each DOCUMENT
     // for `closed_by`, and DocState has never carried one. Every lane in a parallel round then
     // saw every close as its own, which is the false green that attribution exists to stop —
@@ -139,7 +139,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         ? {
             action: "handover", waiting_on: "agent",
             why: `closed with outcome: ${outcome}; the platform's closing step is the ` +
-                 "handover — run `skill_view(\"zz-knowledge\")`, mint what generalises with " +
+                 "handover — run `skill_read(\"zz-knowledge\")`, mint what generalises with " +
                  "`knowledge_add`, and write handover.md, so what this cycle learned " +
                  "outlives the conversation that learned it",
           }
@@ -148,14 +148,14 @@ export function registerInitiativeStatusTools(server: McpServer): void {
             action: "handover", waiting_on: "human",
             why: `closed with outcome: ${outcome}; handover.md is ` +
                  `${handoverState.status ?? "unwritten"} — call ` +
-                 `approve("${name}/handover.md") once the stakeholder agrees before this ` +
+                 `document_approve("${name}/handover.md") once the stakeholder agrees before this ` +
                  "initiative can close",
           }
         : (() => {
             // THE APPROVAL AUTHORISES THE TEAM NODES; IT DOES NOT WRITE THEM.
             //
             // zz-knowledge mints platform nodes immediately and PROPOSES team nodes in
-            // handover.md, minting them only once a team member has approved. But approve()
+            // handover.md, minting them only once a team member has approved. But document_approve()
             // is a generic gate recorder with no side effect, so nothing makes that second
             // pass happen. Reading "closed" the moment the document was approved therefore
             // let an initiative report complete with every promised team node unwritten, and
@@ -194,7 +194,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
               : { action: "handover", waiting_on: "agent",
                   why: `closed with outcome: ${outcome}; handover.md is approved but only ` +
                        `${minted} of the ${promised} team node(s) it proposed have been ` +
-                       "written — run `skill_view(\"zz-knowledge\")` and mint the rest with " +
+                       "written — run `skill_read(\"zz-knowledge\")` and mint the rest with " +
                        "`knowledge_add(scope: \"team\")`, exactly as the approved document " +
                        "promised them" };
           })();
@@ -228,7 +228,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
       if (awaiting) {
         next = {
           action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
-          why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call approve("${name}/${awaiting.name}") ` +
+          why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call document_approve("${name}/${awaiting.name}") ` +
                "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
         };
       } else if (pending) {
@@ -239,6 +239,11 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         next = missing.length
           ? { action: "write_document", document: missing[0], waiting_on: "agent",
               why: `${missing[0]} is required before this initiative can close` }
+          // NOT A TOOL: `next_move.action` is its own vocabulary — declare_flow,
+          // write_document, await_approval, handover, closed, close — and `write_document`
+          // is already not a tool name. Renaming one member of that set to the tool it
+          // suggests would leave the set half verbs and half tool names, which is harder to
+          // read than either. The `why` beside it names the tool to call.
           : { action: "close", document: chain.closingDoc, waiting_on: "agent",
               // What this said, and only this, was "every declared document exists and
               // every gate is recorded" — which reads as permission. The first live smoke
@@ -247,7 +252,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
               // about approvals; acceptance is a different act by a different person, and
               // the close is where the two get confused.
               why: "every declared document exists and every gate is recorded — close it " +
-                   `with close("${name}", "finished") once somebody has accepted, naming ` +
+                   `with initiative_close("${name}", "finished") once somebody has accepted, naming ` +
                    "them in `accepted_by`. The outcome is DERIVED from that: with an " +
                    "acceptor it is `accepted`; without one it is `delivered` and owes one " +
                    "line on why nobody signed off. You do not write `outcome`, and the " +
@@ -298,7 +303,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
              documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
              // reported, never enforced: material that landed after an
              // approval MAY warrant a revision — the team decides, and
-             // revise_document is how they do it
+             // document_revise is how they do it
              sources_after_approval: needsRefinement, next_move: next };
   }
 
@@ -355,7 +360,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "reconcile",
+    "knowledge_reconcile",
     {
       description:
         "Put what a stage PREDICTED next to what actually happened. Every stage already writes " +

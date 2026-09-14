@@ -9,7 +9,7 @@
  * transport status is blind to exactly the outcomes we are trying to count.
  *
  * It was also blind to most of the platform. `tool_call` fired only for `/p/<block>/mcp`.
- * The 21 tools on zz-core — write_file, patch_file, the gates, initiative_status, the whole
+ * The 21 tools on zz-core — document_write, document_patch, the gates, initiative_status, the whole
  * flow — went through `/core/mcp`, which had no telemetry at all. The tools that do the
  * work were the tools nothing recorded.
  *
@@ -169,7 +169,7 @@ function cap(s: string): string {
  *
  * The rule was "names, never values", and it is right for what it was written against — a
  * stakeholder's brain dump, a document body, a building-block key. Applied to every argument
- * it also threw away the one signal this whole record exists to produce. `skill_view` was
+ * it also threw away the one signal this whole record exists to produce. `skill_read` was
  * logged as `args: ["name"]`: a skill was read, and nothing about WHICH. So "does this skill
  * earn its place", "was the preload actually read", "which skills does a winning run load
  * that a stalling one does not" were all unanswerable, from a record taken specifically to
@@ -194,10 +194,10 @@ const IDENTIFIER_ARGS = new Set([
   "old_id", "new_id", "slug", "role",
   "scope", "status", "direction", "prefix", "version", "agent_name", "limit",
   "include_superseded",
-  // `disposition` — finished or abandoned, on close(), which is the most consequential act
+  // `disposition` — finished or abandoned, on initiative_close(), which is the most consequential act
   // this platform has. It is a two-value enum the platform itself defines, and it answers
   // "how did this end" from the telemetry rather than only from the ledger. It was being
-  // thrown away for the same reason `skill_view`'s `name` was: the rule read as
+  // thrown away for the same reason `skill_read`'s `name` was: the rule read as
   // name-versus-value rather than identifier-versus-content.
   "disposition",
   // REMOVED, because no tool declares them and none can: `open_only` is named by nothing
@@ -305,19 +305,22 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     // "this step refused eight times" can become "this VERSION of this step did" — which is
     // the difference between measuring a step and proving a change to it. Every other call
     // pays nothing: the flag is false and this branch never runs.
-    // THE SKILL AND WHETHER THE SKILL ITSELF WAS ASKED FOR. `skill_view(name, file: …)` serves
+    // THE SKILL AND WHETHER THE SKILL ITSELF WAS ASKED FOR. `skill_read(name, file: …)` serves
     // a supporting file beside the SKILL.md — reference material the skill's own instructions
     // point at — and that file's frontmatter is not the skill's version. Reading one out of it
     // wrote an empty step_version onto every call that followed, or a document template's
     // version, under the skill's name. See stepLoaded.
     // RAW NAME: this is the tool name the CLIENT sent, before any resolution, so the
-    // pre-rename spelling is the correct one here and `resolveToolKey` would be wrong —
-    // fifteen lines below, :490 puts the same field through the resolver for `tool_key`,
-    // because that answers a different question. The hazard is real and deferred, not absent:
-    // when `skill_view` is renamed at the REGISTRATION, this predicate silently stops matching
-    // and every call loses `step_version` and `step_sha` — attribution, not display. It must
-    // move in the same commit as the registration, and no resolver can do it for us.
-    const loading = wanted.filter((m) => m.params?.name === "skill_view")
+    // REGISTERED spelling is the correct one here and `resolveToolKey` would be wrong —
+    // the `toolKey` assignment further down puts the same field through the resolver, because
+    // that answers a different question. (A line number here would be the third stale one in
+    // this comment's history; the identifier does not drift.) The hazard is not hypothetical: this line said
+    // `skill_view` until the registration became `skill_read`, and the two moved together
+    // in one commit precisely because nothing would have gone red if they had not. The
+    // next rename of this tool has the same obligation — change it HERE and at the
+    // registration in the same commit, or every call silently loses `step_version` and
+    // `step_sha`, which is attribution rather than display. No resolver can do it for us.
+    const loading = wanted.filter((m) => m.params?.name === "skill_read")
       .map((m) => {
         const a = m.params?.arguments as Record<string, unknown> | undefined;
         return { name: String(a?.name ?? ""), whole: a?.file === undefined || a?.file === "" };
@@ -426,7 +429,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
       const caller = callerKey(req.headers as Record<string, unknown>);
       // What is WRITTEN is the hash. The correlation key above never leaves this process.
       const callerHash = createHash("sha256").update(caller).digest("hex").slice(0, 12);
-      // Registered BEFORE the row is written, so the skill_view call is itself attributed to
+      // Registered BEFORE the row is written, so the skill_read call is itself attributed to
       // the step it loaded. A load is the first act of a step, not the last act of the one
       // before it.
       // THE SKILL TEXT, NOT THE FRAME AROUND IT. `served` is the raw streamed answer — SSE
@@ -461,7 +464,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         //
         // `currentStep` is the last skill SERVED, which is right until an agent consults
         // something mid-flow — and then everything after belongs to that consultation. On
-        // 2026-09-06 twenty intent.md documents were written and TWO write_file calls were
+        // 2026-09-06 twenty intent.md documents were written and TWO document_write calls were
         // stamped ops-intent; the rest landed under ops-verify, zz-knowledge and ops-build,
         // which had been loaded later in the same conversation. Every one of those documents
         // is unattributable, because attribution needs a run of the stage that owes the
@@ -471,7 +474,12 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // to a declared document is stamped with the stage that writes it, whatever was
         // loaded last. This is not a heuristic — it is the manifest answering a question the
         // trace was guessing at.
-        const wroteDoc = /^(write_file|revise_document|patch_file)$/.test(String(call.params?.name ?? ""));
+        // RAW NAME: the same reason as the `loading` predicate above — `call.params.name` is
+        // what the CLIENT sent, so these are the registered spellings and not resolver output.
+        // A regex literal is invisible to `checks/pre-rename-literals.mjs`, which only reads
+        // quoted strings, so this marker is the only thing standing between the next rename
+        // and three document writes that stop being stamped with the stage that owes them.
+        const wroteDoc = /^(document_write|document_revise|document_patch)$/.test(String(call.params?.name ?? ""));
         const docName = wroteDoc
           ? String((given as Record<string, unknown>).path ?? "").split("/").pop() ?? "" : "";
         const owedBy = docName && flow

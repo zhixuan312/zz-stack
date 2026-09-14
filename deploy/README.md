@@ -184,7 +184,7 @@ at all, which is the point of the split.
   gateway takes `GATEWAY_BIND`, and it is the one service that may widen, because Caddy has to
   reach it and it authenticates every request itself. These were ONE variable, so widening the
   gateway's reach silently published zz-core beside it — and zz-core has no authentication of
-  its own: that port answered `tools/list` to anyone, and `read_file` returned another team's
+  its own: that port answered `tools/list` to anyone, and `document_read` returned another team's
   approved spec to a caller who supplied nothing but an email header.
 - The catalog and the platform skills ship INSIDE the image, so a released version describes
   the method as well as the code. They are live-editable only under the build override above.
@@ -252,7 +252,7 @@ it — every tool behind these plugins is a door at the gateway, and the door st
 
 ```bash
 claude plugin marketplace add zhixuan312/zz-stack
-claude plugin install zz@zz-stack      # the baseline; then take what you want
+claude plugin install zz-core@zz-stack # the baseline; then take what you want
 ```
 
 Then the token, which is what the tools actually authenticate with:

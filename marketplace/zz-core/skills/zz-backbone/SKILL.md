@@ -1,6 +1,6 @@
 ---
 name: zz-backbone
-version: 3.26
+version: 3.27
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -79,8 +79,8 @@ what delegated access is for.
 ## Files are tools, and files are real
 
 - The store is on the PLATFORM, not on any machine you can reach. The
-  artifact tools are the only way in: `list_files`, `read_file`,
-  `write_file`, `patch_file`. Paths are relative to your team's store, e.g.
+  artifact tools are the only way in: `document_list`, `document_read`,
+  `document_write`, `document_patch`. Paths are relative to your team's store, e.g.
   `2026-08-19-sample-intake/spec.md`. This skill is loaded in the browser and in
   Claude Code, Codex and Hermes alike — where you do have a shell, it reaches
   your own disk and never the team's store, so the rule is the same one.
@@ -100,10 +100,10 @@ what delegated access is for.
   person a document they believe they have.
 - Dates come from the system — never guessed, never asked.
 - When you create or update a document deliverable, fetch it back with
-  `show_document(path)` and put what it returns in front of the person as
+  `document_present(path)` and put what it returns in front of the person as
   Markdown (the chat renders GFM and Mermaid) — `File: <path>`, a horizontal
   rule, then the document. Never only a path. **What the platform holds is the
-  fetch, not the showing.** Every `show_document` call appends a `shown` entry
+  fetch, not the showing.** Every `document_present` call appends a `shown` entry
   naming the path, the version and who asked, so "was this document fetched,
   and at which version, before its gate was approved" is answerable from the
   initiative's own activity log. Whether your reply then carried the content
@@ -119,10 +119,10 @@ what delegated access is for.
   MOST, because nobody else is looking. So fetch it, then approve.
 
   This is where it went wrong before it was written down. One initiative
-  closed with four of its six approvals carrying no `show_document` since the
+  closed with four of its six approvals carrying no `document_present` since the
   content had last moved — an eleven-task plan among them, approved twice,
   fetched never, one of those approvals four seconds after the revision that
-  produced it. Nothing disagreed, because nothing was looking. `approve` now
+  produced it. Nothing disagreed, because nothing was looking. `document_approve` now
   says so in its own result when it happens, so the gap reaches the caller in
   the same turn instead of surviving to the retrospective. **It still does not
   refuse, and it must not start to** — a refusal there would land on the one
@@ -141,7 +141,7 @@ what delegated access is for.
   agreed to — never as a ritual, and never to collect a better-worded
   version of a yes you already have.
 - **A gate is not passed until it is recorded**: the moment they agree, call
-  zz-core's `approve(path)` in that same turn, before moving on.
+  zz-core's `document_approve(path)` in that same turn, before moving on.
 
   **The document is the one THIS conversation is working on.** If you wrote it and
   asked for a verdict, their answer is about that document — approve it. Do not
@@ -180,7 +180,7 @@ what delegated access is for.
   `initiative_status`. A model guessing something a command would have answered
   is the most common way this platform gets a wrong fact written into a
   document that outlives the conversation.
-- **Today's date is `today` from `get_my_info`. Nothing else is today's date.**
+- **Today's date is `today` from `session_whoami`. Nothing else is today's date.**
   Not the newest row in the store, not a number inside a run tag, not the date
   on the last document somebody wrote. You have no clock, so read it — one call,
   before you name an initiative or write a date anywhere. An agent that reasoned
@@ -192,7 +192,7 @@ what delegated access is for.
 - Every document carries the envelope: `flow`, `type`, `status`, approvals
   when gated, and on close `outcome` with `accepted_by` naming who accepted.
   The platform's telemetry, index and audits read only these.
-- **A close is an ACT: zz-core's `close(initiative, disposition)`** — never a
+- **A close is an ACT: zz-core's `initiative_close(initiative, disposition)`** — never a
   block's own close. You say the one thing you
   know — the work is `finished` or `abandoned` — and the platform derives the rest.
   `finished` with somebody named in `accepted_by` is `accepted`; `finished` with
@@ -216,7 +216,7 @@ what delegated access is for.
   them, because writing down what they decided IS writing it on their authority,
   which is the only kind there is.
 - **An initiative closes ONCE, and a close is not editable afterwards.** A second
-  `close` is refused, and so is revising the document that records one — the ledger row
+  `initiative_close` is refused, and so is revising the document that records one — the ledger row
   was appended at that close and is what the team's counts read, so changing the document
   now would leave the two disagreeing. If a close was wrong, that is a fact about the
   record worth writing down: `knowledge_add` it against the initiative, `scope: "team"`
@@ -224,7 +224,7 @@ what delegated access is for.
   `scope: "platform"`. A correction somebody can find beats an overwrite nobody can.
 - **After the close comes the handover, and it belongs to the platform.**
   Every flow ends the same way, whatever its manifest says: once the outcome
-  is recorded, load `zz-knowledge` with `skill_view` and run it now — it
+  is recorded, load `zz-knowledge` with `skill_read` and run it now — it
   writes `handover.md`, the one document the handover is. `initiative_status`
   keeps returning `action: "handover"` until a team member approves it; only
   then does the initiative report `action: "closed"`. It is not the flow
@@ -264,7 +264,7 @@ blocks you may reach. That team is a column on the PERSON, read fresh on every c
 It is not a property of this conversation, of the agent they opened, or of anything
 you can see from inside the chat.
 
-- **To find out: `get_my_info`,** which answers `team`. Never infer it from the agent's
+- **To find out: `session_whoami`,** which answers `team`. Never infer it from the agent's
   name, from what you were told earlier in the conversation, or from which documents
   you happen to be able to read.
 - **To change it: `switch_team(team)`,** which is on the ACCESS door — the same place as
@@ -284,7 +284,7 @@ a fact about you, never a fact about the platform.
 
 **The switch is a real move, not a view.** After it, their documents and knowledge land
 in the new team, and work left behind stays where it is for that team's members to pick
-up. Say so when you make one, and check `get_my_info` afterwards rather than assuming
+up. Say so when you make one, and check `session_whoami` afterwards rather than assuming
 it took.
 
 ## The initiative is the unit of work, not the chat
@@ -323,7 +323,7 @@ moved — they name another initiative, or a write is refused — not as a habit
 
 The knowledge store is the team's, not one agent's session:
 
-- `search_knowledge`, `read_file`, `list_files`, `list_sources` are open to
+- `knowledge_search`, `document_read`, `document_list`, `source_list` are open to
   everyone, always, from any harness.
 - **A search spans BOTH shelves, so read a result back on the shelf it came
   from.** Every result says which, and the path to open is always the result's
@@ -331,25 +331,25 @@ The knowledge store is the team's, not one agent's session:
   `initiative` is the literal `_knowledge`:
 
   ```
-  shelf: "team"      read_file("<initiative>/<path>")
-  shelf: "platform"  read_file("<initiative>/<path>", scope: "platform")
+  shelf: "team"      document_read("<initiative>/<path>")
+  shelf: "platform"  document_read("<initiative>/<path>", scope: "platform")
   ```
 
   So a node that comes back as `initiative: "_knowledge"`, `path:
   "nodes/0136-….md"`, `shelf: "platform"` is opened with
-  `read_file("_knowledge/nodes/0136-….md", scope: "platform")`. The snippet in a result is
+  `document_read("_knowledge/nodes/0136-….md", scope: "platform")`. The snippet in a result is
   600 characters of a node that is usually much longer, so reading the whole
   thing is the normal move rather than an unusual one — and a node that says
   a block refuses a particular payload shape is worth nothing in summary.
 
   Until 2026-09-09 the result did not say, and the read had no `scope`, so
-  every platform node came back from `read_file` as "does not exist". An agent
+  every platform node came back from `document_read` as "does not exist". An agent
   searched, found the two nodes describing the exact refusal it was about to
   hit, could not open either, hit it, and asked a non-technical person to
   build the thing by hand. **Knowledge you can see and cannot open is worse
   than knowledge you do not have**, because the store looks like it is
   working.
-- **`add_source` is how information reaches work in flight.** Minutes, an
+- **`source_add` is how information reaches work in flight.** Minutes, an
   email, a decision taken in a corridor — attach it to the initiative and
   name in `supports` every document it bears on (one or several). It is
   ungated and immutable; anyone on the team may add one at any time from
@@ -374,8 +374,8 @@ on every harness — Claude Code, Codex, Hermes — because the
 knowledge is the same knowledge.
 
 **Half of that the platform enforces and half of it is yours.** Once a gated
-document is approved, `write_file` and `patch_file` are refused on it outright
-and `revise_document` is the only way through, so on an approved document the
+document is approved, `document_write` and `document_patch` are refused on it outright
+and `document_revise` is the only way through, so on an approved document the
 version bump cannot be skipped. The rest is not checked: a draft or an ungated
 document is overwritten freely, and a revision with no source attached is
 accepted — see *Capture is the goal, not a toll* below for why that is
@@ -392,7 +392,7 @@ is stored.
 One call does all of it:
 
 ```
-revise_document(
+document_revise(
   path: "<initiative>/intent.md",
   content: "<the full revised document>",
   source_content: "<what they just said, verbatim>",
@@ -406,7 +406,7 @@ approved stays in `_versions/`. Two things end up in the record: **the
 source (what they said) and v2 (what it made us change)** — and anyone
 reading later can see one caused the other.
 
-- Never overwrite an approved document with `write_file`.
+- Never overwrite an approved document with `document_write`.
 - Quote them, do not paraphrase: the source is their words, the document is
   your writing. **[convention]** The platform stores whatever you send as
   `source_content` and never saw what the person actually said, so it cannot
@@ -420,15 +420,15 @@ reading later can see one caused the other.
   apart**: there was no external cause, or there was one and nobody captured
   it. Only the second is a gap anybody can close, and it is the one worth
   counting.
-  So say which it was. `revise_document(..., source_content: "<their words>")`
-  when something someone said caused the change; `revise_document(...,
+  So say which it was. `document_revise(..., source_content: "<their words>")`
+  when something someone said caused the change; `document_revise(...,
   self_edit: "<what you edited>")` when nothing did — a short declaration of
   WHAT you changed, never a justification for changing it, because you still
   owe nobody that. Supplying both is refused: they are contradictory claims.
   Supplying neither is allowed and always will be, and the response will tell
   you plainly that the record now cannot distinguish your case from the other
   one.
-- `list_sources(initiative)` shows what evidence exists and what each piece
+- `source_list(initiative)` shows what evidence exists and what each piece
   supports. Read it before judging any document.
 - **Feedback is material too.** A reviewer's objection, an auditor's note, a
   stakeholder's "this is wrong" — all of it arrives the same way and by the
@@ -446,12 +446,12 @@ reading later can see one caused the other.
 
   | | |
   |---|---|
-  | documents | `write_file` `read_file` `show_document` `patch_file` `list_files` `revise_document` |
-  | gates | `approve` `close` |
-  | sources | `add_source` `list_sources` |
-  | knowledge | `search_knowledge` `reindex_knowledge` `knowledge_add` `knowledge_supersede` |
-  | skills | `list_skills` `skill_view` `block_skills` |
-  | status | `initiative_status` `reconcile` `get_my_info` |
+  | documents | `document_write` `document_read` `document_present` `document_patch` `document_list` `document_revise` |
+  | gates | `document_approve` `initiative_close` |
+  | sources | `source_add` `source_list` |
+  | knowledge | `knowledge_search` `knowledge_reindex` `knowledge_add` `knowledge_supersede` |
+  | skills | `skill_list` `skill_read` `block_skills` |
+  | status | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | utility | `encode_base64` |
   | plugin evaluation | `plugin_locate` `plugin_profile` `plugin_cases_record` `plugin_conform` `plugin_ruler` `plugin_ruler_record` `plugin_affirm` `plugin_judge` `plugin_scores` `plugin_finding_record` |
 
@@ -468,12 +468,12 @@ make every number incomparable with every other number.
 
   A tool NOT on that list belongs to a building block, whatever it is called. The
   test is which server it comes from, never what the verb sounds like: zz-core's
-  `approve` records a gate on a document, while bookit's `approve_slot`
+  `document_approve` records a gate on a document, while bookit's `approve_slot`
   approves somebody's appointment. Same verb, different platform, and only one of
   them is a gate.
 - **Every tool in this skill and in a flow's skills is ZZ-CORE'S tool of that
-  name.** Read `approve(path)` as *zz-core's `approve`*, `write_file` as
-  *zz-core's `write_file`*, and so on for all twenty-nine. Say it to yourself that
+  name.** Read `document_approve(path)` as *zz-core's `document_approve`*, `document_write` as
+  *zz-core's `document_write`*, and so on for all twenty-nine. Say it to yourself that
   way before you call it, because that is the whole question — not what the verb
   sounds like, but which server it comes from.
 - **Find it by server, not by verb.** Clients qualify tool names differently and
@@ -520,12 +520,12 @@ make every number incomparable with every other number.
 ## What people write from the web is work
 
 People write on documents from the web view, and what they write lands as a
-source on that initiative, attached to that document. `list_sources` shows
+source on that initiative, attached to that document. `source_list` shows
 them; `sources_after_approval` in `initiative_status` names the ones that
 arrived after a gate closed.
 
 Addressing one is not a flag you set. You read it, you revise the document
-with `revise_document`, and you cite it — the next version, and the source it
+with `document_revise`, and you cite it — the next version, and the source it
 names, ARE the record that it was addressed. A source you did not act on
 stays visible, which is the point: nothing lets you mark it handled without
 the document moving.
@@ -558,7 +558,7 @@ that turned out to be written so people cannot satisfy it.
 
 Tag those with what they are about: `block:<name>`, `flow:sdlc-flow`,
 `provider:forgejo`, `interface:claude-code`, `platform:guardrail`. Then "what have we
-learned about that block" is `search_knowledge(tags=["block:<name>"])` — **a query, not a search
+learned about that block" is `knowledge_search(tags=["block:<name>"])` — **a query, not a search
 through documents**, which across a quarter is the difference between asking and
 not asking.
 

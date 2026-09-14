@@ -53,7 +53,7 @@ check("the evolution loop is closed, and separate from what it measures", () => 
   // at exactly the step that names what to change.
   //
   // evolve-report attributes each refusal to the skill the agent had loaded when it
-  // happened, BY TRACE: skill_view says which skill, and everything after it is done while
+  // happened, BY TRACE: skill_read says which skill, and everything after it is done while
   // following that skill. Attribution by document name would be a guess, because a flow may
   // write the same document from more than one step.
   //
@@ -67,9 +67,10 @@ check("the evolution loop is closed, and separate from what it measures", () => 
   } else {
     const src = readFileSync(tool, "utf8");
     // The trace attribution, not a document-name heuristic.
-    // The attribution EXPRESSION, not the words. Testing for the string "skill_view"
-    // passed when the branch was renamed to `skill_view_disabled`, which still contains it —
-    // found by trying to break this check, and the reason to try.
+    // The attribution EXPRESSION, not the words. Testing for the string "skill_view" — the
+    // name this tool carried before the noun-first rename — passed when the branch was renamed
+    // to `skill_view_disabled`, which still contains it. Found by trying to break this check,
+    // and the reason to try.
     // Attribution is a COLUMN now — the gateway decides which step a call belonged to at the
     // door and stores it, so the report reads `e.step` instead of replaying skill loads per
     // caller. The trace fallback stayed for rows written before that existed, and both legs
@@ -255,14 +256,14 @@ check("a record that is counted is a record that is written once", () => {
   if (!/already closed once/.test(src)) {
     bad.push("ledgerOnClose no longer skips a second row — a reclose would count twice");
   }
-  // The refusal, in close() itself: read the outcome already on the document and stop.
-  // From the one parser: `src.indexOf('\n    "close",')` found the newline registration form
-  // only, and reformatting close() would have sliced from -1 — the last character of the
+  // The refusal, in initiative_close() itself: read the outcome already on the document and stop.
+  // From the one parser: `src.indexOf('\n    "initiative_close",')` found the newline registration form
+  // only, and reformatting initiative_close() would have sliced from -1 — the last character of the
   // file — leaving an empty body and two failures about a rule nobody had touched.
-  const body = zzCoreTools().find((t) => t.name === "close")?.body;
-  if (!body) return "close() is not registered — this check cannot find what it is about";
+  const body = zzCoreTools().find((t) => t.name === "initiative_close")?.body;
+  if (!body) return "initiative_close() is not registered — this check cannot find what it is about";
   if (!/const already = parseEnvelope\(doc\)\.outcome/.test(body) || !/is already closed as/.test(body)) {
-    bad.push("close() does not refuse an initiative that already carries an outcome");
+    bad.push("initiative_close() does not refuse an initiative that already carries an outcome");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -587,7 +588,7 @@ check("every header the telemetry correlates on is actually sent", () => {
   //
   // Measured on UAT during a live round: 160 `render_agent_definition` rows from the
   // 60-second timer were attributed to `ops-build 1.2` and 35 to `zz-knowledge 2.0`, and one
-  // write_file came out carrying one skill's name beside another skill's version. Those rows
+  // document_write came out carrying one skill's name beside another skill's version. Those rows
   // are what tool-report, evolve-report and step-score count.
   //
   // A header read but never set is invisible: nothing errors, the key still has two halves,
@@ -606,7 +607,7 @@ check("every header the telemetry correlates on is actually sent", () => {
 });
 
 check("a step's version comes from the skill, never from a file beside it", () => {
-  // FOUND IN THE TELEMETRY OF A LIVE ROUND. `skill_view(name, file: "references/…")` serves a
+  // FOUND IN THE TELEMETRY OF A LIVE ROUND. `skill_read(name, file: "references/…")` serves a
   // supporting file, and the version was read out of whatever came back — so reading a
   // reference inside the skill you are following blanked step_version for every call after it
   // (seven casebox calls in one round), and reading a document TEMPLATE wrote the DOCUMENT's
@@ -628,7 +629,7 @@ check("a step's version comes from the skill, never from a file beside it", () =
     bad.push("stepSha is taken from a supporting file's bytes — the hash then names a version of the skill that does not exist");
   }
   if (!/\bfile\b[^\n]*undefined/.test(tel) || !/loading\[0\]\.whole/.test(tel)) {
-    bad.push("tool-telemetry does not read skill_view's `file` argument, so every supporting file is still recorded as a skill load");
+    bad.push("tool-telemetry does not read skill_read's `file` argument, so every supporting file is still recorded as a skill load");
   }
   return bad.length ? bad.join("; ") : null;
 });

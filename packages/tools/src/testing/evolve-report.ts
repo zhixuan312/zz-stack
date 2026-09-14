@@ -10,7 +10,7 @@
  * not. Neither answers "ops-select is where this stalls", which is the only form of the answer
  * a skill can be edited from.
  *
- * ATTRIBUTION BY TRACE, NOT BY GUESS. Every `skill_view` says which skill an agent loaded;
+ * ATTRIBUTION BY TRACE, NOT BY GUESS. Every `skill_read` says which skill an agent loaded;
  * everything it does next, it does while following that skill. So the refusals that follow a
  * load are attributable to the step being followed, per actor, in order. Nothing here infers
  * a stage from a document name — a flow may write the same document from more than one step,
@@ -190,8 +190,8 @@ function main(): number {
     //
     // A refusal is the platform saying a rule was broken. A revision is a PERSON saying the
     // document was wrong — the richest signal there is about a step, and the one this report
-    // was blind to. `revise_document` exists precisely because somebody's words changed a
-    // document, and `add_source` after a gate is material that arrived too late to have been
+    // was blind to. `document_revise` exists precisely because somebody's words changed a
+    // document, and `source_add` after a gate is material that arrived too late to have been
     // considered. Both are recorded on every run and neither reached the improvement loop.
     //
     // Counted, never quoted. The reasons live in the team's own store — a source document, a

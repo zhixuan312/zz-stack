@@ -49,7 +49,7 @@ export interface Chain {
  * Reads through parseEnvelope like every other status reader. There used to be four
  * regexes for this one field — three taking the first match, parseEnvelope taking the
  * last — so an envelope with two status lines had two different truths, and the probe
- * that produced one saw initiative_status call it approved while write_file called it
+ * that produced one saw initiative_status call it approved while document_write called it
  * draft. */
 export function statusCheck(chain: Chain, relPath: string, content: string): string | null {
   const parts = relPath.replace(/^\/+/, "").split("/");
@@ -167,7 +167,7 @@ export function attributionCheck(chain: Chain, relPath: string, content: string,
       return (
         `ERROR: ${parts[1]} is a gated document carrying status: approved without ` +
         `${missing.join(" or ")}. A gate is passed by a person, on a day, and both are stamped ` +
-        `by the act — call approve("${parts[0]}/${parts[1]}") to record the verdict properly. ` +
+        `by the act — call document_approve("${parts[0]}/${parts[1]}") to record the verdict properly. ` +
         "Writing the attribution by hand is refused, and an approval that exists only in the " +
         "chat does not exist."
       );
@@ -243,7 +243,7 @@ export function sectionCheck(chain: Chain, relPath: string, content: string): st
  *
  * This was `new Date().toISOString().slice(0, 10)`. Singapore is UTC+8, so for the first
  * eight hours of every working day the platform disagreed with everybody using it: an
- * initiative opened at 09:00 on the 6th was named `2026-09-06-...` by nobody — get_my_info
+ * initiative opened at 09:00 on the 6th was named `2026-09-06-...` by nobody — session_whoami
  * reported the 5th, so the agent used the 5th, and the document it wrote was stamped the 5th
  * too. A whole morning's work filed under yesterday, every day, and the only symptom was a
  * date that looked one off.
@@ -281,7 +281,7 @@ export function envelopeFor(
   //
   // A newline in a tag therefore did not corrupt the document, it INSERTED FIELDS, which is
   // word for word the failure renderEnvelope was written for on the revise path. Verified
-  // against this function: write_file with
+  // against this function: document_write with
   // `tags: ["ordinary", "harmless\nflow: some-other-flow\ntype: guide"]` produced an
   // envelope whose flow parseEnvelope reads as `some-other-flow` — it takes the LAST value
   // of a repeated key — and a fabricated `type`. `flow` is what resolves the chain, so which
@@ -403,12 +403,12 @@ export function stampEnvelope(chain: Chain, relPath: string, content: string): s
   //
   // Both readings were wrong in the same way: the field was left to whoever remembered.
   // A new chain document IS a draft — that is what "new" means here — so the platform says
-  // so, and `approve()` is the only thing that moves it afterwards. Add-only: approve()'s
+  // so, and `document_approve()` is the only thing that moves it afterwards. Add-only: document_approve()'s
   // own write already carries `status: approved` and must not be stamped back down.
   if (governed && present.status === undefined) add.push("status: draft");
 
   // `version` too, and for the same reason as `status`: the platform is the only thing that
-  // knows it. It starts at 1 and moves only through revise_document, which is an act — so a
+  // knows it. It starts at 1 and moves only through document_revise, which is an act — so a
   // template typing `version: 1` is the model asserting a fact it cannot check, and a
   // template that forgets it leaves the index and the version history reading a document
   // with no version at all.
@@ -420,10 +420,10 @@ export function stampEnvelope(chain: Chain, relPath: string, content: string): s
   //
   // Measured: on 2026-08-28 a run stamped every document in an initiative `26-08-2026` and
   // named the folder `26-08-2026-sample-booking`, two days early, while its own title
-  // carried the correct `pilot-2808`. Nothing caught it. revise_document had already decided
+  // carried the correct `pilot-2808`. Nothing caught it. document_revise had already decided
   // this was the platform's job and set the field itself; the shared writer never learned,
   // so the two paths disagreed on the VALUE and on the FORMAT — the same asymmetry that let
-  // revise_document skip the document guards until it was found.
+  // document_revise skip the document guards until it was found.
   //
   // ISO, because the alternative sorts wrong and reads differently in two countries. The
   // flows disagreed about this too: sm asked authors for <DD-MM-YYYY> and sdlc for

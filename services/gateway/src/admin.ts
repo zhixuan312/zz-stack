@@ -76,7 +76,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
   const lead = sup || (!!id && id.teams.some((t) => isTeamAdmin(id, t.slug)));
 
   server.registerTool("whoami", {
-    // What ONLY this tool says. Three tools answer some form of "who am I" — get_my_info on
+    // What ONLY this tool says. Three tools answer some form of "who am I" — session_whoami on
     // /core for an agent doing work, my_teams beside this one for a person managing their own
     // access — and this one described itself as "role and team memberships", which is what
     // my_teams already returns. Described that way it reads as a third copy, and a model
@@ -92,7 +92,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "How the platform resolved YOU, for diagnosing a refusal — including a tool that is " +
       "not in your list at all, which means your role does not carry it: your platform role, " +
       "how this request authenticated (a token, or forwarded headers), and what the token is " +
-      "scoped to. For your teams use my_teams; for your identity while working use get_my_info.",
+      "scoped to. For your teams use my_teams; for your identity while working use session_whoami.",
     inputSchema: {},
   }, async () => {
     const id = await caller();

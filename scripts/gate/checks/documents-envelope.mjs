@@ -22,7 +22,7 @@ check("one function decides what a document's envelope says", () => {
   // What is left is the WRITING half, which nothing else covers: an envelope value
   // interpolated straight into `${k}: ${v}` is how a second `status:` line got into a
   // document in the first place, after which initiative_status reported the gate as passed
-  // and named a fabricated approver while write_file still called the document draft.
+  // and named a fabricated approver while document_write still called the document draft.
   const bad = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     let inRenderer = false;
@@ -47,7 +47,7 @@ check("one function decides what a document's envelope says", () => {
 // scanned the WHOLE document rather than the frontmatter, and two read `flow` — and all of
 // them took the FIRST match where parseEnvelope takes the LAST. An envelope with two of a
 // field therefore had two different truths at once, which is how initiative_status once
-// called a document approved while write_file called it draft.
+// called a document approved while document_write called it draft.
 //
 // A field list rather than a guess at what a regex is for: it is exact, and the day the
 // envelope grows a field, adding it here is the same edit as adding it anywhere else.
@@ -94,11 +94,11 @@ check("only an act may move the fields the platform owns", () => {
   // that legitimately moves them. That makes `via` a bypass, and a bypass is only safe while
   // the list of callers holding it is exactly the list that should.
   //
-  // Both directions have already bitten once each in the same afternoon: revise_document,
+  // Both directions have already bitten once each in the same afternoon: document_revise,
   // whose entire job is to move status back to draft, was refused by the guard until it said
   // so; and the guard itself was claimed in a tool description before it existed. A rule
   // this easy to get backwards belongs in the gate rather than in someone's memory.
-  const ACTS = ["approve", "close", "revise_document"];
+  const ACTS = ["document_approve", "initiative_close", "document_revise"];
   const src = zzCoreSource();
   const lines = src.split("\n");
   const holders = [];
@@ -109,7 +109,7 @@ check("only an act may move the fields the platform owns", () => {
     if (!via) continue;
     // Which tool this call sits inside, from the one parser. Walking upward for a line that
     // is exactly `  "name",` under a bare `registerTool(` only ever found the newline form —
-    // reformat approve to `registerTool("approve", {` and its guard call became "(unknown)",
+    // reformat approve to `registerTool("document_approve", {` and its guard call became "(unknown)",
     // which this check reports as an act passing the wrong `via`. A confusing failure about a
     // reformat, in the check that guards who may own a document's fields.
     const tool = toolAtLine(src, i) ?? "(unknown)";
@@ -166,7 +166,7 @@ check("the envelope vocabulary is defined once", () => {
     const lines = readFileSync(join(root, f), "utf8").split("\n");
     for (const [i, line] of lines.entries()) {
       if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;    // comments quote the vocabulary to explain it
-      // A line held to the contract BY THE COMPILER is not a second copy. close() must name
+      // A line held to the contract BY THE COMPILER is not a second copy. initiative_close() must name
       // all three outcomes — it is where the platform derives which one applies — and it is
       // annotated `(typeof OUTCOMES)[number]`, so a typo there fails the build.
       // Over the whole STATEMENT, not the line: the annotation sits on the first line and the
@@ -219,13 +219,13 @@ check("the model writes the body and the platform writes the envelope", () => {
   // blocklist exists to catch the worst of that, and its own comment admits there is no way
   // to test whether a string is a person — it exists only because a model typed the field.
   //
-  // So write_file and revise_document refuse content that opens with frontmatter, and a
+  // So document_write and document_revise refuse content that opens with frontmatter, and a
   // skill that still shows one in a fenced block is teaching a call that now fails on the
   // first save. Both halves, together: the refusal without the templates would break every
   // flow, and the templates without the refusal would drift straight back.
   const src = zzCoreSource();
   const bad = [];
-  for (const tool of ["write_file", "revise_document"]) {
+  for (const tool of ["document_write", "document_revise"]) {
     if (!new RegExp(`frontmatterRefusal\\(content, "${tool}"\\)`).test(src)) {
       bad.push(`${tool} accepts frontmatter the model composed`);
     }
@@ -267,7 +267,7 @@ check("the envelope is stamped by what governs the document", () => {
 });
 
 check("nothing tells an agent to write a field the platform owns", () => {
-  // The five owned fields are stamped by approve() and close(), and a hand write is refused.
+  // The five owned fields are stamped by document_approve() and initiative_close(), and a hand write is refused.
   // "no skill template hands a model a field the platform owns" stops a skill TEMPLATE
   // carrying one. This is the other half: the platform's
   // own prose telling an agent to write one.
@@ -297,7 +297,7 @@ check("nothing tells an agent to write a field the platform owns", () => {
     .map((m) => m[1] ?? m[2] ?? m[3] ?? "").join(" ");
   // Prose that names the rule rather than instructing a write: the platform is the subject,
   // or the sentence already points at the act that does the stamping.
-  const DESCRIBES = /platform|refus|by hand|approve\(|close\(|is stamped|are stamped|stamps /i;
+  const DESCRIBES = /platform|refus|by hand|document_approve\(|initiative_close\(|is stamped|are stamped|stamps /i;
   // Only text an AGENT READS. `status` is also a column on the `team` table and a filter in
   // the index query, and `update team set status = 'archived'` is not an instruction to
   // anyone — judging those by the same words called three correct lines defects. The bug this
@@ -309,7 +309,7 @@ check("nothing tells an agent to write a field the platform owns", () => {
   // document's frontmatter says so" names no owned field and gives no instruction, and it
   // was sitting in the generated agent preset — the prompt every LibreChat agent on this
   // platform is built on — saying the opposite of what the platform now does. The router
-  // skill said it too. Both were true before approve() existed, which is exactly why this
+  // skill said it too. Both were true before document_approve() existed, which is exactly why this
   // phrasing outlives the thing it described.
   const LOCATES = /\bgate\b[^.]{0,60}\bfrontmatter\b|\bfrontmatter\b[^.]{0,60}\b(approv|gate)/i;
   // A THIRD shape, and the simplest — which is why it should have been the rule from the
@@ -322,7 +322,7 @@ check("nothing tells an agent to write a field the platform owns", () => {
   // EVERY service source, not the four somebody thought of. This list grew twice by being
   // wrong: the three server files were scanned and client-package.ts — which EMITS the router
   // every agent on every client reads — was not, and its text said "a gate passes only once
-  // the document's frontmatter records the approval", true before approve() existed and an
+  // the document's frontmatter records the approval", true before document_approve() existed and an
   // instruction to do a refused thing after. kb.ts registers tools and writes refusals of its
   // own and was never in the list either. A file that speaks to an agent is the rule; naming
   // the files is a list that goes stale the next time one is added.
@@ -363,7 +363,7 @@ check("nothing tells an agent to write a field the platform owns", () => {
     }
   }
   return bad.length
-    ? `${bad.join(", ")} tell an agent to write a field the platform stamps — name approve() or close() instead`
+    ? `${bad.join(", ")} tell an agent to write a field the platform stamps — name document_approve() or initiative_close() instead`
     : null;
 });
 

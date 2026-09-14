@@ -114,10 +114,10 @@ is not yours.
 
 `sdlc-review` is the flow's last STAGE. There is no stage after it — you were present for
 the whole initiative, and closing it is yours to do directly, the way `zz-backbone` describes
-every close: one `close()` call, never a block's own close. Say the one thing you know —
-`close(initiative, "finished", accepted_by: "<their name>")` when somebody accepted it,
-`close(initiative, "finished", no_signoff_reason: "<one line>")` when nobody signed off, or
-`close(initiative, "abandoned")` when the work stopped short — and the platform derives
+every close: one `initiative_close()` call, never a block's own close. Say the one thing you know —
+`initiative_close(initiative, "finished", accepted_by: "<their name>")` when somebody accepted it,
+`initiative_close(initiative, "finished", no_signoff_reason: "<one line>")` when nobody signed off, or
+`initiative_close(initiative, "abandoned")` when the work stopped short — and the platform derives
 `outcome`, writes it into `spec.md`, which this flow declares as its closing document, and
 appends the team's ledger row. An initiative you do not close this way stays open forever
 and never reaches the ledger.
@@ -134,7 +134,7 @@ zz-core, which arrives with the required `zz` plugin:
 
 | | Tool | |
 |---|---|---|
-| `sdlc-recall` | `search_knowledge(query, type, initiative, flow, limit)` | Team-scoped, returns results with provenance — status, approvals, outcome, path |
+| `sdlc-recall` | `knowledge_search(query, type, initiative, flow, limit)` | Team-scoped, returns results with provenance — status, approvals, outcome, path |
 
 Writing to that journal is not a stage of this flow at all. Once you close, `zz-knowledge`
 reads the closed initiative — cold, after delivery is over — and mints what generalises with

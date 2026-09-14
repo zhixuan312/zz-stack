@@ -1,7 +1,7 @@
 /**
  * Who the caller is, and which skills they can reach.
  *
- * `get_my_info` answers the two facts every flow asks for before anything else — today's
+ * `session_whoami` answers the two facts every flow asks for before anything else — today's
  * date and the team this person acts for — and the rest of the door is the skill library:
  * what is installed, what a skill says, and what a connected block teaches about itself.
  *
@@ -24,7 +24,7 @@ import { isoToday } from "../write-guards.js";
 
 export function registerSkillTools(server: McpServer): void {
   server.registerTool(
-    "get_my_info",
+    "session_whoami",
     {
       description:
         "Who am I — the identity this session acts as, my team (artifacts " +
@@ -48,7 +48,7 @@ export function registerSkillTools(server: McpServer): void {
         // envelope and the store from error messages. The spine is one call away and its
         // name is not guessable, so the one tool every session already calls carries the
         // pointer.
-        how_this_works: 'skill_view("zz-backbone") — gates, the envelope, the artifact store, ' +
+        how_this_works: 'skill_read("zz-backbone") — gates, the envelope, the artifact store, ' +
                         "and when a building block is checked. Read it before your first write.",
         // The clock, because the alternative is a guess and the guess has been wrong.
         //
@@ -139,7 +139,7 @@ export function registerSkillTools(server: McpServer): void {
    * come out of evaluation BLIND, never opened by anybody. That reads as agents preferring to improvise and it
    * is nothing of the sort: it is a naming convention that was never true, used as a lookup.
    *
-   * WHICH BLOCKS ARE THERE AT ALL. `list_skills` returns a flat array of names with no block
+   * WHICH BLOCKS ARE THERE AT ALL. `skill_list` returns a flat array of names with no block
    * attribution and no descriptions, so "what could I build this on" was answered from a
    * capability sheet somebody maintains by hand.
    *
@@ -152,7 +152,7 @@ export function registerSkillTools(server: McpServer): void {
    * TWO DEPTHS, and the argument chooses. No argument is the shelf — every block, one line
    * each, cheap enough to call before you know what you want. A block name is that block's
    * skills with what each is for, which is what you read once you do. Neither returns a
-   * skill's BODY: that is skill_view, one at a time, and keeping it that way is what stops
+   * skill's BODY: that is skill_read, one at a time, and keeping it that way is what stops
    * this becoming the thing it exists to avoid.
    */
   server.registerTool(
@@ -163,7 +163,7 @@ export function registerSkillTools(server: McpServer): void {
         "Call it with no argument for the shelf: every block, its title, and how many skills " +
         "it ships. Call it with a block id for that block's skills and what each one is for. " +
         "READ THIS BEFORE GUESSING A SKILL NAME — a block's skills are named whatever its " +
-        "team named them, and there is no convention to derive them from. Then skill_view " +
+        "team named them, and there is no convention to derive them from. Then skill_read " +
         "the ones you need, by the exact name this returns.",
       inputSchema: {
         block: z.string().optional().describe(
@@ -231,7 +231,7 @@ export function registerSkillTools(server: McpServer): void {
             // name in it — a block's own reader knows only that block's skills, so it answered
             // "no usage skill", which reads as the skill not existing rather than as the wrong
             // door. These sit on the PLATFORM's shelf; the platform's reader is what opens them.
-            lines.push('Read any of them with skill_view("<name>") — this server\'s tool. A ' +
+            lines.push('Read any of them with skill_read("<name>") — this server\'s tool. A ' +
               "block's own usage_skill_view knows only that block's skills and answers " +
               '"no usage skill" for a name it does not own, which looks like the skill being ' +
               "missing when it is not.");
@@ -247,7 +247,7 @@ export function registerSkillTools(server: McpServer): void {
         lines.push("");
         lines.push(
           "Call block_skills(block: \"<id>\") for what each skill is for, then read them with " +
-          "skill_view(\"<skill name>\") — the PLATFORM's tool, on this server, never a block's " +
+          "skill_read(\"<skill name>\") — the PLATFORM's tool, on this server, never a block's " +
           "own usage_skill_view. Do not derive a skill name from a block name; these are the " +
           "names.");
       }
@@ -256,7 +256,7 @@ export function registerSkillTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "list_skills",
+    "skill_list",
     {
       description: "List the skills your team can reach: the platform's own, every skill of every flow installed for your team, and your team's own skills.",
       inputSchema: {},
@@ -318,7 +318,7 @@ export function registerSkillTools(server: McpServer): void {
   }
 
   server.registerTool(
-    "skill_view",
+    "skill_read",
     {
       description:
         "Read a skill's full instructions (e.g. 'sdlc-spec'). Load a skill before " +
@@ -345,7 +345,7 @@ export function registerSkillTools(server: McpServer): void {
         const path = join(dir, "SKILL.md");
         if (existsSync(path)) {
           logActivity(await userRoot(), null,
-            { user: parseCaller(requestHeaders()).email, action: "skill_view", skill: name });
+            { user: parseCaller(requestHeaders()).email, action: "skill_read", skill: name });
           if (file === undefined) return text(readFileSync(path, "utf8") + await teamOverlay(name));
           // RESOLVED INSIDE THE SKILL WE ALREADY FOUND, never searched for on its own.
           // Two packages may ship a skill of one name — the roots are ordered precisely
@@ -372,7 +372,7 @@ export function registerSkillTools(server: McpServer): void {
           "your team has installed cannot be read. This is not a statement about the skill. " +
           "Try again once the platform is back.");
       }
-      return text(`ERROR: no skill named '${name}' is available to you — either it does not exist, or its flow is not installed for your team. Call list_skills to see what is.`);
+      return text(`ERROR: no skill named '${name}' is available to you — either it does not exist, or its flow is not installed for your team. Call skill_list to see what is.`);
     },
   );
 }

@@ -57,7 +57,7 @@ probe("the skill registry is not behind the catalog", () => {
 //
 // zz.run is DERIVED from zz.event by reconcileRuns() on a timer, and it keyed the version on
 // zz.event.step_version — a column stamped only when a skill is served whole through
-// skill_view, which an installed skill read off disk never is. So every row the
+// skill_read, which an installed skill read off disk never is. So every row the
 // initiative-bearing insert wrote carried skill_version_id NULL; a NULL cannot match that
 // insert's conflict target, because Postgres treats NULLs as distinct; `do update` therefore
 // never fired and each pass of the timer appended another copy. The table reached 1791 rows of

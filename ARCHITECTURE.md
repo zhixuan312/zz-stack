@@ -263,7 +263,7 @@ flow; all three evaluation-track packages declare both, so one field cannot carr
 
 `install_flow` writes a system prompt: the package's own `agents/<name>/system-prompt.md` if it
 has one, otherwise a generated router. The generated router ends every agent with
-`skill_view("<entry>")` and describes running a flow for a team.
+`skill_read("<entry>")` and describes running a flow for a team.
 
 That is right for a flow and wrong for a surface. **A surface package must carry its own
 system prompt.** `zz-access` does — it is a door and an agent rather than a method run for a

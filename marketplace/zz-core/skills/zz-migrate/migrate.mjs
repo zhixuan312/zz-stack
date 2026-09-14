@@ -16,7 +16,7 @@
  *   `spec.md`, and 212 historical plans have no approvals because nobody ever approved them
  *   under rules that did not exist yet. Importing them as documents would mean signing 212
  *   gates on behalf of people who signed nothing, which is the one thing the gates are for.
- *   `add_source` is ungated and immutable and its description says what it is for — material
+ *   `source_add` is ungated and immutable and its description says what it is for — material
  *   from elsewhere that work rests on. That is exactly what this is.
  *
  * THE EVIDENCE PROBLEM, and how it is answered. `knowledge_add` refuses a node with no
@@ -134,7 +134,7 @@ async function main() {
   const tok = token();
   const base = gateway();
   const core = new Door(base, "/core/mcp", tok, "zz-migrate");
-  const me = JSON.parse(await core.call("get_my_info", {}));
+  const me = JSON.parse(await core.call("session_whoami", {}));
   const today = me.today;
   const initiative = ledger.__initiative || `${today}-mma-archive-${slug(s.repo)}`;
 
@@ -151,7 +151,7 @@ async function main() {
   // ONLY WHAT THIS PLATFORM CAN SAY. mma's journal has four statuses; a zz node has two
   // states, adopted and superseded-by-another-node. A `dropped` or `inconclusive` node
   // imported anyway would be minted `adopted` — the platform stamps that on every node it
-  // writes — so "we tried this and dropped it" would come back out of search_knowledge as
+  // writes — so "we tried this and dropped it" would come back out of knowledge_search as
   // current practice. That is worse than not importing it: it is the record saying the
   // opposite of what happened.
   //
@@ -175,7 +175,7 @@ async function main() {
   if (!ledger.__initiative) {
     console.log(`Creating ${initiative}/explore.md`);
     if (!DRY) {
-      await core.call("write_file", {
+      await core.call("document_write", {
         path: `${initiative}/explore.md`,
         content: exploreDoc(s, initiative),
         flow: FLOW,
@@ -196,7 +196,7 @@ async function main() {
     tick(`  sources  ${sent + skipped + failed.length + 1}/${sources.length}  ${src.key}`);
     if (DRY) { sent++; continue; }
     try {
-      await core.call("add_source", { initiative, title: src.title, content: src.content });
+      await core.call("source_add", { initiative, title: src.title, content: src.content });
       remember(key, true); sent++;
     } catch (e) { failed.push([src.key, e.message]); }
   }
@@ -266,7 +266,7 @@ async function main() {
 
   // 5 ── say plainly that the archive stays open.
   //
-  // There is no archived state on this platform. `close` writes the outcome onto the flow's
+  // There is no archived state on this platform. `initiative_close` writes the outcome onto the flow's
   // CLOSING document, every flow that declares one gates it, and an imported archive has no
   // approvals because nobody approved anything — signing that gate to tidy a listing is the
   // one thing the gates exist to prevent. So the archive sits in `initiative_status()` beside
@@ -293,7 +293,7 @@ async function main() {
   }
   console.log(`Done. ${initiative} holds the archive; ${nSent + nSkipped} journal nodes are in ` +
               `the team knowledge base.`);
-  console.log(`Search it with search_knowledge, or find everything this import brought over ` +
+  console.log(`Search it with knowledge_search, or find everything this import brought over ` +
               `with the tag \`mma-import\`.`);
 }
 

@@ -165,6 +165,7 @@ const sites = [
   ["services/zz-core/src/tools/initiative-status.ts", /if \(docs\.length === 0\) \{/,
    /if \(!chain\.name && docs\.length === 0\)/,
    "initiative_status must refuse to compute a next move over an empty document chain, " +
+   // NOT A TOOL: `close` is the `next_move.action` verb this refusal prevents, not a call.
    "however the chain was resolved — otherwise it answers `close` naming no document"],
   ["scripts/gate/checks/catalog-manifest.mjs", /documents && !stages/, /m\.entry && !stages/,
    "the gate's manifest rule must refuse documents-without-stages, and must no longer " +

@@ -24,32 +24,32 @@
     "sha": "9a04bd96e3dd"
   },
   "sdlc-explore": {
-    "version": "1.1",
-    "sha": "9a753290ce0b"
+    "version": "1.2",
+    "sha": "0896a140f76b"
   },
   "sdlc-flow": {
-    "version": "1.2",
-    "sha": "6aa89ba0a1f8"
+    "version": "1.3",
+    "sha": "44b1c0adf52e"
   },
   "sdlc-investigate": {
     "version": "1.0",
     "sha": "c52bfb4eff39"
   },
   "sdlc-method": {
-    "version": "1.3",
-    "sha": "af362dd16723"
+    "version": "1.4",
+    "sha": "513397ae821b"
   },
   "sdlc-plan-audit": {
     "version": "1.0",
     "sha": "7ad834323396"
   },
   "sdlc-plan": {
-    "version": "1.3",
-    "sha": "895cd03f4da6"
+    "version": "1.4",
+    "sha": "a9358da05557"
   },
   "sdlc-recall": {
-    "version": "1.2",
-    "sha": "11d3248df3c0"
+    "version": "1.3",
+    "sha": "e6f3f9eb5740"
   },
   "sdlc-research": {
     "version": "1.0",
@@ -64,8 +64,8 @@
     "sha": "a8861d50826a"
   },
   "sdlc-spec": {
-    "version": "1.2",
-    "sha": "77e51ec5f4ac"
+    "version": "1.3",
+    "sha": "733085450bad"
   },
   "sdlc-tldr": {
     "version": "1.0",
@@ -80,12 +80,12 @@
     "sha": "6fd5f6827f61"
   },
   "zz-plugin-define": {
-    "version": "0.1",
-    "sha": "a3c6baa250d1"
+    "version": "0.2",
+    "sha": "c726e3f00cab"
   },
   "zz-plugin-eval": {
-    "version": "0.3",
-    "sha": "7f3a38205833"
+    "version": "0.4",
+    "sha": "8b32078d71d9"
   },
   "zz-plugin-judge": {
     "version": "0.1",
@@ -100,24 +100,24 @@
     "sha": "b4d171f5a477"
   },
   "zz-plugin-report": {
-    "version": "0.1",
-    "sha": "084a6246cec6"
+    "version": "0.2",
+    "sha": "17a22d12a50c"
   },
   "zz-backbone": {
-    "version": "3.26",
-    "sha": "4e39db5d39ec"
+    "version": "3.27",
+    "sha": "8697ece2710c"
   },
   "zz-doctor": {
     "version": "1.2",
     "sha": "32f46223e8d2"
   },
   "zz-knowledge": {
-    "version": "2.4",
-    "sha": "93465dacc57f"
+    "version": "2.5",
+    "sha": "083a3eb3f2e7"
   },
   "zz-migrate": {
-    "version": "1.2",
-    "sha": "61cc51fe863c"
+    "version": "1.3",
+    "sha": "574ad565ef2c"
   },
   "zz-update": {
     "version": "1.2",

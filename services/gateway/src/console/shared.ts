@@ -17,7 +17,12 @@ import { resolveScope, type Scope } from "../scope.js";
 export type ResolvedScope = Exclude<Scope, { kind: "refused" }>;
 
 /** The ops-flow shape, stated once. The console draws a stepper from it and the
- * API decides `stage` with it, so the two cannot disagree about what step 4 is. */
+ * API decides `stage` with it, so the two cannot disagree about what step 4 is.
+ *
+ * NOT A TOOL: the last member is the flow's closing STAGE, which shares a word with
+ * `initiative_close` and is not it. A stage is a step a flow declares; the tool is the act
+ * that ends the initiative, and renaming this one to match would make the stepper render
+ * "initiative_close" as a step nobody wrote. */
 const STAGES = ["intent", "spec", "select", "plan", "build", "verify", "close"] as const;
 
 /** May this caller read the console at all?
@@ -189,7 +194,7 @@ export function grainForSpan(days: number): Grain {
 /** How far an initiative got, from the documents that exist and their approvals.
  *
  * Derived, never stored — which is the point. The platform already records the
- * only facts that matter (a document exists; `approve()` stamped it), and a
+ * only facts that matter (a document exists; `document_approve()` stamped it), and a
  * `stage` column would be a second copy of that able to drift from it. */
 export interface DocRow {
   path: string; type: string; status: string | null; outcome: string | null;
@@ -276,7 +281,7 @@ export function stageOf(docs: DocRow[], flow: string | null): {
                      passed: byName.get(d.name)?.status === "approved",
                      after: stageIndex(d.stage) }));
     const closing = declared.find((d) => d.closing === true);
-    // THE OUTCOME, not just whether it was accepted. `close()` records one of three words and
+    // THE OUTCOME, not just whether it was accepted. `initiative_close()` records one of three words and
     // all three mean closed: `accepted` is a person saying it is what they wanted,
     // `delivered` is work that finished without that signature, `abandoned` is work that
     // stopped. The console carried only a boolean, so a delivered initiative and one still

@@ -1,6 +1,6 @@
 ---
 name: sdlc-explore
-version: 1.1
+version: 1.2
 description: Ground a raw idea before anyone designs it — capture the brain dump, fan out parallel workers across this system, the outside world and the ZZ knowledge base, wait for all of them, then synthesise one explore.md (Background · Current state · Rough direction). Main agent, with the fan-out dispatched.
 when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Local runtimes only (Claude Code, Codex)."
 ---
@@ -77,9 +77,9 @@ answer.
 The synthesis is yours. **Do not dump the raw worker reports back to the person** — the
 synthesis IS the output, and the reports are what you reasoned over.
 
-Write it into the initiative with `write_file` as `explore.md`. Never a local path.
+Write it into the initiative with `document_write` as `explore.md`. Never a local path.
 
-Then fetch it back with `show_document("<initiative>/explore.md")` and put what it returns
+Then fetch it back with `document_present("<initiative>/explore.md")` and put what it returns
 in front of the person before they pick a direction to carry into `sdlc-spec`. A write that
 succeeded is not a direction anybody read.
 
@@ -87,8 +87,8 @@ Keep the top level at `##`: downstream stages read these sections by their `##` 
 deeper top level makes them see nothing.
 
 ```markdown
-# No frontmatter. write_file takes the BODY; the platform writes the envelope.
-#   write_file(path: "<initiative>/explore.md", flow: "sdlc-flow", content: "<the body>")
+# No frontmatter. document_write takes the BODY; the platform writes the envelope.
+#   document_write(path: "<initiative>/explore.md", flow: "sdlc-flow", content: "<the body>")
 # flow is needed on the FIRST document of an initiative and stamped onto the rest.
 
 # Exploration: <title>

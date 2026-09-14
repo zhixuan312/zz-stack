@@ -11,15 +11,15 @@
  *   which FLOW was running   — no. Recoverable only through the team's CURRENT install, so a
  *                              team that reinstalls rewrites its own history.
  *   which STEP was running   — no. Recoverable only by replaying every row in id order and
- *                              remembering the last `skill_view` PER ACTOR.
+ *                              remembering the last `skill_read` PER ACTOR.
  *
  * That last one is why this file exists. Attribution by trace is the right idea — a
- * `skill_view` genuinely does say which skill the agent is following — but re-derived by each
+ * `skill_read` genuinely does say which skill the agent is following — but re-derived by each
  * reader it has three faults, and all three are silent:
  *
  *   IT KEYS ON THE PERSON. One human running two conversations interleaves, and every call is
  *   attributed to whichever skill either conversation loaded most recently.
- *   IT NEVER EXPIRES. A `skill_view` from last week still "follows" that person, so unrelated
+ *   IT NEVER EXPIRES. A `skill_read` from last week still "follows" that person, so unrelated
  *   work months later is attributed to a step nobody was reading.
  *   IT IS RECOMPUTED. Every reader re-derives it, so two reports can disagree about the same
  *   row and neither is wrong about anything it can check.
@@ -31,7 +31,7 @@
  *
  * Knowing `ops-select` refused eight times is not improvement. Improvement is knowing it
  * refused eight times under ONE version of that skill and once under the next — otherwise a
- * change can be shipped and never proved. So a `skill_view` answer is hashed as it streams and
+ * change can be shipped and never proved. So a `skill_read` answer is hashed as it streams and
  * every call attributed to that step carries the hash of the skill text the agent was ACTUALLY
  * SERVED. Not the file on someone's laptop, not the version in a manifest: the bytes that
  * reached the model.
@@ -74,7 +74,7 @@ interface Trace {
   at: number;
 }
 
-/** The version a skill DECLARES, read out of the frontmatter that `skill_view` serves.
+/** The version a skill DECLARES, read out of the frontmatter that `skill_read` serves.
  *
  * A declared version is what a person cites — "ops-select v2 fixed it" — and it is the only
  * form of the answer that is orderable and arguable. The hash beside it is what makes the
@@ -125,7 +125,7 @@ export const callerKey = (headers: Record<string, unknown>): string =>
 /** A skill was served. Everything this caller does next belongs to it.
  *
  * `whole` says whether the bytes ARE the skill, or a supporting file beside it —
- * `skill_view(name, file: "references/blocks-capabilities.md")`, which ops-select's own
+ * `skill_read(name, file: "references/blocks-capabilities.md")`, which ops-select's own
  * instructions tell the agent to read. Both are the same step; only the first carries the
  * skill's version.
  *

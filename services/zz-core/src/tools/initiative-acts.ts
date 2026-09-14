@@ -6,7 +6,7 @@
  * clock, and every write path refuses them typed by a caller — which is a rule that means
  * something only because these three are the exception and there is no fourth.
  *
- * `revise_document` exists because an approved document cannot be written over: the
+ * `document_revise` exists because an approved document cannot be written over: the
  * approver's name would stand on bytes they never read. It bumps the version, returns the
  * document to draft, clears the stale approval and keeps the approved copy in `_versions/`.
  */
@@ -30,7 +30,7 @@ import { isoToday, normalizeSections } from "../write-guards.js";
 
 export function registerInitiativeActTools(server: McpServer): void {
   server.registerTool(
-    "approve",
+    "document_approve",
     {
       description:
         "Record an approval on a document, in one call. THE PLATFORM writes `status: approved`, " +
@@ -71,12 +71,12 @@ export function registerInitiativeActTools(server: McpServer): void {
       doc = putEnvelopeField(doc, "approved_by", signer);
       doc = putEnvelopeField(doc, "approved_at", isoToday());
       const fixed = normalizeSections(chain, relPath, doc);
-      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "approve");
+      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
       if (bad) return text(bad);
       // READ BEFORE THE WRITE, because persistDocument logs and this asks about the log.
       const fetched = shownSinceLastChange(root, relPath);
-      persistDocument(chain, root, relPath, target, fixed.content, "approve");
-      logActivity(root, relPath, { user: who.email, action: "approve", path: relPath, signer, fetched });
+      persistDocument(chain, root, relPath, target, fixed.content, "document_approve");
+      logActivity(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
       return text(
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +
@@ -85,7 +85,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         // SAID, NOT REFUSED, and the wording is the whole point.
         //
         // What this catches is real and was invisible: an initiative closed with four of its
-        // six approvals carrying no `show_document` since the content last moved — an
+        // six approvals carrying no `document_present` since the content last moved — an
         // eleven-task plan among them, approved twice, fetched never. Nothing disagreed,
         // because nothing was looking.
         //
@@ -99,10 +99,10 @@ export function registerInitiativeActTools(server: McpServer): void {
         // approval is already recorded, so "fetch it before the next gate" is the only
         // advice that can still be taken.
         (fetched === false
-          ? "\nNOT FETCHED: no `show_document` on this path since its content last changed, so " +
+          ? "\nNOT FETCHED: no `document_present` on this path since its content last changed, so " +
             "the record cannot show anyone saw these bytes before the verdict. The approval " +
             "stands — this is a note, not a refusal. Before the next gate, call " +
-            "`show_document` and put what it returns in front of the person; a standing " +
+            "`document_present` and put what it returns in front of the person; a standing " +
             "\"approve without checking with me\" waives their REVIEW, not the fetch, because " +
             "the fetch is the part that reaches the record.\n"
           : "") +
@@ -112,7 +112,7 @@ export function registerInitiativeActTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "close",
+    "initiative_close",
     {
       description:
         "Close an initiative, in one call. You say what you KNOW — the work `finished` or was " +
@@ -265,18 +265,18 @@ export function registerInitiativeActTools(server: McpServer): void {
       doc = putEnvelopeField(doc, "closed_by", who.email);
       if (acceptor) doc = putEnvelopeField(doc, "accepted_by", acceptor);
       if (!acceptor && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
-      const bad = await documentGuards(chain, root, relPath, doc, team, "close");
+      const bad = await documentGuards(chain, root, relPath, doc, team, "initiative_close");
       if (bad) return text(bad);
       persistDocument(chain, root, relPath, target, doc, `close ${outcome}`);
       logActivity(root, relPath,
-        { user: who.email, action: "close", initiative, outcome, accepted_by: acceptor || null });
+        { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: acceptor || null });
       return text(
         `${initiative} closed as ${outcome}, recorded by ${who.email}.\n` +
         (acceptor ? `Accepted by ${acceptor}.\n`
                   : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
         "Closed is not yet complete — one step remains, and it belongs to the platform rather " +
-        "than to this flow. Run `skill_view(\"zz-knowledge\")` next: it mints whatever " +
+        "than to this flow. Run `skill_read(\"zz-knowledge\")` next: it mints whatever " +
         "generalises from this cycle and writes handover.md. That document is gated — a team " +
         "member approves it, and only then does `initiative_status` read `action: \"closed\"`.",
       );
@@ -284,7 +284,7 @@ export function registerInitiativeActTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "revise_document",
+    "document_revise",
     {
       description:
         "Revise a document and record WHY it changed, in one call. Send the BODY — the " +
@@ -296,7 +296,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         "second brain dump, pasted notes, a decision taken elsewhere — pass their words as " +
         "source_content and they are stored as a source and linked, so v2 explains itself. It " +
         "is not required; someone may simply edit their own document. " +
-        "Never overwrite an approved document with write_file.",
+        "Never overwrite an approved document with document_write.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/intent.md'"),
         content: z.string().describe("The full revised document, body and all."),
@@ -326,7 +326,7 @@ export function registerInitiativeActTools(server: McpServer): void {
     },
     async ({ path: relPath, content, source_content, source_title, sources, note,
              self_edit, stakeholder, tags, title, blocks, fields }) => {
-      const refusedFm = frontmatterRefusal(content, "revise_document") ?? fieldRefusal(fields)
+      const refusedFm = frontmatterRefusal(content, "document_revise") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
       if (refusedFm) return text(refusedFm);
       // WHAT CAUSED THIS VERSION, ASKED ONCE.
@@ -349,7 +349,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // `self_edit` says nothing outside the document produced this version. Each of the
       // three fields above says something did. Taking both would mean writing a record that
       // contradicts itself, and there is no rule for deciding which half to believe —
-      // silently preferring one is how close() and reconcile() lost supplied values before
+      // silently preferring one is how initiative_close() and knowledge_reconcile() lost supplied values before
       // they were repaired. Refused, in the same shape as those two.
       if (selfEdit && causes.length) {
         return text(
@@ -365,7 +365,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       const blocked = writeGuard(relPath);
       if (blocked) return text(blocked);
       const target = await safePath(relPath);
-      if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — write_file creates a document; revise_document changes one`);
+      if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`);
       const chain = await chainFor(root, relPath, team);
       if (!chain.docs.has(parts[1]))
         return text(`ERROR: ${parts[1]} is not a document this flow declares`);
@@ -373,25 +373,25 @@ export function registerInitiativeActTools(server: McpServer): void {
       const prevEnv = parseEnvelope(readFileSync(target, "utf8"));
       // AN INITIATIVE CLOSES ONCE, and this was the way round that.
       //
-      // close() refuses a second close by reading `outcome` off the document, and
-      // ledgerOnClose refuses a second row by reading it off the file on disk. revise_document
+      // initiative_close() refuses a second close by reading `outcome` off the document, and
+      // ledgerOnClose refuses a second row by reading it off the file on disk. document_revise
       // DELETED that field — it clears the governance fields so the gate goes back to a
       // person — while leaving `closed_by` and `accepted_by` standing. closeCheck fires only
       // on content that HAS an outcome, so nothing refused it. One revision of the closing
       // document reopened a closed initiative, left it stamped with who closed it and no
-      // outcome, and let close() run again and append a SECOND ledger row for the same work.
+      // outcome, and let initiative_close() run again and append a SECOND ledger row for the same work.
       // _ledger.md is what the OKR grading and the cross-flow comparison count.
       //
-      // Refused for the reason close() already gives, in the same words: a record's value is
+      // Refused for the reason initiative_close() already gives, in the same words: a record's value is
       // that it is not edited afterwards.
       // A CLOSED RECORD MAY BE CORRECTED. WHAT CLOSED IT MAY NOT BE.
       //
       // This refused every revision of a closing document, and the reason it gave was true of
-      // the code as it stood then: revise_document DELETED `outcome`, which reopened the
-      // initiative and let close() append a second ledger row for the same work. That delete
+      // the code as it stood then: document_revise DELETED `outcome`, which reopened the
+      // initiative and let initiative_close() append a second ledger row for the same work. That delete
       // is gone — `outcome` is carried forward from the previous envelope now, and the line
       // below makes that explicit rather than incidental — so the failure the refusal names
-      // cannot happen: close() reads `outcome` off the document and refuses a second close,
+      // cannot happen: initiative_close() reads `outcome` off the document and refuses a second close,
       // and ledgerOnClose reads it off disk and returns before appending.
       //
       // What is left is the real rule, and it is narrower: an initiative closes ONCE, on ONE
@@ -400,7 +400,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // were wrong stayed wrong, and the only remedy on offer — a journal node beside it —
       // is not read by anybody opening the report.
       //
-      // Nothing here is a quiet overwrite. revise_document freezes the approved copy in
+      // Nothing here is a quiet overwrite. document_revise freezes the approved copy in
       // `_versions/`, bumps the version, records a revision_note, and returns the document to
       // draft so a PERSON approves the new text. The signed version stays retrievable and the
       // ledger never moves.
@@ -473,13 +473,13 @@ export function registerInitiativeActTools(server: McpServer): void {
       if (title?.trim()) env.title = oneLine(title);
       const revTags = (tags ?? []).map((t) => t.trim()).filter(Boolean);
       if (revTags.length) env.tags = revTags.join(", ");
-      // Name checked by fieldRefusal above, like write_file's — this was the second copy of
+      // Name checked by fieldRefusal above, like document_write's — this was the second copy of
       // that predicate, and a rule with two copies is a rule that can be half-changed.
       for (const [k, v] of Object.entries(fields ?? {})) {
         if (String(v).trim()) env[k.trim()] = oneLine(String(v));
       }
       // `outcome` is CARRIED, not merely left alone. Deleting it was the whole defect — it is
-      // the field close() and ledgerOnClose both read to know an initiative was already
+      // the field initiative_close() and ledgerOnClose both read to know an initiative was already
       // closed — and "we happen not to touch it" is not a guarantee the next edit inherits.
       // Written back from what the document said before this revision, every time.
       if (closedOutcome) env.outcome = closedOutcome;
@@ -494,7 +494,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // which is how "a closed report cannot be corrected" survived as an accident of two
       // guards meeting rather than as a rule anybody had decided.
       //
-      // What replaces the signature is not nothing. revise_document freezes the approved copy
+      // What replaces the signature is not nothing. document_revise freezes the approved copy
       // in `_versions/` before writing, bumps the version, and records a revision_note saying
       // what changed — so the text a person actually signed stays retrievable, and the
       // correction is discoverable beside it rather than pretending to be the original.
@@ -537,11 +537,11 @@ export function registerInitiativeActTools(server: McpServer): void {
       // a document that had it, with no refusal. The section a flow declares required is not
       // less required in v2.
       const fixed = normalizeSections(chain, relPath, doc);
-      // `via` — revise_document is an ACT, and one whose whole job is to move the governance
+      // `via` — document_revise is an ACT, and one whose whole job is to move the governance
       // fields: status back to draft, the stale approval cleared. Without saying so it would
       // be refused by the guard that exists to stop a model writing those by hand, which is
       // the correct guard refusing the one caller that is allowed to.
-      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "revise_document");
+      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
       if (bad) return text(bad);
 
       // The revision is allowed, so the source that explains it is written now — before
@@ -554,7 +554,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         writeFileSync(srcTarget, pendingSource.doc);
         void indexDoc(root, pendingSource.rel, pendingSource.doc);
         logActivity(root, pendingSource.rel,
-          { user: who.email, action: "add_source", path: pendingSource.rel, supports: parts[1] });
+          { user: who.email, action: "source_add", path: pendingSource.rel, supports: parts[1] });
       }
       // Through persistDocument, like the other two paths, rather than a writeFileSync and
       // an indexDoc of its own. Keeping a second copy of "how a document is written down" is
@@ -570,11 +570,11 @@ export function registerInitiativeActTools(server: McpServer): void {
       //
       // Deliberately ABOVE this call and not inside it. The gate check that holds both names
       // to this payload reads a 600-character window either side of `action:
-      // "revise_document"`, so a comment inside the object naming them would satisfy the
+      // "document_revise"`, so a comment inside the object naming them would satisfy the
       // check on its own and keep passing after the field itself was deleted. A comment that
       // can stand in for the thing it describes is how a check quietly stops checking.
       logActivity(root, relPath, {
-        user: who.email, action: "revise_document", path: relPath,
+        user: who.email, action: "document_revise", path: relPath,
         version: nextVersion, sources: [...linked].join(","), explained,
         self_edit: selfEdit || null,
       });

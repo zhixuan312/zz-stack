@@ -12,7 +12,7 @@ import { between, contractsSource, functionBody, gatewaySource, root, sourceFile
 import { check } from "../run.mjs";
 import { flows } from "../facts.mjs";
 
-check("revise_document records whether a revision had an external cause", () => {
+check("document_revise records whether a revision had an external cause", () => {
   // An earlier version of this check searched forward from src.indexOf("explained") — which
   // lands inside the word "unexplained" in a comment at :5124, 6,946 characters before the
   // logActivity payload at :5226 and outside its own 4,000-char window. It could not have
@@ -27,18 +27,18 @@ check("revise_document records whether a revision had an external cause", () => 
   if (!/self_edit:\s*z\.string\(\)/.test(src)) bad.push("self_edit is missing or is not a string (spec D6 forbids a boolean)");
   if (/self_edit:\s*z\.boolean\(\)/.test(src)) bad.push("self_edit is a boolean; D6 requires a declaration of what was edited");
   if (!/ERROR:[^"'\n]*self_edit/.test(src)) bad.push("no refusal for self_edit supplied together with a cause");
-  const at = src.indexOf('action: "revise_document"');
-  if (at < 0) { bad.push("the revise_document activity payload was not found"); }
+  const at = src.indexOf('action: "document_revise"');
+  if (at < 0) { bad.push("the document_revise activity payload was not found"); }
   else {
     const payload = src.slice(Math.max(0, at - 600), at + 600);
     if (!/\bexplained\b/.test(payload) || !/\bself_edit\b/.test(payload)) {
-      bad.push("the revise_document activity payload does not carry both `explained` and `self_edit`, so the three states are indistinguishable");
+      bad.push("the document_revise activity payload does not carry both `explained` and `self_edit`, so the three states are indistinguishable");
     }
   }
   return bad.length ? bad.join("; ") : null;
 });
 
-check("show_document returns a document, not a rendering or a summary", () => {
+check("document_present returns a document, not a rendering or a summary", () => {
   // "Your reply includes the document's full content" lived only in zz-backbone's prose and
   // was routed around — including by the agent writing the spec about routing around it,
   // twice in one session. A tool can be checked; prose cannot.
@@ -55,15 +55,15 @@ check("show_document returns a document, not a rendering or a summary", () => {
   // and the NEWLINE is the bound, so a fragment cannot run past its own source line and
   // collect words out of the code below it.
   const src = zzCoreSource();
-  const at = src.indexOf('registerTool(\n    "show_document"');
-  if (at < 0) return "show_document is not registered";
+  const at = src.indexOf('registerTool(\n    "document_present"');
+  if (at < 0) return "document_present is not registered";
   const body = src.slice(at, src.indexOf("\n  );", at));
   const bad = [];
   if (/renderMarkdown|marked|<pre>|escapeHtml/.test(body)) {
-    bad.push("show_document emits HTML; the interfaces render markdown (spec D9)");
+    bad.push("document_present emits HTML; the interfaces render markdown (spec D9)");
   }
   if (!/ERROR:[^"'\n]*no document at/.test(body)) {
-    bad.push("show_document does not refuse a missing path by name");
+    bad.push("document_present does not refuse a missing path by name");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -223,18 +223,18 @@ check("the store audit applies the platform's close rules, not stricter ones", (
 });
 
 check("nothing can clear the field that says an initiative already closed", () => {
-  // `outcome` is the whole record that an initiative closed. close() reads it off the
+  // `outcome` is the whole record that an initiative closed. initiative_close() reads it off the
   // document to refuse a second close; ledgerOnClose reads it off the file on disk to refuse
   // a second row. Both guards are one field deep, so anything that can REMOVE that field
   // reopens the initiative and lets the close run again — and _ledger.md is what the OKR
   // grading and the cross-flow comparison count, so the same work is counted twice.
   //
-  // revise_document did exactly that. It clears the governance fields so the gate goes back
+  // document_revise did exactly that. It clears the governance fields so the gate goes back
   // to a person, and `outcome` was in that list alongside approved_by and approved_at — while
   // `closed_by` and `accepted_by` were left standing, so the document said who closed it and
   // nothing about what the close was. closeCheck fires only on content that HAS an outcome,
   // so no guard saw it. It now refuses the revision instead, and points at a journal node,
-  // which is what close() says to do when a close was wrong.
+  // which is what initiative_close() says to do when a close was wrong.
   const bad = [];
   for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
     const src = readFileSync(join(root, rel), "utf8");
@@ -242,18 +242,18 @@ check("nothing can clear the field that says an initiative already closed", () =
       if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;               // prose about it is the record
       if (!/delete\s+\w+\.outcome\b|\.outcome\s*=\s*(""|''|null|undefined)|putEnvelopeField\([^,]+,\s*"outcome",\s*""/.test(ln)) return;
       bad.push(`${rel}:${i + 1} clears \`outcome\` — \`${ln.trim().slice(0, 70)}\`. That is the ` +
-               "field close() and ledgerOnClose both read to know an initiative already " +
+               "field initiative_close() and ledgerOnClose both read to know an initiative already " +
                "closed, so removing it lets the same work be closed and counted twice");
     });
   }
   // And the one path that used to do it has to still refuse the case, or the rule above is
   // satisfied by a tool that simply writes the whole envelope back without the field.
   const rev = between(zzCoreSource(),
-                      '"revise_document",', "server.registerTool(");
+                      '"document_revise",', "server.registerTool(");
   const code = (rev.text ?? "").split("\n")
     .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
   if (!rev.text) {
-    bad.push(`revise_document is no longer readable here: ${rev.why}`);
+    bad.push(`document_revise is no longer readable here: ${rev.why}`);
   } else if (!/env\.outcome\s*=\s*closedOutcome/.test(code)
              || !/const\s+closedOutcome\s*=\s*prevEnv\.outcome/.test(code)) {
     // CARRIED FORWARD, not refused. This used to require `if (prevEnv.outcome)` — a blanket
@@ -263,13 +263,13 @@ check("nothing can clear the field that says an initiative already closed", () =
     //
     // The invariant that actually matters is narrower and stronger: whatever a revision does
     // to the prose, the field that says the initiative closed must come out the other side
-    // unchanged. Then close() still refuses a second close and ledgerOnClose still returns
+    // unchanged. Then initiative_close() still refuses a second close and ledgerOnClose still returns
     // before appending, so the same work cannot be counted twice — and the text can still be
     // fixed, with the signed copy frozen in _versions/ and a person re-approving the new one.
-    bad.push("revise_document does not carry `outcome` forward from the previous envelope — " +
+    bad.push("document_revise does not carry `outcome` forward from the previous envelope — " +
              "read it into `closedOutcome` before the rebuild and write it back onto `env`. " +
              "Leaving the field merely untouched is not the same guarantee: it is the field " +
-             "close() and ledgerOnClose both read to know an initiative already closed, and " +
+             "initiative_close() and ledgerOnClose both read to know an initiative already closed, and " +
              "the next edit to this function inherits nothing from an accident");
   }
   return bad.join("\n");

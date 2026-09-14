@@ -206,17 +206,17 @@ check("every console write route records the door it came through", () => {
     // act is as unmistakable as settings.ts's `password_verifier` one: it is the only file
     // that ever names the table.
     { path: "services/gateway/src/discussion.ts", isWrite: (body) => /discussion_message/.test(body), markerCalls: [] },
-    // Task I-24: console-ask.ts's one route calls `core.call("search_knowledge", …)` — a
+    // Task I-24: console-ask.ts's one route calls `core.call("knowledge_search", …)` — a
     // READ, scoped by the caller's own identity, that changes nothing zz-core holds — and
     // otherwise only `generate()`, which never touches zz-core at all. Neither has a door
     // to record, so this file is deliberately NOT held to "calls logEvent with via: web"
     // the way console-write.ts's routes are. What it IS held to: a `core.call` to anything
-    // OTHER than `search_knowledge` in this file is a write this check has never seen
+    // OTHER than `knowledge_search` in this file is a write this check has never seen
     // before, and must not pass silently — see the file's own header for the full
     // reasoning. `isWrite` says so explicitly rather than by omission, so the day a write
     // is added here the negative lookahead below flips it to true and this check starts
     // asking the new call for its `via: "web"` the same as every other write route.
-    { path: "services/gateway/src/console-ask.ts", isWrite: (body) => /\bcore\.call\(\s*"(?!search_knowledge")/.test(body), markerCalls: [] },
+    { path: "services/gateway/src/console-ask.ts", isWrite: (body) => /\bcore\.call\(\s*"(?!knowledge_search")/.test(body), markerCalls: [] },
   ];
   const bad = [];
 

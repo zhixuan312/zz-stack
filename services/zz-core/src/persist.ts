@@ -49,7 +49,7 @@ function snapshotOnApproval(chain: Chain, root: string, relPath: string, target:
     //
     // Snapshots reached disk and stopped there. Nothing put a row in zz.doc for one, so the
     // only way a frozen approval became searchable was somebody remembering to run
-    // reindex_knowledge(force) by hand — and the initiative that found this has snapshots on
+    // knowledge_reindex(force) by hand — and the initiative that found this has snapshots on
     // disk and zero indexed rows, which is what "somebody remembers" looks like over time.
     // indexDoc already knows what a snapshot IS: it derives `superseded_by` from exactly this
     // path shape. It was simply never called with one at the moment one was written.
@@ -81,20 +81,20 @@ export function setEnvelopeField(doc: string, field: string, value: string): str
   const line = new RegExp(`^${field}:.*$`, "m");
   if (!line.test(m[1])) return doc;
   // FUNCTION replacements, both of them. A string replacement interprets $$, $&, $` and $'
-  // — and `value` here is not always the platform's own: close() passes the model's
+  // — and `value` here is not always the platform's own: initiative_close() passes the model's
   // `accepted_by` through putEnvelopeField below. `$'` means "everything after the match",
   // so one of those in a name silently duplicates the rest of the document into its envelope.
   //
   // ONE LINE, for the other half of the same problem. That comment already said the value can
   // be the model's and stopped at the substitution patterns, which are the milder failure: a
   // newline does not corrupt a field, it ADDS one, and parseEnvelope takes the LAST value of a
-  // repeated key. Measured through approve(): `on_behalf_of: "Dana Reyes\nflow: other\noutcome:
+  // repeated key. Measured through document_approve(): `on_behalf_of: "Dana Reyes\nflow: other\noutcome:
   // accepted"` wrote a flow the platform had not chosen and an outcome nobody had derived —
   // through the tool whose description says the platform writes those fields and a
   // hand-written one is refused. ownershipCheck cannot see it either, because approve and
   // close pass `via` and that check returns null on `via` by design.
   //
-  // Here rather than at the four call sites. close() already spelled `oneLine(reason)` at one
+  // Here rather than at the four call sites. initiative_close() already spelled `oneLine(reason)` at one
   // of them and not at `accepted_by` directly above it, which is what a rule kept as a
   // call-site habit looks like just before it is forgotten.
   return doc.replace(m[0], () => m[0].replace(line, () => `${field}: ${oneLine(value)}`));
@@ -155,8 +155,8 @@ function ledgerOnClose(chain: Chain, root: string, relPath: string, content: str
           const e = JSON.parse(line) as { ts?: string; action?: string };
           if (!firstTs && e.ts) firstTs = e.ts;
           if (e.ts) lastTs = e.ts;
-          if (e.action === "write_file") writes++;
-          if (e.action === "patch_file") patches++;
+          if (e.action === "document_write") writes++;
+          if (e.action === "document_patch") patches++;
         } catch { /* skip */ }
       }
     }
@@ -250,7 +250,7 @@ export function commitStore(root: string, actor: string, action: string, subject
 }
 /** Everything that happens once a mutation is allowed, in the order it must happen.
  *
- * Both write paths did these steps inline and patch_file was missing one of them, silently
+ * Both write paths did these steps inline and document_patch was missing one of them, silently
  * skipping the envelope stamp, so a document written before its flow was known stayed
  * unstamped however often it was edited. (The count is not written here for the reason
  * documentGuards gives above: the list has grown twice since and the number had not.)

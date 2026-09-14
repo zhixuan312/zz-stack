@@ -1,7 +1,7 @@
 /**
  * /api/console/documents/thread — the discussion thread on one document.
  *
- * Not console-write.ts's shape. `approve()` there forwards a caller's headers to zz-core
+ * Not console-write.ts's shape. `document_approve()` there forwards a caller's headers to zz-core
  * and stamps a platform document because approval IS a flow-side act with a flow-side
  * author. A thread has no such counterpart: there is no zz-core tool called "say something
  * about this document", and inventing one would make every team's back-and-forth about a
@@ -13,7 +13,7 @@
  * directory-or-superadmin gate as every other console route. Both refuse a `platform` scope:
  * a thread is always one team's conversation about one document, and there is no
  * fleet-wide reading of it for `?scope=platform` to mean — the same refusal
- * console-write.ts's `approve` gives for the same reason. `resolveScope` refusing a caller
+ * console-write.ts's `document_approve` gives for the same reason. `resolveScope` refusing a caller
  * who names or defaults to a team they are not in is what makes a non-member's request
  * fail before this file's code runs at all; there is no second membership check here to
  * forget.
@@ -140,7 +140,7 @@ function sendEvent(res: Response, msg: ThreadMessage): void {
 
 /** `{ kind: "platform" }` is the only non-`team` scope `resolveScope` can hand back — a
  *  thread has no fleet-wide reading, so both routes below refuse it the same way
- *  `console-write.ts`'s `approve` refuses it for a document. */
+ *  `console-write.ts`'s `document_approve` refuses it for a document. */
 function refusePlatformScope(res: Response): void {
   res.status(400).json({ error: "a thread belongs to one team — pass ?team=<slug>, not ?scope=platform" });
 }

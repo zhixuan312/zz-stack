@@ -39,7 +39,7 @@ const PLACEABLE = "e.detail ? 'run' and e.initiative is not null and e.initiativ
  * column that used to answer it is almost never set.
  *
  * Every one of these joins read `sv.version = e.step_version`, and `step_version` is stamped
- * only when a skill is served WHOLE through skill_view (step-trace.ts). Claude Code reads an
+ * only when a skill is served WHOLE through skill_read (step-trace.ts). Claude Code reads an
  * installed skill off disk, so in normal operation nothing stamps it at all. Measured twice, a
  * day apart, and the pair is the proof:
  *

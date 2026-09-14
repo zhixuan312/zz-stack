@@ -7,7 +7,7 @@
 #   sdlc-explore/SKILL.md:80 and sdlc-method/SKILL.md:161 carry the same rule.
 #
 # What it tests: asked to write an initiative's document, does the agent reach for the
-#   platform's `write_file` and a store-relative path, rather than its runtime's local
+#   platform's `document_write` and a store-relative path, rather than its runtime's local
 #   Write tool?
 #
 # IMPORTANT — no MCP server runs in this eval. The sdlc plugin ships no `.mcp.json`, and
@@ -19,7 +19,7 @@
 #   what separates the arms is which vocabulary and which path shape the answer uses.
 #
 # Note on the prompt: it says exploration is FINISHED so sdlc-explore does not try to fan
-#   out subagents, and it never says "write_file", "store", "platform" or "local" —
+#   out subagents, and it never says "document_write", "store", "platform" or "local" —
 #   measured on a sibling case (2026-09-13), a bare agent scored a regex grader purely by
 #   quoting a word back out of the prompt. `regex` matches the LAST MESSAGE only, so both
 #   patterns below have to survive into the final answer; the with-arm reaches them
@@ -29,7 +29,7 @@
 #   explore-skill-fired      ~1.0 — the skill does not exist in the baseline arm. May
 #                                   under-report if the agent reaches sdlc-flow or
 #                                   sdlc-method instead and writes from there.
-#   names-the-platform-write ~1.0 — `write_file` is zz-core's tool name. A bare agent
+#   names-the-platform-write ~1.0 — `document_write` is zz-core's tool name. A bare agent
 #                                   says "I'll create explore.md" and uses Write.
 #   store-relative-path      ~0.6 — the baseline arm may echo the initiative name from the
 #                                   prompt into a directory, so this is the weakest of the
@@ -69,7 +69,7 @@ graders:
     tool: Skill(sdlc-explore)
   - name: names-the-platform-write
     type: regex
-    pattern: 'write_file'
+    pattern: 'document_write'
   - name: store-relative-path
     type: regex
     pattern: '2026-09-12-plugin-level-eval/explore\.md'

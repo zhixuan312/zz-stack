@@ -45,7 +45,7 @@ async function confirm(url) {
                  "Accept": "application/json, text/event-stream",
                  "Authorization": `Bearer ${token}`, "X-ZZ-Client": CLIENT },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
-                             params: { name: "get_my_info", arguments: {} } }),
+                             params: { name: "session_whoami", arguments: {} } }),
       signal: AbortSignal.timeout(15_000),
     });
     if (res.status === 401 || res.status === 403) return { ok: false, why: `the platform refused the token (${res.status})` };

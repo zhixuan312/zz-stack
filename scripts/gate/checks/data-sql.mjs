@@ -308,7 +308,7 @@ check("a service reaches its database through one accessor", () => {
   // every team because nothing had served a request yet, and the fix was to write the
   // construction out a fifth time. indexDoc and reindexTeam still asked it, so a write
   // arriving before the first database-backed request went to disk and never reached the
-  // index — search_knowledge then answers "nothing is known" about a document that is there.
+  // index — knowledge_search then answers "nothing is known" about a document that is there.
   //
   // The pool SIZE is the quiet half: four connections spelled in five places is four
   // connections until somebody changes one of them, and a pool that disagrees with itself is
@@ -350,7 +350,7 @@ check("a run is attributed to a version by time, not by a column nothing stamps"
   // WHAT A RUN IS KEYED ON, and the shape that made zz.run 99.8% junk.
   //
   // reconcileRuns() joined zz.skill_version on `sv.version = e.step_version`. That column is
-  // written only when a skill is served WHOLE through skill_view; an installed skill read off
+  // written only when a skill is served WHOLE through skill_read; an installed skill read off
   // disk stamps nothing. Measured a day apart: the event log grew 381 -> 510 and step_version
   // stayed at 39. Not sparse -- dead.
   //

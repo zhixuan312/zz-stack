@@ -128,7 +128,7 @@ check("Caddy proxies the port the compose file actually publishes", () => {
 check("only the authenticated door may be published beyond loopback", () => {
   // zz-core has no authentication of its own; the gateway is the door and /core/mcp is the
   // way in. Publishing zz-core on the same host address made that premise false — the port
-  // answered tools/list to anyone, and read_file returned another team's approved spec to a
+  // answered tools/list to anyone, and document_read returned another team's approved spec to a
   // caller who supplied nothing but an email header. It happened because ONE variable,
   // MCP_BIND, governed both the gateway (which must be reachable) and the internal services
   // (which must not be), so widening one widened the other.

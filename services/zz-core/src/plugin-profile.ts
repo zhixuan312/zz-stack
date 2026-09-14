@@ -31,7 +31,7 @@ interface PluginTraces {
   /** Counted, never classified. See the header.
    *
    * AND ONLY OVER THE STAGES THAT REACHED THE DOOR. A step is attributed from the last
-   * `skill_view` a caller asked for, so a stage whose worker loaded its skill out of its own
+   * `skill_read` a caller asked for, so a stage whose worker loaded its skill out of its own
    * plugin directory left no step at all — and a return is a relation BETWEEN stages, so one
    * missing stage silently removes every return through it. Measured on 2026-09-13: zz.event
    * holds no `sdlc-spec-audit` or `sdlc-plan-audit` row in its whole history, so every
@@ -53,7 +53,7 @@ interface PluginTraces {
 /** The runs belonging to one plugin version, through its recorded skill membership.
  *
  * Through zz.plugin_version_skill and NOT through zz.event.step_version, which is stamped only
- * when a skill is served whole through skill_view and has been frozen at 39 rows while the event
+ * when a skill is served whole through skill_read and has been frozen at 39 rows while the event
  * log grew by a third. The membership is written at release, which is the only moment anybody
  * actually knows what a plugin version contained. */
 const RUNS_OF = `
@@ -155,7 +155,7 @@ export async function pluginTraces(
      order by count(*) desc`, [plugin, version])).rows;
   const use = useRows.map((r) => ({ tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals) }));
 
-  // A tool_call subject is `<surface>:<tool>` -- core:write_file, manage:whoami. The reachable
+  // A tool_call subject is `<surface>:<tool>` -- core:document_write, manage:whoami. The reachable
   // set is bare tool names, so compare on the half after the colon.
   const called = new Set(use.map((u) => u.tool.split(":").pop() ?? u.tool));
 

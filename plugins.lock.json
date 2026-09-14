@@ -1,24 +1,24 @@
 {
   "sdlc": {
     "version": "0.2.0",
-    "digest": "e5b3642b",
-    "cases_digest": "5b892e95",
+    "digest": "f94018de",
+    "cases_digest": "8ed10ca9",
     "skills": {
       "sdlc-audit-criteria": "2e6e7658e10d",
       "sdlc-authoring": "36835b1ba955",
       "sdlc-breakout": "053edf157618",
       "sdlc-deck": "bb0f737c315b",
       "sdlc-execute": "9a04bd96e3dd",
-      "sdlc-explore": "9a753290ce0b",
-      "sdlc-flow": "6aa89ba0a1f8",
+      "sdlc-explore": "0896a140f76b",
+      "sdlc-flow": "44b1c0adf52e",
       "sdlc-investigate": "c52bfb4eff39",
-      "sdlc-method": "af362dd16723",
-      "sdlc-plan": "895cd03f4da6",
+      "sdlc-method": "513397ae821b",
+      "sdlc-plan": "a9358da05557",
       "sdlc-plan-audit": "7ad834323396",
-      "sdlc-recall": "11d3248df3c0",
+      "sdlc-recall": "e6f3f9eb5740",
       "sdlc-research": "356f31a674f0",
       "sdlc-review": "aa2dd0db648a",
-      "sdlc-spec": "77e51ec5f4ac",
+      "sdlc-spec": "733085450bad",
       "sdlc-spec-audit": "a8861d50826a",
       "sdlc-tldr": "2469c2720bad"
     }
@@ -34,27 +34,27 @@
   },
   "zz-core": {
     "version": "0.34.0",
-    "digest": "a681dfbd",
-    "cases_digest": "eb019e03",
+    "digest": "90d1aae3",
+    "cases_digest": "e0e2b9b8",
     "skills": {
-      "zz-backbone": "4e39db5d39ec",
+      "zz-backbone": "8697ece2710c",
       "zz-doctor": "32f46223e8d2",
-      "zz-knowledge": "93465dacc57f",
-      "zz-migrate": "61cc51fe863c",
+      "zz-knowledge": "083a3eb3f2e7",
+      "zz-migrate": "574ad565ef2c",
       "zz-update": "fe649922ad45"
     }
   },
   "zz-plugin-eval": {
     "version": "0.2.0",
-    "digest": "33d23396",
+    "digest": "fdd6426b",
     "cases_digest": "18f8affd",
     "skills": {
-      "zz-plugin-define": "a3c6baa250d1",
-      "zz-plugin-eval": "7f3a38205833",
+      "zz-plugin-define": "c726e3f00cab",
+      "zz-plugin-eval": "8b32078d71d9",
       "zz-plugin-judge": "93ddf954c040",
       "zz-plugin-locate": "641a2d2e8a99",
       "zz-plugin-profile": "b4d171f5a477",
-      "zz-plugin-report": "084a6246cec6"
+      "zz-plugin-report": "17a22d12a50c"
     }
   }
 }

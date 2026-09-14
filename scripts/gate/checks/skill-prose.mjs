@@ -14,17 +14,17 @@ import { firstOf, root, sourceFiles } from "../read.mjs";
 import { check } from "../run.mjs";
 import { NAMING, catalogPackages, declaredCommands, everyShippedSkill, flows, ownedFields, platformSkills, skillsOf } from "../facts.mjs";
 
-check("a skill_view a skill spells out names a skill that exists", () => {
+check("a skill_read a skill spells out names a skill that exists", () => {
   // THE DIRECT INSTRUCTION, checked directly. The prefix check below covers a backticked
   // sibling name, which is what a citation usually looks like WITHIN a flow. It cannot
   // cover a cross-family name: `blocks-capabilities` shares no prefix with ops-flow's
-  // skills, so `skill_view("blocks-capabilities")` sat in ops-select AND in zz-backbone —
+  // skills, so `skill_read("blocks-capabilities")` sat in ops-select AND in zz-backbone —
   // the platform skill every flow on this platform loads first — for as long as the skill
   // was gone, and the gate was green the whole time. A block evaluation loaded zz-backbone,
   // did what it said, and was refused: "no skill named 'blocks-capabilities' is available
   // to you".
   //
-  // `skill_view("X")` is not a citation, it is an instruction to load X, and an instruction
+  // `skill_read("X")` is not a citation, it is an instruction to load X, and an instruction
   // to load something that does not exist is wrong in a way no convention makes ambiguous.
   // Its `file:` form is out of scope here: whether a skill ships a given reference is a
   // question about that skill's directory, and "a skill never instructs a tool its package
@@ -32,8 +32,8 @@ check("a skill_view a skill spells out names a skill that exists", () => {
   const bad = [];
   for (const rel of sourceFiles(["catalog", "skills", "blocks"], ["SKILL.md"])) {
     const txt = readFileSync(join(root, rel), "utf8");
-    for (const m of txt.matchAll(/skill_view\(\s*["'`]([a-z0-9][a-z0-9-]*)["'`]/g)) {
-      if (!everyShippedSkill().has(m[1])) bad.push(`${rel} -> skill_view("${m[1]}")`);
+    for (const m of txt.matchAll(/skill_read\(\s*["'`]([a-z0-9][a-z0-9-]*)["'`]/g)) {
+      if (!everyShippedSkill().has(m[1])) bad.push(`${rel} -> skill_read("${m[1]}")`);
     }
   }
   return bad.length ? [...new Set(bad)].join("; ") : null;
@@ -91,7 +91,7 @@ check("no skill justifies itself by machinery this platform does not have", () =
   // The rules were right and the reasons were fiction, which is the worse way round: anyone
   // who checks finds no renderer and concludes the rule is vestigial, when sdlc-execute and
   // sdlc-plan-audit genuinely depend on it.
-  // @include is here too: nothing on this platform expands one. skill_view returns the file
+  // @include is here too: nothing on this platform expands one. skill_read returns the file
   // verbatim, so a directive that names another file ships as literal text — and both skills
   // that carried one followed it with "apply these writing rules", above nothing at all.
   // "the pipeline" joined them: sdlc-plan told a plan author that it "re-materializes your
@@ -122,7 +122,7 @@ check("no skill justifies itself by machinery this platform does not have", () =
 check("no skill writes a document with a local-file tool", () => {
   // sdlc-spec told the model to write the spec skeleton "in ONE `Write` call" and to enrich
   // each section "using `Edit`". Those are the runtime's LOCAL file tools. The platform's
-  // documents live in the initiative store and are written with write_file / patch_file — a
+  // documents live in the initiative store and are written with document_write / document_patch — a
   // spec written to a local path has no envelope, no version snapshot at approval, no
   // telemetry, and nothing a person can approve or an auditor can read. And it looks exactly
   // like success, which is why the same file's own design note warns against it.
@@ -131,7 +131,7 @@ check("no skill writes a document with a local-file tool", () => {
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     readFileSync(join(root, rel), "utf8").split("\n").forEach((line, i) => {
       for (const m of line.matchAll(LOCAL)) {
-        bad.push(`${rel}:${i + 1} names \`${m[1]}\` — documents are written with write_file / patch_file`);
+        bad.push(`${rel}:${i + 1} names \`${m[1]}\` — documents are written with document_write / document_patch`);
       }
     });
   }
@@ -165,7 +165,7 @@ check("a skill that ships an asset does not say the asset is beside it", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("every stage that writes a document names show_document, or says why not", () => {
+check("every stage that writes a document names document_present, or says why not", () => {
   // ops-flow told its agent to present documents in full and its records show it did.
   // sdlc-flow's eleven skill files never mentioned the subject, and its records show that
   // too. The difference was never a decision — it was which prose happened to be loaded.
@@ -180,8 +180,8 @@ check("every stage that writes a document names show_document, or says why not",
       const sk = join(f.dir, "skills", d.stage, "SKILL.md");
       if (!existsSync(sk)) { bad.push(`${f.owner}/${f.flow}: ${d.stage} declares no SKILL.md`); continue; }
       const text = readFileSync(sk, "utf8");
-      if (!/show_document/.test(text) && !/do not paste|does not paste|present .{0,40}differently/i.test(text)) {
-        bad.push(`${f.owner}/${f.flow}/${d.stage} writes ${d.name} but neither names show_document nor states a departure`);
+      if (!/document_present/.test(text) && !/do not paste|does not paste|present .{0,40}differently/i.test(text)) {
+        bad.push(`${f.owner}/${f.flow}/${d.stage} writes ${d.name} but neither names document_present nor states a departure`);
       }
     }
   }
@@ -319,7 +319,7 @@ check("no skill template hands a model a field the platform owns", () => {
   // Found by reading rather than by running: three sdlc templates opened with
   // `status: draft`, and an sdlc closing skill's close section handed over a whole
   // `outcome: delivered` block while the same file, forty lines down, correctly said
-  // `close()` derives it. The stale half came first, which is the half an agent follows.
+  // `initiative_close()` derives it. The stale half came first, which is the half an agent follows.
   //
   // Only inside a fence, and only as a KEY at the start of a line. Prose naming a field is
   // how these skills explain the rule, and explaining it is exactly what they should do.
@@ -336,7 +336,7 @@ check("no skill template hands a model a field the platform owns", () => {
   const OWNED_INLINE = new RegExp(
     `(record|write|set|put|add|patch|fill|stamp)\\b.{0,90}?\`(${ownedFields().join("|")})\\s*:`, "is");
   // The sentence is describing the platform's behaviour, not asking for it.
-  const DESCRIBES = /platform|refus|by hand|approve\(|close\(|stamp|stays|never|not by/i;
+  const DESCRIBES = /platform|refus|by hand|document_approve\(|initiative_close\(|stamp|stays|never|not by/i;
   const bad = [];
   for (const rel of sourceFiles(["catalog", "skills"], ["SKILL.md"])) {
     let fenced = false;
@@ -361,7 +361,7 @@ check("no skill template hands a model a field the platform owns", () => {
   }
   return bad.length
     ? `${bad.join("; ")} — the platform stamps these; a template carrying one is refused on ` +
-      "the first save. Say approve() or close() instead."
+      "the first save. Say document_approve() or initiative_close() instead."
     : null;
 });
 
@@ -463,7 +463,7 @@ check("no skill names a package file the packager does not emit", () => {
 });
 
 check("a re-entry section names the tool that can change an approved document", () => {
-  // An approved gated document changes through revise_document; write_file and patch_file are
+  // An approved gated document changes through document_revise; document_write and document_patch are
   // refused on it, because a signature has to cover the bytes it signed.
   //
   // Re-entry is where this always bites, and it is identifiable rather than guessable: a stage
@@ -494,15 +494,15 @@ check("a re-entry section names the tool that can change an approved document", 
         if (!/\b(amend|revise|update|change)\b/i.test(sec)) continue;
         // Only when the section acts on a document that actually carries a gate.
         const docs = gated.filter((n) => sec.includes(n) || sec.includes(n.replace(/\.md$/, "")));
-        if (docs.length && !/revise_document/.test(sec)) {
-          bad.push(`${f.owner}/${f.flow}/${sk} re-entry touches ${docs.join(", ")} without naming revise_document`);
+        if (docs.length && !/document_revise/.test(sec)) {
+          bad.push(`${f.owner}/${f.flow}/${sk} re-entry touches ${docs.join(", ")} without naming document_revise`);
         }
       }
     }
   }
   return bad.length
     ? `${bad.join("; ")} — a re-entered stage works on a document the stakeholder already ` +
-      "approved, and write_file and patch_file are refused there"
+      "approved, and document_write and document_patch are refused there"
     : null;
 });
 
@@ -638,7 +638,7 @@ check("a skill citing another's section cites one that is there", () => {
 });
 
 check("a skill describing acceptance describes the honest close too", () => {
-  // `close()` has two honest endings for finished work: somebody accepted it, or nobody did
+  // `initiative_close()` has two honest endings for finished work: somebody accepted it, or nobody did
   // and one line says why. Its own description states the design — "closing without an
   // acceptor is a legitimate route and costs a sentence... an honest close is never the
   // expensive one, but it is never free either" — and the whole point is that the cheap word

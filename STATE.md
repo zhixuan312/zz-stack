@@ -41,7 +41,7 @@ is what some other product gets wrong:
   outcomes, telemetry and the team's own git history fall out of the work being
   done, which is the only way a record stays true.
 - **Evidence is the input to the next round.** The record exists to be read
-  back — by `reconcile`, by zz-knowledge, by the next person who asks what this team
+  back — by `knowledge_reconcile`, by zz-knowledge, by the next person who asks what this team
   already decided about this block. A record nobody reads is filing, not memory.
 - **The parts are yours.** Models, front ends, building blocks and flows are all
   replaceable, by design and one at a time. What the platform owns is the seam
@@ -170,7 +170,7 @@ and confirm-parameters on destructive tools.
   level (org / team / the platform team itself) and are strictly opt-in.
   Envelope, telemetry and index are the only mandatory layers; the ledger
   is automatic; journal is recommended; OKR is ambition.
-- **Tools do format, skills do judgment**: add_source / knowledge_add /
+- **Tools do format, skills do judgment**: source_add / knowledge_add /
   knowledge_supersede keep users out of format work; `zz-knowledge`, the skill
   every flow ends with, guides what is worth writing.
 - Visibility: records default team-private. **Distillates go on one of two
@@ -195,7 +195,7 @@ Stated once, in `zz-backbone`, inherited by every flow on every harness.
 - **If someone's input changes a required document, that input becomes a
   source and the document goes to the next version.** The commonest case is
   not a meeting note but the *second brain dump* — the correction a
-  stakeholder adds after reading their own intent. `revise_document` does
+  stakeholder adds after reading their own intent. `document_revise` does
   it in one call: stores their words verbatim as a source, links it, bumps
   v1 → v2, puts `status` back to draft so the gate returns to a human, and
   leaves the approved v1 in `_versions/`.
@@ -227,7 +227,7 @@ Stated once, in `zz-backbone`, inherited by every flow on every harness.
   with no provenance at all.
 - **A verdict is recorded by an ACT, not by typing a field.** `status`,
   `approved_by`, `approved_at`, `outcome` and `closed_by` are the platform's;
-  writing them by hand is refused. `approve()` and `close()` stamp them from the
+  writing them by hand is refused. `document_approve()` and `initiative_close()` stamp them from the
   session, which is the only party that knows who is calling and what day it is.
   The evidence: of 93 approved documents on this deployment, four carried no
   `approved_at` and two no `approved_by`, each written by an agent that had just
@@ -275,7 +275,7 @@ What is pluggable and what never moves:
 |---|---|---|
 | Stages | any number, any names, per flow | they come from the manifest; telemetry proves the order |
 | Documents | any set, names, roles, and which section headings each must carry | `flow`, `type`, `status` — stamped by the platform; a heading the flow declares is present or the write is refused |
-| Gates | which documents gate, and how many | `status` is exactly `draft` or `approved`, and only `approve()` moves it — the model writes no frontmatter at all |
+| Gates | which documents gate, and how many | `status` is exactly `draft` or `approved`, and only `document_approve()` moves it — the model writes no frontmatter at all |
 | Tools | which blocks a flow declares, which a team is granted | every call authenticates as the caller, through the one door |
 | Client | web front end, CLI harness, agent runtime, read surface | the rules live in zz-core, so where the loop runs changes ergonomics and nothing else |
 | Method | all of it — markdown the team writes | versioning, snapshots, telemetry, the ledger |
@@ -385,8 +385,8 @@ browser and in a CLI harness. It is a stored choice rather than a header a clien
 there is one answer to "which team" and one place to change it.
 
 And the people who never run a flow at all — reviewers, auditors, partners
-— are first-class: from any harness they can search, read, `list_sources`,
-`add_source`. It contributes knowledge without editing
+— are first-class: from any harness they can search, read, `source_list`,
+`source_add`. It contributes knowledge without editing
 around a gate.
 
 ## 5f. Platform capabilities (what a team gets for free)
@@ -399,7 +399,7 @@ around a gate.
 | Guardrails | gate chain, status vocabulary, close requirements, envelope stamping, system-file protection | zz-core |
 | Provenance | approval snapshots, immutable sources, mechanical ledger, activity telemetry | zz-core |
 | Knowledge | team store, full-text + envelope search with citations, sources, journal, OKRs | zz-core + `zz` schema |
-| Team skills | two roots, both readable by that team from every client and invisible to others: the team's OWN STORE at `skills/<name>/SKILL.md`, written with `write_file` and needing nobody's approval, and a skills-only package under `catalog/<team>/` once one earns its keep beyond the team. Both are searched after the platform's and the flow's, so neither can shadow `zz-backbone` or a stage | zz-core |
+| Team skills | two roots, both readable by that team from every client and invisible to others: the team's OWN STORE at `skills/<name>/SKILL.md`, written with `document_write` and needing nobody's approval, and a skills-only package under `catalog/<team>/` once one earns its keep beyond the team. Both are searched after the platform's and the flow's, so neither can shadow `zz-backbone` or a stage | zz-core |
 | Continuity | `initiative_status`: the same next move in every harness | zz-core |
 | Credentials | each person's own block keys, stored once, injected per call, never echoed | gateway |
 | Evaluation | smoke engine, manifest audit, the tool record, block conformance against the published standard, the cross-flow comparison, and the claim index — all flow-agnostic | packages/tools + zz-core (`testing/` is the shell around them) |
@@ -431,15 +431,15 @@ is the balance, and the balance is:
 - **No block is registered.** `blocks.ts` ships an empty built-in registry — a deployment's
   blocks come entirely from `PLATFORMS`, and this one sets none.
 - **Governance in code, not in prose:** document-chain gates, the exact status and outcome
-  vocabularies, an approval that only exists once `approve()` recorded it, a close that must
-  name who accepted or say why nobody did, and `approve` now reporting whether anything fetched
+  vocabularies, an approval that only exists once `document_approve()` recorded it, a close that must
+  name who accepted or say why nobody did, and `document_approve` now reporting whether anything fetched
   the document since its content last changed.
 - **Backups work, and did not.** Nightly and weekly-verify, both in the host's crontab. Until
   2026-09-11 every run wrote three archives and then deleted all three, because a fourth step
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 303 checks**, and twelve of them RUN code rather than reading it: the
+- **The offline gate is 304 checks**, and twelve of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through
@@ -673,7 +673,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **303 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **304 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".
@@ -738,8 +738,8 @@ deck's own `?qa` panel reported as identical to finished ones. Silently truncate
 silently blank. That is better and it is not what was promised; fixing it changes the
 placeholder format and is separate work.
 
-**`approve` says whether anything fetched the document since its content last changed.** The
-platform has always asked for `show_document` before a gate — a person approves bytes, and the
+**`document_approve` says whether anything fetched the document since its content last changed.** The
+platform has always asked for `document_present` before a gate — a person approves bytes, and the
 fetch is the only part of "I put it in front of them" that reaches the record — and nothing
 ever said so at the moment it was skipped. The initiative that produced this release closed
 with four of its six approvals carrying no fetch, an eleven-task plan among them, approved
@@ -850,7 +850,7 @@ provably what the revision was made from rather than a summary of it. Nothing re
 unless generation succeeds, and the new version lands as a draft with the approval cleared,
 so generation can advance no gate.
 
-**And a team can ask its own folder.** Retrieval is the existing `search_knowledge`, called as
+**And a team can ask its own folder.** Retrieval is the existing `knowledge_search`, called as
 the caller and therefore already scoped; the route adds generation only. Citations are built
 from what was retrieved, never from the model's prose, and a citation the console cannot open
 — the shared platform shelf is pooled into that search but its documents 404 outside their own
@@ -933,7 +933,7 @@ was not everybody's.
   everybody.
 - **The handover is a step every flow inherits, derived from the manifest rather than wired
   into a stage list.** `initiative_status` answers `action: handover` until a node names this
-  initiative; the handover carries a gate so the team approves what was distilled; `close()`
+  initiative; the handover carries a gate so the team approves what was distilled; `initiative_close()`
   refuses an initiative whose handover is not approved. `learnings.md` is abolished and
   sdlc-flow's own closing skill is deleted — `zz-knowledge` is the only skill that writes
   knowledge, for every flow. (The retired skill is not named here on purpose: a gate check
@@ -961,17 +961,17 @@ server code holds identically everywhere.** That sentence is the whole release. 
 behaviours moved across the line, each one chosen because a live run had already shown the
 prose version being routed around.
 
-- **`show_document`** puts a document in front of a person: envelope facts, then the body
+- **`document_present`** puts a document in front of a person: envelope facts, then the body
   verbatim, never a summary. Every document-writing stage now names it. **The fetch is
   recorded** as a `shown` entry with the path, version and caller — so "was this ever fetched
   before its gate was approved" is answerable from the initiative's own log. That is
   detection, not prevention: a tool result is model input, and the platform cannot vouch for
   a pair of eyes. The refusal that WOULD make it impossible is named and deliberately unbuilt.
-- **Three tools stopped discarding a supplied value.** `close()` given both an acceptor and a
-  no-signoff reason preferred the acceptor and dropped the reason; `reconcile()` given both an
+- **Three tools stopped discarding a supplied value.** `initiative_close()` given both an acceptor and a
+  no-signoff reason preferred the acceptor and dropped the reason; `knowledge_reconcile()` given both an
   initiative and a block answered one and ignored the other. Both now refuse and name the
   contradiction.
-- **`revise_document` accepts `self_edit`** — the record could not tell "no cause" from "cause
+- **`document_revise` accepts `self_edit`** — the record could not tell "no cause" from "cause
   not captured".
 - **A spec's acceptance criteria are indexed at all.** The reader anchored at a bold key at
   line start, so a flow writing `- [ ] **AC-6.1**` had its requirements indexed AS its criteria
@@ -991,7 +991,7 @@ OIDC client — the gateway never sees that sign-in, so there is nothing to hook
 `SSOAUTH_*`/`CONSOLE_PUBLIC_URL` values on **`cred-proxy`**, which is what serves `/auth/*`.
 
 **What is NOT verified.** Two acceptance criteria in the initiative behind this release name
-method `human` and no human has answered them: whether `show_document`'s output reads as a
+method `human` and no human has answered them: whether `document_present`'s output reads as a
 document, and whether the spine's prose still overstates what the code does. Both were
 exercised by an agent, which is the weakest possible reviewer of its own output.
 
@@ -1016,7 +1016,7 @@ the rule — a flow is a discipline over documents, so the packages that have on
 that declare documents; `zz-access`'s phantom stage is deleted and it has no stages at all. Ownership is still
 `shelved: true`, a separate axis from `install: "auto"` (all three evaluation packages declare
 both, which is why one field could not carry them), and `zz-admin` still carries its own prompt,
-because the generated router assumes a flow and told it to `skill_view` an entry it does not have.
+because the generated router assumes a flow and told it to `skill_read` an entry it does not have.
 
 `ARCHITECTURE.md` is the definition the repository is now checked against, and
 three gate checks enforce the parts a machine can read.
@@ -1073,7 +1073,7 @@ happened.
 The console tells flows from blocks — a flow is an agent method that runs against blocks, a
 block is something reached over MCP carrying its team's own skills — and every skill on
 either serves its own text, its reference material, what it cost and what it scored.
-`skill_view` gained a `file` argument, which is what made a block's reference material
+`skill_read` gained a `file` argument, which is what made a block's reference material
 reachable at all: block skills are packaged into no plugin, so MCP is their only delivery
 path and it served SKILL.md and nothing else.
 
@@ -1135,13 +1135,13 @@ our own work.
   255 checks. Most of what that found was one shape: a rule stated in one place and applied in
   another, the two drifted, and nothing able to see it. Four were in the gate itself.
 
-- **A verdict is an act.** `approve(path)` and `close(initiative, disposition)` stamp
+- **A verdict is an act.** `document_approve(path)` and `initiative_close(initiative, disposition)` stamp
   `status`, `approved_by`, `approved_at`, `outcome` and `closed_by` from the session, and
   writing any of them by hand is refused. `outcome` lost `superseded` — supersession is a
   pointer between documents, not the fate of an initiative — and now reads
-  `delivered | accepted | abandoned`, derived by `close()` from a disposition and whether a
+  `delivered | accepted | abandoned`, derived by `initiative_close()` from a disposition and whether a
   person is named.
-- **`reconcile(initiative | block)`** joins `zz.decision` against `zz.event`: what a stage
+- **`knowledge_reconcile(initiative | block)`** joins `zz.decision` against `zz.event`: what a stage
   predicted about a block, beside what the platform later recorded happening to it.
   `zz.decision` had been write-only since it was added — rows derived on every index, read
   by nothing.
@@ -1161,13 +1161,13 @@ our own work.
   `/admin/mcp` tools with no server declared, so the agent every account gets was told to
   perform an install it could not perform. Complete and unreachable is the most expensive
   shape here because nothing fails, and a gate check asks the question now.
-- **The model writes the body; the platform writes the envelope.** `write_file` and
-  `revise_document` refuse content that opens with frontmatter and take the rest as named
+- **The model writes the body; the platform writes the envelope.** `document_write` and
+  `document_revise` refuse content that opens with frontmatter and take the rest as named
   arguments. Every envelope field now comes from a fact the platform holds or from an act,
   and the third source — a model typing YAML — is closed. `version` became the platform's;
   `sdlc-spec`'s `contract:` block moved into the body, where a reader can actually see it.
-- **One way to change an approved document.** `patch_file` and `write_file` are refused on a
-  gated document while it is approved, and point at `revise_document`. Two paths with
+- **One way to change an approved document.** `document_patch` and `document_write` are refused on a
+  gated document while it is approved, and point at `document_revise`. Two paths with
   opposite behaviour was the third instance of the asymmetry the guards check for.
 - **A comment is a source.** The three comment tools are gone and `zz.comment` is dropped;
   what a person writes on a document from the web now lands as a source, through zz-core.
@@ -1213,7 +1213,7 @@ calendar, and this file is the balance.
 |---|---|---|
 | One door | the `zz` schema in our own database; PAT identity, hashed, scoped and revocable; `/admin/mcp` with RBAC, confirm-params and an audit trail; the `/core` proxy | a request without a PAT is refused; a spoofed identity header presented alongside a PAT is REWRITTEN to the PAT's owner, not trusted; every skill is reachable through one URL |
 | Registry | `flow.json` manifests drive the guardrail chain; `install_flow` / `grant_tool` decide what a team has; `/p` enforces it once grants exist | the chain is enforced from the manifest rather than from code that knows the flow's name |
-| Knowledge | one shelf on the platform's own team, read by every team; version snapshots taken at approval; `sources/` ungated and immutable; a mechanical ledger row at close; index-on-write with `search_knowledge` carrying provenance | a full chain test: three snapshots, a ledger row, and a search hit that cites its source |
+| Knowledge | one shelf on the platform's own team, read by every team; version snapshots taken at approval; `sources/` ungated and immutable; a mechanical ledger row at close; index-on-write with `knowledge_search` carrying provenance | a full chain test: three snapshots, a ledger row, and a search hit that cites its source |
 | Many flows | the guardrails are flow-agnostic — the chain comes from each flow's own manifest | proven with a one-document, one-gate fixture: same image, different manifest, different discipline, zero code changes. The fixture was deleted once it had done its job |
 
 ## 7. Principles (the rules that settle arguments)
@@ -1261,8 +1261,8 @@ written**: the same shape of defect had been observed three times, each one two
 paths to the same effect where one demanded less. `outcome: accepted` required a
 signature and `delivered` did not, so writing the latter skipped it.
 `approved_by` and `accepted_by` were two words and only one was enforced.
-`revise_document` cleared the signature and returned a document to draft while
-`patch_file` edited the same document and moved nothing. None of the three was
+`document_revise` cleared the signature and returned a document to draft while
+`document_patch` edited the same document and moved nothing. None of the three was
 the model disobeying; all three were a design offering it a cheaper road.
 
 Half of that is mechanically checkable: a **conditional validation** — a field

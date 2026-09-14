@@ -175,7 +175,7 @@ function buildServer(): McpServer {
   // raw `Error#message` — so this is not a rescue from a crash, it is the difference between
   // that generic shape and this file's own "ERROR: …" refusal shape, which is what every
   // OTHER refusal in this file already returns and what the gateway's own refusal-counting
-  // (tool-telemetry's `/^ERROR\b/` check, reconcile()'s comment about counting by refusal
+  // (tool-telemetry's `/^ERROR\b/` check, knowledge_reconcile()'s comment about counting by refusal
   // TEXT) already expects to see.
   //
   // Patched on the INSTANCE, not renamed at each of the 28 call sites below: a gate check

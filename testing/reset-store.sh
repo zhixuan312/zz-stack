@@ -18,7 +18,7 @@
 # /artifacts/archive/<team>/<stamp>/ and stay there.
 #
 # THEN REINDEX, because zz.doc and zz.decision are built from the filesystem and moving a folder
-# out from under them leaves rows pointing at documents that no longer exist. reindex_knowledge
+# out from under them leaves rows pointing at documents that no longer exist. knowledge_reindex
 # is what reconciles the two.
 set -euo pipefail
 
@@ -66,6 +66,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=60 "$HOST" \
   "$IN_CORE sh -c 'mkdir -p /artifacts/archive/$TEAM/$STAMP && cd /artifacts/teams/$TEAM && for d in $PREFIX*; do [ -e \"\$d\" ] && mv \"\$d\" /artifacts/archive/$TEAM/$STAMP/; done; ls /artifacts/archive/$TEAM/$STAMP | wc -l'"
 
 echo "  archived to /artifacts/archive/$TEAM/$STAMP — nothing was deleted"
-echo "  now call reindex_knowledge so zz.doc and zz.decision stop pointing at documents that moved:"
+echo "  now call knowledge_reindex so zz.doc and zz.decision stop pointing at documents that moved:"
 echo "    the eval harness does this on its next run; do it by hand if you are not about to run one"
 }

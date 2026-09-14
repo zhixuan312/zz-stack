@@ -1,6 +1,6 @@
 ---
 name: zz-knowledge
-version: 2.4
+version: 2.5
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -28,15 +28,15 @@ anything, as the signal this cycle is actually done.
 - Every document the flow declared, in order, and their `_versions/` snapshots: what
   changed between an approval and the next one is where the disagreements are.
 - `activity.jsonl` — every call, timestamped, with its arguments.
-- `reconcile(<initiative>)` — what this initiative's stages PREDICTED about each block
+- `knowledge_reconcile(<initiative>)` — what this initiative's stages PREDICTED about each block
   against what the gateway actually recorded, refusal text included.
 - The `_ledger.md` row: the close, its outcome, and its date — written by the platform, not
   by the agent, which is why it is the one to measure against.
-- `search_knowledge` for what is ALREADY known, on both shelves — and OPEN the ones that
+- `knowledge_search` for what is ALREADY known, on both shelves — and OPEN the ones that
   matter, on the shelf each says it is on — the path is the result's `initiative` and `path`
   joined, and a journal node's `initiative` is the literal `_knowledge`, so
-  `read_file("_knowledge/nodes/0136-….md", scope: "platform")` opens a platform node and
-  `read_file("<initiative>/<path>")` opens one of your team's own. A 600-character snippet is
+  `document_read("_knowledge/nodes/0136-….md", scope: "platform")` opens a platform node and
+  `document_read("<initiative>/<path>")` opens one of your team's own. A 600-character snippet is
   enough to judge whether a node is relevant and never enough to know what it says. A node that restates an
   existing one is noise; a node that CONTRADICTS one is the most valuable thing you can
   write, and it goes through `knowledge_supersede` rather than being added beside it —
@@ -176,7 +176,7 @@ exactly the judgement this skill exists to make honestly, not to talk itself out
 **Declare how many team nodes you proposed, in the write's own `fields`:**
 
 ```
-write_file(path: "<initiative>/handover.md", content: "<the body>",
+document_write(path: "<initiative>/handover.md", content: "<the body>",
            fields: {proposed_team_nodes: "2"})
 ```
 
@@ -194,9 +194,9 @@ complete with two team nodes promised in its own prose and none on the shelf, an
 anywhere disagreed. A promise recorded whose keeping goes unverified is the exact shape this
 document's own machinery exists to prevent.
 
-Write the document with `write_file` once, with all three sections filled in as above. It is
+Write the document with `document_write` once, with all three sections filled in as above. It is
 gated like every other document this platform hands to a person: a team member reads it and
-calls `approve("<initiative>/handover.md")` when they agree with what it says, including
+calls `document_approve("<initiative>/handover.md")` when they agree with what it says, including
 where it says nothing was worth recording. Nothing about that review is this skill's to
 perform — Pass 1 ends when the document is written, and Pass 2 does not begin until the
 approval has already happened.

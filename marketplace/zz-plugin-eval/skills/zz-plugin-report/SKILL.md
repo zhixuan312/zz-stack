@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-report
-version: 0.1
+version: 0.2
 description: Stage 5 of plugin evaluation. Read the scores back, say what the pattern is, propose the cases the next round should lock in, and write findings.md — which is gated and closes the initiative.
 when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation and what admits the proposed cases into the suite."
 ---
@@ -123,12 +123,12 @@ somebody imagined; traces see only what has been run. Neither sees the path nobo
 
 ## Closing
 
-Write it with `write_file`, then fetch it back with `show_document` and put what THAT returns in
+Write it with `document_write`, then fetch it back with `document_present` and put what THAT returns in
 front of the person. They are approving the document, not your account of it — and a write that
 succeeded is not a document anybody read.
 
 `findings.md` is gated and closing. Once a person approves it, close the initiative directly —
-one `close()` call, as `zz-backbone` describes — and say plainly whether the evaluation reached
+one `initiative_close()` call, as `zz-backbone` describes — and say plainly whether the evaluation reached
 a verdict or stopped for want of evidence. Both are complete outcomes; only one of them is a
 score.
 

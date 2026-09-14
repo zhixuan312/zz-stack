@@ -135,8 +135,8 @@ function subjectTagError(tags: string[] | undefined): string | null {
       const { active: team, all: evidenceTeams } = await teamsFor(who.email);
       // userRoot() falls back to a personal directory OUTSIDE teams/ when teamFor() is falsy
       // (server.ts:2374) — a team-scoped node from such a caller would report success and
-      // land where team-gated search can never reach it. search_knowledge and
-      // reindex_knowledge already refuse this caller in these terms; this closes the same
+      // land where team-gated search can never reach it. knowledge_search and
+      // knowledge_reindex already refuse this caller in these terms; this closes the same
       // silent-loss path here. `scope: "platform"` is untouched: the platform shelf is not
       // team-resolved, so a teamless caller still writes there.
       if (scope === "team" && !team) {
@@ -209,7 +209,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         // caller may already read, and a member of one team still cannot cite another's.
         if (!evidenceRoots.some((r) => existsSync(join(r, e.trim())))) {
           return text(`ERROR: evidence entry "${e}" is not an initiative in any store you are a ` +
-                      `member of (${evidenceTeams.join(", ") || "none"}). list_files with no ` +
+                      `member of (${evidenceTeams.join(", ") || "none"}). document_list with no ` +
                       "argument shows what is in the one you are acting for. Evidence names " +
                       "where the lesson came from, and a node whose evidence points at nothing " +
                       "is the opinion this tool exists to refuse.");
@@ -389,7 +389,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
       // Re-index the node, or the change stays invisible to every search.
       //
       // This wrote the file and the human-readable index.md and stopped. zz.doc — which is
-      // what search_knowledge actually reads — kept status: adopted and superseded_by:
+      // what knowledge_search actually reads — kept status: adopted and superseded_by:
       // null until the next boot or an explicit reindex. So "we tried this and moved on",
       // the single most useful thing recall can surface, was the one thing a search could
       // not see, for as long as the service happened to stay up.
@@ -416,7 +416,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
   );
 
   server.registerTool(
-    "reindex_knowledge",
+    "knowledge_reindex",
     {
       description:
         "Rebuild your team's knowledge index from the files, which are the source of truth. " +
@@ -451,7 +451,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
   );
 
   server.registerTool(
-    "search_knowledge",
+    "knowledge_search",
     {
       description:
         "Search your team's knowledge base and get ANSWERS, not just a list of paths. Ranks by " +
@@ -518,7 +518,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
       applyFilters((c) => cond.push(c), put);
 
       // team_slug IS SELECTED, because the query spans TWO shelves and the answer used to
-      // discard which one each row came from. A caller then read a path back with read_file,
+      // discard which one each row came from. A caller then read a path back with document_read,
       // which is scoped to their own team, and got "does not exist" for a node that is right
       // there on the platform's shelf. Observed on a live ops-flow round: the agent searched,
       // found the two nodes describing the exact casebox refusal it was about to hit, could not
@@ -640,7 +640,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         results.push({
           initiative: row.initiative, path: row.path, title: row.title, type: row.type,
           // WHICH SHELF, and therefore how to read it back. `platform` rows live in the
-          // journal every team shares; read_file reaches them with scope: "platform".
+          // journal every team shares; document_read reaches them with scope: "platform".
           shelf: row.team_slug === team ? "team" : "platform",
           status: row.status, superseded_by: row.superseded_by ?? null,
           tags: row.tags ?? [], evidence: row.evidence ?? [], flow: row.flow,

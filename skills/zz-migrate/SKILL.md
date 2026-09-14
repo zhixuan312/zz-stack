@@ -1,6 +1,6 @@
 ---
 name: zz-migrate
-version: 1.2
+version: 1.3
 description: "Bring one mma repository's history onto this platform: its journal becomes knowledge nodes, and its specs, plans, explorations, audits and the rest become the sources of one archive initiative that every migrated node cites as evidence. Resumable, and safe to run twice."
 when_to_use: "The person typed /zz-core:migrate, or has a repository with a .mma/ directory whose history they want on the platform. Run it from inside that repository."
 ---
@@ -29,7 +29,7 @@ where it stopped.
 | In `.mma/` | Becomes | Why that and not something else |
 |---|---|---|
 | `journal/nodes/*.md` | knowledge nodes | mma's six node types **are** this platform's six. It is a rename, not a translation. |
-| `specs/` `plans/` `explorations/` `audits/` `backlogs/` `verifications/` `notes/` `retros/` `decks/` `deployment/` | **sources** on one archive initiative | An initiative's documents are gated. A historical plan has no approvals because nobody approved it under rules that did not exist yet — importing it as a document would mean signing those gates on behalf of people who signed nothing. `add_source` is ungated and immutable and is exactly for material from elsewhere. |
+| `specs/` `plans/` `explorations/` `audits/` `backlogs/` `verifications/` `notes/` `retros/` `decks/` `deployment/` | **sources** on one archive initiative | An initiative's documents are gated. A historical plan has no approvals because nobody approved it under rules that did not exist yet — importing it as a document would mean signing those gates on behalf of people who signed nothing. `source_add` is ungated and immutable and is exactly for material from elsewhere. |
 | `worktrees/` `flow-state/` | nothing | Operational state, true only while the daemon that wrote it was running. |
 
 Every migrated node cites the archive initiative as its **evidence**, which is what makes the

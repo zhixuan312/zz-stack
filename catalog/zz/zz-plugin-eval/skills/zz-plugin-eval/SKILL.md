@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 0.3
+version: 0.4
 description: The front door to plugin evaluation. Five stages — locate, profile, define, judge, report — over one plugin at one released version. Two kinds of evidence, two gates, evidence about whether a plugin does the job it claims; never a change.
 when_to_use: "Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
@@ -78,7 +78,7 @@ conversation makes every number incomparable with every other number.
 | 4 | `zz-plugin-judge` | the scores, against the approved ruler |
 | 5 | `zz-plugin-report` | `findings.md` — gated, and it closes the initiative |
 
-After report, the close is an act rather than a stage — one `close()` call — and the platform
+After report, the close is an act rather than a stage — one `initiative_close()` call — and the platform
 then reports `action: handover`, which `zz-knowledge` writes cold, afterwards. The close ends
 the evaluation; the handover ends the cycle.
 

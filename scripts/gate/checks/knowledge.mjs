@@ -72,21 +72,21 @@ check("every flow ends with the platform's handover", () => {
     const skillsDir = join(f.dir, "skills");
     if (!existsSync(skillsDir)) continue;
     if (!(JSON.parse(readFileSync(fjp, "utf8")).documents ?? []).some((d) => d.closing)) continue;
-    // The skill that calls close() is the one that has to say what follows it.
+    // The skill that calls initiative_close() is the one that has to say what follows it.
     for (const sk of readdirSync(skillsDir)) {
       const md = join(skillsDir, sk, "SKILL.md");
       if (!existsSync(md)) continue;
       const text = readFileSync(md, "utf8");
-      // A skill that PERFORMS the close, not one that names the act. `close(initiative`
-      // alone missed sdlc-flow, which writes "one `close()` call against spec.md" and then
+      // A skill that PERFORMS the close, not one that names the act. `initiative_close(initiative`
+      // alone missed sdlc-flow, which writes "one `initiative_close()` call against spec.md" and then
       // said "Nothing runs after this stage" — the entry skill describing the whole
-      // sequence, with the appended step absent from it. Matching any `close(` then caught
-      // sdlc-method, which only says which fields come "from approve() and close()".
+      // sequence, with the appended step absent from it. Matching any `initiative_close(` then caught
+      // sdlc-method, which only says which fields come "from document_approve() and initiative_close()".
       //
       // So: a call with an argument, or the plain English for doing it.
-      if (!/close\(\s*(initiative|"|<)/.test(text) && !/closes? the initiative/i.test(text)) continue;
+      if (!/initiative_close\(\s*(initiative|"|<)/.test(text) && !/closes? the initiative/i.test(text)) continue;
       if (!/handover|zz-knowledge/.test(text)) {
-        bad.push(`${f.owner}/${f.flow}/${sk} calls close() and never mentions the handover that follows it`);
+        bad.push(`${f.owner}/${f.flow}/${sk} calls initiative_close() and never mentions the handover that follows it`);
       }
     }
   }
@@ -255,7 +255,7 @@ check("the shelf is on the door everyone has, and installing is not", () => {
 
 check("a knowledge node says which shelf it belongs on", () => {
   // The node format is frozen and carries no tier, so the shelf can only be said at the write.
-  // A default here would make silence sayable again — which is exactly what close() had to be
+  // A default here would make silence sayable again — which is exactly what initiative_close() had to be
   // repaired for, and what knowledge node 0097 records as the move that works: force a choice
   // between two sayable answers rather than nudging toward one.
   const src = zzCoreSource();
@@ -320,7 +320,7 @@ check("a platform-scoped node is about a registry entry", () => {
 
 check("a team-scoped node cannot be written by somebody in no team", () => {
   // userRoot() falls back to a personal directory OUTSIDE teams/ when teamFor() is falsy
-  // (server.ts:2374). search_knowledge and reindex_knowledge both refuse that caller;
+  // (server.ts:2374). knowledge_search and knowledge_reindex both refuse that caller;
   // knowledge_add did not — so a team node from them would have reported success and landed
   // where team-gated search can never reach it. Silent loss wearing a success message.
   const src = zzCoreSource();
@@ -373,7 +373,7 @@ check("every flow that gates a document also carries the handover", () => {
 });
 
 check("the handover carries a gate and does not carry the close", () => {
-  // gate: true is what makes a person sign it. closing/requiredForClose would make close()
+  // gate: true is what makes a person sign it. closing/requiredForClose would make initiative_close()
   // demand a document that cannot exist until after the close — documentGuards skips a gated
   // document that is absent, and that is the only reason the sequence is not circular.
   const src = zzCoreSource();
@@ -415,11 +415,11 @@ check("the handover is complete when its document is approved, not when a node m
 });
 
 check("close names the handover document and not a file that was abolished", () => {
-  // close() told agents to "write learnings.md" for months after zz-knowledge abolished it.
+  // initiative_close() told agents to "write learnings.md" for months after zz-knowledge abolished it.
   // Two independent agents hit that confusion in one day, and so did the author of the plan
   // this check comes from. A tool's own return text is documentation and rots like it.
   const src = zzCoreSource();
-  const at = src.indexOf(`registerTool(\n    "close"`);
+  const at = src.indexOf(`registerTool(\n    "initiative_close"`);
   if (at < 0) return "close is no longer registered";
   const body = src.slice(at, src.indexOf("\n  );", at));
   const bad = [];
@@ -563,7 +563,7 @@ check("the abandon-contradiction refusal is not disabled by the derived handover
 });
 
 check("an approved handover must have kept the team nodes it promised", () => {
-  // FOUND BY REVIEW. approve() is a generic gate recorder with no side effect, so nothing
+  // FOUND BY REVIEW. document_approve() is a generic gate recorder with no side effect, so nothing
   // makes zz-knowledge's second pass happen — and reading "closed" the instant handover.md
   // was approved let an initiative report complete with every promised team node unwritten.
   // A promise recorded whose keeping went unverified: the same shape as the substring scan

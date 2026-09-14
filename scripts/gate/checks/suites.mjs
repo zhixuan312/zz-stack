@@ -261,3 +261,6 @@ check("a flow is a plugin that declares documents, and zz-access is not one",
 
 check("every plugin declares what it is, what it ships, and what each stage leaves behind",
       runsCheck("manifests-conform.mjs"));
+
+check("the core door speaks noun-first, and no caller still says the old name",
+      runsCheck("core-names.mjs"));

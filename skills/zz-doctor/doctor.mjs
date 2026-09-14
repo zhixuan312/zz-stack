@@ -133,7 +133,7 @@ const PROBE = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", para
  *
  * `tools/list` is a protocol method, not a tool, so a doctor built only from probes is a
  * thing that leaves NO TRACE: the platform would have no way to know anybody ever ran it, and
- * "how often does this fail for real people" is the question it exists to answer. `get_my_info`
+ * "how often does this fail for real people" is the question it exists to answer. `session_whoami`
  * is a tool call, recorded at the door like every other, tagged `zz-doctor` by the header
  * above — and it is not a call invented for the telemetry's sake: it answers the question a
  * person with a broken setup actually has, which is whether the platform knows who they are. */
@@ -145,7 +145,7 @@ async function whoami(base) {
                  "Accept": "application/json, text/event-stream",
                  "Authorization": `Bearer ${token}`, "X-ZZ-Client": CLIENT },
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call",
-                             params: { name: "get_my_info", arguments: {} } }),
+                             params: { name: "session_whoami", arguments: {} } }),
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return null;

@@ -1,4 +1,4 @@
-# The `zz` plugin's suite. RUN IT AGAINST `marketplace/zz`, NOT AGAINST THE REPOSITORY ROOT.
+# The `zz` plugin's suite. RUN IT AGAINST `marketplace/zz-core`, NOT AGAINST THE REPOSITORY ROOT.
 #
 # This header used to say the root, on the reasoning that `zz` has no catalog directory and the
 # root resolves as a skills-dir plugin over `skills/`. It does — and it resolves the other three
@@ -8,7 +8,7 @@
 # was `partial: true` with a with-arm only, which is not a measurement of anything. 89MB of
 # repository against 144KB of built plugin.
 #
-# `marketplace/zz` is the plugin as a person actually installs it, so it carries zz-router too
+# `marketplace/zz-core` is the plugin as a person actually installs it, so it carries zz-router too
 # — which the root target does not, because buildClientPackage generates it per caller. A case
 # here may therefore depend on the router; none currently does.
 #
@@ -25,7 +25,7 @@
 #   suggests things to try. The plugin hands over one command that answers it.
 #
 # THE PROMPT TYPES THE COMMAND, and that is forced rather than chosen. zz-doctor does NOT
-#   ship as a skill: measured 2026-09-13, `marketplace/zz/skills/zz-doctor/` contains
+#   ship as a skill: measured 2026-09-13, `marketplace/zz-core/skills/zz-doctor/` contains
 #   `doctor.mjs` and no SKILL.md at all, because buildClientPackage renders zz's three typed
 #   capabilities (doctor, update, migrate) as COMMANDS — and a command carries
 #   `disable-model-invocation: true`, so no model can open it whatever the prompt says.
@@ -36,12 +36,12 @@
 #   script was there. Delta 0.00 — a case about a capability that is genuinely present,
 #   measuring nothing, because it reached for it the one way that cannot work.
 #
-#   Typing `/zz:doctor` is what a person does, and it costs the baseline arm nothing: with no
+#   Typing `/zz-core:doctor` is what a person does, and it costs the baseline arm nothing: with no
 #   such command installed, the line is just text.
 #
 # `regex` matches the run's LAST MESSAGE only (measured on the sdlc suite, 2026-09-13),
 #   and any string quoted in the prompt is free to the baseline arm. `doctor.mjs` and `zzp_`
-#   below appear nowhere in the prompt; `/zz:doctor` DOES, so it is not graded.
+#   below appear nowhere in the prompt; `/zz-core:doctor` DOES, so it is not graded.
 #
 # What it tests: given the exact symptom pair the skill names, does the agent reach for
 #   zz-doctor and hand over the script, instead of improvising a diagnosis?
@@ -56,7 +56,7 @@
 #    skill in the shipped plugin. See the note above.)
 #   hands-over-the-script ~1.0 — `doctor.mjs` is a filename that exists only inside this
 #                                plugin. The baseline arm cannot produce it by guessing.
-#   plugin-only-vocabulary ~0.9 — `zzp_` (the platform's token prefix), `/zz:update` (the
+#   plugin-only-vocabulary ~0.9 — `zzp_` (the platform's token prefix), `/zz-core:update` (the
 #                                fix the skill names for a version mismatch) and
 #                                `CLAUDE_PLUGIN_ROOT` (how the skill spells the path) are
 #                                all facts carried by the skill text. Weaker than the
@@ -66,14 +66,14 @@ schema_version: "1.0"
 name: diagnoses-a-401-with-zz-doctor
 execution:
   prompt: |
-    /zz:doctor
+    /zz-core:doctor
 
     Something is wrong with my ZZ setup in Claude Code. The MCP server will not connect at
     all, and one of the doors that did answer came back 401. I have no idea which half is
     broken. What is wrong, and how do I find out for certain?
   max_turns: 15
 graders:
-  # `/zz:doctor` was in this alternation and has been removed: the prompt now types it, so
+  # `/zz-core:doctor` was in this alternation and has been removed: the prompt now types it, so
   # the baseline arm gets it for free by quoting the request back. `doctor.mjs` is the file
   # name only this plugin carries.
   - name: hands-over-the-script
@@ -81,4 +81,4 @@ graders:
     pattern: 'doctor\.mjs'
   - name: plugin-only-vocabulary
     type: regex
-    pattern: 'zzp_|/zz:update|CLAUDE_PLUGIN_ROOT'
+    pattern: 'zzp_|/zz-core:update|CLAUDE_PLUGIN_ROOT'

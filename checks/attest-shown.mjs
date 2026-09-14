@@ -39,17 +39,17 @@ const write = (entries) =>
 
 const cases = [
   ["written then shown then approved      -> fetched", true,
-   [["write_file", "d.md"], ["shown", "d.md"], ["approve", "d.md"]]],
+   [["document_write", "d.md"], ["shown", "d.md"], ["document_approve", "d.md"]]],
   ["revised then approved, never shown    -> NOT fetched", false,
-   [["write_file", "d.md"], ["shown", "d.md"], ["approve", "d.md"],
-    ["revise_document", "d.md"], ["approve", "d.md"]]],
+   [["document_write", "d.md"], ["shown", "d.md"], ["document_approve", "d.md"],
+    ["document_revise", "d.md"], ["document_approve", "d.md"]]],
   ["shown, then PATCHED, then approved    -> NOT fetched", false,
-   [["write_file", "d.md"], ["shown", "d.md"], ["patch_file", "d.md"], ["approve", "d.md"]]],
+   [["document_write", "d.md"], ["shown", "d.md"], ["document_patch", "d.md"], ["document_approve", "d.md"]]],
   ["shown AFTER the last patch            -> fetched", true,
-   [["write_file", "d.md"], ["patch_file", "d.md"], ["shown", "d.md"], ["approve", "d.md"]]],
+   [["document_write", "d.md"], ["document_patch", "d.md"], ["shown", "d.md"], ["document_approve", "d.md"]]],
   // Another document's fetch must not vouch for this one — the log is shared per initiative.
   ["another document was the one shown    -> NOT fetched", false,
-   [["write_file", "d.md"], ["shown", "other.md"], ["approve", "d.md"]]],
+   [["document_write", "d.md"], ["shown", "other.md"], ["document_approve", "d.md"]]],
   // Silence, not a warning, when there is nothing to be "since".
   ["no recorded change at all             -> null (silent)", null,
    [["shown", "d.md"]]],

@@ -1,4 +1,4 @@
-# The `zz` plugin's suite. RUN IT AGAINST `marketplace/zz`, NOT AGAINST THE REPOSITORY ROOT.
+# The `zz` plugin's suite. RUN IT AGAINST `marketplace/zz-core`, NOT AGAINST THE REPOSITORY ROOT.
 #
 # This header used to say the root, on the reasoning that `zz` has no catalog directory and the
 # root resolves as a skills-dir plugin over `skills/`. It does — and it resolves the other three
@@ -8,14 +8,14 @@
 # was `partial: true` with a with-arm only, which is not a measurement of anything. 89MB of
 # repository against 144KB of built plugin.
 #
-# `marketplace/zz` is the plugin as a person actually installs it, so it carries zz-router too
+# `marketplace/zz-core` is the plugin as a person actually installs it, so it carries zz-router too
 # — which the root target does not, because buildClientPackage generates it per caller. A case
 # here may therefore depend on the router; none currently does.
 #
 # Provenance — skills/zz-backbone/SKILL.md, "Gates and the envelope", which states both
 #   halves of the rule and both are load-bearing:
 #     "A gate is not passed until it is recorded: the moment they agree, call zz-core's
-#     `approve(path)` in that same turn, before moving on."
+#     `document_approve(path)` in that same turn, before moving on."
 #     "The platform writes `status`, `approved_by` and `approved_at` from who you are and
 #     what time it is — you write none of the three, and writing them by hand is refused."
 #     "An approval that exists only in the chat does not exist, and the person must never be
@@ -39,8 +39,8 @@
 #
 # Expected Δ (with-plugin minus no-plugin):
 #   backbone-skill-fired ~1.0 — the skill does not exist in the baseline arm.
-#   names-the-approve-call ~0.9 — `approve(` as the platform's own call, alongside
-#                              `revise_document` / `show_document`. Plugin vocabulary.
+#   names-the-approve-call ~0.9 — `document_approve(` as the platform's own call, alongside
+#                              `document_revise` / `document_present`. Plugin vocabulary.
 #   platform-writes-the-envelope ~0.6 — the weakest here, and kept deliberately: a baseline
 #                              agent can name `approved_by` because it is the field it was
 #                              about to write. The llm grader is what separates naming the
@@ -63,7 +63,7 @@ graders:
     tool: Skill(zz-backbone)
   - name: names-the-approve-call
     type: regex
-    pattern: 'approve\(|show_document|initiative_status'
+    pattern: 'document_approve\(|document_present|initiative_status'
   - name: platform-writes-the-envelope
     type: regex
     pattern: 'approved_by|approved_at'

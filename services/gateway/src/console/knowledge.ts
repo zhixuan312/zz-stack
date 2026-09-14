@@ -67,7 +67,7 @@ export function mountKnowledge(app: Express): void {
    *
    * READS `knowledge.add` / `knowledge.supersede`, the entries zz-core writes beside its
    * `_knowledge/log.md` (see `knowledgeEvent` there). Not `tool_call` rows: those carry no
-   * actor on purpose — "no address on a measurement" — and they include `search_knowledge`
+   * actor on purpose — "no address on a measurement" — and they include `knowledge_search`
    * reads, which are not journal entries. A log needs exactly the thing a measurement drops.
    *
    * THE NODES ARE JOINED BACK IN, by (team, subject), so a row can carry the node's title

@@ -78,7 +78,7 @@ check("a value crossing into a shell is quoted for a shell", () => {
 check("the write guards see a path traversal cannot hide from", () => {
   // writeGuard matched every pattern against the path AS THE CALLER WROTE IT, and one of them
   // anchors at the start. So `a/../_knowledge/nodes/0001-x.md` slipped past the journal guard
-  // and safePath then resolved it to exactly the file the guard exists to protect: write_file
+  // and safePath then resolved it to exactly the file the guard exists to protect: document_write
   // could mint a journal node with no evidence, no index.md row and no line in the
   // append-only log — the things knowledge_add is there to guarantee — and rewrite an OKR sheet
   // that okr_grade averages.
@@ -116,11 +116,11 @@ check("no replacement string can be read as a pattern", () => {
   // String.replace's SECOND argument is not inert text. It reads $$, $&, $` and $' — and
   // this platform's whole job is putting somebody's words into somebody's document.
   //
-  // patch_file did `body.replace(find, replace)` with the model's own text as the
+  // document_patch did `body.replace(find, replace)` with the model's own text as the
   // replacement, and it is described as how a draft is filled in section by section. Verified
   // against that call: "$$50" became "$50"; a shell example containing $' swallowed its line
   // and injected the entire rest of the document after it; "$&" wrote the text being replaced
-  // back out. setEnvelopeField and putEnvelopeField did the same with a value that close()
+  // back out. setEnvelopeField and putEnvelopeField did the same with a value that initiative_close()
   // takes from the model — a name of "Ms $& Tan" came out as "Ms accepted_by: old Tan" — and
   // three more sites interpolated a title, a stakeholder or a grader's note into a
   // replacement. Nine in total, all silent, none of which any test would have shown.
@@ -258,7 +258,7 @@ check("nothing under a store root that begins with a dot is reachable", () => {
   // walk() skips dot-entries — it has to, because the store is a git repository and a lister
   // that did not would report `.git/COMMIT_EDITMSG` as the team's first document. safeName
   // refuses a dot-prefixed name and says why in as many words. Neither guards the `path`
-  // argument write_file, patch_file and read_file take, so the rule was stated twice and
+  // argument document_write, document_patch and document_read take, so the rule was stated twice and
   // applied nowhere near the tools that needed it.
   //
   // `.git` arrived at the root of every team's store this release. `.git/hooks/pre-commit`

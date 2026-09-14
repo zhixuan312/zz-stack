@@ -58,7 +58,7 @@ const CLAIM_KEY = "([A-Z]{1,4}-\\d+(?:\\.\\d+)*)";
  * entries in the console, in initiative_status, and in every report built by ordering on it.
  *
  * ON CREATION ONLY, and that is the whole of the design. Put in safeName it would have guarded
- * every call that names an initiative — add_source, close, initiative_status — and the forty
+ * every call that names an initiative — source_add, close, initiative_status — and the forty
  * that already exist could then never be closed, which is the shape of bug this file has now
  * fixed twice. A name is checked when it is chosen; afterwards it is simply the name. */
 export function initiativeNameShape(name: string): string | null {
@@ -66,7 +66,7 @@ export function initiativeNameShape(name: string): string | null {
   return (
     `ERROR: an initiative is named <YYYY-MM-DD>-<slug> and "${name}" does not begin with a ` +
     "date in that order. The date is what every listing sorts on, so a day-first or undated " +
-    "name files itself in the wrong place for good. get_my_info carries today's date in this " +
+    "name files itself in the wrong place for good. session_whoami carries today's date in this " +
     "deployment's own timezone — use that, then a short slug in the stakeholder's words."
   );
 }
@@ -77,7 +77,7 @@ export function initiativeNameShape(name: string): string | null {
  * owns was refused here, with a sentence explaining why. A name that is merely malformed —
  * `buildingBlock` where the skill said `building_block`, or a key with a space in it — was
  * dropped, silently, by an identical `FIELD_NAME` test duplicated inside envelopeFor AND
- * inside revise_document. Both paths returned `written: <path> (N chars)`, and the document
+ * inside document_revise. Both paths returned `written: <path> (N chars)`, and the document
  * came back without the pointer the flow's own skill had just told the agent to write.
  *
  * A silent drop is the worse of the two failures. A refusal costs one round trip and names
@@ -108,7 +108,7 @@ export function fieldRefusal(fields: Record<string, unknown> | undefined): strin
  *
  * Every envelope field comes either from a fact the platform already holds — which flow
  * governs this initiative, what role the manifest gives this document, what day it is — or
- * from an explicit act: approve(), close(), revise_document. There is no third source, and
+ * from an explicit act: document_approve(), initiative_close(), document_revise. There is no third source, and
  * "the model typed it into some YAML" was the third source.
  *
  * The cost of that was countable rather than theoretical. Of 93 approved documents on this
@@ -129,7 +129,7 @@ export function frontmatterRefusal(content: string, tool: string): string | null
     "not by hand, and this content opens with one. Send the markdown starting at its first " +
     "heading. `flow`, `type`, `status`, `version` and `updated_at` are stamped from what the " +
     "platform already knows; `approved_by`, `approved_at`, `outcome` and `closed_by` come " +
-    "from approve() and close(); anything else the document needs — `stakeholder`, `tags`, " +
+    "from document_approve() and initiative_close(); anything else the document needs — `stakeholder`, `tags`, " +
     "`title` — is a named argument to this call, so it is recorded as something you were told " +
     "rather than something you composed."
   );
@@ -138,32 +138,32 @@ export function frontmatterRefusal(content: string, tool: string): string | null
 /** A patch that reaches the envelope, or null.
  *
  * The counterpart to frontmatterRefusal, for the write path that edits text in place. That
- * one refuses content which OPENS with frontmatter; patch_file has no content to inspect —
+ * one refuses content which OPENS with frontmatter; document_patch has no content to inspect —
  * it has a `find` and a `replace`, and `find: "flow: ops-flow"` lands in the envelope as
  * readily as in a section.
  *
  * Compared as a BLOCK, before and after, rather than field by field. ownershipCheck already
  * compares the five fields the platform owns and it is not enough here: `flow` is not one of
  * them, and it is the field that decides which gates, which required documents and which
- * closing rule govern the initiative. `version` is the same shape — revise_document owns it,
+ * closing rule govern the initiative. `version` is the same shape — document_revise owns it,
  * stampEnvelope adds it only when absent, so a patched one stands and desynchronises the
  * document from its own snapshots in _versions/.
  *
- * This closes a route patch_file's own comment used to contemplate — a patch that adds a missing
+ * This closes a route document_patch's own comment used to contemplate — a patch that adds a missing
  * `flow:` line to repair an ungoverned initiative — and that nothing recommends:
  * flowDeclarationCheck and initiative_status both answer that case with "pass
- * `flow: \"<name>\"` as an argument to write_file", which still works and is stamped rather
- * than typed. Every skill that teaches patch_file teaches it for body content: filling a
+ * `flow: \"<name>\"` as an argument to document_write", which still works and is stamped rather
+ * than typed. Every skill that teaches document_patch teaches it for body content: filling a
  * `<!-- brief: -->` marker, one section at a time. */
 export function envelopeEditRefusal(before: string, after: string): string | null {
   const was = ENVELOPE_BLOCK.exec(before)?.[0] ?? "";
   const now = ENVELOPE_BLOCK.exec(after)?.[0] ?? "";
   if (was === now) return null;
   return (
-    "ERROR: patch_file edits the document's BODY — this patch changes its frontmatter, which " +
-    "the platform writes. A gate is recorded by approve(); an outcome by close(); the flow, " +
-    "the title, the stakeholder and the tags are named arguments to write_file and " +
-    "revise_document, so they arrive as something you were told rather than something you " +
+    "ERROR: document_patch edits the document's BODY — this patch changes its frontmatter, which " +
+    "the platform writes. A gate is recorded by document_approve(); an outcome by initiative_close(); the flow, " +
+    "the title, the stakeholder and the tags are named arguments to document_write and " +
+    "document_revise, so they arrive as something you were told rather than something you " +
     "composed. If this initiative declares no flow, write its first document again with " +
     '`flow: "<name>"` as an argument — that is the repair, and the platform stamps it.'
   );
@@ -192,7 +192,7 @@ export const tableRow = (...cells: (string | number)[]): string =>
 /** The one place an envelope is rendered, and the reason every value goes through it.
  *
  * The readers are line-based, so a value carrying a newline does not corrupt a document —
- * it INSERTS a field. revise_document passed a user-supplied `sources` entry in raw, and a
+ * it INSERTS a field. document_revise passed a user-supplied `sources` entry in raw, and a
  * probe used it to write `status: approved` and `approved_by:` two lines under the
  * `status: draft` the same call had just set. initiative_status then reported the gate as
  * passed and named the fabricated approver. Rendering is now incapable of emitting it,
@@ -229,7 +229,7 @@ export function indexable(relPath: string): boolean {
  * A derived index has no business discarding provenance over a format it did not expect.
  *
  * NOT because a flow may choose. No flow writes `approved_at` at all now — content opening
- * with frontmatter is refused outright, and approve() stamps the field with isoToday(), so
+ * with frontmatter is refused outright, and document_approve() stamps the field with isoToday(), so
  * everything written from here on is ISO. What this tolerates is the STORE AS IT IS: the
  * production store holds 66 documents dated DD-MM-YYYY against 10 in ISO, all written before
  * the platform owned the field. Narrowing this to ISO would drop sixty-six approval dates

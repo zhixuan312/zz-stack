@@ -69,13 +69,13 @@ const PLATFORM_OWNER = "zz";
  * database. With a database present the limit is what stops one team reading
  * another team's method by guessing a skill name.
  *
- * Order matters. skill_view returns the FIRST match, so a team package must
+ * Order matters. skill_read returns the FIRST match, so a team package must
  * never shadow a platform skill or a flow stage skill of the same name — team
  * roots therefore go last.
  *
  * And the order is DECIDED here, not inherited from the filesystem. This walked
  * readdirSync unsorted, so which of two packages shipping a skill of one name
- * answered skill_view depended on directory order — different between two
+ * answered skill_read depended on directory order — different between two
  * containers of the same image, and not reproducible. @zz/catalog sorts its own
  * walk for exactly this reason. Nothing collides today; that is the argument for
  * fixing the order while nothing does, rather than the argument for leaving it.
@@ -91,7 +91,7 @@ function catalogSkillRoots(flows: Set<string> | null, team: string | null): stri
   // same stated reason, but under a single try. So a FILE where an owner directory was
   // expected threw ENOTDIR, the catch below it said "no catalog mounted (local dev)", and
   // this returned whatever had accumulated: with a stray `.DS_Store`, which sorts first, the
-  // empty list. No platform skills, no stage skills, no overlays, and skill_view finding
+  // empty list. No platform skills, no stage skills, no overlays, and skill_read finding
   // nothing, on any host running the build override that mounts the working tree.
   for (const { owner, name, dir: pkgDir } of catalogPackages()) {
     const ownedByCaller = !!team && owner === team;
@@ -169,7 +169,7 @@ export async function governingFlows(team: string | null): Promise<Set<string> |
  * mounted default handed every caller that team's method whatever their membership.
  *
  * LAST is the team's OWN store — `<team root>/skills/<name>/SKILL.md` — and it is last for
- * the same reason the catalog's team packages are: skill_view returns the first match, so a
+ * the same reason the catalog's team packages are: skill_read returns the first match, so a
  * root that comes after can add a name but can never take one. A team cannot shadow
  * zz-backbone by accident, and cannot shadow a stage of the flow it runs.
  *
@@ -188,7 +188,7 @@ export async function governingFlows(team: string | null): Promise<Set<string> |
  * `degraded` is not decoration. teamFor THROWS when the platform database cannot be reached
  * and there is no cached answer — it says so rather than guessing, which is right — and this
  * function swallowed that into `team = null`, which resolves to platform packages only. So
- * during an outage skill_view answered "no skill named 'ops-select' is available to you —
+ * during an outage skill_read answered "no skill named 'ops-select' is available to you —
  * either it does not exist, or its flow is not installed for your team", and the reader goes
  * to an admin to install a flow they already have. The one thing the caller needed to know
  * was the one thing the message could not say.

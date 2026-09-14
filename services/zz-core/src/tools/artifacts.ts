@@ -6,7 +6,7 @@
  * what makes a rule added to the guards a rule that holds on every path rather than on the
  * paths somebody remembered.
  *
- * `show_document` is the odd one: it returns the document rather than a rendering of it,
+ * `document_present` is the odd one: it returns the document rather than a rendering of it,
  * and every call appends a `shown` entry naming the path and version. Whether a document
  * was fetched before its gate was approved is answerable from the record because of it.
  */
@@ -29,7 +29,7 @@ import { envelopeFor, isoToday, normalizeSections } from "../write-guards.js";
 
 export function registerArtifactTools(server: McpServer): void {
   server.registerTool(
-    "write_file",
+    "document_write",
     {
       description:
         "Create or overwrite a file in your team's artifact store (specs, plans, " +
@@ -58,12 +58,12 @@ export function registerArtifactTools(server: McpServer): void {
     async ({ path, content, flow, stakeholder, tags, title, blocks, fields }) => {
       const blocked = writeGuard(path);
       if (blocked) return text(blocked);
-      const refused = frontmatterRefusal(content, "write_file") ?? fieldRefusal(fields)
+      const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
       if (refused) return text(refused);
       const root = await userRoot();
       const team = await teamFor(parseCaller(requestHeaders()).email);
-      // RESOLVED FIRST, as approve, close, patch_file and revise_document all resolve it.
+      // RESOLVED FIRST, as approve, close, document_patch and document_revise all resolve it.
       //
       // This was the one write path that resolved last, after eight guards and a chain
       // lookup — so `.zz/spec.md` was answered with a complaint about the flow's required
@@ -85,14 +85,14 @@ export function registerArtifactTools(server: McpServer): void {
       if (gate) return text(gate);
       const written = persistDocument(chain, root, path, target, fixed.content, "write");
       logActivity(root, path,
-        { user: parseCaller(requestHeaders()).email, action: "write_file", path, chars: written.length });
+        { user: parseCaller(requestHeaders()).email, action: "document_write", path, chars: written.length });
       return text(`written: ${path} (${written.length} chars)`
         + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : ""));
     },
   );
 
   server.registerTool(
-    "read_file",
+    "document_read",
     {
       description:
         "Read a file from your team's artifact store. Paths are relative to it — " +
@@ -101,12 +101,12 @@ export function registerArtifactTools(server: McpServer): void {
         "with the same path to read it.",
       inputSchema: {
         path: z.string(),
-        // READ-ONLY, and only here. write_file and patch_file stay on the caller's own team,
+        // READ-ONLY, and only here. document_write and document_patch stay on the caller's own team,
         // because a shared journal anyone may edit is not a journal. knowledge_add already
         // owns the writing side and already takes `scope`.
         scope: z.enum(["team", "platform"]).optional()
           .describe("Which shelf the path is on. Omit for your team's own store; " +
-                    "\"platform\" for the shared journal, as search_knowledge reports it."),
+                    "\"platform\" for the shared journal, as knowledge_search reports it."),
       },
     },
     async ({ path, scope }) => {
@@ -123,7 +123,7 @@ export function registerArtifactTools(server: McpServer): void {
       // NAMES THE OTHER SHELF, once, when the path looks like a journal node. The whole
       // failure above was a caller who had no way to know a second shelf existed.
       const hint = scope !== "platform" && path.startsWith("_knowledge/")
-        ? " — if search_knowledge returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
+        ? " — if knowledge_search returned it with `shelf: \"platform\"`, read it with scope: \"platform\""
         : "";
       return text(`ERROR: ${path} does not exist${hint}`);
     },
@@ -139,7 +139,7 @@ export function registerArtifactTools(server: McpServer): void {
   // unfenced and unescaped (spec FR-12b, C-7) — a fenced body is source presented as syntax,
   // which is the one thing the readability floor rules out.
   //
-  // AND IT NEVER JUDGES (spec C-6). No summary, no score, no comment of its own. read_file
+  // AND IT NEVER JUDGES (spec C-6). No summary, no score, no comment of its own. document_read
   // already returns the bytes; what this adds is that the ENVELOPE IS STATED. A reader handed
   // frontmatter has been handed a parsing job, and the facts that decide whether a document may
   // be approved — its version, its status, whose signature is already on it — are exactly the
@@ -149,7 +149,7 @@ export function registerArtifactTools(server: McpServer): void {
   // D10). The platform guarantees the fetch; the hop from here to a person's screen belongs to
   // the interface, and this tool claims nothing about it.
   server.registerTool(
-    "show_document",
+    "document_present",
     {
       description:
         "Fetch a document from your team's artifact store to put in front of the person. " +
@@ -184,10 +184,10 @@ export function registerArtifactTools(server: McpServer): void {
         return text(held.length
           ? `ERROR: no document at \`${path}\`. The initiative holds: ${held.join(", ")}. ` +
             `Ask for one of those by its full path, \`${initiative}/<name>\`, or call ` +
-            "list_files to see the rest of the store."
+            "document_list to see the rest of the store."
           : `ERROR: no document at \`${path}\`. The initiative holds: nothing this tool can ` +
             `show — \`${initiative}\` is empty or is not a folder in your team's store. Call ` +
-            "list_files to see what the store does hold, then ask again by full path.");
+            "document_list to see what the store does hold, then ask again by full path.");
       }
       const content = readFileSync(target, "utf8");
       const env = parseEnvelope(content);
@@ -234,13 +234,13 @@ export function registerArtifactTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "patch_file",
+    "document_patch",
     {
       description:
         "Replace an exact text fragment (must occur exactly once) in an artifact file. " +
         "This is how a DRAFT is filled in section by section. It is refused on a gated " +
         "document once that document is approved — an approved document changes through " +
-        "revise_document, which versions it and returns it to draft, because a signature " +
+        "document_revise, which versions it and returns it to draft, because a signature " +
         "has to cover the bytes it signed.",
       inputSchema: { path: z.string(), find: z.string(), replace: z.string() },
     },
@@ -263,22 +263,22 @@ export function registerArtifactTools(server: McpServer): void {
       const result = body.replace(find, () => replace);
       // THE ENVELOPE IS NOT PATCHABLE, which is the third and last way it was writable by hand.
       //
-      // write_file and revise_document refuse content that opens with frontmatter, and say
+      // document_write and document_revise refuse content that opens with frontmatter, and say
       // why: "the envelope is the platform's; the body is yours ... there is no third source,
-      // and 'the model typed it into some YAML' was the third source". patch_file WAS that
+      // and 'the model typed it into some YAML' was the third source". document_patch WAS that
       // third source. It edits text in place, so `find: "flow: ops-flow"` reached the envelope,
       // and ownershipCheck only guards the five fields in PLATFORM_OWNED — `flow` is not one
       // of them.
       //
       // WHICH fields, and what closing this route costs, are envelopeEditRefusal's own
       // docstring. They were written out here as well, in nearly the same words, and each
-      // copy pointed at the other — "one comment in patch_file contemplated" there, "one
+      // copy pointed at the other — "one comment in document_patch contemplated" there, "one
       // comment here contemplated" in this one — so a reader following either was sent to
       // the paragraph they had just read.
       const edited = envelopeEditRefusal(body, result);
       if (edited) return text(edited);
       // The chain comes from what the document says. It cannot differ from the file's own
-      // envelope now, and reading it from `result` keeps this the same expression write_file
+      // envelope now, and reading it from `result` keeps this the same expression document_write
       // uses rather than a second way of asking the same question.
       const chain = await chainFor(root, path, team, result);
       // Against the RESULTING document, not the replacement fragment. A patch is normally a
@@ -290,14 +290,14 @@ export function registerArtifactTools(server: McpServer): void {
       if (bad) return text(bad);
       persistDocument(chain, root, path, target, fixed.content, "patch");
       logActivity(root, path,
-        { user: parseCaller(requestHeaders()).email, action: "patch_file", path });
+        { user: parseCaller(requestHeaders()).email, action: "document_patch", path });
       return text(`patched: ${path}`
         + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : ""));
     },
   );
 
   server.registerTool(
-    "list_files",
+    "document_list",
     {
       description:
         "List files in your team's artifact store (shared with every member of it), " +
@@ -316,7 +316,7 @@ export function registerArtifactTools(server: McpServer): void {
   // ── knowledge tools: format is mechanical, judgment stays with skills ──
 
   server.registerTool(
-    "add_source",
+    "source_add",
     {
       description:
         "Attach supporting material (meeting minutes, an email excerpt, call notes, a decision " +
@@ -336,7 +336,7 @@ export function registerArtifactTools(server: McpServer): void {
     async ({ initiative, title, content, supports }) => {
       // The same guard the other four initiative-taking tools apply. This one did not, so it
       // accepted a multi-segment name like `a/b` that initiative_status, reconcile, close and
-      // list_sources all refuse — a source attached to something no other tool calls an
+      // source_list all refuse — a source attached to something no other tool calls an
       // initiative. safePath below still stopped it leaving the store, which is why the gap
       // read as harmless; being inside the store is a different question from being an
       // initiative, and `join(root, initiative, d)` further down asks the second one.
@@ -374,7 +374,7 @@ export function registerArtifactTools(server: McpServer): void {
         { title, by: who.email, day: date, supports: list.join(", "), content });
       mkdirSync(resolve(target, ".."), { recursive: true });
       writeFileSync(target, doc);
-      logActivity(root, rel, { user: who.email, action: "add_source", path: rel, supports: list.join(",") });
+      logActivity(root, rel, { user: who.email, action: "source_add", path: rel, supports: list.join(",") });
       commitStore(root, who.email, "source", rel);
       void indexDoc(root, rel, doc);
       // which of the named documents were already approved when this landed?
@@ -391,19 +391,19 @@ export function registerArtifactTools(server: McpServer): void {
             `${stale.length > 1 ? "were" : "was"} already approved before this material arrived, so ` +
             `the approval does not cover it. initiative_status reports this under ` +
             `sources_after_approval. Whether to change the document is the team's call — if they ` +
-            `decide to, revise_document bumps the version, links this source and re-opens the gate.`
+            `decide to, document_revise bumps the version, links this source and re-opens the gate.`
           : list.length ? "\n\nNo approved document is affected." : ""),
       );
     },
   );
 
   server.registerTool(
-    "list_sources",
+    "source_list",
     {
       description:
         "The immutable inputs attached to an initiative (minutes, emails, call notes) with their " +
         "titles and what each supports. Read these before judging a document: they are the " +
-        "evidence behind it. Use add_source to attach a new one.",
+        "evidence behind it. Use source_add to attach a new one.",
       inputSchema: { initiative: z.string() },
     },
     async ({ initiative }) => {
@@ -414,7 +414,7 @@ export function registerArtifactTools(server: McpServer): void {
       if (!existsSync(dir)) return text(JSON.stringify({ initiative, sources: [] }));
       const rows = readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => {
         const env = parseEnvelope(readFileSync(join(dir, f), "utf8"));
-        // `contributed_by` is what add_source and revise_document actually write. This
+        // `contributed_by` is what source_add and document_revise actually write. This
         // read `added_by`, a field nothing has ever written, so every source came back
         // with an empty contributor — the one thing that says whose material it is.
         return { path: `${initiative}/sources/${f}`, title: env.title || f,

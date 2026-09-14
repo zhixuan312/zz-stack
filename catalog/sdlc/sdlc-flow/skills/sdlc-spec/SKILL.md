@@ -1,13 +1,13 @@
 ---
 name: sdlc-spec
-version: 1.2
+version: 1.3
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Local runtimes only (Claude Code, Codex)."
 ---
 
 # sdlc-spec
 
-<!-- Design note: the spec is written into the initiative with write_file, never to a
+<!-- Design note: the spec is written into the initiative with document_write, never to a
      local path, and nothing refines it afterwards — what you write is what the person
      reads and approves. -->
 
@@ -24,7 +24,7 @@ worker to check. You are the writer, and the person is the gate.
 
 **2. Nothing proceeds until the person agrees.** The next stage is `sdlc-spec-audit`, and auditing
 a document nobody has agreed to audits your own guess. Tell them in their own words what the
-spec says ships and what it calls "done", and wait. An approval exists only once `approve(path)` has
+spec says ships and what it calls "done", and wait. An approval exists only once `document_approve(path)` has
 recorded it — the platform stamps `status`, `approved_by` and `approved_at` itself, refuses
 those three written by hand, and refuses every later document in the chain until they are there.
 
@@ -52,7 +52,7 @@ someone could write the spec. Not before, and not after.
 
 | Kind | Examples | How |
 |---|---|---|
-| **Mechanical** | a signature, a file path, the test framework, prior art, what was already decided | **Resolve it yourself** by dispatching a worker — `sdlc-investigate` for this system, `sdlc-research` for outside it, `sdlc-recall` for `search_knowledge`. Never ask the person to look something up for you |
+| **Mechanical** | a signature, a file path, the test framework, prior art, what was already decided | **Resolve it yourself** by dispatching a worker — `sdlc-investigate` for this system, `sdlc-research` for outside it, `sdlc-recall` for `knowledge_search`. Never ask the person to look something up for you |
 | **Decision** | trade-offs, scope, priority, which approach | **Ask the person.** Concrete options, your recommendation, your reasoning. They pick |
 
 Getting this split wrong is the most common way this stage goes bad in both directions: asking
@@ -244,9 +244,9 @@ or whatever is true. That is a sentence a reader can disagree with, which an abs
 not, and it keeps the labels the next two stages lift from. Never add a component outside the
 eight.
 
-Do NOT try to write the whole spec in one pass — long single-pass documents come out slow and uneven and often truncate or fail before the last section. Instead, first create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `write_file` call into the initiative — `write_file(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
+Do NOT try to write the whole spec in one pass — long single-pass documents come out slow and uneven and often truncate or fail before the last section. Instead, first create the spec file as a **complete skeleton**: the title and ALL EIGHT `##` component headings, each `###` section within them, each `####` sub-part, with a single one-line **brief** immediately under each `###` section stating what that section will contain (drawn from the confirmed decisions). Write this skeleton in ONE `document_write` call into the initiative — `document_write(path: "<initiative>/spec.md", content: "<the body>")`. Send the body only; the platform writes the envelope. It is small and fast.
 
-**`write_file` and `patch_file`, not your runtime's local-file tools.** A spec written to a local path is a file on your disk: no envelope, no version snapshot at approval, no telemetry, and nothing the person can approve or the auditor can read. It also looks exactly like success.
+**`document_write` and `document_patch`, not your runtime's local-file tools.** A spec written to a local path is a file on your disk: no envelope, no version snapshot at approval, no telemetry, and nothing the person can approve or the auditor can read. It also looks exactly like success.
 
 Each brief is one HTML-comment line placed directly under its `###` heading:
 
@@ -404,7 +404,7 @@ These labels are the specification standard for this flow, and they are read by 
 
 ### Phase C — Enrich each section (one Edit per section)
 
-Now fill the skeleton in, **one `###` section at a time, in document order**, using `patch_file("<initiative>/spec.md", find: "<!-- brief: … -->", replace: "<the section's complete final content>")` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document, and the caller can send the unreached sections back to you. Continue until **zero `<!-- brief:` markers remain.**
+Now fill the skeleton in, **one `###` section at a time, in document order**, using `document_patch("<initiative>/spec.md", find: "<!-- brief: … -->", replace: "<the section's complete final content>")` — the brief line is the `find`, and it is unique per section, which is what makes this exact. Never rewrite the whole file — edit one section, move to the next. Small, focused edits produce higher-quality prose than one long pass, and if you run out of budget they leave a well-structured partial document, and the caller can send the unreached sections back to you. Continue until **zero `<!-- brief:` markers remain.**
 
 Each section you enrich must satisfy these Section Rules:
 
@@ -439,7 +439,7 @@ Before finishing, verify:
 ## Output
 
 **You are the main agent and your final response goes to the PERSON**, not to a caller
-synthesising workers. Fetch the written spec with `show_document("<initiative>/spec.md")` and
+synthesising workers. Fetch the written spec with `document_present("<initiative>/spec.md")` and
 present what it returns in full — all eight components, not a walk through the headings you
 emitted. They are agreeing to the document, and a document nobody put in front of them is not
 one they can agree to. Say where it is written, and name plainly anything you could not settle

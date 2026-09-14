@@ -5,7 +5,7 @@
 // re-prove is a check that quietly stops working. This is the same plant, committed.
 //
 // What it plants is the original defect, exactly: `sv.version = e.step_version` back in the
-// binding. That column is stamped only when a skill is served WHOLE through skill_view, and an
+// binding. That column is stamped only when a skill is served WHOLE through skill_read, and an
 // installed skill read off disk stamps nothing — measured twice a day apart, it sat frozen at
 // 39 rows while the event log grew by a third. Every row the initiative-bearing insert wrote
 // therefore carried skill_version_id NULL, a NULL cannot match that insert's conflict target,

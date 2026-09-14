@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.3
+version: 1.4
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Local runtimes only (Claude Code, Codex)."
 ---
@@ -16,9 +16,9 @@ when_to_use: "The spec is written, agreed and audited, and the work needs an ord
 never dispatched. Order, risk and scope are the person's judgement, and a dispatched plan is a
 plausible ordering nobody chose.
 
-**Write it with the platform's `write_file` into the initiative, as `plan.md`.** Never a local
-path. `write_file` writes the FIRST version only — once the plan is approved the platform refuses
-it on this document, and the plan changes through `revise_document`. See *Coming back from the
+**Write it with the platform's `document_write` into the initiative, as `plan.md`.** Never a local
+path. `document_write` writes the FIRST version only — once the plan is approved the platform refuses
+it on this document, and the plan changes through `document_revise`. See *Coming back from the
 audit, or from execution* at the end of this skill.
 
 ## Role
@@ -219,7 +219,7 @@ has not decided how anyone will know it still works.
 
 This guidance is deliverable-neutral by default. Where a team needs technique specific to what
 they build, it lives in their own skills — a flow's stage skills, or the team's skills-only
-package under `catalog/<team>/` — and you load it with `skill_view` alongside this one. Nothing
+package under `catalog/<team>/` — and you load it with `skill_read` alongside this one. Nothing
 merges it into this file for you.
 
 ## How to write it
@@ -251,14 +251,14 @@ Work in this order (guidance for producing a good document, not a rigid ritual):
    methodology's skills; this flow executes its own plans.
 
    **The id in the marker is not decoration — it is what makes the next step possible.**
-   `patch_file` replaces a fragment that occurs EXACTLY ONCE and refuses one that repeats, so
+   `document_patch` replaces a fragment that occurs EXACTLY ONCE and refuses one that repeats, so
    a scaffold whose eleven tasks all say `<!-- enrich -->` can have its first task filled and
    not one of the other ten. This skill used to say exactly that, having copied the pattern
    from `sdlc-spec` without the property that makes it work: a brief there is one line of
    prose about its own section, unique by construction. Uniqueness was doing the work and the
    copy kept the shape and dropped it.
 3. **Fill each task** one at a time (technical AC + Contract + any declared checks), in dependency
-   order, with `patch_file("<initiative>/plan.md", find: "<!-- enrich: I-N -->", replace: "<the
+   order, with `document_patch("<initiative>/plan.md", find: "<!-- enrich: I-N -->", replace: "<the
    task's complete body>")` — the marker line is the `find`, and the task id is what makes it
    unique. Never rewrite the whole file. Continue until zero `<!-- enrich` markers remain.
 4. **Close** with a whole-deliverable gate and a Spec-coverage traceability table mapping every spec
@@ -284,7 +284,7 @@ AC, a contract, and either a declared check or a plain statement of how the clai
 instead. Zero `<!-- enrich` markers remain.
 
 **Then hand it to the person for approval.** Fetch it with
-`show_document("<initiative>/plan.md")` and present what it returns before you ask — they are
+`document_present("<initiative>/plan.md")` and present what it returns before you ask — they are
 approving this document, not your account of it. Say what the plan builds, in what order, and what
 is true at the end of each phase. `plan.md` is a gate: `sdlc-execute` does not start until it is
 approved, and the approval is recorded on the document. They may delegate the decision, and
@@ -305,14 +305,14 @@ dependency order, the full-suite gate. Write the plan expecting that.
 
 `sdlc-plan-audit` returns findings, and `sdlc-execute` sends a plan back when a task's contract
 turns out to be wrong against the real code. Either way the document on disk is the one the
-person approved, and **`write_file` and `patch_file` are refused on it outright** — `plan.md`
+person approved, and **`document_write` and `document_patch` are refused on it outright** — `plan.md`
 carries `gate: true`, and writing over an approved document would leave the approver's name
 standing on bytes they never read.
 
-**Revise it with `revise_document`.** One call does all of it:
+**Revise it with `document_revise`.** One call does all of it:
 
 ```
-revise_document(
+document_revise(
   path: "<initiative>/plan.md",
   content: "<the full revised plan>",
   source_content: "<the audit finding or the execution report, verbatim>",
@@ -324,6 +324,6 @@ keeps the approved copy in `_versions/`. Mark every task `unchanged`, `changed` 
 add the tasks that undo anything an earlier round built that no longer belongs. Do not write a
 second plan; execution needs one document.
 
-Then show it again with `show_document("<initiative>/plan.md")`, say what changed and why, and
+Then show it again with `document_present("<initiative>/plan.md")`, say what changed and why, and
 get the approval recorded afresh — the gate is on the version they read, not on the one they
 read last time.

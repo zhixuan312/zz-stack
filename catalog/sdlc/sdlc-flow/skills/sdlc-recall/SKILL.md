@@ -1,13 +1,13 @@
 ---
 name: sdlc-recall
-version: 1.2
+version: 1.3
 description: Search the ZZ knowledge base for what earlier work already decided or learned about a question, read the nodes that matter, and report what it means for the decision in front of someone. Read-only. Dispatched by sdlc-explore, one topic per worker.
 when_to_use: "Before designing, attempting or deciding something, to find out what this team already settled — decisions, design rationale, observed behaviour, process learnings, conventions. Dispatched by sdlc-explore as part of its fan-out. Searches the platform's knowledge base, which is shared across the team and across initiatives."
 ---
 
 # sdlc-recall
 
-<!-- Design note: retrieval AND judgement are both yours. search_knowledge ranks and
+<!-- Design note: retrieval AND judgement are both yours. knowledge_search ranks and
      excerpts, but it has no model and cannot synthesise — turning ranked source material
      into an answer someone can act on is the whole reason this skill exists. -->
 
@@ -26,7 +26,7 @@ decoding jargon or node-ID soup.
 
 ## Retrieval
 
-`search_knowledge` does the retrieval and ranking. It returns results already scored — fusing
+`knowledge_search` does the retrieval and ranking. It returns results already scored — fusing
 full-text relevance, tag overlap, and the initiatives a node cites as evidence — each with a
 **matched excerpt** and its provenance. **It cannot synthesise.** It has no model; it hands you
 ranked source data. Turning that into an answer is this skill, and it is the whole reason this
@@ -36,9 +36,9 @@ skill exists.
 the original author might have written them, not the way the question was asked.
 
 ```
-search_knowledge(query: "token expiry", type: "decision")
-search_knowledge(query: "refresh rotation")
-search_knowledge(query: "session lifetime", limit: 25)
+knowledge_search(query: "token expiry", type: "decision")
+knowledge_search(query: "refresh rotation")
+knowledge_search(query: "session lifetime", limit: 25)
 ```
 
 Filters: `query`, `type`, `status`, `initiative`, `flow`, `tags`, `include_superseded`, `limit`.
@@ -51,8 +51,8 @@ reached because it cites the same initiative as a strong hit — often the most 
 the set, and never one you would have found by searching harder.
 
 **Read the node before citing it as `critical` or `high`.** A result gives you `initiative` and
-`path` separately, and `read_file` takes them joined: `read_file("<initiative>/<path>")` — for a
-journal node that is `read_file("_knowledge/nodes/0010-….md")`. Passing `path` alone returns "does
+`path` separately, and `document_read` takes them joined: `document_read("<initiative>/<path>")` — for a
+journal node that is `document_read("_knowledge/nodes/0010-….md")`. Passing `path` alone returns "does
 not exist". A snippet is two fragments; it tells you the node is about your topic, not what it
 concluded.
 
@@ -101,7 +101,7 @@ mechanics.** Keep node ids in the structured findings, not woven through the pro
 4. **Finding nothing is a valid answer.** Say so plainly and return empty findings. Do not stretch
    an irrelevant node to fit. `(no prior learning)` is what the caller will write, and it is
    information.
-5. **You may not be in a team.** `search_knowledge` is team-scoped and returns an error if the
+5. **You may not be in a team.** `knowledge_search` is team-scoped and returns an error if the
    caller has no team. Report that as the error it is — it is not the same as an empty knowledge
    base, and reporting "no prior learning" would be false.
 

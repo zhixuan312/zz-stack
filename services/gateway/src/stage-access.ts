@@ -45,7 +45,7 @@ function declaredBlocks(flow: string, step: string): FlowStage["blocks"] | undef
  * itself at length, and the one on this deployment names casebox in a heading and then names
  * bookit and RuleMill in the paragraphs REJECTING them — so a parser reading the body would
  * grant exactly the blocks the document argued against. `blocks:` is written by ops-select
- * through write_file's `fields` and is the flow's own frontmatter key.
+ * through document_write's `fields` and is the flow's own frontmatter key.
  *
  * Cached briefly and per initiative: this runs on every block call, and a selection document
  * changes at most once per initiative.

@@ -122,7 +122,7 @@ interface CatalogPackage {
  *
  * Sorted rather than left in filesystem order: the shelf and the digest keyed to it are
  * built from this, and a listing that reorders itself between two containers of the same
- * image changes a version for nobody's benefit. skill_view has the sharper version of the
+ * image changes a version for nobody's benefit. skill_read has the sharper version of the
  * same reason — it returns the FIRST match, so directory order decided which of two packages
  * answered, and that differed between two containers of one image.
  *
@@ -131,14 +131,14 @@ interface CatalogPackage {
  * thing, so a FILE where an owner directory was expected threw ENOTDIR and the catch — whose
  * comment says "no catalog mounted (local dev)" — swallowed it and returned whatever had
  * accumulated. A stray `.DS_Store` at the catalog root sorts FIRST, so the answer was the
- * empty list: no platform skills, no flow stage skills, no team overlays, and skill_view
+ * empty list: no platform skills, no flow stage skills, no team overlays, and skill_read
  * finding nothing at all, with the only symptom being that every skill had vanished. The
  * catalog is mounted from the working tree on any host using the build override, which is
  * exactly where a stray file comes from.
  *
  * Every package, INCLUDING one with no flow.json. A skills-only package is a package kind
  * the platform supports and zz-flow-builder teaches — a team keeping its own conventions —
- * and it is served by skill_view today. catalogEntries() is the narrower question.
+ * and it is served by skill_read today. catalogEntries() is the narrower question.
  */
 export function catalogPackages(): readonly CatalogPackage[] {
   const out: CatalogPackage[] = [];

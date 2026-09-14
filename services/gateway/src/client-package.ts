@@ -5,7 +5,7 @@
  * The rule this module exists to keep: **a client is told where the tools are
  * and what the entry skill is called, and nothing else.** No stage, no gate and
  * no document shape is ever rendered into a file here. The method is fetched at
- * run time with skill_view(), from the same catalog that serves the browser, so
+ * run time with skill_read(), from the same catalog that serves the browser, so
  * a flow fixed on the server is live everywhere on the next message.
  *
  * It also never writes CLAUDE.md, AGENTS.md or SOUL.md. Those are engine-global
@@ -334,7 +334,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       // the same tar path, and the one that won on extraction was the wrong one.
       // MCP *AND* SKILLS. This carried the router and nothing else, so the five
       // skills in `/skills` — the platform's own, zz-backbone among them, which
-      // has been read 194 times through skill_view — shipped in no plugin at all.
+      // has been read 194 times through skill_read — shipped in no plugin at all.
       // They were reachable over MCP and installable by nobody. This is the one
       // plugin everybody must have, and what we are is our MCP and our method.
       files: baselineFiles(flows),

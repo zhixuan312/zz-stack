@@ -65,7 +65,7 @@ services:
     # INTERNAL_BIND, not MCP_BIND. zz-core has no authentication of its own — the gateway
     # is the authenticated door and /core/mcp is how anything outside reaches it. Publishing
     # it beside the gateway on the same address made that premise false: this port answered
-    # tools/list unauthenticated, and read_file returned another team's approved spec to a
+    # tools/list unauthenticated, and document_read returned another team's approved spec to a
     # caller who supplied nothing but an email header. Proven on the live host.
     #
     # One variable governed both, which is why widening the gateway's reach silently widened

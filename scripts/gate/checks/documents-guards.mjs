@@ -26,7 +26,7 @@ import { envelopeFields } from "../facts.mjs";
  * beside it. The paragraph moved to where it belongs. */
 
 check("every store mutation goes through the shared guard and persist", () => {
-  // patch_file had the activity-log guard and not the _versions/ one, so a model could
+  // document_patch had the activity-log guard and not the _versions/ one, so a model could
   // rewrite the frozen copy of what was approved — the record snapshotOnApproval exists to
   // make un-writable. Two write paths, a guard added to one, and nothing to notice.
   //
@@ -49,7 +49,7 @@ check("every store mutation goes through the shared guard and persist", () => {
 
 check("every tool that writes a file also indexes it", () => {
   // knowledge_supersede wrote the node and index.md and stopped. zz.doc — what
-  // search_knowledge actually reads — kept status: adopted until the next boot, so the
+  // knowledge_search actually reads — kept status: adopted until the next boot, so the
   // "we tried this and moved on" signal was invisible to search for as long as the
   // service stayed up. Nothing failed; the index simply disagreed with the file.
   const src = zzCoreSource();
@@ -69,7 +69,7 @@ check("every document write runs the guards", () => {
   // persistDocument is "everything that happens once a mutation is allowed"; documentGuards
   // is "everything that must be true before one is". Both exist because the steps were
   // listed at each call site and each new path got whichever ones its author remembered —
-  // patch_file skipped the envelope stamp for months, and revise_document ran no check at
+  // document_patch skipped the envelope stamp for months, and document_revise ran no check at
   // all, so a required section could be deleted in a revision without a refusal.
   //
   // The pairing is the check: a tool that persists a document must have asked first. This
@@ -81,7 +81,7 @@ check("every document write runs the guards", () => {
   if (persists < 1 || guards < 1) return "persistDocument or documentGuards has no call sites";
   return persists === guards ? null
     : `${persists} call sites persist a document and ${guards} run documentGuards — a write ` +
-      "path that persists without asking is how revise_document came to check nothing";
+      "path that persists without asking is how document_revise came to check nothing";
 });
 
 check("no asymmetric fork in the document guards", () => {
@@ -92,7 +92,7 @@ check("no asymmetric fork in the document guards", () => {
   //
   //   outcome: accepted requires accepted_by;  outcome: delivered requires nothing.
   //   approved_by is enforced;                 accepted_by only inside one branch.
-  //   revise_document clears the approval;     patch_file leaves it standing.
+  //   document_revise clears the approval;     document_patch leaves it standing.
   //
   // The mechanisable half of that principle is narrow and worth having: a REQUIRED-ness
   // that is itself conditional on another envelope field's value. Written to match the
@@ -146,7 +146,7 @@ check("a refusal is classified in one place", () => {
 
 // A GUARD'S ANSWER IS THE GUARD. Calling one and discarding what it says is the same as not
 // calling it, and it compiles: `writeGuard(path);` on its own line is a legal statement, and
-// with it write_file accepts a write to `_ledger.md` — the mechanical record the platform
+// with it document_write accepts a write to `_ledger.md` — the mechanical record the platform
 // owns and refuses by hand. Every guard here returns `string | null` precisely so a caller
 // must decide, and every call site follows the same two lines:
 //
@@ -187,7 +187,7 @@ check("a guard's answer is never discarded", () => {
 });
 
 check("nothing is written before the guards that would refuse it", () => {
-  // revise_document wrote the source document that explains a revision FORTY LINES before
+  // document_revise wrote the source document that explains a revision FORTY LINES before
   // documentGuards ran. So a revision the platform then refused left that source on disk,
   // indexed into zz.doc and logged to activity, while the caller was told the write had
   // failed and reasonably believed nothing had happened — and it sat uncommitted until some
@@ -218,8 +218,8 @@ check("nothing is written before the guards that would refuse it", () => {
 });
 
 check("every exclusive input pair refuses both-supplied, distinctly", () => {
-  // A generic precedence sniff was tried and abandoned: close() has no `??` between its
-  // pair, so the detector short-circuited and could never fail; and reconcile()'s
+  // A generic precedence sniff was tried and abandoned: initiative_close() has no `??` between its
+  // pair, so the detector short-circuited and could never fail; and knowledge_reconcile()'s
   // pre-existing NEITHER-supplied refusal already names both parameters, so a substring
   // scan for "an ERROR mentioning both" passed on the unfixed defect. The pairs are
   // enumerated instead — adding one is a visible diff, which is the point.
@@ -231,7 +231,7 @@ check("every exclusive input pair refuses both-supplied, distinctly", () => {
   // and failing identically whether a guard is present or not. Backticks are allowed
   // through and the NEWLINE is the bound instead: a fragment cannot run past its own line.
   //
-  // The newline bound is not tidiness. reconcile()'s body carries a comment reading
+  // The newline bound is not tidiness. knowledge_reconcile()'s body carries a comment reading
   // "tool answers 200 with `ERROR:` in its text", and a fragment starting there could
   // otherwise absorb `initiative` and `block` out of the code below it and pass a tool
   // whose guard had been deleted.
@@ -241,8 +241,8 @@ check("every exclusive input pair refuses both-supplied, distinctly", () => {
   // it is merely formatted differently. That is the safe direction — loud, not silent — but
   // the fix is to keep the pair on one line, not to widen the bound back out.
   const PAIRS = [
-    { tool: "close", a: "accepted_by", b: "no_signoff_reason", neither: "needs `no_signoff_reason`" },
-    { tool: "reconcile", a: "initiative", b: "block", neither: "ask by" },
+    { tool: "initiative_close", a: "accepted_by", b: "no_signoff_reason", neither: "needs `no_signoff_reason`" },
+    { tool: "knowledge_reconcile", a: "initiative", b: "block", neither: "ask by" },
   ];
   const src = zzCoreSource();
   const bad = [];
@@ -288,13 +288,13 @@ check("a tool that builds a path from an initiative name checks it first", () =>
   // outside the caller's store — proven on the live gateway, where a member of one team
   // listed the sources of a directory belonging to another."
   //
-  // Four of the five tools taking an `initiative` applied it. add_source did not, and built
+  // Four of the five tools taking an `initiative` applied it. source_add did not, and built
   // `${initiative}/sources/…` from the raw argument. safePath still stopped it leaving the
   // store, which is why the gap read as harmless — but being inside the store and being an
   // initiative are different questions, and a name like `a/b` passed the first and is refused
   // as an initiative by every other tool.
   //
-  // A tool that only FILTERS on the name (search_knowledge) builds no path and is not asked.
+  // A tool that only FILTERS on the name (knowledge_search) builds no path and is not asked.
   // EVERY FILE ZZ-CORE REGISTERS A TOOL IN, not the one that holds them today. This is a
   // rule about what a TOOL must do, and a tool does not stop being a tool by moving module.
   const bad = [];
@@ -315,13 +315,13 @@ check("a tool that builds a path from an initiative name checks it first", () =>
 });
 
 check("a refusal names a way out the tool it came from actually has", () => {
-  // flowDeclarationCheck sat in the guard chain of BOTH write_file and patch_file, and its
-  // refusal said "pass `flow` as an argument to this call". write_file has that argument;
-  // patch_file does not. So an agent that hit the refusal while patching was told to do
+  // flowDeclarationCheck sat in the guard chain of BOTH document_write and document_patch, and its
+  // refusal said "pass `flow` as an argument to this call". document_write has that argument;
+  // document_patch does not. So an agent that hit the refusal while patching was told to do
   // something the tool it was using cannot do — and the refusal that exists to unblock an
   // ungoverned initiative was the one giving the impossible instruction.
   //
-  // That guard names write_file outright now, which is the better fix. The rule survives it:
+  // That guard names document_write outright now, which is the better fix. The rule survives it:
   // a guard reachable from more than one tool must not tell the caller to pass something
   // only some of them take. frontmatterRefusal says exactly that about `stakeholder`, `tags`
   // and `title` — correctly today, because both its callers declare all three.
@@ -399,11 +399,11 @@ check("a refusal class keeps the number that IS the refusal", () => {
 });
 
 check("a path is resolved before the document at it is judged", () => {
-  // write_file was the one write path that called safePath LAST — after eight guards, a chain
+  // document_write was the one write path that called safePath LAST — after eight guards, a chain
   // lookup and an envelope stamp. So `.zz/spec.md` came back complaining about the sections
   // this flow requires, and only after the author had rewritten the document to satisfy that
   // did the next attempt say the path form was wrong and always had been. approve, close,
-  // patch_file and revise_document all resolved first; one of five did not, which is the shape
+  // document_patch and document_revise all resolved first; one of five did not, which is the shape
   // a rule takes when it is spelled at each call site instead of held in one place.
   //
   // pathShapeRefusal is the message that teaches the path form, and it teaches nothing from
@@ -411,7 +411,7 @@ check("a path is resolved before the document at it is judged", () => {
   // headings, runs its guards — is downstream of knowing the path is one the store will accept.
   // BOUNDED HANDLER BODIES, which this check used to do itself and got wrong in two ways.
   // It read server.ts alone, because the whole service concatenated let the last handler run
-  // past the end of the file and list_sources was reported for a defect belonging to whatever
+  // past the end of the file and source_list was reported for a defect belonging to whatever
   // sorted next. And it split on `server.registerTool(` and kept `parts.slice(1)`, so every
   // handler's "body" also contained every handler after it — a safePath in a LATER tool
   // satisfied an earlier one. zzCoreTools bounds each body inside its own file, which fixes

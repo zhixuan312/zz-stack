@@ -215,7 +215,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   // refused here must not have gone as far as picking a key.
   //
   // `caller` is spelled the same way tool-telemetry spells it, and it has to be: the map it
-  // keys is the one `skill_view` writes when a stage's skill is served. Two spellings would
+  // keys is the one `skill_read` writes when a stage's skill is served. Two spellings would
   // mean enforcement reading an empty trace and letting everything through, which is the
   // failure that looks exactly like success.
   {

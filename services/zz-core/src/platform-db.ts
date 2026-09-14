@@ -29,7 +29,7 @@ let pool: pg.Pool | undefined;
  * for every team because nothing had served a request yet, and the fix was to write the
  * construction out a fifth time rather than to stop asking the wrong question. indexDoc and
  * reindexTeam still asked it, so a write arriving before any pool existed went to disk and
- * silently never reached the index — invisible to search_knowledge until the next reindex.
+ * silently never reached the index — invisible to knowledge_search until the next reindex.
  *
  * One accessor, so "is there a database" has one answer and connecting is not something a
  * caller can forget to do. The size lives here too: four connections spelled in five places
@@ -55,9 +55,9 @@ export async function teamFor(email: string): Promise<string | null> {
  *
  * The store is per team and the tools take no team argument, so a person in two teams reads
  * and writes exactly one of them — chosen here, admin role first and then alphabetically.
- * That choice was invisible: get_my_info reported a single `team` and nothing said the other
+ * That choice was invisible: session_whoami reported a single `team` and nothing said the other
  * existed, so work could land in the wrong store with the conversation looking normal.
- * get_my_info now names the others and how to pick one. */
+ * session_whoami now names the others and how to pick one. */
 export async function teamsFor(email: string): Promise<{ active: string | null; all: string[] }> {
   const p = db();
   if (!p || !email) return { active: null, all: [] };
@@ -77,7 +77,7 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
     // `slug` is NULL for a membership of an archived team, and those rows are dropped two
     // lines below — the row is still returned so `active_slug`, a scalar about the person
     // rather than about any one membership, is readable even when every team they belong to
-    // has been archived. The ORDER BY is what `all` is listed in for get_my_info: live teams
+    // has been archived. The ORDER BY is what `all` is listed in for session_whoami: live teams
     // first, then the ones they administer, then by name.
     //
     // This comment described a `known` column and a fallback that depended on telling it

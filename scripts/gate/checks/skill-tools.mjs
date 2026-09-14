@@ -13,7 +13,7 @@ import { check } from "../run.mjs";
 import { catalogRoot, flows, platformSkills, skillsOf } from "../facts.mjs";
 
 check("no tool description teaches a path form the platform refuses", () => {
-  // read_file said "Read a file from your .zz artifact store" while safePath had just
+  // document_read said "Read a file from your .zz artifact store" while safePath had just
   // started REFUSING a .zz/ prefix — the tool's own description inviting the shape its
   // implementation rejects, in the sentence a model reads before deciding how to call it.
   // Three tools carried it.
@@ -88,7 +88,13 @@ check("a skill never names a platform tool that does not exist", () => {
   // render_agent_definition for a whole session after that tool was deleted. Both tools that
   // ever carried the stem — render_agent_definition and render_harness_config — were the
   // platform's, and no block publishes it.
-  const OURS = /^(journal_|okr_|revise_|reindex_|initiative_|render_|connect_block$|issue_pat|revoke_pat|skill_view$|list_skills$|write_file|read_file|patch_file|list_files|add_source|list_sources|search_knowledge|my_credential|admin_|set_[a-z_]*credential|delete_[a-z_]*credential|encode_base64)/;
+  // `revise_` AND `reindex_` WERE STEMS AND ARE NOW NAMES. They earned their place as stems
+  // when the tools were `revise_document` and `reindex_knowledge`; the noun-first rename left
+  // both stems matching nothing of ours, so a block publishing `revise_booking` would have
+  // been reported as a platform tool that does not exist. The two names they covered are
+  // spelled out instead — the same coverage, and no stem staking a claim on a word we no
+  // longer own.
+  const OURS = /^(journal_|okr_|document_revise|knowledge_reindex|initiative_|render_|connect_block$|issue_pat|revoke_pat|skill_read$|skill_list$|document_write|document_read|document_patch|document_list|source_add|source_list|knowledge_search|my_credential|admin_|set_[a-z_]*credential|delete_[a-z_]*credential|encode_base64)/;
   const served = new Set();
   // zz-core asked as a SERVICE and the gateway's doors by name: zz-core's registrations are
   // spread across modules, so a list of its files goes short the moment a door is added.
@@ -121,8 +127,10 @@ check("a skill never names a platform tool that does not exist", () => {
 check("the backbone's roster of platform tools is the tools zz-core serves", () => {
   // zz-backbone names all twenty-one and tells an agent that anything NOT on the list belongs
   // to a building block. That makes the list load-bearing: an agent uses it to decide whether
-  // `approve` is a gate or somebody's booking approval, and one session got that wrong four
-  // times in a row and told the person the platform had no approve action at all.
+  // `document_approve` is a gate or somebody's booking approval, and one session got that wrong
+  // four times in a row and told the person the platform had no approve action at all. The
+  // noun-first rename narrows that confusion without ending it: `document_approve` says which
+  // noun it acts on, and a block is still free to publish `approve_slot`.
   //
   // A hand-written roster is exactly the thing that stops being true — a tool added to zz-core
   // and not to the skill is a tool the next agent is told does not belong to us. So the list is
@@ -314,7 +322,7 @@ check("every zz-core tool is named by a skill somebody loads", () => {
   // A tool nothing teaches is reachable and unused. On /manage that is fatal, because
   // zz-access is the only thing describing that door; on /core the tool list reaches every
   // agent with its own description, so this is softer — but a tool no skill mentions is one
-  // the flows were not written around, and reindex_knowledge was exactly that: the answer to
+  // the flows were not written around, and knowledge_reindex was exactly that: the answer to
   // "search returned a document that is gone", named nowhere anybody would look for it.
   //
   // Skills, not documentation. The question is whether an agent following a method is ever
@@ -325,9 +333,11 @@ check("every zz-core tool is named by a skill somebody loads", () => {
   for (const rel of sourceFiles(["skills", "catalog"], ["SKILL.md"])) {
     taught += readFileSync(join(root, rel), "utf8");
   }
-  // AS A TOOL, not as a word. `\b<name>\b` accepted any prose use — and `reconcile` is an
-  // ordinary English verb, so four skills saying "contradictions reconciled in the open" and
-  // "reconciliation notes" satisfied this check about a tool none of them mentions. It is
+  // AS A TOOL, not as a word. `\b<name>\b` accepted any prose use — and the tool now called
+  // `knowledge_reconcile` was called `reconcile`, an ordinary English verb, so four skills
+  // saying "contradictions reconciled in the open" and "reconciliation notes" satisfied this
+  // check about a tool none of them mentions. The rename removes that particular collision and
+  // not the rule: `document_list` and `skill_read` are still words a skill can use in prose. It is
   // genuinely taught, by zz-kb-usage, with both call forms; nothing here noticed that the
   // evidence came from somewhere else entirely. A check that would go on passing after the
   // one real mention was deleted is checking the wrong thing.
@@ -414,11 +424,11 @@ check("a tool a block's own skill tells an agent to call is a tool the agent has
         // The platform's own tools are served by zz-core, not by the block, and are never on
         // a block's allowlist. zz-backbone enumerates them; these are the ones block skills
         // actually reach for.
-        if (["skill_view", "knowledge_add", "write_file", "read_file", "patch_file",
-             "list_files", "approve", "close", "add_source", "list_sources",
-             "search_knowledge", "initiative_status", "get_my_info", "block_skills",
-             "revise_document", "encode_base64", "reindex_knowledge",
-             "knowledge_supersede", "show_document", "list_skills", "reconcile"].includes(name)) continue;
+        if (["skill_read", "knowledge_add", "document_write", "document_read", "document_patch",
+             "document_list", "document_approve", "initiative_close", "source_add", "source_list",
+             "knowledge_search", "initiative_status", "session_whoami", "block_skills",
+             "document_revise", "encode_base64", "knowledge_reindex",
+             "knowledge_supersede", "document_present", "skill_list", "knowledge_reconcile"].includes(name)) continue;
         if (!allow.includes(`"${name}"`)) {
           bad.push(`${slug}/${skill} tells an agent to call \`${name}()\` and it is not on ${slug}'s tools list in blocks.ts — the skill says take it, the platform never hands it over`);
         }

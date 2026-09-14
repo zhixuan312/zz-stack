@@ -14,7 +14,7 @@
  * That gap is felt hardest at exactly two moments, and both are ones where nothing else can
  * help: setting a deployment up (`grant_tool`, `install_flow`, `add_member` — the calls that
  * come BEFORE anybody has a working client), and reading the record back after an evaluation
- * (`initiative_status`, `list_sources`) without asking the agent under test what it thinks
+ * (`initiative_status`, `source_list`) without asking the agent under test what it thinks
  * happened. A harness that scores a run by asking the run is not a harness.
  *
  * IT IS NOT A SECOND CLIENT. It is @zz/mcp-client with an argv in front of it, which is the

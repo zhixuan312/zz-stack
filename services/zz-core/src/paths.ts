@@ -85,7 +85,7 @@ export async function userRoot(): Promise<string> {
  * THE DOT IS NOT COSMETIC. `walk()` skips every dot-entry — it has to, because the store is
  * a git repository and a lister that did not report `.git/COMMIT_EDITMSG` as the team's
  * first document. So a name like `.hidden` was accepted here and then invisible to
- * list_files and to the index: written, and gone. And `.git` itself was accepted, which
+ * document_list and to the index: written, and gone. And `.git` itself was accepted, which
  * writes documents into the repository's own directory — the history a team keeps when they
  * walk away from this platform. */
 export function safeName(value: string, what: string): string | null {
@@ -96,7 +96,7 @@ export function safeName(value: string, what: string): string | null {
   }
   if (v.startsWith(".")) {
     return `ERROR: ${what} cannot begin with a dot — the store skips dot-entries, so it would ` +
-           "be written and then invisible to list_files and to search, and `.git` is the " +
+           "be written and then invisible to document_list and to search, and `.git` is the " +
            "store's own history.";
   }
   return null;
@@ -148,11 +148,11 @@ export const PLAIN_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const TAG_TOKEN = /^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)?$/;
 /** A tag this document or node may not carry, or null.
  *
- * ONE RULE, THREE WRITE PATHS. knowledge_add checked its tags and write_file and
- * revise_document checked nothing — the same column, zz.doc.tags, filled by three tools
+ * ONE RULE, THREE WRITE PATHS. knowledge_add checked its tags and document_write and
+ * document_revise checked nothing — the same column, zz.doc.tags, filled by three tools
  * under two different rules, one of which was no rule.
  *
- * LOWERCASE, because a tag is matched by EQUALITY and nothing else. search_knowledge's tag
+ * LOWERCASE, because a tag is matched by EQUALITY and nothing else. knowledge_search's tag
  * leg lowercases the words a person typed and intersects them with the stored array, so a
  * tag written `Booking` can never be reached by anyone searching for booking — it is stored,
  * indexed, and unfindable. subjectTagError's own docblock names this exact failure two
@@ -207,8 +207,8 @@ export function pathShapeRefusal(path: string): string | null {
   //
   // safeName has refused a dot-prefixed name since walk() learned to skip dot-entries, and
   // its own message says why: "the store skips dot-entries, so it would be written and then
-  // invisible to list_files and to search, and `.git` is the store's own history". But
-  // safeName guards an `initiative` ARGUMENT, and write_file takes a `path` — so the rule
+  // invisible to document_list and to search, and `.git` is the store's own history". But
+  // safeName guards an `initiative` ARGUMENT, and document_write takes a `path` — so the rule
   // was stated in one place and applied nowhere near the tool that needed it.
   //
   // The store became a git repository this release, so `.git` now sits at the root of every
@@ -218,7 +218,7 @@ export function pathShapeRefusal(path: string): string | null {
   // team keeps when they leave this platform, and it is the one thing here with no other copy.
   if (/(^|\/)\.[^/]/.test(path.replace(/^\/+/, ""))) {
     return "no part of a path may begin with a dot. The store skips dot-entries, so a file " +
-      "written there is invisible to list_files and to search — and `.git` is the store's " +
+      "written there is invisible to document_list and to search — and `.git` is the store's " +
       "own history, which is the copy a team keeps when they leave. Write " +
       "`<initiative>/<document>.md`.";
   }
@@ -283,7 +283,7 @@ const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$
 
 /** Guards EVERY mutation of the artifact store passes, whichever tool asks.
  *
- * These lived inline in write_file, and patch_file had only the first of them — so a patch
+ * These lived inline in document_write, and document_patch had only the first of them — so a patch
  * could rewrite anything under _versions/, which is the frozen copy of what was approved.
  * snapshotOnApproval exists to make that record un-writable by the model, and one of the
  * two write paths simply did not know. Provenance the platform cannot vouch for is worse
@@ -294,7 +294,7 @@ export function writeGuard(rawPath: string): string | null {
   // NORMALISED FIRST. Every pattern below was matched against the path as the caller wrote
   // it, and one of them anchors at the start — so `a/../_knowledge/nodes/0001-x.md` slipped
   // past the journal guard, and safePath then resolved it to exactly the file the guard
-  // exists to protect. write_file could mint a journal node with no evidence, no index.md
+  // exists to protect. document_write could mint a journal node with no evidence, no index.md
   // row and no line in the append-only log, which are the things this guard's own comment
   // says knowledge_add is there to guarantee, and could rewrite a node that the log
   // averages.
@@ -314,10 +314,10 @@ export function writeGuard(rawPath: string): string | null {
   }
   // The whole of _knowledge/, not just its log.
   //
-  // log.md was guarded and the nodes beside it were not, so write_file could rewrite a
+  // log.md was guarded and the nodes beside it were not, so document_write could rewrite a
   // journal node — around knowledge_supersede, which is what makes "knowledge evolves,
   // nothing is deleted" true rather than aspirational — or mint one outright at any id it
-  // liked. That node would be indexed and returned by search_knowledge carrying no
+  // liked. That node would be indexed and returned by knowledge_search carrying no
   // evidence, no index.md row and no line in the append-only log, which are the four things
   // knowledge_add exists to guarantee.
   //

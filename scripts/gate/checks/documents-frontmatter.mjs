@@ -50,7 +50,7 @@ check("a frontmatter field that will not appear is refused, never dropped", () =
   // frontmatter name at all. Only the first was ever said out loud.
   //
   // The second was enforced by `/^[a-z][a-z0-9_]*$/` written twice — once inside envelopeFor
-  // and once inside revise_document — and both copies DROPPED the field and carried on. So
+  // and once inside document_revise — and both copies DROPPED the field and carried on. So
   // `buildingBlock` where the skill said `building_block` produced `written: <path> (N chars)`
   // and a document with no such field in it, which is the failure this repository keeps
   // finding: a call that did not error and did not do the thing either.
@@ -88,7 +88,7 @@ check("a caller's words cannot write a frontmatter field", () => {
   // built the same frontmatter by concatenating strings, and `tags` was the one value it
   // concatenated raw — title and stakeholder went through oneLine and tags did not.
   //
-  // write_file with `tags: ["ordinary", "harmless\nflow: other\ntype: guide"]` produced an
+  // document_write with `tags: ["ordinary", "harmless\nflow: other\ntype: guide"]` produced an
   // envelope whose flow parseEnvelope reads as `other`, because it takes the LAST value of a
   // repeated key. `flow` is what resolves the chain, so which gates, which required documents
   // and which closing rule govern the initiative became the caller's to choose — and
@@ -134,11 +134,11 @@ check("a caller's words cannot write a frontmatter field", () => {
   }
   if ("type" in env) bad.push("a tag wrote a `type` the manifest never gave the document");
 
-  // THE OTHER WRITER. approve() and close() do not render an envelope, they edit one —
+  // THE OTHER WRITER. document_approve() and initiative_close() do not render an envelope, they edit one —
   // through setEnvelopeField and putEnvelopeField, whose own comment says the value "is not
   // always the platform's own" and then guarded only the substitution patterns. A newline is
   // the more serious half: it does not corrupt a field, it adds one, and parseEnvelope takes
-  // the LAST value of a repeated key. `approve(on_behalf_of: "Dana\nflow: other")` wrote a
+  // the LAST value of a repeated key. `document_approve(on_behalf_of: "Dana\nflow: other")` wrote a
   // flow the platform had not chosen, through the tool whose description says the platform
   // writes that field and a hand-written one is refused — and ownershipCheck cannot see it,
   // because approve and close pass `via` and it returns null on `via` by design.
@@ -180,7 +180,7 @@ check("a caller's words cannot write a frontmatter field", () => {
     return out;
   };
   // Both halves: adding a field that was absent, and rewriting one that was there.
-  for (const [field, why] of [["approved_by", "approve(on_behalf_of)"], ["status", "a rewrite"]]) {
+  for (const [field, why] of [["approved_by", "document_approve(on_behalf_of)"], ["status", "a rewrite"]]) {
     const after = read(put(base, field, "Dana Reyes\nflow: some-other-flow\noutcome: accepted"));
     if (after.flow !== "ops-flow") {
       bad.push(`${why} rewrote the envelope's flow to ${JSON.stringify(after.flow)}`);
@@ -188,10 +188,10 @@ check("a caller's words cannot write a frontmatter field", () => {
     if ("outcome" in after) bad.push(`${why} wrote an outcome the platform never derived`);
   }
 
-  // THE THIRD WRITER. A source document is written by add_source and by revise_document, and
+  // THE THIRD WRITER. A source document is written by source_add and by document_revise, and
   // for a while by two hand-built envelopes of which one escaped its title and one did not.
   // `supports` is what initiative_status reads to flag an approved document for refinement,
-  // and `type` is what search_knowledge filters on — so a title carrying a newline could file
+  // and `type` is what knowledge_search filters on — so a title carrying a newline could file
   // a source as a spec, or point it at somebody else's document.
   const srcBody = functionBody(src, "sourceDocument");
   if (!srcBody) {
@@ -224,7 +224,7 @@ check("a caller's words cannot write a frontmatter field", () => {
   // a WRITE refuses a tag it cannot store, because silently rewriting somebody's tag is the
   // trade safePath refuses for a path; a QUERY folds the caller's filter down, because a
   // value arriving from outside has to be matched against a store that is already normalised.
-  // What no tool may do is neither, which is what write_file and revise_document did — the
+  // What no tool may do is neither, which is what document_write and document_revise did — the
   // same zz.doc.tags column filled by three tools under two rules, one of which was no rule.
   for (const t of zzCoreTools()) {
     if (!/\btags\b[^)]{0,80}z\.array\(z\.string\(\)\)/.test(t.body)) continue;
@@ -240,7 +240,7 @@ check("a caller's words cannot write a frontmatter field", () => {
 });
 
 check("nothing sends the platform a document with frontmatter in it", () => {
-  // write_file and revise_document take the BODY. The platform says so in the refusal itself —
+  // document_write and document_revise take the BODY. The platform says so in the refusal itself —
   // "takes the document's BODY — the frontmatter is written by the platform, not by hand" —
   // and `flow`, the one thing a caller genuinely decides, is a named argument.
   //
@@ -262,7 +262,7 @@ check("nothing sends the platform a document with frontmatter in it", () => {
   }
   // The rule itself, so a change that stopped refusing anything would be visible here rather
   // than only as this check quietly passing.
-  if (!refuses("---\nflow: ops-flow\n---\n\n# x\n", "write_file")) {
+  if (!refuses("---\nflow: ops-flow\n---\n\n# x\n", "document_write")) {
     return "frontmatterRefusal no longer refuses content that opens with frontmatter — the " +
            "rest of this check would pass by asking a question that has stopped mattering";
   }
@@ -283,7 +283,7 @@ check("nothing sends the platform a document with frontmatter in it", () => {
       const text = src.split("\n")[line - 1];
       if (/^\s*(\/\/|\*|\/\*)/.test(text)) continue;         // prose about the rule
       bad.push(`${rel}:${line} builds a document that opens with frontmatter — send the body, ` +
-               "and pass `flow` as the argument write_file takes");
+               "and pass `flow` as the argument document_write takes");
     }
   }
   return bad.length ? bad.join("; ") : null;
@@ -291,8 +291,8 @@ check("nothing sends the platform a document with frontmatter in it", () => {
 
 check("no write path lets a caller type an envelope field", () => {
   // "The envelope is the platform's; the body is yours ... there is no third source, and 'the
-  // model typed it into some YAML' was the third source." write_file and revise_document
-  // refuse content that OPENS with frontmatter. patch_file has no content to inspect — it has
+  // model typed it into some YAML' was the third source." document_write and document_revise
+  // refuse content that OPENS with frontmatter. document_patch has no content to inspect — it has
   // a `find` and a `replace` — and `find: "flow: ops-flow"` lands in the envelope as readily as
   // in a section. It was the third source, still open.
   //
@@ -326,11 +326,11 @@ check("no write path lets a caller type an envelope field", () => {
   const bad = [];
   const cases = [
     ["flow: ops-flow", "flow: some-other-flow", true, "relabels which flow governs the initiative"],
-    ["version: 1", "version: 99", true, "rewrites the version revise_document owns"],
+    ["version: 1", "version: 99", true, "rewrites the version document_revise owns"],
     ["status: draft", "status: approved", true, "signs a gate by hand"],
     ["title: Enquiries", "title: Enquiries\noutcome: accepted", true, "adds an outcome nobody derived"],
     ["<!-- brief: context -->", "The service takes 400 enquiries a week.", false,
-     "fills a section, which is what patch_file is for"],
+     "fills a section, which is what document_patch is for"],
   ];
   for (const [find, replace, shouldRefuse, why] of cases) {
     const got = Boolean(refuse(doc, patched(find, replace)));
@@ -342,11 +342,11 @@ check("no write path lets a caller type an envelope field", () => {
 
   // And each write path has to consult its own refusal, or the rule holds on nothing.
   for (const t of zzCoreTools()) {
-    if (t.name === "patch_file" && !/envelopeEditRefusal\(/.test(t.body)) {
-      bad.push("patch_file does not call envelopeEditRefusal — it edits text in place, so it " +
+    if (t.name === "document_patch" && !/envelopeEditRefusal\(/.test(t.body)) {
+      bad.push("document_patch does not call envelopeEditRefusal — it edits text in place, so it " +
                "is the one path with no content to inspect for frontmatter");
     }
-    if ((t.name === "write_file" || t.name === "revise_document") &&
+    if ((t.name === "document_write" || t.name === "document_revise") &&
         !/frontmatterRefusal\(content/.test(t.body)) {
       bad.push(`${t.name} does not call frontmatterRefusal, so content that opens with an ` +
                "envelope reaches the store");

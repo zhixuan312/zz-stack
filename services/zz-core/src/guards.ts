@@ -51,7 +51,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // is the wrong noun: nobody accepted anything, somebody decided to stop. Naming a field
   // wrongly is how the next reader learns the wrong model.
   //
-  // So the guard inverts. `close()` takes what the caller KNOWS — finished or abandoned, and
+  // So the guard inverts. `initiative_close()` takes what the caller KNOWS — finished or abandoned, and
   // who accepted it if anyone did — and the platform DERIVES the outcome from that. There is
   // no branch in which one field is required because another holds a particular value,
   // because there is no validation left to branch on: a fact you derive cannot be forged by
@@ -63,7 +63,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   if (!env.closed_by) {
     return (
       `ERROR: ${parts[1]} carries outcome: ${env.outcome} but no closed_by, so it was written ` +
-      "by hand rather than recorded by an act. Use `close(initiative, disposition)` — the " +
+      "by hand rather than recorded by an act. Use `initiative_close(initiative, disposition)` — the " +
       "platform derives the outcome from what you tell it and stamps who closed it. " +
       "`disposition: finished` with an `accepted_by` records an acceptance; without one it " +
       "records a delivery and asks why nobody signed off; `abandoned` says the work stopped."
@@ -73,7 +73,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   if (self?.gate && parseEnvelope(content).status !== "approved") {
     return (
       `ERROR: ${parts[1]} is this flow's closing document AND carries a gate, so it cannot be ` +
-      `closed while its own approval is unrecorded. Call approve("${parts[0]}/${parts[1]}") first — ` +
+      `closed while its own approval is unrecorded. Call document_approve("${parts[0]}/${parts[1]}") first — ` +
       "the platform stamps the approval, and an approval that exists only in the chat does not exist."
     );
   }
@@ -102,8 +102,8 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
         return (
           `ERROR: ${parts[0]}/${d.name} carries a gate this flow declares and is not ` +
           `approved, so this initiative cannot close as ${env.outcome}. Call ` +
-          `approve("${parts[0]}/${d.name}") once the stakeholder agrees — or, if the work ` +
-          `stopped rather than finished, call close(initiative, "${OUTCOME_STOPPED}"), ` +
+          `document_approve("${parts[0]}/${d.name}") once the stakeholder agrees — or, if the work ` +
+          `stopped rather than finished, call initiative_close(initiative, "${OUTCOME_STOPPED}"), ` +
           "which says so in the team's ledger. A gate left open is not a gate passed."
         );
       }
@@ -124,7 +124,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
         return (
           `ERROR: ${parts[0]}/${need} does not exist — this flow's manifest requires it before the ` +
           `initiative can close as finished, under exactly that name. If the work STOPPED ` +
-          `rather than finished, close(initiative, "${OUTCOME_STOPPED}") records that and does ` +
+          `rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") records that and does ` +
           "not ask for it — a document nobody wrote is not made true by the close needing one."
         );
       }
@@ -168,7 +168,7 @@ export async function flowDeclarationCheck(
       : "ERROR: the platform database is unreachable, so which flows your team runs cannot be " +
         "read — and an initiative that declares none is governed by nothing, permanently, " +
         "because the platform stamps every later document from the first. Write this document " +
-        'again with `flow: "<name>"` as an argument to write_file and it will be accepted.';
+        'again with `flow: "<name>"` as an argument to document_write and it will be accepted.';
   }
   if (!flows || flows.size < 2) return null;
   const declared = parseEnvelope(content).flow;
@@ -194,7 +194,7 @@ export async function flowDeclarationCheck(
       "this initiative governed by nothing."
     : "ERROR: this initiative declares no flow, and your team runs more than one " +
       `(${known}), so nothing can say which gates apply to it. Write the initiative's FIRST ` +
-      `document again with \`flow: "<name>"\` as an argument to write_file — that argument is ` +
+      `document again with \`flow: "<name>"\` as an argument to document_write — that argument is ` +
       "where the flow is declared, and the platform stamps every later document from it. " +
       "Until it is there, no gate, no required document and no closing rule is enforced here.";
 }
@@ -277,12 +277,12 @@ export function initiativeNameTaken(chain: Chain, root: string, relPath: string)
     `and use that name for every later document.\n\n` +
     `Do not choose for them, and do not overwrite ${first} to find out.`;
 }
-/** An approved gated document changes through `revise_document`, or it does not change.
+/** An approved gated document changes through `document_revise`, or it does not change.
  *
- * There were two paths and they disagreed. `revise_document` bumps the version, returns the
- * document to draft, clears the approval and stores what caused the change. `patch_file` ran
+ * There were two paths and they disagreed. `document_revise` bumps the version, returns the
+ * document to draft, clears the approval and stores what caused the change. `document_patch` ran
  * the same content guards and then simply wrote, leaving `status: approved` and the signature
- * standing over bytes the approver never read — and `write_file` did the same. So the rule
+ * standing over bytes the approver never read — and `document_write` did the same. So the rule
  * "never overwrite an approved document" was prose in zz-backbone that nothing enforced, and
  * the cheaper path was the one that skipped the record.
  *
@@ -291,7 +291,7 @@ export function initiativeNameTaken(chain: Chain, root: string, relPath: string)
  * true one — that judgement is exactly what a model must not be given.
  *
  * So the second path is refused rather than taught to imitate the first. Teaching it to reset
- * the status would be a second, partial copy of revise_document, and the whole reason this
+ * the status would be a second, partial copy of document_revise, and the whole reason this
  * platform has acts is that there is one way to do each thing.
  *
  * GATED documents only, and only while APPROVED. A flow may mark an ungated document
@@ -299,7 +299,7 @@ export function initiativeNameTaken(chain: Chain, root: string, relPath: string)
  * work. Drafts are ordinary work too: this is how a spec is written, one section at a time. */
 function approvedDocumentGuard(chain: Chain, root: string, relPath: string,
                                via: string | null): string | null {
-  if (via) return null;                       // approve(), close() and revise_document own their writes
+  if (via) return null;                       // document_approve(), initiative_close() and document_revise own their writes
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
   if (!chain.documents.some((d) => d.name === parts[1] && d.gate)) return null;
@@ -307,7 +307,7 @@ function approvedDocumentGuard(chain: Chain, root: string, relPath: string,
   if (!existsSync(f) || frontmatterStatus(f) !== "approved") return null;
   return (
     `ERROR: ${relPath} is approved and carries a gate, so it changes through ` +
-    `revise_document(path: "${relPath}", content: …) — not write_file or patch_file. ` +
+    `document_revise(path: "${relPath}", content: …) — not document_write or document_patch. ` +
     "That call bumps the version, returns the document to draft, clears the approval and " +
     "keeps the approved copy in _versions/. Writing over it here would leave the approver's " +
     "name standing on bytes they never read. If somebody's words are what changed it, pass " +
@@ -340,7 +340,7 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
   if (status !== "approved") {
     return (
       `ERROR: ${parts[0]}/${dep} is status: ${status ?? "missing"} — its approval gate has not been recorded. ` +
-      `Once the stakeholder agrees, call approve("${parts[0]}/${dep}") in that same turn; the platform ` +
+      `Once the stakeholder agrees, call document_approve("${parts[0]}/${dep}") in that same turn; the platform ` +
       `stamps the approval from who you are and what time it is, and a hand-written one is refused. ` +
       `Only then can ${parts[1]} be written. An approval that exists only in the chat does not exist.`
     );
@@ -361,9 +361,9 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
  * typing a field the platform already knew the answer to, and no amount of prose in a skill
  * makes a model reliably type a date it can only guess.
  *
- * So the fields stop being writable. `approve()` and `close()` stamp them from the session
+ * So the fields stop being writable. `document_approve()` and `initiative_close()` stamp them from the session
  * and the clock, and they pass `via` to say so. Everything else that touches a document —
- * write_file, patch_file, revise_document — reaches this function with `via` unset, and is
+ * document_write, document_patch, document_revise — reaches this function with `via` unset, and is
  * refused the moment it tries to introduce or change any of them.
  *
  * CHANGE is the test, not presence: a document that already carries an approval is patched
@@ -388,8 +388,8 @@ function ownershipCheck(root: string, relPath: string, content: string,
       `ERROR: ${field} is written by the platform, not by hand — this write would ` +
       (a ? `change it from \`${a}\` to \`${b || "(removed)"}\`` : `set it to \`${b}\``) + ". " +
       (field === "outcome" || field === "closed_by"
-        ? "Use `close(initiative, disposition)`: you say finished or abandoned and who accepted it, and the outcome follows from that."
-        : "Use `approve(path)` the moment the person agrees: it stamps status, approved_by and approved_at from who you are and what time it is.") +
+        ? "Use `initiative_close(initiative, disposition)`: you say finished or abandoned and who accepted it, and the outcome follows from that."
+        : "Use `document_approve(path)` the moment the person agrees: it stamps status, approved_by and approved_at from who you are and what time it is.") +
       " A field the platform can fill is never a field you should be asked to."
     );
   }
@@ -422,7 +422,7 @@ async function selectionCheck(chain: Chain, relPath: string, content: string): P
   if (!named.length) {
     return (
       `ERROR: ${parts[1]} does not say which building blocks were chosen. Pass them as ` +
-      "write_file's own `blocks` argument — `blocks: [\"casebox\"]` — and ONLY the ones being " +
+      "document_write's own `blocks` argument — `blocks: [\"casebox\"]` — and ONLY the ones being " +
       "built on, never the ones considered and rejected. It is an argument rather than one " +
       "of the flow's `fields` because the platform reads it: the stages after this one may " +
       "call these blocks and nothing else. The prose is for the reasoning; this is the " +
@@ -536,7 +536,7 @@ async function vocabularyCheck(chain: Chain, relPath: string, content: string): 
     // followed this advice and passed `<initiative>/intent.md` to `supports`, which takes a
     // BARE document name — so the agent was refused twice for one mistake, and the second
     // refusal was caused by the first one's instruction being half a sentence short.
-    `    add_source(initiative: "${parts[0]}", title: "<what they said, in a few words>",\n` +
+    `    source_add(initiative: "${parts[0]}", title: "<what they said, in a few words>",\n` +
     "               content: \"<their words, verbatim>\", supports: \"" + parts[1] + "\")\n\n" +
     "`supports` is the DOCUMENT NAME on its own — `" + parts[1] + "`, never " +
     `\`${parts[0]}/${parts[1]}\`. The initiative is already its own argument.`
@@ -546,7 +546,7 @@ async function vocabularyCheck(chain: Chain, relPath: string, content: string): 
  *
  * The symmetric half of persistDocument, and it exists for the same reason that one does.
  * These checks were listed at each call site instead, so every new write path started with
- * none of them and got whichever ones its author remembered: revise_document had zero, and
+ * none of them and got whichever ones its author remembered: document_revise had zero, and
  * a selection document's required section could be deleted in a revision without a refusal.
  * Three of them are inert for a revision — it forces `status: draft` and clears the approval
  * and the outcome, so statusCheck, attributionCheck and closeCheck have nothing to fire on —

@@ -260,7 +260,7 @@ export const verdictFromProse = (said: string): string | null => {
  * closeCheck exempts a stopped initiative from "every declared gate must be approved" — it
  * has to, since an initiative that was dropped is precisely one whose gates were never
  * passed, and requiring them would leave only "approve a plan nobody agreed to" or "leave it
- * open forever". close() derives this word from `disposition: abandoned`.
+ * open forever". initiative_close() derives this word from `disposition: abandoned`.
  *
  * It was a bare `/^abandoned$/` in one of those places and a literal in the other. The
  * derivation is annotated `(typeof OUTCOMES)[number]` so the compiler holds it; the regex was
@@ -269,7 +269,7 @@ export const verdictFromProse = (said: string): string | null => {
  * rename. */
 export const OUTCOME_STOPPED: (typeof OUTCOMES)[number] = "abandoned";
 
-/** The verdict fields. `approve()` and `close()` stamp them from the session; a hand write
+/** The verdict fields. `document_approve()` and `initiative_close()` stamp them from the session; a hand write
  * is refused, because only the session knows who is calling and what day it is. */
 export const PLATFORM_OWNED = ["status", "approved_by", "approved_at", "outcome", "closed_by"] as const;
 
@@ -292,7 +292,7 @@ export const Envelope = z.object({
   date: z.string().optional(),
   added_at: z.string().optional(),
   title: z.string().optional(),
-  /** Who attached a source. add_source and revise_document write it and both list_sources
+  /** Who attached a source. source_add and document_revise write it and both source_list
    * and the knowledge base read it — it was simply never declared here, so the schema this
    * platform PUBLISHES as the rules for writing a document omitted a field the platform
    * writes itself, and zz-core's reserved-name set (derived from these keys) did not defend
@@ -311,7 +311,7 @@ export const Envelope = z.object({
    * Comma-separated block ids, and few of them. A selection naming half the shelf is a
    * decision that was not made, and the write guard holds it to five. */
   blocks: z.string().optional(),
-  /** Why a document was revised, in one line, written by revise_document.
+  /** Why a document was revised, in one line, written by document_revise.
    *
    * No CODE reads it, and that is the design rather than an oversight: evolve-report counts
    * revisions and says in as many words to go and read them in the team's own store, because
@@ -322,7 +322,7 @@ export const Envelope = z.object({
   /** The initiatives a journal node was learned from, written by knowledge_add.
    *
    * Declared for the reason the three fields around it are: the platform writes it and the
-   * platform READS it. indexDoc puts it in zz.doc.evidence, and search_knowledge expands the
+   * platform READS it. indexDoc puts it in zz.doc.evidence, and knowledge_search expands the
    * graph along it — "a node that cites the same initiative as a strong hit is about the same
    * work even when it shares no vocabulary". Undeclared, the published schema omitted a field
    * the platform stamps on every node, and RESERVED_ENVELOPE — derived from these keys — did

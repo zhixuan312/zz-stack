@@ -125,7 +125,7 @@ function record(ok: boolean, name: string, got: string): void {
  * "the call errored" and "the rule fired" are different claims, and this file already knows
  * it — the journal probe fills in every other argument precisely so a schema rejection cannot
  * be mistaken for the subject rule. The hand-written-approval probe did not have that, and it
- * patched `status: draft` on a document approved forty lines earlier: patch_file answered
+ * patched `status: draft` on a document approved forty lines earlier: document_patch answered
  * "`find` occurs 0 times" long before any guard ran, and the check printed ok having never
  * reached ownershipCheck at all.
  */
@@ -164,11 +164,11 @@ function eitherOr(name: string, got: string, acceptableRefusal: RegExp): void {
  * A probe document: THE BODY, and nothing else.
  *
  * `flow` is a caller ARGUMENT — it says which flow governs the initiative, and the platform
- * stamps every other envelope field from it. This docblock has said so since write_file gained
+ * stamps every other envelope field from it. This docblock has said so since document_write gained
  * that argument; the line below went on emitting `---\nflow: …\n---`, so the comment described
  * the design and the code did the thing the design replaced.
  *
- * write_file refuses content that opens with frontmatter, in as many words — "takes the
+ * document_write refuses content that opens with frontmatter, in as many words — "takes the
  * document's BODY — the frontmatter is written by the platform, not by hand". So EVERY write
  * in this probe was refused, and the probe that exists to say "the platform still works when
  * the model provider is down" could not complete one. It needs a live deployment, which is
@@ -180,7 +180,7 @@ function doc(body: string): string {
 
 /** A write, with the flow declared where the platform takes it: as an argument. */
 const writeDoc = (path: string, body: string): Promise<string> =>
-  call("write_file", { path, content: doc(body), flow: FLOW });
+  call("document_write", { path, content: doc(body), flow: FLOW });
 
 async function main(): Promise<number> {
   console.log(`walking ${INIT}/ through ${GW}`);
@@ -196,28 +196,28 @@ async function main(): Promise<number> {
 
   // The platform authored `status` on that write. Nothing else could have: the document went
   // in without the field.
-  const opened = await call("read_file", { path: `${INIT}/${OPENS_ON}` });
+  const opened = await call("document_read", { path: `${INIT}/${OPENS_ON}` });
   record(opened.includes("status: draft"), "a new document opens as a draft, stamped by the platform", opened);
 
   // ON A DRAFT, while `status: draft` is still in the file. Run after the approve loop below
-  // this found nothing to replace and passed on patch_file's arity error instead of on the
+  // this found nothing to replace and passed on document_patch's arity error instead of on the
   // rule — the quietest way for a suite to stop measuring what it says it measures, which is
   // the thing this file's own comments keep warning about.
   check("an approval written by hand is refused",
-    await call("patch_file", { path: `${INIT}/${OPENS_ON}`, find: "status: draft", replace: "status: approved" }),
-    true, /patch_file edits the document's BODY/);
+    await call("document_patch", { path: `${INIT}/${OPENS_ON}`, find: "status: draft", replace: "status: approved" }),
+    true, /document_patch edits the document's BODY/);
 
-  check("approve() records a verdict on a document that exists",
-    await call("approve", { path: `${INIT}/${OPENS_ON}`, on_behalf_of: "Chain Check" }), false);
-  check("approve() refuses a document that does not",
-    await call("approve", { path: `${INIT}/nothing-here.md` }), true,
+  check("document_approve() records a verdict on a document that exists",
+    await call("document_approve", { path: `${INIT}/${OPENS_ON}`, on_behalf_of: "Chain Check" }), false);
+  check("document_approve() refuses a document that does not",
+    await call("document_approve", { path: `${INIT}/nothing-here.md` }), true,
     /does not exist|not a document this flow declares/);
 
   // BOTH halves, from the session rather than from the model. Read back, because the tool
   // reporting success is the tool's own account of itself.
-  const signed = await call("read_file", { path: `${INIT}/${OPENS_ON}` });
+  const signed = await call("document_read", { path: `${INIT}/${OPENS_ON}` });
   const both = signed.includes("approved_by: Chain Check") && /approved_at: \d{4}-\d{2}-\d{2}/.test(signed);
-  record(both, "approve() stamps an approver AND a day", signed);
+  record(both, "document_approve() stamps an approver AND a day", signed);
 
   const status = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
     documents: { name: string; status?: string | null; gate?: boolean }[];
@@ -225,7 +225,7 @@ async function main(): Promise<number> {
   };
   const docs = status.documents.map((d) => d.name);
   // What is ALREADY approved, from the platform's own answer. The write loop below walked
-  // every document including the one approved above it — and write_file on an approved gated
+  // every document including the one approved above it — and document_write on an approved gated
   // document is refused by design, so the loop's first iteration failed against a platform
   // that was working exactly as documented. Skipping it is not avoiding the case: that
   // refusal is asserted directly further down.
@@ -235,7 +235,7 @@ async function main(): Promise<number> {
   // check below is only meaningful if it passes the REAL team name.
   let team = "";
   try {
-    team = ((JSON.parse(await call("get_my_info", {})) as { team?: string }).team ?? "").trim();
+    team = ((JSON.parse(await call("session_whoami", {})) as { team?: string }).team ?? "").trim();
   } catch {
     // No identity to read: the team-name check below simply asserts nothing about a team.
   }
@@ -255,14 +255,14 @@ async function main(): Promise<number> {
   for (const name of docs) {
     if (settled.has(name)) continue;
     check(`write ${name}`, await writeDoc(`${INIT}/${name}`, name), false);
-    check(`approve ${name}`, await call("approve", { path: `${INIT}/${name}`, on_behalf_of: "Chain Check" }), false);
+    check(`approve ${name}`, await call("document_approve", { path: `${INIT}/${name}`, on_behalf_of: "Chain Check" }), false);
   }
 
   // And the refusal the skip above relies on, asserted rather than assumed: an approved gated
-  // document does not change through write_file.
-  check("an approved document does not change through write_file",
+  // document does not change through document_write.
+  check("an approved document does not change through document_write",
     await writeDoc(`${INIT}/${OPENS_ON}`, "rewritten"),
-    true, /revise_document/);
+    true, /document_revise/);
 
   // WHICH document closes is not in initiative_status's document list — only `next_move`
   // names it. So ask for it rather than assume: the closing document is NOT necessarily the
@@ -273,24 +273,26 @@ async function main(): Promise<number> {
   const nxt = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
     next_move?: { action?: string; document?: string };
   };
+  // NOT A TOOL: matched against `next_move.action`, which is initiative_status's own verb
+  // vocabulary and not a tool name — see the comment at its registration.
   const closing = nxt.next_move?.action === "close" ? nxt.next_move.document! : docs[docs.length - 1];
   console.log(`  (the flow closes on ${closing})`);
-  const before = await call("read_file", { path: "_ledger.md" });
+  const before = await call("document_read", { path: "_ledger.md" });
 
   // The close is an ACT. Writing `outcome` into frontmatter by hand is refused, because a
   // derived fact cannot be forged by choosing the cheaper word — which is what a
   // hand-written outcome always could do.
   check("an outcome written by hand is refused",
-    await call("patch_file", {
+    await call("document_patch", {
       path: `${INIT}/${closing}`,
       find: "approved_by: Chain Check",
       replace: "approved_by: Chain Check\noutcome: accepted\naccepted_by: Chain Check",
-    }), true, /patch_file edits the document's BODY/);
+    }), true, /document_patch edits the document's BODY/);
 
   // Finished with nobody named is a legitimate route and costs a sentence. Refusing it
   // outright would leave the honest agent with only the dishonest option.
   check("finished with nobody named needs a reason",
-    await call("close", { initiative: INIT, disposition: "finished" }), true, /no_signoff_reason/);
+    await call("initiative_close", { initiative: INIT, disposition: "finished" }), true, /no_signoff_reason/);
 
   // SKIPPED, not inverted, when the team name is unknown. With no team to send, this asserted
   // that closing accepted-by "a-team" SUCCEEDS — so a run that could not read its identity
@@ -299,35 +301,35 @@ async function main(): Promise<number> {
   // the opposite is worse than an absent one.
   if (team) {
     check("a close cannot be accepted by a team",
-      await call("close", { initiative: INIT, disposition: "finished", accepted_by: team }),
+      await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: team }),
       true, /names your team, not a person/);
   } else {
-    console.log("  skip  a close cannot be accepted by a team — get_my_info named no team");
+    console.log("  skip  a close cannot be accepted by a team — session_whoami named no team");
   }
 
   check("a close accepted by a person is recorded",
-    await call("close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }), false);
+    await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }), false);
 
   // An initiative closes ONCE. A second close used to overwrite the document's outcome while
   // ledgerOnClose skipped the second row, so the document said one word and the team's ledger
   // — which is what the OKR grading and the cross-flow comparison count — said another.
   check("an initiative cannot be closed twice",
-    await call("close", { initiative: INIT, disposition: "abandoned" }), true, /already closed as/);
+    await call("initiative_close", { initiative: INIT, disposition: "abandoned" }), true, /already closed as/);
 
-  // AND THE WAY ROUND THAT GUARD. close() and ledgerOnClose both refuse a second close by
+  // AND THE WAY ROUND THAT GUARD. initiative_close() and ledgerOnClose both refuse a second close by
   // reading `outcome` off the document, so anything able to REMOVE that field reopens the
   // initiative and lets the close run again — a second ledger row for the same work, in the
-  // file the OKR grading and the cross-flow comparison count. revise_document cleared it, as
+  // file the OKR grading and the cross-flow comparison count. document_revise cleared it, as
   // one of the governance fields it puts back to draft, while leaving `closed_by` standing.
-  // The check above cannot see that: it asks whether close() refuses, and after a revision
-  // close() has nothing to refuse.
+  // The check above cannot see that: it asks whether initiative_close() refuses, and after a revision
+  // initiative_close() has nothing to refuse.
   check("a document that records a close cannot be revised",
-    await call("revise_document", { path: `${INIT}/${closing}`, content: doc("reopened") }),
+    await call("document_revise", { path: `${INIT}/${closing}`, content: doc("reopened") }),
     true, /closes once/);
 
   // And the document says what the close recorded, not merely that the call was accepted.
   // "not refused" is a claim about the call; this is a claim about the record.
-  const closed = await call("read_file", { path: `${INIT}/${closing}` });
+  const closed = await call("document_read", { path: `${INIT}/${closing}` });
   record(/outcome:\s*accepted/.test(closed), "the closing document carries the outcome", closed.slice(0, 200));
   record(/closed_by:\s*\S+/.test(closed), "the closing document names who closed it", closed.slice(0, 200));
 
@@ -335,7 +337,7 @@ async function main(): Promise<number> {
   // recorded happening to it. zz.decision had been written on every index and read by
   // nothing since it was added — a table nobody queries is a table nobody notices going
   // wrong.
-  const rec = await call("reconcile", { initiative: INIT });
+  const rec = await call("knowledge_reconcile", { initiative: INIT });
   record(!rec.trim().toUpperCase().startsWith("ERROR"), "reconcile answers for an initiative", rec);
 
   // ── the rest of the artifact-store door: reading, sourcing, listing, the skill shelf ──
@@ -345,21 +347,21 @@ async function main(): Promise<number> {
   // asserting that stays true is the point: a reader reaching for the record of what just
   // happened here should not discover these tools quietly stopped working once it did.
 
-  check("show_document renders the closing document for a person",
-    await call("show_document", { path: `${INIT}/${closing}` }), false);
+  check("document_present renders the closing document for a person",
+    await call("document_present", { path: `${INIT}/${closing}` }), false);
 
-  const listed = await call("list_files", { prefix: INIT });
+  const listed = await call("document_list", { prefix: INIT });
   record(!listed.trim().toUpperCase().startsWith("ERROR") && listed.includes(closing),
-    "list_files finds what this run just wrote", listed);
+    "document_list finds what this run just wrote", listed);
 
-  check("add_source attaches material to the initiative",
-    await call("add_source", {
+  check("source_add attaches material to the initiative",
+    await call("source_add", {
       initiative: INIT, title: "chain-check source", content: "material chain-check attached.",
       supports: closing,
     }), false);
-  const sourced = await call("list_sources", { initiative: INIT });
+  const sourced = await call("source_list", { initiative: INIT });
   record(!sourced.trim().toUpperCase().startsWith("ERROR") && sourced.includes("chain-check source"),
-    "list_sources reads back what add_source just wrote", sourced);
+    "source_list reads back what source_add just wrote", sourced);
 
   // Deterministic arithmetic, and a genuine round trip rather than a call that merely
   // returns without error — decode(encode(x)) === x is the whole claim the tool makes.
@@ -367,16 +369,16 @@ async function main(): Promise<number> {
   const decoded = await call("encode_base64", { text: encoded, direction: "decode" });
   record(decoded.trim() === "chain-check", "encode_base64 round-trips its own output", `${encoded} -> ${decoded}`);
 
-  // list_skills and skill_view degrade (a named ERROR) rather than fail outright when this
-  // deployment has no platform database — get_my_info's own team lookup already treats that
+  // skill_list and skill_read degrade (a named ERROR) rather than fail outright when this
+  // deployment has no platform database — session_whoami's own team lookup already treats that
   // as ordinary above, and these two tools document the identical fallback.
-  eitherOr("list_skills lists what this caller can reach",
-    await call("list_skills", {}), /platform database is unreachable/);
-  // zz-backbone ships with the `zz` plugin, which every account carries — get_my_info points
-  // here itself ("skill_view(\"zz-backbone\")"), so this is the one skill name the door can
+  eitherOr("skill_list lists what this caller can reach",
+    await call("skill_list", {}), /platform database is unreachable/);
+  // zz-backbone ships with the `zz` plugin, which every account carries — session_whoami points
+  // here itself ("skill_read(\"zz-backbone\")"), so this is the one skill name the door can
   // promise exists without reading this deployment's own catalog first.
-  check("skill_view reads the platform's own backbone skill",
-    await call("skill_view", { name: "zz-backbone" }), false);
+  check("skill_read reads the platform's own backbone skill",
+    await call("skill_read", { name: "zz-backbone" }), false);
   eitherOr("block_skills answers the shelf of building blocks",
     await call("block_skills", {}), /platform database is unreachable/);
 
@@ -430,14 +432,14 @@ async function main(): Promise<number> {
       `could not read an id back from knowledge_add: ${added}`);
   }
 
-  // search_knowledge and reindex_knowledge both refuse the identical way get_my_info's team
+  // knowledge_search and knowledge_reindex both refuse the identical way session_whoami's team
   // lookup and knowledge_add's own team-scope guard do — no platform database, or no team —
   // and that is ordinary on a deployment run without either, not a broken tool.
-  eitherOr("search_knowledge finds the node this run just wrote",
-    await call("search_knowledge", { query: "chain-check subject probe" }),
+  eitherOr("knowledge_search finds the node this run just wrote",
+    await call("knowledge_search", { query: "chain-check subject probe" }),
     /no platform database|no platform db|not in a team/);
-  eitherOr("reindex_knowledge rebuilds the team's index",
-    await call("reindex_knowledge", {}), /no platform database|no platform db|not in a team/);
+  eitherOr("knowledge_reindex rebuilds the team's index",
+    await call("knowledge_reindex", {}), /no platform database|no platform db|not in a team/);
 
   // ── the plugin-eval surface: a plugin's release history, not this run's initiative ──
   //
@@ -487,7 +489,7 @@ async function main(): Promise<number> {
       eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
     }), /no platform database|no evaluation/);
 
-  const after = await call("read_file", { path: "_ledger.md" });
+  const after = await call("document_read", { path: "_ledger.md" });
   record(after.includes(INIT) && !before.includes(INIT),
     "closing appends a ledger row the model cannot write", after.slice(-160));
 

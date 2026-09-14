@@ -2,7 +2,7 @@
  * Making a document findable: the row the knowledge index keeps for it, and the walks that
  * rebuild that index for a team or for every team.
  *
- * A document the store holds and the index does not know about is a document `search_knowledge`
+ * A document the store holds and the index does not know about is a document `knowledge_search`
  * cannot return, which reads to the person asking as though the work was never done. So every
  * tool that writes a file indexes it in the same call, and the reindex walks exist for the two
  * cases that cannot be covered that way: a store restored from a backup, and a schema change
@@ -28,7 +28,7 @@ import { ARTIFACTS_DIR, db } from "./platform-db.js";
  * deliberately carries NO ACTOR — "no address on a measurement", see tool-telemetry.ts —
  * because it measures a skill, not a person. A journal entry is the opposite kind of record:
  * who recorded what, when. It also cannot be filtered out of tool_call rows honestly, since
- * those include `search_knowledge` reads, which are not log entries at all.
+ * those include `knowledge_search` reads, which are not log entries at all.
  *
  * team_id AND team_slug, both. The slug alone is what zz.event carried for a week while
  * every console view that joins through `team_id` read empty — see 042_event_team_backfill.
@@ -76,12 +76,12 @@ export interface KbRow {
 }
 /** A source document, which two tools write.
  *
- * add_source attaches material a person brought; revise_document captures the words that
+ * source_add attaches material a person brought; document_revise captures the words that
  * caused a version. Same `type: source`, same fields, same readers — and two hand-built
- * envelopes, of which ONE escaped its title. revise_document's interpolated `source_title`
+ * envelopes, of which ONE escaped its title. document_revise's interpolated `source_title`
  * raw, so a title carrying a newline did not corrupt the source's envelope, it added fields
  * to it: `supports` decides which approved documents initiative_status flags for refinement,
- * and `type` is what search_knowledge filters on, so a source could be indexed as a spec.
+ * and `type` is what knowledge_search filters on, so a source could be indexed as a spec.
  *
  * Through renderEnvelope, so every value is folded to one line whatever a caller sends and
  * whatever field is added here next. `supports` stays comma-joined because that is how the
@@ -105,7 +105,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
   try {
     // db(), not `pool`. This asked whether anybody had connected yet, so a write arriving
     // before the first database-backed request went to disk and never reached the index —
-    // and search_knowledge answers "nothing is known" for a document that is right there.
+    // and knowledge_search answers "nothing is known" for a document that is right there.
     const p = db();
     if (!p) return false;
     const teamSlug = root.startsWith(join(ARTIFACTS_DIR, "teams") + "/")
@@ -126,7 +126,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // A frozen approval snapshot IS a superseded copy of the live document, and until this
     // line nothing in the index said so. `_versions/spec.v1.md` carried `status: approved`
     // from its own frontmatter and an empty superseded_by, so it came back from
-    // search_knowledge indistinguishable from the current spec — three rows for one
+    // knowledge_search indistinguishable from the current spec — three rows for one
     // document on this store, all reading as approved, and `include_superseded: false`
     // filtered none of them because that filter reads exactly this field. 28 of 164 indexed
     // rows are snapshots.
@@ -175,7 +175,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // which are not blocks at all.
     //
     // That is not cosmetic. `blocks` is GIN-indexed so that "what have we predicted about casebox"
-    // is one query, and `reconcile` joins it against the block name the gateway records — which
+    // is one query, and `knowledge_reconcile` joins it against the block name the gateway records — which
     // is always the bare `casebox`. With six spellings in the column the join matched the sixth of
     // rows that happened to agree, and reported the rest as predictions about nothing.
     //
@@ -348,7 +348,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
  *
  * Dot-directories are skipped, `.git` being the one that exists. The store became a git
  * repository this release, and a walker that does not know reports the repository's own
- * machinery as the team's work: measured on a store holding three documents, list_files
+ * machinery as the team's work: measured on a store holding three documents, document_list
  * returned 32 entries of which 29 were git objects, hooks and refs — and they sort FIRST, so
  * the first thing an agent reading a store saw was `.git/COMMIT_EDITMSG`. On a store with a
  * quarter of history behind it that is thousands of entries burying the documents.
@@ -427,7 +427,7 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
  *
  * Deliberately not awaited by startup: the service answers requests while this runs, and a
  * partially-rebuilt index is strictly better than a service that will not start. Anything
- * it misses is repaired by the next write or an explicit reindex_knowledge call. */
+ * it misses is repaired by the next write or an explicit knowledge_reindex call. */
 export async function reindexAllTeams(): Promise<void> {
   const teamsDir = join(ARTIFACTS_DIR, "teams");
   const p = db();

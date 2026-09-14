@@ -73,7 +73,15 @@ for (const f of [...walk("packages"), ...walk("services")]) {
       if (!t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*")) break;
       if (/RAW NAME:/.test(t)) marked = true;
     }
-    for (const m of code.matchAll(/["'`]([a-z0-9_]+)["'`]/g)) {
+    // QUOTED STRINGS AND REGEX ALTERNATIONS. The first spelling was quoted-only, and
+    // `tool-telemetry.ts` turned out to hold a SECOND raw-name site the check could not see:
+    // `/^(document_write|document_revise|document_patch)$/`, comparing the same client-sent
+    // field as the quoted one fifteen lines above it. A name inside a regex literal is as much
+    // a comparison as a name inside quotes; only the delimiters differ. Matching the regex
+    // metacharacters that fence an alternation or an anchor covers it without trying to parse
+    // JavaScript's regex-versus-division ambiguity, which is not worth the false positives.
+    const TOKENS = [/["'`]([a-z0-9_]+)["'`]/g, /[/(|^]([a-z0-9_]+)[/)|$]/g];
+    for (const m of [...code.matchAll(TOKENS[0]), ...code.matchAll(TOKENS[1])]) {
       if (!OLD.has(m[1]) || marked) continue;
       fail.push(`${f}:${i + 1} matches the pre-rename name "${m[1]}" in a file that resolves ` +
                 `names through the alias maps — resolved values never carry it, so this ` +

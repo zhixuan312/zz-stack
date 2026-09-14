@@ -139,11 +139,11 @@ for id in $IDS; do
     [ -n "$CONTINUE" ] || { echo "  SKIPPED: $FROM recorded no initiative for $id"; continue; }
   fi
 
-  # THE STEP IS LOADED THE WAY THE FLOW LOADS IT, through skill_view — that is what makes the
+  # THE STEP IS LOADED THE WAY THE FLOW LOADS IT, through skill_read — that is what makes the
   # platform attribute everything after it to this step and this version. A prompt that pasted
   # the skill's text would exercise the same words and record them against nothing.
   if [ -n "$CONTINUE" ]; then
-    PROMPT="Call the zz-core tool skill_view, passing zz-backbone as its name argument, and then
+    PROMPT="Call the zz-core tool skill_read, passing zz-backbone as its name argument, and then
 again passing ${STEP}. Follow those skills exactly — they are the method.
 
 You are continuing the initiative ${CONTINUE}. Read what is already in it first.
@@ -157,7 +157,7 @@ ${BRIEF}
 Do only what ${STEP} says to do, and stop when its document is written. Do not run any later
 stage of the flow."
   else
-    PROMPT="Call the zz-core tool skill_view, passing zz-backbone as its name argument, and then
+    PROMPT="Call the zz-core tool skill_read, passing zz-backbone as its name argument, and then
 again passing ${STEP}. Follow those skills exactly — they are the method.
 
 A stakeholder has sent you this, and it is all you have. There is nobody to ask: work from
@@ -247,7 +247,7 @@ Reply as yourself." < /dev/null 2>/dev/null || true)"
     done
   fi
 
-  # WHICH INITIATIVE THIS REQUIREMENT PRODUCED, taken from the write_file call itself. The step
+  # WHICH INITIATIVE THIS REQUIREMENT PRODUCED, taken from the document_write call itself. The step
   # names its own folder from the title it wrote, so nothing about the name says which brief it
   # came from — and matching documents to requirements by content afterwards mis-attributed two
   # of them on the very first run, scoring requirements that had never been run at all.
@@ -259,7 +259,7 @@ Reply as yourself." < /dev/null 2>/dev/null || true)"
       let o; try { o = JSON.parse(line); } catch { continue; }
       if (o.type !== "assistant") continue;
       for (const c of o.message?.content ?? []) {
-        if (c.type === "tool_use" && /write_file$/.test(c.name ?? "")) {
+        if (c.type === "tool_use" && /document_write$/.test(c.name ?? "")) {
           const p = c.input?.path;
           if (typeof p !== "string" || !p.includes("/")) continue;
           // THE DOCUMENT THIS STEP OWES, not simply the last thing written. Two ops-plan runs

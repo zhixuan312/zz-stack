@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.3
+version: 1.4
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -65,7 +65,7 @@ A dispatched plan is a plausible ordering nobody chose.
 
 **`sdlc-explore`** owns the fan-out and the synthesis around it.
 
-**Closing the initiative** is an act, not a stage — one `close()` call, the way `zz-backbone`
+**Closing the initiative** is an act, not a stage — one `initiative_close()` call, the way `zz-backbone`
 describes it, once `sdlc-review` is done. You are the only party who was present for the
 whole initiative, so there is nobody else to dispatch it to. `zz-knowledge` runs afterward
 and is what turns the closed initiative into what the next one recalls; that is the
@@ -92,7 +92,7 @@ discover that later.
 Three things, in this order. A worker missing any of them writes something plausible and
 wrong.
 
-1. **Its instructions**: follow the stage's skill, and **load it with `skill_view("<stage>")`
+1. **Its instructions**: follow the stage's skill, and **load it with `skill_read("<stage>")`
    as its first act, before anything else.** Do not paste the skill's text into the prompt —
    it is hundreds of lines, and a pasted copy goes stale the next time the package updates.
    The subagent inherits your tools and can load the skill itself.
@@ -101,9 +101,9 @@ wrong.
    not intend to make.
 3. **Where it lands**: the initiative and the document name.
 
-**Why `skill_view` and not whatever your runtime offers.** A worker that loads the skill from
+**Why `skill_read` and not whatever your runtime offers.** A worker that loads the skill from
 its own plugin directory gets the same text and leaves no trace, and the platform attributes a
-step from the last `skill_view` it was asked for. So a stage loaded locally did not happen as
+step from the last `skill_read` it was asked for. So a stage loaded locally did not happen as
 far as the record is concerned. Measured on 2026-09-13: across every initiative this platform
 has ever recorded, `zz.event` holds not one `sdlc-spec-audit` or `sdlc-plan-audit` row — both
 audits, the two stages whose whole value is that somebody independent read the document, are
@@ -130,7 +130,7 @@ Read the file, not the summary.
 
 Three checks apply to every stage; each stage's skill adds its own.
 
-1. **It exists.** `read_file(...)`. A worker that reports success without a successful write
+1. **It exists.** `document_read(...)`. A worker that reports success without a successful write
    has told you about a document that does not exist.
 2. **Nothing survives as a placeholder.** Search for `<!--`, `TODO`, `TBD`, `brief:`. Workers
    draft from briefs and replace them as they go, so a surviving brief is a section that
@@ -158,14 +158,14 @@ document someone builds on. That is the reason the checks above are not optional
 document's BODY — markdown starting at its first heading — and content that opens with
 frontmatter is refused. `flow`, `type`, `status`, `version` and `updated_at` are stamped from
 what the platform already knows; `approved_by`, `approved_at`, `outcome` and `closed_by` come
-from `approve()` and `close()`.
+from `document_approve()` and `initiative_close()`.
 
 What the document needs beyond those facts is a NAMED ARGUMENT to the write, not a line you
 type: `flow` on the first document, then `stakeholder`, `tags`, `title`, and `fields` for this
 flow's own keys.
 
 ```
-write_file(path: "<initiative>/explore.md", flow: "sdlc-flow", content: "<the body>")
+document_write(path: "<initiative>/explore.md", flow: "sdlc-flow", content: "<the body>")
 ```
 
 `flow` is not decoration. The platform reads it to decide which chain of gates applies. A team
@@ -181,12 +181,12 @@ indistinguishable from declaring nothing.
 
 Pass it on the FIRST write of the initiative; the platform stamps every later document from it.
 
-**Documents** go in the initiative, written with `write_file` — never a local path. The
+**Documents** go in the initiative, written with `document_write` — never a local path. The
 initiative store is what gives a document its envelope, its version snapshot at approval, and
 its telemetry. A spec written to `./spec.md` is a file; a spec written to the initiative is a
 document someone can approve. This flow produces three: `explore.md`, `spec.md`, `plan.md`.
 
-**The journal** is the ZZ knowledge base, reached through zz-core: `search_knowledge` to read,
+**The journal** is the ZZ knowledge base, reached through zz-core: `knowledge_search` to read,
 `knowledge_add` to write. Not a local directory, and not this flow's own store. A journal on one
 laptop is a journal one person has; the point of recall is that the next initiative starts from
 what *every* earlier one learned.
@@ -198,7 +198,7 @@ and retrieval, and a stage that rebuilds any of it produces a second store nobod
 
 Not you, and not the worker. A worker proposes; a person decides. Report to them in their own
 words what the document says and what it calls "done", and let them answer. An approval exists
-only once `approve(path)` has recorded it — the platform stamps who and when from the session
+only once `document_approve(path)` has recorded it — the platform stamps who and when from the session
 itself, so the one thing you must get right is calling it in the same turn they agreed. Your
 team's own name is not a person, and `on_behalf_of` exists for the rarer case where the verdict
 is someone else's.

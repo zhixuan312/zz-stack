@@ -14,17 +14,17 @@ import { join } from "node:path";
 
 /** Actions that change a document's bytes. A `shown` after one of these is a fetch of the
  * current content; a `shown` before them is a fetch of something else. */
-const CHANGED = new Set(["write_file", "patch_file", "revise_document"]);
+const CHANGED = new Set(["document_write", "document_patch", "document_revise"]);
 
 /** Was this document FETCHED BACK since the last time its content changed?
  *
- * `zz-backbone` asks for `show_document` before a gate: a person approves bytes, and the
+ * `zz-backbone` asks for `document_present` before a gate: a person approves bytes, and the
  * fetch is the only part of "I put it in front of them" the platform can see. It also says,
  * in as many words, that no approval is refused over it — the record makes the gap visible
- * and does not close it. That stays true: this returns a fact, `approve` reports the fact,
+ * and does not close it. That stays true: this returns a fact, `document_approve` reports the fact,
  * and nothing here refuses.
  *
- * SINCE THE LAST CONTENT CHANGE, not "at this version". A `patch_file` does not bump
+ * SINCE THE LAST CONTENT CHANGE, not "at this version". A `document_patch` does not bump
  * `version`, so a document can be shown at v1, patched eight times and approved while the
  * log still reads "shown v1" — version-matching would call that fetched. Filling a scaffold
  * is exactly that shape, so version-matching would have been silent on the common case and

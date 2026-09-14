@@ -2,8 +2,8 @@
 import { readFileSync } from "node:fs";
 const fail = [];
 const acts = readFileSync("services/zz-core/src/tools/initiative-acts.ts", "utf8");
-const block = acts.split('"revise_document"')[1]?.slice(0, 6000) ?? "";
-if (!block) fail.push("revise_document is not registered");
+const block = acts.split('"document_revise"')[1]?.slice(0, 6000) ?? "";
+if (!block) fail.push("document_revise is not registered");
 
 if (!/self_edit/.test(block)) fail.push("self_edit was removed; a wording fix would have to invent a source");
 // Both-supplied stays refused.

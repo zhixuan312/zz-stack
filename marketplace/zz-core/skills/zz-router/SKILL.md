@@ -23,7 +23,7 @@ Never resume from your memory of a conversation.
 
 **When:** Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex).
 
-**Then:** call the `zz-core` tool **skill_view**, passing `zz-backbone` as its
+**Then:** call the `zz-core` tool **skill_read**, passing `zz-backbone` as its
 `name` argument; then call it again passing `sdlc-flow`. Both are MCP tools
 on the zz-core server, not this client's own skills. Follow those skills
 exactly — they are the method; this file is only the door.
@@ -32,20 +32,20 @@ exactly — they are the method; this file is only the door.
 
 **When:** Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here...
 
-**Then:** call the `zz-core` tool **skill_view**, passing `zz-backbone` as its
+**Then:** call the `zz-core` tool **skill_read**, passing `zz-backbone` as its
 `name` argument; then call it again passing `zz-plugin-eval`. Both are MCP tools
 on the zz-core server, not this client's own skills. Follow those skills
 exactly — they are the method; this file is only the door.
 
 ## What holds regardless
 
-- Documents are written through `write_file` / `patch_file` / `revise_document`
+- Documents are written through `document_write` / `document_patch` / `document_revise`
   into your team's store — never into this repository. You send the BODY;
   the platform writes the frontmatter, and content that opens with one is refused.
-- A gate passes only once `approve(path)` has recorded it. A "yes" in the
+- A gate passes only once `document_approve(path)` has recorded it. A "yes" in the
   conversation is not an approval, and you cannot write one by hand — the
   platform stamps who approved and when, and refuses the fields if you try.
-- An approved document changes through `revise_document`, never by writing over it.
+- An approved document changes through `document_revise`, never by writing over it.
 - Keys for the building blocks and tokens belong to the **ZZ Access** agent.
   Never ask anyone to paste a key here.
 

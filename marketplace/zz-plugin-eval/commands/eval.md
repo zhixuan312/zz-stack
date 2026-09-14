@@ -79,7 +79,7 @@ conversation makes every number incomparable with every other number.
 | 4 | `zz-plugin-judge` | the scores, against the approved ruler |
 | 5 | `zz-plugin-report` | `findings.md` — gated, and it closes the initiative |
 
-After report, the close is an act rather than a stage — one `close()` call — and the platform
+After report, the close is an act rather than a stage — one `initiative_close()` call — and the platform
 then reports `action: handover`, which `zz-knowledge` writes cold, afterwards. The close ends
 the evaluation; the handover ends the cycle.
 

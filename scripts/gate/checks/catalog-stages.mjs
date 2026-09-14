@@ -411,7 +411,7 @@ check("a team overlay adds and cannot replace", () => {
   const src = zzCoreSource();
   const bad = [];
   if (!/readFileSync\(path, "utf8"\) \+ await teamOverlay\(name\)/.test(src)) {
-    bad.push("skill_view no longer appends the team overlay to the skill — an overlay that is not appended is a replacement");
+    bad.push("skill_read no longer appends the team overlay to the skill — an overlay that is not appended is a replacement");
   }
   // It must read from the TEAM's store, not from a skills root, or it would be competing
   // for the same names the platform's skills use.

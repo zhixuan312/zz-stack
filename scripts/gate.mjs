@@ -5,7 +5,7 @@
  * WHY THIS EXISTS. Until now the only gate between "I edited a file" and "every user's
  * platform is down" was `tsc -b`. That is not hypothetical: a duplicate MCP tool
  * registration typechecked cleanly, deployed cleanly, and returned 500 for every
- * request to zz-core for about four minutes — including write_file and
+ * request to zz-core for about four minutes — including document_write and
  * initiative_status — because the server is built per request and the throw took the
  * whole builder down. Nothing caught it. I found it by reading logs.
  *

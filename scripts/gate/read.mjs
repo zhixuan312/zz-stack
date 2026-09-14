@@ -243,13 +243,15 @@ export function functionBody(src, name) {
   };
   let open = src.indexOf("{", at);
   if (open < 0) return null;
+  // NOT A TOOL: `close` here is the local brace-matcher declared just above — it finds the
+  // closing brace of a block and has nothing to do with the tool that ends an initiative.
   let end = close(open);
   for (;;) {
     if (end < 0) return null;
     const next = src.indexOf("{", end + 1);
     if (next < 0 || !/^[\s,):|<>\[\]A-Za-z0-9_.?]*$/.test(src.slice(end + 1, next))) break;
     open = next;
-    end = close(open);
+    end = close(open);   // NOT A TOOL: the local brace-matcher, as above
   }
   return src.slice(open + 1, end)
     .replace(/:\s*Record<string, string>/g, "")
@@ -263,7 +265,7 @@ export function functionBody(src, name) {
  *
  * NOT `toolsIn(zzCoreSource())`, and the difference has already cost a false finding. A tool
  * body runs to the next `registerTool(`, so the LAST tool in a file has none after it and its
- * body runs to the end of whatever it was concatenated with — `list_sources` was reported as
+ * body runs to the end of whatever it was concatenated with — `source_list` was reported as
  * judging a document without resolving its path, on evidence that belonged to the module that
  * happened to sort next. Bounded per file that cannot happen, which is also what lets the
  * registrations live in more than one file.

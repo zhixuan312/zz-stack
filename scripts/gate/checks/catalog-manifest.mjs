@@ -57,7 +57,7 @@ check("every flow.json parses, and its entry names a skill it ships", () => {
     // generic audit skill", the auditors are sdlc-spec-audit and sdlc-plan-audit, and the
     // manifest kept the name from before that split. Nothing failed: the flow's stages come
     // from the skills an agent loads, and the smoke engine's stage-order check quietly drops
-    // any stage it never sees a skill_view for — so a stage naming nothing was a stage
+    // any stage it never sees a skill_read for — so a stage naming nothing was a stage
     // nothing verified.
     for (const [field, names] of [["stages", (m.stages ?? []).map((x) => x.name)],
                                   ["commands", Object.values(m.commands ?? {})]]) {
@@ -134,7 +134,7 @@ check("every catalog entry has a flow.json and declares what it is", () => {
   // the platform supports and zz-flow-builder teaches: a SKILLS-ONLY package, no manifest at
   // all, that a team keeps its conventions in. catalogSkillRoots scans the filesystem and
   // serves a package owned by the caller's own team whether or not any flow is installed —
-  // verified on the deployment, where skill_view returned a skill from a package with no
+  // verified on the deployment, where skill_read returned a skill from a package with no
   // flow.json. This check would have failed the build the first time a team did as they were
   // told.
   //
@@ -296,7 +296,7 @@ check("a stray file in the catalog cannot empty it", () => {
   // "no catalog mounted (local dev)", swallowed it and returned whatever had accumulated.
   //
   // `.DS_Store` sorts FIRST, so what accumulated was nothing: no platform skills, no flow
-  // stage skills, no team overlays. skill_view finds nothing at all, and the only symptom is
+  // stage skills, no team overlays. skill_read finds nothing at all, and the only symptom is
   // that every skill has vanished. It is reachable on any host using the build override,
   // which mounts the working tree over the image's copy — which is where a stray file comes
   // from in the first place.
@@ -343,7 +343,7 @@ check("a stray file in the catalog cannot empty it", () => {
   }
   if (got.names.join(",") !== "ops/ops-flow,zz/zz-knowledge") {
     bad.push(`a stray file at the catalog root left ${JSON.stringify(got.names)} — every ` +
-             "package after it in sort order is gone, and skill_view would find nothing");
+             "package after it in sort order is gone, and skill_read would find nothing");
   }
   // And the narrower question must still be the narrower one: only the package with a
   // manifest is an entry, and the skills-only package is a package all the same.

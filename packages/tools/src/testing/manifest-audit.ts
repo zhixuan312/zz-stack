@@ -88,7 +88,7 @@ function auditInitiative(
     // which is the one shape this audit exists to catch.
     const closer = closingFm.closed_by ?? "";
     if (!closer) {
-      problems.push(`${closing} carries outcome: ${outcome} with no closed_by — written by hand rather than recorded by close()`);
+      problems.push(`${closing} carries outcome: ${outcome} with no closed_by — written by hand rather than recorded by initiative_close()`);
     } else if (team && closer.trim().toLowerCase() === team.trim().toLowerCase()) {
       problems.push(`${closing} closed_by names the team ('${closer}'), not a person`);
     }
@@ -122,7 +122,7 @@ function auditInitiative(
     const f = join(folder, d.name);
     if (!existsSync(f)) {
       // What a close DEPENDS on. closeCheck requires every `requiredForClose` document to
-      // exist whatever the outcome, and close() refuses outright when the closing document is
+      // exist whatever the outcome, and initiative_close() refuses outright when the closing document is
       // not written. A GATED document that was never written is requiredForClose's business,
       // not the gate's — that is closeCheck's own division, and this had merged the two.
       if (closed && (d.requiredForClose || d.closing)) {
@@ -166,7 +166,7 @@ function stageOrder(store: string, stages: string[]): string[] {
       continue;
     }
     const skill = e.skill ?? "";
-    if (e.action === "skill_view" && stages.includes(skill) && !first.has(skill)) {
+    if (e.action === "skill_read" && stages.includes(skill) && !first.has(skill)) {
       first.set(skill, e.ts ?? "");
     }
   }

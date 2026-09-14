@@ -35,8 +35,8 @@ refuses("an absolute path is refused",        R.initiativeNameShape("/etc/passwd
 refuses("an empty name is refused",           R.initiativeNameShape(""));
 
 /* ── frontmatterRefusal — the platform writes the envelope, never the caller ── */
-refuses("content opening with --- is refused", R.frontmatterRefusal("---\nflow: sdlc-flow\n---\n\n# Spec\n", "write_file"));
-allows("a body starting at its title is fine", R.frontmatterRefusal("# Spec\n\nbody\n", "write_file"));
+refuses("content opening with --- is refused", R.frontmatterRefusal("---\nflow: sdlc-flow\n---\n\n# Spec\n", "document_write"));
+allows("a body starting at its title is fine", R.frontmatterRefusal("# Spec\n\nbody\n", "document_write"));
 
 /* ── fieldRefusal — a caller's own keys, bounded ──────────────────────────── */
 allows("a plain field is allowed",             R.fieldRefusal({ proposed_team_nodes: "2" }));

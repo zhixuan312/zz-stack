@@ -19,7 +19,7 @@
  *
  * Authorised through console.ts's own `handler()`, not a copy of it — the same directory-or-
  * superadmin gate and the same `resolveScope` that decides which team a read sees. A write
- * needs a settled answer to "which team", not the platform-wide reading of it: `approve`
+ * needs a settled answer to "which team", not the platform-wide reading of it: `document_approve`
  * stamps one document belonging to one team, and there is no fleet-wide version of that
  * question for `?scope=platform` to answer, so this route refuses that case with a 400
  * rather than picking a team to log against that nobody asked for.
@@ -29,8 +29,8 @@
  * document markdown in a browser") so a body to send zz-core does not exist until this
  * route makes one. It reads the document's discussion thread (never the request body — the
  * caller supplies nothing but the instruction to proceed), asks the platform's own model to
- * write the next version from it, and only THEN reaches `core.call("revise_document", …)`
- * exactly the way `approve` reaches `core.call("approve", …)` above. A generation failure
+ * write the next version from it, and only THEN reaches `core.call("document_revise", …)`
+ * exactly the way `document_approve` reaches `core.call("document_approve", …)` above. A generation failure
  * leaves the document untouched — nothing is written to zz-core until `generate()` has
  * already succeeded.
  */
@@ -61,7 +61,7 @@ import { withoutFrontmatter } from "./package/skills.js";
  * worse than leaving the argument visible in the next round of discussion.
  *
  * WHY NO FRONTMATTER: the platform writes the envelope (version, status, approval) itself,
- * deterministically, the same way for every caller of `revise_document` — that is the whole
+ * deterministically, the same way for every caller of `document_revise` — that is the whole
  * reason the tool exists instead of a plain overwrite. A model asked to produce "a document"
  * reaches for frontmatter out of habit, and zz-core refuses a body that opens with one
  * (`frontmatterRefusal`), which is why the rule is spelled out rather than assumed.
@@ -96,6 +96,10 @@ function stripWrappingFence(body: string): string {
 }
 
 export function mountConsoleWrite(app: Express): void {
+  // NOT A TOOL: handler()'s first argument is the human-readable label in "console <name>
+  // failed" and "could not read <name>" — its siblings are "an answer", "the thread" and
+  // "revise". Renaming it to the tool would make the error read "could not read
+  // document_approve", which is worse prose and out of step with every other route here.
   app.post("/api/console/documents/approve", handler("approve", async (req: Request, res: Response, scope: ResolvedScope) => {
     if (scope.kind !== "team") {
       // Only `{ kind: "platform" }` reaches here otherwise (a refused scope already
@@ -121,7 +125,7 @@ export function mountConsoleWrite(app: Express): void {
     const subject = `${initiative}/${path}`;
     let reply: string;
     try {
-      reply = await core.call("approve", { path: subject });
+      reply = await core.call("document_approve", { path: subject });
     } catch (err) {
       // `Mcp.call` throws only for a transport or protocol failure — a refusal comes back
       // as ordinary text beginning with ERROR, read below. So everything that lands here is
@@ -135,7 +139,7 @@ export function mountConsoleWrite(app: Express): void {
     // unchanged rather than replaced with a generic message that would throw that away.
     if (/^ERROR/.test(reply)) { res.status(400).json({ error: reply }); return; }
     // Written after the act succeeds, never before, and `via: "web"` is stated explicitly
-    // here rather than assumed from `approve` itself — approve() has callers that are not
+    // here rather than assumed from `document_approve` itself — document_approve() has callers that are not
     // this console, and none of them should inherit a door marker they did not come
     // through. See the gate check below this file's sibling check in scripts/gate.mjs for
     // what happens to FR-8 the day a route forgets this line.
@@ -182,7 +186,7 @@ export function mountConsoleWrite(app: Express): void {
 
     let current: string;
     try {
-      current = await core.call("read_file", { path: subject });
+      current = await core.call("document_read", { path: subject });
     } catch (err) {
       res.status(502).json({ error: err instanceof McpError ? err.message : "zz-core unreachable" });
       return;
@@ -196,7 +200,7 @@ export function mountConsoleWrite(app: Express): void {
     // Found by doing it on UAT: revising the closing document of a closed initiative moved
     // its version while `outcome` and `closed_by` stayed on it. Nothing was corrupted —
     // zz-core carries those forward deliberately, and its own comment records the incident
-    // where DELETING them reopened a closed initiative and let close() append a second
+    // where DELETING them reopened a closed initiative and let initiative_close() append a second
     // ledger row for the same work. But the ledger row was written from this document at the
     // close, and rewriting it afterwards is how a document and the ledger come to disagree
     // about work that is finished.
@@ -243,7 +247,7 @@ export function mountConsoleWrite(app: Express): void {
     } catch (err) {
       // generate()'s own contract: 503 when the endpoint has no LLM_* configured, 502 for a
       // timeout, a bad provider answer, or a truncated/empty one. Either way NOTHING has
-      // been written yet — core.call("revise_document", …) below is the first write this
+      // been written yet — core.call("document_revise", …) below is the first write this
       // route makes, and it is never reached from this branch.
       const status = (err as { status?: number }).status ?? 502;
       res.status(status).json({ error: err instanceof Error ? err.message : "generation failed" });
@@ -252,7 +256,7 @@ export function mountConsoleWrite(app: Express): void {
 
     let reply: string;
     try {
-      reply = await core.call("revise_document", {
+      reply = await core.call("document_revise", {
         path: subject,
         content: stripWrappingFence(revisedBody),
         source_content: discussionText,
@@ -270,7 +274,7 @@ export function mountConsoleWrite(app: Express): void {
     logEvent({ actor, teamSlug: scope.slug, kind: "document.revise", subject, detail: { via: "web" } });
 
     // zz-core's own success text always opens "<path> revised: vN -> vM, status …" (see
-    // revise_document's registration) — read from THAT reply rather than a second round
+    // document_revise's registration) — read from THAT reply rather than a second round
     // trip back to zz-core to ask the version it just wrote.
     const version = /-> v(\d+)/.exec(reply)?.[1];
     res.json({ ok: true, version: version ? Number(version) : null });

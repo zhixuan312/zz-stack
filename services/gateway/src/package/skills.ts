@@ -188,15 +188,15 @@ export function routerSkill(flows: InstalledFlow[]): string {
         `**When:** ${f.whenToUse}`,
         "",
           // NAMED ARGUMENT, AND THE SERVER SAID OUT LOUD. This told the agent to "load
-          // skill_view(...)", and on a client with a Skill mechanism of its own that is
+          // skill_read(...)", and on a client with a Skill mechanism of its own that is
           // ambiguous twice over. Measured on the first turn of a round: the agent called
           // the CLIENT's Skill tool with the platform's tool name ("Unknown skill:
-          // zz:skill_view"), then called the right tool positionally with the argument
-          // dropped ("Invalid arguments for tool skill_view: Required at name"). Four
+          // zz:skill_read"), then called the right tool positionally with the argument
+          // dropped ("Invalid arguments for tool skill_read: Required at name"). Four
           // wasted calls and four refusals before the flow had begun, every round, on that
           // client. Codex and Hermes have no Skill tool, which is why this stayed invisible
           // until there was a Claude Code harness to see it.
-          "**Then:** call the `zz-core` tool **skill_view**, passing `zz-backbone` as its",
+          "**Then:** call the `zz-core` tool **skill_read**, passing `zz-backbone` as its",
           `\`name\` argument; then call it again passing \`${f.entry}\`. Both are MCP tools`,
           "on the zz-core server, not this client's own skills. Follow those skills",
           "exactly — they are the method; this file is only the door.",
@@ -208,13 +208,13 @@ export function routerSkill(flows: InstalledFlow[]): string {
   body.push(
     "## What holds regardless",
     "",
-    "- Documents are written through `write_file` / `patch_file` / `revise_document`",
+    "- Documents are written through `document_write` / `document_patch` / `document_revise`",
     "  into your team's store — never into this repository. You send the BODY;",
     "  the platform writes the frontmatter, and content that opens with one is refused.",
-    "- A gate passes only once `approve(path)` has recorded it. A \"yes\" in the",
+    "- A gate passes only once `document_approve(path)` has recorded it. A \"yes\" in the",
     "  conversation is not an approval, and you cannot write one by hand — the",
     "  platform stamps who approved and when, and refuses the fields if you try.",
-    "- An approved document changes through `revise_document`, never by writing over it.",
+    "- An approved document changes through `document_revise`, never by writing over it.",
     "- Keys for the building blocks and tokens belong to the **ZZ Access** agent.",
     "  Never ask anyone to paste a key here.",
     "",
@@ -287,7 +287,7 @@ export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): 
   ];
   if (entryBody) return head.concat(entryBody.trimEnd(), "").join("\n");
   return head.concat([
-    "Call the `zz-core` tool **skill_view**, passing `zz-backbone` as its `name` argument;",
+    "Call the `zz-core` tool **skill_read**, passing `zz-backbone` as its `name` argument;",
     `then call it again passing \`${f.entry}\`, and follow it exactly. Both are MCP tools on`,
     "the zz-core server, not this client's own skills.",
     "",

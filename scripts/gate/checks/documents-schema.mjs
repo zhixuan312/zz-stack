@@ -91,8 +91,8 @@ check("every envelope field the platform writes is one the schema declares", () 
   // it is a schema and not an interface. So a field the platform writes and the schema does
   // not name is a rulebook that is wrong about its own author.
   //
-  // Two were: `contributed_by`, written by add_source and read by both list_sources and the
-  // knowledge base, and `revision_note`, written by revise_document on every revision. And
+  // Two were: `contributed_by`, written by source_add and read by both source_list and the
+  // knowledge base, and `revision_note`, written by document_revise on every revision. And
   // it was not only documentation: zz-core's RESERVED_ENVELOPE is derived from these keys,
   // so an undeclared field is also one a flow may claim for itself and collide with.
   const nothingToRun = unbuilt();
@@ -126,7 +126,7 @@ check("every envelope field the platform writes is one the schema declares", () 
 
 check("everything that reads a source reads the fields sourceDocument writes", () => {
   // A source's envelope is composed by the platform, so its keys are the only ones any reader
-  // may use. This has been got wrong twice: list_sources read `added_by`, a field nothing has
+  // may use. This has been got wrong twice: source_list read `added_by`, a field nothing has
   // ever written, and carries a comment saying every source came back with an empty author;
   // the web sources endpoint added this release then read `added_by` too, written by guessing
   // the name rather than by reading it three thousand lines away.
@@ -134,8 +134,8 @@ check("everything that reads a source reads the fields sourceDocument writes", (
   // Neither failed. An absent field is an empty string, so the reader shows a blank where a
   // person's name belongs and nothing anywhere says why.
   //
-  // Read from sourceDocument, which is now the one writer. It used to read add_source's
-  // template literal — and while it did, revise_document was building a SECOND source
+  // Read from sourceDocument, which is now the one writer. It used to read source_add's
+  // template literal — and while it did, document_revise was building a SECOND source
   // envelope forty lines of its own away, which this check could not see and which escaped
   // its title differently. A check that reads one of two copies is a check on half the code.
   const core = zzCoreSource();
@@ -147,7 +147,7 @@ check("everything that reads a source reads the fields sourceDocument writes", (
   }
   const bad = [];
   // Wherever a source is read, not the two files it is read in today. The defect this exists
-  // for — list_sources reading `added_by` where add_source writes `contributed_by`, so the
+  // for — source_list reading `added_by` where source_add writes `contributed_by`, so the
   // reader showed a blank where a person's name belongs — is available to any reader, and a
   // third one would be written by copying one of these two.
   for (const f of sourceFiles(["services", "packages"], [".ts"])) {
@@ -178,7 +178,7 @@ check("every subject kind the platform accepts is one a skill teaches", () => {
   //
   // Both list all five today and nothing holds them there. A sixth kind added to the enum
   // ships accepted-but-untaught — the search that makes the tag worth having
-  // (`search_knowledge(tags=["block:casebox"])`) only works if people write the tag, and they
+  // (`knowledge_search(tags=["block:casebox"])`) only works if people write the tag, and they
   // write what they were told. zz-kb-usage says it plainly: a kind nobody knows about is
   // "the search says nothing is known while the knowledge sits right there".
   const code = zzCoreSource();
@@ -409,7 +409,7 @@ check("every envelope field the platform reads is one the schema publishes", () 
   // Three fields had already been found missing one at a time — contributed_by,
   // revision_note, supersededBy — each with a comment saying the schema "omitted a field the
   // platform writes itself". `evidence` was the fourth: knowledge_add writes it, indexDoc puts
-  // it in zz.doc.evidence, and search_knowledge expands the knowledge graph along it. A flow
+  // it in zz.doc.evidence, and knowledge_search expands the knowledge graph along it. A flow
   // could have declared its own `evidence` field on a chain document and landed in those
   // edges.
   //
@@ -591,7 +591,7 @@ check("a subject tag is reachable from the word it is about", () => {
   // knowledge_add's description names the payoff in as many words — "what have we learned about
   // casebox" becomes a query instead of a search through documents.
   //
-  // search_knowledge's tag arm could not answer it. Its candidate words come from splitting
+  // knowledge_search's tag arm could not answer it. Its candidate words come from splitting
   // the query on everything that is not a letter or a digit, so `casebox` is a token and
   // `block:casebox` can never be one — and the stored tag is that one string, colon included. The
   // arm matched plain tags, missed every subject tag, and looked like it worked because the
@@ -606,7 +606,7 @@ check("a subject tag is reachable from the word it is about", () => {
 
   const split = /const tokens = [^;]*?split\(\/\[([^\]]*)\]\+\/\)/s.exec(src);
   if (!split) {
-    return "search_knowledge no longer derives query words with a split() this rule can read " +
+    return "knowledge_search no longer derives query words with a split() this rule can read " +
            "— re-establish what a token may contain before trusting the arm below";
   }
   if (split[1].includes(":")) {
@@ -622,9 +622,9 @@ check("a subject tag is reachable from the word it is about", () => {
   // moment the code beneath it is removed — the failure mode two checks here have already had.
   const code = (arm.text ?? "").split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
   if (!arm.text) {
-    bad.push(`search_knowledge's tag-retrieval arm is no longer readable here: ${arm.why}`);
+    bad.push(`knowledge_search's tag-retrieval arm is no longer readable here: ${arm.why}`);
   } else if (!/SUBJECT_KINDS/.test(code)) {
-    bad.push("search_knowledge matches the query's own words against `tags` without expanding " +
+    bad.push("knowledge_search matches the query's own words against `tags` without expanding " +
              "them by SUBJECT_KINDS — `casebox` cannot equal `block:casebox`, so every subject tag the " +
              "platform validates is invisible to the arm that exists to read tags");
   }
@@ -633,7 +633,7 @@ check("a subject tag is reachable from the word it is about", () => {
   // question nobody asks any more.
   if (!/const TAG_TOKEN = [^;]*:/.test(src)) {
     bad.push("TAG_TOKEN no longer admits a colon, so `block:casebox` is not a tag — the expansion " +
-             "in search_knowledge's tag arm is inventing candidates that cannot be stored");
+             "in knowledge_search's tag arm is inventing candidates that cannot be stored");
   }
   return bad.join("\n");
 });

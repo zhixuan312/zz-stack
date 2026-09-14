@@ -624,7 +624,7 @@ function main(argv: string[]): number {
     }
     if (report.named.length) {
       // `skill_read`, THE RESOLVED NAME: `named.tools` holds subjects already folded through
-      // resolveToolKey, so `skill_view` matches no row at all and this section would stop
+      // resolveToolKey, so `skill_read` matches no row at all and this section would stop
       // rendering. evolve-report.ts folds the same rename the same way.
       const skills = report.named.filter((n) => n.key === "name" && n.tools.some((t) => t.includes("skill_read")));
       // Capped for the terminal, and the cap is stated. A listing that quietly stops at

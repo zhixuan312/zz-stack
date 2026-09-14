@@ -30,7 +30,7 @@ import { catalogEntry, catalogManifest } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
-import { EVALS_DIR } from "./package/plugin-lock.js";
+import { EVALS_DIR, OUTPUT_DIR } from "./package/plugin-lock.js";
 import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, pluginName, promoteCommands, routerSkill, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one
@@ -133,14 +133,22 @@ function platformOwnSkills(prefix: string): PackageFile[] {
 function platformOwnEvals(): PackageFile[] {
   if (!existsSync(EVALS_DIR)) return [];
   const out: PackageFile[] = [];
+  // A SUITE'S OUTPUT IS NOT PART OF THE SUITE, the same exclusion plugin-lock.ts keeps and for
+  // a sharper reason: that file was only deciding a hash, this one decides what bytes travel to
+  // a person. `evals/results/` is what running the suite produced — one directory per run, one
+  // machine's, `.gitignore`d precisely because it belongs to nobody else — and every installer
+  // was being handed it. It is also the one thing under evals/ that is not text: a run leaves
+  // HTML reports and a trace.jsonl, and `readFileSync(abs, "utf8")` on those ships mojibake.
   const walk = (dir: string, rel: string): void => {
     for (const f of readdirSync(dir, { withFileTypes: true })) {
+      if (f.name === OUTPUT_DIR) continue;
       const abs = join(dir, f.name);
       if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
       else out.push({ path: `evals/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
     }
   };
   for (const e of readdirSync(EVALS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.name === OUTPUT_DIR) continue;
     if (e.isDirectory()) walk(join(EVALS_DIR, e.name), e.name);
   }
   return out;

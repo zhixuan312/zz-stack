@@ -70,8 +70,15 @@ interface PluginLockEntry {
  *
  * The exclusion is STRUCTURAL rather than a `.gitignore` read, because this file is compiled
  * into the image, where there is no git and no working tree to ask. The principle holds in both
- * places and needs neither: a digest over a suite covers the cases, never the run. */
-const OUTPUT_DIR = "results";
+ * places and needs neither: a digest over a suite covers the cases, never the run.
+ *
+ * EXPORTED, because the digest was only half the problem. client-package.ts walks the same tree
+ * to build the package a person actually installs, and it had no exclusion either — so the
+ * baseline plugin shipped one developer's local run output to every installer: 264KB of
+ * aggregate-result.json, HTML reports and trace files, read through readFileSync(.., "utf8").
+ * Fixing the hash and leaving the package would have been the same defect wearing a different
+ * hat. One constant, imported, so the next tree that walks evals/ cannot quietly disagree. */
+export const OUTPUT_DIR = "results";
 
 function walkTree(root: string, prefix: string): PackageFile[] {
   if (!existsSync(root)) return [];

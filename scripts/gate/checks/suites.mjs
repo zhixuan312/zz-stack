@@ -202,7 +202,7 @@ check("the version that shipped has a changelog section of its own", () => {
 check("a plugin's content identity moves with its content and not with its address",
       runsCheck("digest-per-plugin.mjs"));
 
-check("the committed lock is reproducible from what git carries",
+check("a suite's output reaches neither the lock nor the package somebody installs",
       runsCheck("lock-reproducible.mjs"));
 
 check("a check that works is a check the gate runs",

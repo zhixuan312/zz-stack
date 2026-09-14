@@ -91,8 +91,11 @@ COPY skills /skills
 # The baseline plugin's own eval cases. `zz` is generated per caller rather than read from
 # catalog/, so its suite has nowhere else to ride along.
 COPY evals /evals
-# Everything written ON TOP of a building block: its usage skill and its tests.
-COPY blocks /blocks
+# NO `COPY blocks /blocks`. That directory held the building-block contract and two prose
+# documents and never held a single usage skill, so the image carried documentation and
+# skill-roots.ts walked it for skills that were never there. It is removed from the repository;
+# the walker already treats an absent /blocks as "no blocks connected", which is what a
+# deployment without one is. A block's usage skill, when there is one, arrives with the block.
 
 ENV SERVICE=
 EXPOSE 8000

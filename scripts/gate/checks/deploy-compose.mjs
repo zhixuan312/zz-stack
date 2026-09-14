@@ -1,6 +1,7 @@
 /**
  * The compose files and the proxy in front of them: that they resolve, that they name images
- * this release builds, and that every address in them is one this deployment defines.
+ * this release builds, that every address in them is one this deployment defines, and that
+ * the Dockerfile copies only paths this repository carries.
  *
  * A compose file is only exercised on the host. Every mistake here is found in production or
  * here, and there is nothing in between.
@@ -343,4 +344,39 @@ check("a hostname with no dots is a service this compose file defines", () => {
     }
   }
   return bad.join("\n");
+});
+
+check("every path the Dockerfile copies is a path that exists", () => {
+  // THE GATE DOES NOT BUILD, and this is the gap that costs a release. `COPY blocks /blocks`
+  // stayed in the Dockerfile after the blocks/ tree was removed: tsc was clean, all 328 checks
+  // passed, and the failure arrived in step 2 of the release as
+  // `failed to compute cache key: "/blocks": not found` — after the gate, after the changelog,
+  // after the version bump. A path in a COPY is a claim about the tree exactly like a path in
+  // prose is, and every other such claim in this repository is checked.
+  //
+  // BUILD-STAGE COPIES ARE SKIPPED, because `--from=build` names a path inside a previous
+  // stage's filesystem rather than in this checkout, and asking the working tree about
+  // `/repo/packages` would report a correct Dockerfile as broken.
+  const df = readFileSync(join(root, "Dockerfile"), "utf8");
+  const bad = [];
+  let copies = 0;
+  for (const line of df.split("\n")) {
+    const m = /^COPY\s+(?!--from=)(.+)$/.exec(line.trim());
+    if (!m) continue;
+    // The last word is the destination; everything before it is a source.
+    const parts = m[1].split(/\s+/).filter(Boolean);
+    for (const src of parts.slice(0, -1)) {
+      if (src.startsWith("--")) continue;
+      copies++;
+      // A glob is a claim about a shape rather than about one path; it is matched by the
+      // builder and cannot be resolved with existsSync.
+      if (/[*?\[]/.test(src)) continue;
+      if (!existsSync(join(root, src))) {
+        bad.push(`Dockerfile copies ${src}, which this repository does not carry — the image ` +
+                 `build fails on it, and the gate is where that should have been said`);
+      }
+    }
+  }
+  if (!copies) return "the Dockerfile has no COPY this check could read — it is measuring nothing";
+  return bad.length ? bad.join("; ") : null;
 });

@@ -116,16 +116,26 @@ const MEMBER = ["block_connect", "block_disconnect", "platform_list", "team_mine
                 "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list", "install_list",
                 "catalog_list"];
 const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
+// `bug_list` and `bug_resolve` are superadmin and not lead, deliberately. A report is not
+// team-scoped — the platform is one deployment and a defect one team hits is one every team
+// has — so the list is everybody's reports, and handing it to a team's own admin would show
+// them every other team's. That is a wider reading of "admin" than a team admin was given.
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
                "team_create", "team_archive", "tool_grant", "tool_revoke",
-               "credential_admin_set", "credential_admin_delete", "knowledge_reindex"];
+               "credential_admin_set", "credential_admin_delete", "knowledge_reindex",
+               "bug_list", "bug_resolve"];
 
 // The tiers and the frozen table have to describe the same door. Without this, a name could be
 // dropped from a tier and from the rename table together and every count below would agree.
-// `knowledge_reindex` is named and not derived: it arrived from /core at Task I-38 and its
-// rename history is a TOOL_ALIAS entry, so MANAGE_ALIAS cannot produce it. Naming it here is
-// what keeps the set equality below honest rather than widening it to "or anything".
-const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami", "knowledge_reindex"]);
+//
+// THREE NAMES ARE NAMED AND NOT DERIVED, each for a reason worth stating rather than widening
+// this to "or anything". `knowledge_reindex` arrived from /core at Task I-38 and its rename
+// history is a TOOL_ALIAS entry, so MANAGE_ALIAS cannot produce it. `bug_list` and
+// `bug_resolve` were born on this door and have never been renamed, so there is no alias entry
+// to derive them from — a tool that has always had one name is invisible to a table of old
+// names, and a rename map is the wrong place to register a new tool.
+const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami", "knowledge_reindex",
+                          "bug_list", "bug_resolve"]);
 const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
 for (const n of expected) {
   if (!tiered.has(n)) fail.push(`${n} is a current /manage name and no tier above claims it`);
@@ -163,7 +173,7 @@ for (const [who, got, want] of tierSets) {
 // ONE PLACE, because the first version of this spelled the number in the condition and again
 // in the sentence, and a mutation that changed the condition alone printed "/manage registers
 // 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
-const DOOR_SIZE = 31;
+const DOOR_SIZE = 33;
 if (registered.size !== DOOR_SIZE) {
   fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
             `(33 before this initiative, minus the 3 duplicates, plus knowledge_reindex ` +
@@ -205,7 +215,9 @@ for (const old of Object.keys(MANAGE_ALIAS)) {
   if (registered.has(old)) fail.push(`${old} was not renamed — MANAGE_ALIAS says ${MANAGE_ALIAS[old]}`);
 }
 const NOUNS = ["person", "team", "member", "pat", "flow", "install", "tool",
-               "enrolment", "block", "platform", "credential", "client", "catalog", "knowledge"];
+               "enrolment", "block", "platform", "credential", "client", "catalog", "knowledge",
+               // `bug` arrived with the tracker: filing is on /core, answering is here.
+               "bug"];
 for (const n of registered.keys()) {
   if (n === "whoami") continue;                       // the one exception, deliberately kept
   if (!NOUNS.some((x) => n.startsWith(`${x}_`))) fail.push(`${n} does not start with a noun`);

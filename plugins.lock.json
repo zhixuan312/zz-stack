@@ -21,11 +21,11 @@
   },
   "zz-access": {
     "version": "2.2.0",
-    "digest": "f5ea7a07",
+    "digest": "9203ab3e",
     "cases_digest": "fdb69ec6",
     "skills": {
       "zz-access": "29467f7264e8",
-      "zz-admin": "a92dca3d9e94",
+      "zz-admin": "b457b4f3e4c3",
       "zz-doctor": "4e0d5a42bf10",
       "zz-migrate": "87b3582af113",
       "zz-update": "9b180cc39a6c"
@@ -33,14 +33,14 @@
   },
   "zz-core": {
     "version": "0.36.1",
-    "digest": "f5b05ecc",
+    "digest": "68cec26a",
     "cases_digest": "f64bba10",
     "skills": {
       "zz-authoring": "60f258ebec54",
       "zz-breakout": "130174886cc0",
       "zz-deck": "5ff1f1770bfc",
       "zz-handover": "35896603a076",
-      "zz-platform": "087d2f86e260",
+      "zz-platform": "2d3c160c994d",
       "zz-tldr": "66d6e9e95272"
     }
   },

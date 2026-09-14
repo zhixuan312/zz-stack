@@ -45,6 +45,30 @@ which is almost always the answer to "why was that a 403".
 | which building blocks a team may reach | `tool_grant` `tool_revoke` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
 | a team's knowledge index, when it disagrees with the files | `knowledge_reindex` |
+| what people have reported as broken | `bug_list` `bug_resolve` |
+
+## Answering a bug report
+
+Anybody on the platform files one with `bug_report` on `/core` — that door is everyone's, and
+somebody who has just hit a wall should not need a role to say so. Reading the whole
+deployment's reports and deciding what came of one are yours.
+
+`bug_list` defaults to what is OPEN, because the question that brings somebody here is usually
+"what is wrong right now". It returns a count by status beside the rows, so a capped list cannot
+be mistaken for the whole answer. `bug_list(query: "timeout")` matches the title and the detail
+together — whichever half the reporter put the word in is an accident of how they wrote it.
+
+`bug_resolve` takes `fixed`, `not_a_bug` or `duplicate`, and **requires a resolution for all
+three**. The two that are not fixes are the ones that matter here: somebody took the trouble to
+file it, and "not a bug" without a sentence is an answer they cannot learn anything from. For a
+duplicate, name the other id in the resolution.
+
+It refuses a second close and tells you who decided and what they said. If that decision was
+wrong, file what you now know as a new report naming the old id — the record of what somebody
+concluded, and on what evidence, is worth more than a tidy status.
+
+**Reports are not team-scoped.** The platform is one deployment: a defect one team hits is one
+every team has, which is why this is a superadmin's list rather than a team admin's.
 
 ## Rebuilding a knowledge index
 

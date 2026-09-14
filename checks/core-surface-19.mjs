@@ -96,9 +96,10 @@ const walk = (d, out = []) => {
 // evaluation door imports and this scan does not read — so the list and the directory agree
 // again, and each says the same true thing.
 const EXPECTED = [
-  // `bug_*` joined at the release that added them: reporting a defect is something anybody in
-  // any flow does and no flow owns, which is this door's own rule for what belongs on it.
-  "bug_list", "bug_report", "bug_resolve",
+  // `bug_report` ALONE. Filing is something anybody in any flow does and no flow owns, which is
+  // this door's own rule. Reading every report on the deployment and deciding what came of one
+  // are operator acts and live on /manage behind superadmin, beside knowledge_reindex.
+  "bug_report",
   "document_approve", "document_list", "document_patch", "document_present", "document_read",
   "document_revise", "document_write", "initiative_close", "initiative_open",
   "initiative_status", "knowledge_add",

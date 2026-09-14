@@ -33,8 +33,29 @@ const registered = new Set([
 // itself forever. The prefix is the marker for that class and is checked, not assumed.
 const SELF = "working-checks-registered.mjs";
 
+// A DECLARED EXEMPTION COUNTS AS REGISTRATION, and reading it from suites.mjs rather than
+// keeping a second list here is the whole point. Task I-34 added `notRegistered` — a map of
+// check file to the reason it is deliberately not wired — and this file did not know it
+// existed, so the two checks came to disagree about one rule: I-34's accepted a declared
+// exemption, this one still demanded a registration line, and a check that is honestly
+// declared was reported as green-by-absence.
+//
+// `eval-readable.mjs` is the case that surfaced it. It reads `evals/results/latest/`, which
+// costs real money to produce and which `.gitignore` deliberately excludes — a suite's output
+// is not part of what a checkout carries, which is the rule `lock-reproducible.mjs` enforces
+// one layer down. Registering it would turn the gate red for everyone who has not just paid
+// for a run. Leaving it undeclared would make it dormant. Declaring it is the third answer,
+// and both checks have to honour the declaration or the declaration is decoration.
+//
+// PARSED, NOT DUPLICATED. A copy of the map here would drift from the real one the first time
+// somebody added an entry, which is the defect this initiative removed from two hand-kept
+// rosters already.
+const declared = new Set(
+  [...readFileSync("scripts/gate/checks/suites.mjs", "utf8")
+    .matchAll(/\[\s*"([A-Za-z0-9._-]+\.(?:mjs|sh))"\s*,\s*\n?\s*"/g)].map((m) => m[1]));
+
 for (const f of readdirSync("checks").filter((f) => f.endsWith(".mjs"))) {
-  if (f === SELF || registered.has(f) || f.startsWith("gate-")) continue;
+  if (f === SELF || registered.has(f) || declared.has(f) || f.startsWith("gate-")) continue;
   const src = readFileSync(`checks/${f}`, "utf8");
   if (/scripts\/gate\.mjs/.test(src) && /spawnSync|execFileSync/.test(src)) continue;
   // A host-dependent check cannot pass offline, so it fails and exempts itself — but skip it

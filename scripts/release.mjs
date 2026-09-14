@@ -85,6 +85,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildAndSmoke } from "./release/build.mjs";
+import { ATTEST, fitForPurpose } from "./release/fit-for-purpose.mjs";
 import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, PLATFORM, REMOTE, die, envToken, log, publicUrl, root, run, ssh, step, warn } from "./deployment.mjs";
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.mjs";
 import { consoleImage, resolveDashboard } from "./release/dashboard.mjs";
@@ -189,6 +190,13 @@ if (!new RegExp(`^## \\[${version.replace(/\./g, "\\.")}\\]`, "m").test(readFile
 try {
   execFileSync("node", [join(root, "scripts/gate.mjs")], { cwd: root, stdio: "inherit" });
 } catch { die("gate did not pass"); }
+
+/* ── 1a · fit-for-purpose review ──────────────────────────────────────────── */
+// The gate proves a plugin DECLARES a purpose. Whether its tool surface DELIVERS that purpose
+// is a judgement, so this step prints both sides and refuses to go on until somebody says they
+// read them. See scripts/release/fit-for-purpose.mjs for why it stops rather than warns.
+step("1a", "fit-for-purpose review");
+fitForPurpose(args.includes(ATTEST));
 
 // RELEASE FROM master, NOT FROM A RELEASE BRANCH.
 //

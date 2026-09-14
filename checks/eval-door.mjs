@@ -26,18 +26,24 @@
 // door decides whether its traffic is filed as the platform's own or as a building block
 // nobody has ever granted.
 //
-// WHAT IT CANNOT SEE, AND WHOSE TASK THAT IS. The platform records its own tool surface per
-// service version (`zz.block_version` + `zz.block_tool`), and `zz.block_tool` is
-// `(id, block_version_id, name, verdict, …)` — there is no column for a door. Both doors are
-// built at boot and both fill OWN_TOOLS, so the RECORD is complete; what it cannot express is
-// which door a name is on. The consequence is sharper than it sounds:
-// `eval_block_surface('platform')` diffs a version's surface against the one before, and when
-// ten tools move from /core to /eval the recorded name set is IDENTICAL — so the one
-// instrument this platform has for judging a tool surface reports NO CHANGE across the largest
-// surface change it has ever had. That is not a gap, it is a wrong answer that looks like a
-// right one. It needs a migration and a change to how the surface is recorded, it must land
-// after the doors stop moving, and it is TASK I-39. Nothing below covers it, and the green
-// line says so, so that a passing check is not read as the all-clear.
+// WHAT IT COVERS THAT IT ONCE SAID IT COULD NOT — SEE SECTION 9. The platform records its own
+// tool surface per service version (`zz.block_version` + `zz.block_tool`), and that record used
+// to be a set of NAMES: `zz.block_tool` was `(id, block_version_id, name, verdict, …)` with no
+// column for a door. Both doors are built at boot and both fill OWN_TOOLS, so the record was
+// complete and still could not say which door a name was on — and when the ten `plugin_*` tools
+// moved from /core to /eval, the recorded name set before and after was IDENTICAL, so the one
+// instrument this platform has for judging a tool surface answered NO CHANGE across the largest
+// surface change it has ever had. That was not a gap, it was a wrong answer wearing the shape of
+// a right one. Migration 052 adds `door`, `recordingDoor` writes it from the builder that knows
+// it, and `zz-tool block-surface` reads it back; section 9 holds all three ends of that, and the
+// green line now states what was asserted instead of what was missing.
+//
+// WHAT IS STILL NOT IN THAT RECORD, said on the green line rather than here alone: the /manage
+// door is built in the GATEWAY's process, which has no recordingDoor and writes no
+// zz.block_version row at all. So the platform's recorded surface is this service's two doors
+// and not every tool the platform serves. That is a different absence from the one above — those
+// tools are missing from the record entirely rather than present without a door — and no clause
+// in this file speaks to it.
 //
 // WHAT IT LEAVES TO checks/orientation.mjs. That file owns every door's PARAGRAPH — the
 // `instructions` a client is handed at `initialize`, its length, the skill it points at, its
@@ -134,9 +140,27 @@ try {
 // Its tool modules are read out of server.ts's own imports rather than listed here, so this
 // opens the door as it is today and not as it was when this was written.
 let coreClient = null;
+// THE WORD buildServer PASSES TO recordingDoor, READ OFF THE SOURCE AND NOT TYPED HERE.
+// server.ts binds :8000 at module scope, so buildServer cannot be imported and this file has
+// always had to reconstruct it. The reconstruction now has to include the wrapper, because
+// section 9 reads what that wrapper recorded — and a check that supplied the word itself would
+// report a correctly recorded door for a service that records none. So the literal comes from
+// the call, and a buildServer that stops wrapping, or wraps without naming a door, leaves this
+// null and fails there rather than passing on the check's own guess.
+const coreDoorWord =
+  /recordingDoor\(\s*coreServer\([\s\S]*?\)\s*,\s*"([^"]+)"\s*\)/.exec(stripComments(coreSrc ?? ""))?.[1] ?? null;
+if (coreSrc && coreDoorWord === null) {
+  fail.push(`${CORE_SRC_PATH}'s buildServer does not wrap its server in recordingDoor with a ` +
+            "door name — the core door's tools would then be absent from the surface this " +
+            "platform records about itself, or present with no door against them, and its " +
+            "refusals would arrive in a shape nothing here expects");
+}
 try {
   const { coreServer } = await import("../services/zz-core/dist/orientation.js");
-  const server = coreServer("0.0.0-eval-door-check");
+  const { recordingDoor } = await import("../services/zz-core/dist/door.js");
+  const server = coreDoorWord === null
+    ? coreServer("0.0.0-eval-door-check")
+    : recordingDoor(coreServer("0.0.0-eval-door-check"), coreDoorWord);
   const mods = [...(coreSrc ?? "").matchAll(/import \{ (register\w+) \} from "(\.\/tools\/[\w-]+)\.js"/g)];
   if (!mods.length) blind.push(`no tool modules found imported by ${CORE_SRC_PATH}`);
   for (const [, fn, rel] of mods) {
@@ -209,10 +233,11 @@ if (evalSrc && evalClient) {
 // ── 2b. The door's tools reach the surface this platform records about itself ─────────────
 //
 // `recordingDoor` is what every door wraps its server in, and it does two things no caller can
-// see: it adds each name to OWN_TOOLS as that tool is declared, and it turns a thrown `Refusal`
+// see: it records each name in OWN_TOOLS against the door it is declared on, and it turns a
+// thrown `Refusal`
 // into this platform's refusal shape. A door built WITHOUT it serves a perfectly working tool
 // list — this file's clauses 1 to 3 all stay green — while its tools are missing from the row
-// `eval_block_surface('platform')` reads and its refusals arrive in a different shape from
+// a surface report about `platform` reads and its refusals arrive in a different shape from
 // every other refusal here. Both failures are silent, which is why this clause is not a grep
 // for the word: the builder above has already run, so OWN_TOOLS holds what that run declared.
 if (evalTools.size) {
@@ -448,6 +473,98 @@ try {
             `door's calls are recorded was checked: ${err?.message ?? err}`);
 }
 
+// ── 9. WHICH DOOR A TOOL IS ON REACHES THE SURFACE RECORD, AND A READER CAN SEE IT ────────
+//
+// THIS IS WHAT THE "NOT COVERED" LINE AT THE BOTTOM OF THIS FILE USED TO SAY WAS MISSING, and
+// it was not a gap — it was a wrong answer. `zz.block_tool` was `(block_version_id, name, …)`,
+// so the platform's recorded surface was a SET OF NAMES. When the ten `plugin_*` tools moved
+// from the core door to this one, the recorded name set before and after was IDENTICAL, and
+// the one instrument this platform has for judging a tool surface answered NO CHANGE across
+// the largest surface change it has ever had. Silence would have been honest; "nothing moved"
+// is the sentence an instrument produces when it is working and there was nothing to find.
+//
+// Migration 052 adds `door`, `recordingDoor` writes it, and `zz-tool block-surface` reads it.
+// The three clauses below are those three halves, and each fails on its own:
+//
+//   a. THE WRITE, from the builds already run above. `OWN_TOOLS` is filled by the registration
+//      itself, so this is not a claim about the source — it is what the two real doors just
+//      recorded about themselves in this process.
+//   b. THE VOCABULARY. The word recorded has to be the gateway's own word for that door, or
+//      the recorded surface cannot be read against the recorded CALLS: `zz.event.tool_key` is
+//      `<surface>:<tool>` written from `doorSurface()`. Two vocabularies that agree today and
+//      are never compared are two vocabularies that disagree after the next rename.
+//   c. THE READ. `diffSurfaces` is driven over the exact before/after this task exists for —
+//      the same names, moved — and is required to report the moves. A check that only asserted
+//      the column exists would pass on a reader that ignores it, which is the state this task
+//      found the platform in, one level up.
+if (evalTools.size && coreTools.size) {
+  try {
+    const { OWN_TOOLS } = await import("../services/zz-core/dist/door.js");
+    const { doorSurface } = await import("../services/gateway/dist/tool-telemetry.js");
+    const { diffSurfaces } = await import("../packages/tools/dist/lib/surface-diff.js");
+
+    // (a) + (b): every tool the client saw, with the door the registration recorded for it,
+    // against the gateway's own name for the door that serves it.
+    for (const [tools, path] of [[evalTools, "/eval/mcp"], [coreTools, "/core/mcp"]]) {
+      const want = doorSurface(path);
+      const wrong = [...tools].filter((t) => OWN_TOOLS.get(t) !== want).sort();
+      if (wrong.length) {
+        fail.push(`the surface record says ${wrong.map((t) => `${t}=${JSON.stringify(OWN_TOOLS.get(t) ?? null)}`).join(", ")} ` +
+                  `for tools served at ${path}, and the gateway files that door's calls under ` +
+                  `"${want}" — a recorded surface in a private vocabulary cannot be read ` +
+                  "against the calls recorded for it, and null means the door was never " +
+                  "recorded at all, which is the state that answered NO CHANGE to the move");
+      }
+    }
+
+    // (c) THE EXACT CASE, not a synthetic one: `before` is every name this service serves TODAY
+    // with all of them on the core door, which is precisely the surface recorded before the ten
+    // plugin tools moved. `after` is what the two builders recorded a moment ago.
+    const after = [...OWN_TOOLS].map(([name, door]) => ({ name, door }));
+    const before = after.map(({ name }) => ({ name, door: doorSurface("/core/mcp") }));
+    const names = (xs) => xs.map((t) => t.name).sort().join(",");
+    if (names(before) !== names(after)) {
+      fail.push("this clause's before and after do not carry the same tool names, so it is no " +
+                "longer the case it was written for — a diff that reports a change here proves " +
+                "nothing, because the names changed too");
+    }
+    const moved = diffSurfaces({ version: "before", tools: before },
+                               { version: "after", tools: after });
+    const wantMoved = [...evalTools].sort().join(",");
+    if (moved.moved.map((m) => m.name).sort().join(",") !== wantMoved) {
+      fail.push(`the surface reader was given the same ${before.length} names before and after, ` +
+                `with ${evalTools.size} of them served on a different door, and it reports ` +
+                `${moved.moved.length} moved rather than ${evalTools.size} — that is the NO ` +
+                "CHANGE this task exists to remove, back in the one place that reads the record");
+    }
+    if (moved.added.length || moved.removed.length) {
+      fail.push("the surface reader invents an addition or a removal where every name is on " +
+                "both sides — a fabricated finding is worse than a missed one");
+    }
+
+    // THE CONTROL, AND IT IS THE HALF A GREEN READER CAN STILL GET WRONG. Rows written before
+    // 052 carry no door. `door ?? "core"` makes this same comparison read beautifully and
+    // reports every eval tool as having MOVED out of a door nothing ever recorded — a finding
+    // invented out of a null. So the reader is required to answer "not comparable" here.
+    const blind = diffSurfaces({ version: "pre-052", tools: after.map(({ name }) => ({ name, door: null })) },
+                               { version: "after", tools: after });
+    if (blind.moved.length) {
+      fail.push(`the surface reader reports ${blind.moved.length} tool(s) as having changed door ` +
+                "against a version that recorded no door at all — it is defaulting a null to a " +
+                "door somebody guessed, and every tool that was already on the other door reads " +
+                "as a move that never happened");
+    }
+    if (blind.undecidable.length !== after.length) {
+      fail.push("the surface reader does not report a version with no recorded doors as " +
+                "undecidable — an operator reading \"no tool changed door\" there has been told " +
+                "something the record cannot support");
+    }
+  } catch (err) {
+    fail.push(`what the platform records about which door a tool is on could not be checked: ` +
+              `${err?.message ?? err}`);
+  }
+}
+
 // A path this check reads that has moved is this scan going blind, and it is said FIRST: every
 // assertion about that file passed on nothing.
 for (const p of new Set(blind)) {
@@ -467,7 +584,11 @@ console.log(`eval door: ok — zz-core serves two doors a client can open: /mcp 
             `/core/mcp to CORE_URL, announces both in DOORS, records its calls under surface ` +
             `"${doorSurfaceOfEval}" as the platform's own, and zz-plugin-eval declares ` +
             `/eval/mcp.\n` +
-            `           NOT COVERED: which door a tool is on is absent from the surface record ` +
-            `— zz.block_tool has no door column, so eval_block_surface('platform') will report ` +
-            `NO CHANGE when the ${evalTools.size} tools on that door move. That is Task I-39, and this check passing ` +
-            `does not speak to it.`);
+            `           AND THE RECORD SAYS WHICH DOOR: building both doors recorded every one ` +
+            `of those names against the door that registered it, in the same words doorSurface ` +
+            `answers, and the reader behind zz-tool block-surface reports all ${evalTools.size} ` +
+            `as MOVED when the same name set is served from the other door — the NO CHANGE this ` +
+            `used to say was not covered. What it still cannot see: the /manage door is the ` +
+            `gateway's own process and records no surface at all, so the platform's recorded ` +
+            `surface is this service's ${coreTools.size + evalTools.size} tools and not every ` +
+            `tool the platform serves.`);

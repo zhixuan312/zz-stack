@@ -330,7 +330,14 @@ check("a gate check cited elsewhere is cited by a name that exists", () => {
   // because it cannot be verified and will rot the next time a check is inserted.
   const names = new Set(gateCheckNames());
   if (!names.size) return "no checks found — this cannot verify anything";
-  const files = ["STATE.md", "CHANGELOG.md", "README.md",
+  // DISCOVERED, NOT LISTED. The three documents named here were the three somebody had in
+  // mind, and ARCHITECTURE.md was not among them — which is how its own "what the gate checks"
+  // table came to cite `flowShapeDeclared`, `testingDrivesOnly`, `imageCarriesNoFixtures` and
+  // "the agent-prompt check", none of which has ever been the name of a check. The ruler was
+  // citing enforcement that did not exist, in the one document that says the repository is
+  // wrong where it disagrees with it. `ourDocs()` is the same set every other document rule
+  // reads, so a document added tomorrow is covered without anybody remembering to add it.
+  const files = [...ourDocs(),
                  ...sourceFiles(["scripts/gate/checks"], [".mjs"]),
                  ...sourceFiles(["catalog", "skills", "docs"], [".md"])];
   const bad = [];
@@ -364,7 +371,10 @@ check("a document's links point at something that exists", () => {
   // Relative targets only. An external URL cannot be checked offline, and this gate has no
   // network by design.
   const bad = [];
-  const docs = ["README.md", "STATE.md", "CHANGELOG.md", ...sourceFiles(["docs"], [".md"])];
+  // Discovered for the reason above: STATE.md's release narrative moved to HISTORY.md and
+  // HISTORY-PRE-0.23.md in 0.34.0, and a three-name list would have stopped checking the links
+  // in the half that moved on the day it moved.
+  const docs = [...ourDocs(), ...sourceFiles(["docs"], [".md"])];
   for (const rel of docs) {
     const f = join(root, rel);
     if (!existsSync(f)) continue;

@@ -375,6 +375,9 @@ check("every eval case is discovered once, from the tree its manifest declares",
 check("no shipped file states a count of this platform's own surface",
       runsCheck("derived-counts.mjs"));
 
+check("the written record matches the delivered surface, and no document outgrew the ceiling",
+      runsCheck("docs-current.mjs"));
+
 // ── the two checks written as bash, unwired since the day they were written ───────────────
 //
 // Both passed every time somebody typed their name and neither was ever registered, which is
@@ -405,8 +408,6 @@ check("the deck chassis carries no slides and the guidebook carries all of them"
  * rule demands a registration. Neither rule is weakened by the other's existence.
  */
 const notRegistered = new Map([
-  ["docs-current.mjs",
-   "reads a plugin standard that is not written yet; it fails until the task that writes it"],
   ["eval-readable.mjs",
    "reads evals/results/latest/, which is one person's run output and no checkout carries"],
 ]);

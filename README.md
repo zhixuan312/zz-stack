@@ -223,7 +223,10 @@ scripts/    gate.mjs (the order the gate runs in — every check itself lives in
             flow_install overwrites its own history), refresh-block-tools (what somebody else's tools
             actually COST us, derived from the bytes already recorded — a call
             that SUCCEEDS can still spend a caller's whole working memory, and
-            no error is recorded when it does), watch-results
+            no error is recorded when it does), block-surface (what a block's
+            tool surface DID between its last two recorded versions — including a
+            tool that stayed and changed door, which a diff of names alone reports
+            as no change at all), watch-results
             probes/  what the gate cannot assert by reading — it builds a real
             client package and looks at it. A file rather than a string inside
             a gate module, because these are full of regexes and escaping them twice

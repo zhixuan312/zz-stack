@@ -124,9 +124,9 @@ import { registerSkillTools } from "./tools/skills.js";
  *
  * `zz.block` has carried a row for us since migration 024, which said why in as many words:
  * our MCP "is not a block in the zz-blocks sense and never will be — but it IS an MCP surface
- * like any other". What it did not do was record a VERSION, so `eval_block_surface('platform')`
- * answered "no recorded surface" and the one instrument this platform has for judging a tool
- * surface could be pointed at everybody except us.
+ * like any other". What it did not do was record a VERSION, so a surface report about
+ * `platform` answered "no recorded surface" and the one instrument this platform has for
+ * judging a tool surface could be pointed at everybody except us.
  *
  * Every other block is measured by probing it, because its surface is somebody else's to
  * declare. Ours is declared by the registerTool calls themselves, on EVERY door this service
@@ -134,20 +134,18 @@ import { registerSkillTools } from "./tools/skills.js";
  * each name to OWN_TOOLS at the moment that tool is declared. So this is not an estimate of
  * our surface, it IS our surface, and it cannot drift from what we serve.
  *
- * TWO DOORS, ONE RECORD, AND THE LIMIT SAID OUT LOUD — IT IS WORSE THAN A GAP. Both doors are
- * built below before this runs, so the set of NAMES is complete. What the record cannot express
- * is which door a name is on: `zz.block_tool` is `(id, block_version_id, name, verdict, …)` and
- * has no column for a door. `eval_block_surface` diffs a version's surface against the one
- * before it — so when ten tools move from this door to the evaluation door, the recorded name
- * set is IDENTICAL and the diff reports NO CHANGE across the largest surface change this
- * platform has had. An instrument that answers "nothing moved" about the thing that moved is
- * not merely silent, it is wrong in the direction nobody checks. Closing it needs a migration
- * and a change to how the surface is recorded, it has to land after the doors stop moving, and
- * it is TASK I-39. Written here rather than left implied, because the sentence above this one
- * is a claim about accuracy and a claim like that has to carry its own exception.
+ * TWO DOORS, AND THE RECORD SAYS WHICH. Both doors are built below before this runs, so the set
+ * of names is complete — and each name carries the door that registered it, because
+ * `recordingDoor` is handed one. That is the whole of migration 052 and it closes a failure
+ * worse than a gap: with names alone, ten tools moving from this door to the evaluation door
+ * left the recorded name set IDENTICAL, so a surface diff answered NO CHANGE across the largest
+ * surface change this platform has had. An instrument that says "nothing moved" about the thing
+ * that moved is not silent, it is wrong in the direction nobody checks. `zz-tool block-surface`
+ * is the reader; it reports a move as a move, and a version recorded before 052 as one whose
+ * doors were never written rather than as a core door it can only have guessed at.
  *
  * Recorded per SERVICE VERSION, which is what makes "what moved" answerable: two releases
- * leave two rows, and `eval_block_surface` diffs the newest against the one before. A version
+ * leave two rows, and `zz-tool block-surface` diffs the newest against the one before. A version
  * that has already been recorded is left alone rather than rewritten — the row means "this is
  * what that version served", and editing it would make the history agree with today by
  * construction, which is the one thing a history must not do. */
@@ -163,13 +161,21 @@ async function recordOwnSurface(): Promise<void> {
        returning id::text as id`, [version]);
     // Already recorded: this version's surface is not written twice, and not edited.
     if (!rows[0]) return;
-    const names = [...OWN_TOOLS].sort();
+    const names = [...OWN_TOOLS.keys()].sort();
     for (const name of names) {
+      // THE DOOR IS WRITTEN IN THE SAME STATEMENT AS THE NAME. A row that records the name and
+      // leaves the door for a later pass is a row that is wrong until that pass runs, on a
+      // table whose rows are never edited afterwards — so there is no later pass to have.
       await p.query(
-        `insert into zz.block_tool (block_version_id, name) values ($1::uuid, $2)
-         on conflict do nothing`, [rows[0].id, name]);
+        `insert into zz.block_tool (block_version_id, name, door) values ($1::uuid, $2, $3)
+         on conflict do nothing`, [rows[0].id, name, OWN_TOOLS.get(name)]);
     }
-    console.log(`recorded our own surface as platform ${version}: ${names.length} tools`);
+    // THE DOORS ARE IN THE LINE, because "29 tools" is the number that was true before this
+    // recorded which door each was on, and a log line that did not change would be the first
+    // place a reader looked to decide whether it had.
+    const byDoor = [...new Set(OWN_TOOLS.values())].sort()
+      .map((d) => `${d}=${names.filter((n) => OWN_TOOLS.get(n) === d).length}`).join(" ");
+    console.log(`recorded our own surface as platform ${version}: ${names.length} tools (${byDoor})`);
   } catch (err) {
     // NEVER FATAL. This is the platform describing itself for a measurement nobody is waiting
     // on; a service that refuses to start because it could not write its own metrics has
@@ -187,7 +193,9 @@ function buildServer(): McpServer {
   // `recordingDoor` is what makes a thrown `Refusal` arrive in our refusal shape and what
   // fills OWN_TOOLS as each tool is declared. It lives in door.ts because the evaluation
   // door needs exactly the same thing and a second copy of it would drift — see that file.
-  const server = recordingDoor(coreServer(serviceVersion(import.meta.url)));
+  // "core" is the gateway's own name for this door — `doorSurface("/core/mcp")` — and it is
+  // what lands in zz.block_tool.door beside every name registered below.
+  const server = recordingDoor(coreServer(serviceVersion(import.meta.url)), "core");
   // THE TOOL MODULES THIS DOOR SERVES, in the order they are registered. The ten `plugin_*`
   // tools are NOT among them any more: they are the zz-plugin-eval flow's own instrument and
   // they are served by eval-door.ts, on the door that flow declares. This door is what every
@@ -279,7 +287,7 @@ app.listen(8000, "0.0.0.0", () => {
   //
   // BOTH, NOT JUST THE FIRST. Our recorded surface is the whole platform's, and building only
   // the core door would have recorded a platform that serves ten fewer tools than it does —
-  // `eval_block_surface('platform')` would then report ten tools DELETED in the release that
+  // `zz-tool block-surface platform` would then report ten tools DELETED in the release that
   // merely moved them, which is worse than no measurement because it reads as a finding.
   void (async () => { buildServer(); buildEvalServer(); await recordOwnSurface(); })()
     .catch((err: unknown) => console.error("surface record failed:", err));

@@ -44,6 +44,10 @@ declare -A TOOLS=(
   [register-skills]=ops/register-skills
   [register-plugins]=ops/register-plugins
   [refresh-block-tools]=ops/refresh-block-tools
+  # block-surface reads what refresh-block-tools and zz-core WRITE. A record nothing reads back
+  # is a record nobody can be wrong about; this is the reader, and a deploy host is where the
+  # recorded surfaces actually are.
+  [block-surface]=ops/block-surface
   [audit]=testing/manifest-audit
   [chain-check]=testing/chain-check
   [conformance]=testing/block-conformance

@@ -547,7 +547,7 @@ check("the platform records its own surface, the way it records everybody else's
   //
   // `zz.block` has held a row for us since migration 024, which said why: our MCP "is not a
   // block in the zz-blocks sense and never will be — but it IS an MCP surface like any other".
-  // What nothing did was record a VERSION, so `eval_block_surface('platform')` answered "no
+  // What nothing did was record a VERSION, so a surface report about `platform` answered "no
   // recorded surface" and the one instrument this platform has for judging a tool surface
   // could be pointed at everyone except its author.
   //
@@ -561,11 +561,23 @@ check("the platform records its own surface, the way it records everybody else's
   // the last release" quietly answers nothing.
   const src = zzCoreSource();
   const bad = [];
-  if (!/OWN_TOOLS\.add\(name\)/.test(src)) {
-    bad.push("registerTool no longer records the name it is registering — the surface would be recorded from something other than what is served, or not at all");
+  if (!/OWN_TOOLS\.set\(name, door\)/.test(src)) {
+    bad.push("registerTool no longer records the name it is registering AND the door it is registering it on — the surface would be recorded from something other than what is served, or not at all");
   }
   if (!/insert into zz\.block_version[\s\S]{0,200}where b\.name = 'platform'/.test(src)) {
-    bad.push("nothing writes a zz.block_version row for 'platform' — eval_block_surface('platform') has nothing to read");
+    bad.push("nothing writes a zz.block_version row for 'platform' — `zz-tool block-surface` has nothing to read");
+  }
+  // THE DOOR IS IN THE ROW, AND IT IS IN THE SAME STATEMENT AS THE NAME. Migration 052 added
+  // `zz.block_tool.door` for one reason: a surface recorded as names alone answered NO CHANGE
+  // when ten tools moved from `/core/mcp` to `/eval/mcp`, because not one name changed. A
+  // writer that goes back to `(block_version_id, name)` restores that wrong answer silently —
+  // every row still appears, the column just stays null, and the reader correctly reports it as
+  // not comparable rather than as a fault. So the write is what is checked here.
+  if (!/insert into zz\.block_tool \(block_version_id, name, door\)/.test(src)) {
+    bad.push("the surface row no longer carries the door it was served on — a surface recorded as names alone reports NO CHANGE when a tool moves between doors, which is the wrong answer this platform's largest surface change already got");
+  }
+  if (!/OWN_TOOLS\.get\(name\)/.test(src)) {
+    bad.push("the door written into zz.block_tool does not come from OWN_TOOLS — it would be a second account of which door a tool is on, and the one in OWN_TOOLS is the one the registration itself created");
   }
   // Per version, and never rewritten: the row means "this is what that version served".
   if (!/on conflict \(block_id, version\) do nothing/.test(src)) {
@@ -577,7 +589,7 @@ check("the platform records its own surface, the way it records everybody else's
   // EVERY DOOR, AND THE LIST IS DERIVED FROM THE MOUNTS. This named `buildServer` when that was
   // the only factory there was. zz-core now serves two doors — `/mcp` and `/eval-mcp`, one
   // process, two tool sets — and building only the first would record a platform that serves
-  // ten fewer tools than it does. That is worse than recording nothing: `eval_block_surface`
+  // ten fewer tools than it does. That is worse than recording nothing: the surface report
   // diffs a version against the one before it, so the release that merely MOVED those tools
   // would report them deleted, and a diff that invents a finding is the one failure this
   // instrument cannot have. So the factories come out of the `serveMcp` calls themselves, and
@@ -599,6 +611,31 @@ check("the platform records its own surface, the way it records everybody else's
     if (!new RegExp(`\\b${factory}\\(\\)`).test(built)) {
       bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
     }
+  }
+
+  // ── AND THE COLUMN THE WRITE DEPENDS ON, WITH ITS NULLS LEFT ALONE ─────────────────────
+  //
+  // A writer naming a column no migration adds fails INSIDE the catch that makes recording
+  // deliberately non-fatal: the service starts, one line says it could not record its surface,
+  // and nothing is red. `schemaColumns()` replays every add and drop in order, so a later
+  // migration removing the column is caught by the same clause.
+  //
+  // NO DEFAULT AND NO BACKFILL, asserted rather than trusted. Rows written before 052 carry a
+  // null door honestly — nothing knew the door when they were written. A default, or an
+  // `update … set door`, would make the first diff after this lands read beautifully and INVENT
+  // the moves it shows, because every `plugin_*` name recorded before the move would claim to
+  // have started on the core door. That is NO CHANGE with the sign flipped, committed for good.
+  const mig = "services/gateway/migrations/052_block_tool_door.sql";
+  const sql = (() => { try { return readFileSync(join(root, mig), "utf8"); } catch { return ""; } })();
+  if (!schemaColumns().includes("block_tool.door")) {
+    bad.push("no migration leaves zz.block_tool.door standing — the insert above names a column nothing creates, and it fails inside the catch that makes recording non-fatal, so the service starts and records nothing");
+  }
+  if (!sql) {
+    bad.push(`${mig} could not be read, so nothing about how it treats existing rows was checked`);
+  } else if (/door text[^;]*not null/i.test(sql) || /door text[^;]*default/i.test(sql)) {
+    bad.push(`${mig} gives door a default or makes it NOT NULL — every row written before it would then claim a door nobody recorded, and whatever moved would read as having started on whichever door the default names`);
+  } else if (/update\s+zz\.block_tool[\s\S]*door/i.test(sql)) {
+    bad.push(`${mig} backfills door onto existing rows — a door reconstructed after the fact is a guess written as a fact, on rows the recorder deliberately never rewrites`);
   }
   return bad.length ? bad.join("; ") : null;
 });

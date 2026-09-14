@@ -12,6 +12,14 @@ That record is CHANGELOG.md, beside this file. The two are a pair and the divisi
 the changelog is the transaction log, this is the balance. A reader asking "what changed in
 0.2.0" wants the changelog; a reader asking "what IS this platform" wants this.
 
+**Where the version-by-version record went.** §6a–§6s held one entry per release — what that
+release was for, and what it turned out to cost — nineteen sections and 751 of this file's
+1309 lines. By the test in the paragraph above they are the changelog's kind of material, not
+this file's, so they are now [HISTORY.md](HISTORY.md) for 0.23.0 onward and
+[HISTORY-PRE-0.23.md](HISTORY-PRE-0.23.md) for everything earlier; each file's header says why
+the two are split there. What stayed here is the balance: what the platform is (§1–§5f), where
+it stands (§6 and §6b) and the rules that settle arguments (§7).
+
 It was called "direction", three directories down, and read as neither. A document describing
 where you are GOING has no obligation to be accurate about where you are — which is how it
 came to say the old front end still borrowed our database, long after it was removed.
@@ -128,7 +136,8 @@ and `catalog/zz/` holds the platform's own entries (zz-access, zz-admin, zz-hand
 the platform from a flow uses the platform's real names; declaring a
 flow's identity uses its own.
 
-Two shapes live under one word there, and §6e says which is which: a package that declares
+Two shapes live under one word there, and 0.15.0's entry in
+[HISTORY-PRE-0.23.md](HISTORY-PRE-0.23.md) says which is which: a package that declares
 `stages` is a FLOW, one that does not is a SURFACE — an agent and its doors, no steps.
 
 ## 5a. Operating model — every flow is made by two teams
@@ -443,7 +452,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 328 checks**, and fifteen of them RUN code rather than reading it: the
+- **The offline gate is 329 checks**, and fifteen of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through
@@ -479,761 +488,51 @@ is the balance, and the balance is:
 
 **What is NOT claimed here, and was:** there is no standing evaluation. All five eval tables
 hold zero rows, the smoke engine is not in the tree, and the CLI half of that track writes raw
-SQL past the MCP door. §6c has said "the evaluation track exists, and has not been run" since
-0.11.0; it is still true, and the earlier §6 claimed a five-scenario standing suite on top of
+SQL past the MCP door. 0.11.0's entry in [HISTORY-PRE-0.23.md](HISTORY-PRE-0.23.md) has said
+"the evaluation track exists, and has not been run" ever since; it is still true, and the earlier §6 claimed a five-scenario standing suite on top of
 it.
 
-## 6s. In 0.33.0: every plugin can be evaluated, and running it is what found the defects
-
-**Held to this section's bar.** Everything below was measured on 2026-09-13 — by running
-`claude plugin eval` against all four plugins on this shelf, and by querying the deployment —
-not by reading the code that was supposed to do it.
-
-**Four plugins, eight cases, and three of the four could not be evaluated at all before this.**
-`zz-access` and `zz-plugin-eval` had no case suite and no run history, and both blocks empty is
-the one condition that stops the flow. `zz` had one case. Cases need no history, so a suite is
-what makes a plugin evaluable the day it ships — and writing one for each is what closes the
-gap between "the platform can evaluate a plugin" and "the platform can evaluate its plugins".
-
-**What running them found, which reading them had not:**
-
-- **The blind control was not blind.** The document fallback excluded the round's own items and
-  nothing else, so it took `2026-09-13-console-brand-adoption/plan.md` — an initiative that ran
-  sdlc-flow. Control 4.00/5.00 against real 4.00/5.00, and the round was read as "this ruler
-  does not discriminate" when what had been asked was whether two sdlc documents score alike.
-  The exclusion is by initiative now, because an initiative that ran a flow also holds documents
-  the platform stamped no flow on.
-- **And after the fix there is no same-kind control left on this deployment.** Measured: every
-  candidate that survives is a `_knowledge` node, because every non-node initiative here has run
-  sdlc-flow. A ten-line node marked against a spec ruler scores low for the wrong reason, so it
-  is kept as the last resort and `control_read` now says in the string itself what it is and
-  what it does not prove. A real control for sdlc needs a second flow on this platform.
-- **`zz` could never have produced the finding the tool exists for.** `entryOf("zz")` is
-  undefined and every caller fell back to an empty tool list, so `never_called` was empty by
-  construction for the one plugin every account installs — and read as a clean bill of health.
-- **Recording a case run would have stored nothing readable.** The parser read three top-level
-  keys the CLI does not emit; the numbers are under `aggregates`. A suite that measured
-  perfectly came back as unreadable.
-- **The evaluation flow cannot be reached by asking.** Over nine runs across the three questions
-  it exists to answer, asked in ordinary words with the plugin installed, nothing in it engaged
-  and the delta was zero on all three. The cause is structural, not a wording slip: a flow's
-  `entry` skill ships as a COMMAND carrying `disable-model-invocation: true`, so no model can
-  open it whatever its `when_to_use` says, and the five stage skills beside it each say "never
-  on its own", which is correct — a stage firing out of order is worse than one that does not
-  fire. That is what "a person invokes this on purpose" costs, stated as a number. Its cases now
-  name the flow, the way a person does, so they measure the flow's content rather than the
-  shelf's routing.
-- **No audit stage has ever reached the door.** `zz.event` holds not one `sdlc-spec-audit` or
-  `sdlc-plan-audit` row in its whole history, because a dispatched auditor in Claude Code loads
-  its skill locally. A return is a relation between stages, so every `spec → audit → spec` on
-  this platform reads as a straight line.
-
-**And the same lesson twice, from two directions: a capability that ships as a COMMAND cannot be
-reached by a case that asks in words.** `zz-doctor` does not ship as a skill at all —
-`marketplace/zz-access/skills/zz-doctor/` holds `doctor.mjs` and no SKILL.md, because the three
-typed capabilities of the plugin that ships it render as commands with
-`disable-model-invocation: true`. (It was `marketplace/zz-core/` when this was measured; the
-skill moved to zz-access on 2026-09-14 and the finding travelled with it unchanged.) A case grading
-`Skill(zz-doctor)` therefore scored 0.00 on every grader in the with arm, for a capability that
-is present and works. What makes this worth a section rather than a footnote is that the failure
-is silent in the direction that matters: the suite reports a delta, the delta is zero, and zero
-reads as "this plugin adds nothing here".
-
-**A prediction that was wrong, kept as written.** zz-access's `kills-it-first` grader predicted
-a delta of ~0.8 and measured 0.00: a bare agent told a credential was visible in a forty-person
-channel revokes it first as readily as the plugin does. The case is unchanged and the
-measurement is recorded beside the prediction, because a case edited until it flatters its
-plugin ends the series — nothing after it compares with anything before it.
-
-**What is NOT claimed:** that these eight cases are the right eight. They are the first eight,
-each one written from a rule its plugin states in its own text, and three of them measured a
-delta of zero on their first outing.
-
-## 6r. In 0.32.0: the subject of an evaluation is a plugin, and it has not been run
-
-**Held to this section's bar, which means saying what is NOT verified.** Everything below is
-in the release and none of it has been exercised against the deployment, because migrations
-`047` and `048` apply on the gateway's next start and that start is this release.
-
-A plugin is what a person installs — a flow's skills plus the MCP servers those skills call.
-The platform evaluated the halves separately and could see neither of the two things that
-decide whether the whole works: whether a flow that goes wrong can return to an earlier stage,
-and whether a tool its own skills name is ever actually called.
-
-**Two kinds of evidence, and the second one is new to this platform.** TRACES come from the
-event log and need five usable runs. CASES come from `claude plugin eval`, which runs a suite
-twice — with the plugin and without — and reports the delta. That is a COUNTERFACTUAL, which
-no score can give: it says the plugin caused the outcome. It needs no history at all, which is
-what makes a plugin evaluable the day it ships. Each block carries its own sufficiency and only
-both empty stops the flow.
-
-**What is verified about it, and it is not the flow:**
-- One case ran end to end against the shipped shelf — `Plugin under test: "sdlc" version
-  "0.31.0+600dd6c5"`, two arms, with-arm 0.75, $1.40. The ablation resolves and both arms run.
-- That run paid for itself: a grader keyed on `Skill(sdlc-spec-audit)` scored 0 in all three
-  with-arm runs, not because the plugin failed but because `sdlc-method` DISPATCHES an audit to
-  a subagent whose transcript the parent's tool log never sees. It measured the harness and
-  understated the plugin by a quarter every run.
-- `047` and `048` apply as a pair, verified in a rolled-back transaction against the live
-  database. Every affected table held zero rows, measured rather than remembered.
-- 199 queries across `services/`, `packages/` and `scripts/` PREPARE against the post-`048`
-  schema. Nine readers of dropped columns were found and fixed; the ninth was in a route
-  nobody was looking at, with the gate green over it.
-
-**The flow has since been run, and §6s records what it found.** This paragraph used to say
-`/zz:zz-plugin-eval sdlc` had never been run and predicted it would take the full path. It has,
-it did, and the prediction was worth exactly what this section says predictions are worth: the
-round it produced was void, because the control it took was another sdlc document.
-
-**Three write tools exist because their absence was found three times.** `plugin_cases_record`,
-`plugin_ruler_record` and `plugin_finding_record`. Each closed a hole where the flow READ a
-table nothing could write: the case results are produced by a CLI on somebody's laptop and
-zz-core is a container that cannot see them; a ruler was written into a document and never into
-a row, so the judge would have refused forever with the gate green; and `zz.eval_finding` lost
-its only writer when the old evaluation went. The shape was one shape three times — the design
-specified what the flow reads and under-specified what it writes.
-
-## 6q. In 0.29.0: one client, and a shelf anyone can read
-
-The client package stopped being a tarball behind a token. `claude plugin marketplace add
-zhixuan312/zz-stack` clones a shelf committed to this repository — `build-marketplace.mjs`
-renders it, through the same `buildClientPackage` the gateway has always used, so there is
-one renderer rather than two. The old path put a credential in front of the tools a person
-installs in order to obtain one: `curl -H "Authorization: Bearer $ZZ_TOKEN" /pkg/…` ran
-before `marketplace add`, so somebody with no token had no way to install the tools that
-issue one. Nothing is given away by publishing it. Every tool the shelf lists is a door at
-the gateway, and the door still answers 401 — the shelf was never the boundary.
-
-Build output under version control drifts, so a gate check rebuilds the shelf and fails on a
-dirty tree. A red gate leaves the fix already written.
-
-**Codex and Hermes are gone, and the `clients` matrix with them.** Nobody ran either. What
-they cost was not two branches: it was a tarball route, a hand-rolled ustar writer nothing
-else called, two more install stories, and a three-set intersection — what a flow can run on,
-what a team wants, what the platform supports — threaded from the manifest through
-`install_flow` into a database column, to decide something that now has one possible answer.
-`isLocalOnly` went the same way: it chose between shipping a flow's skills as files and
-leaving a pointer, and the pointer side existed for the browser front end removed in 0.28.0.
-It had been true for every flow it was ever asked about since.
-
-The marketplace is called `zz-stack`, the same word as the repository it is cloned from.
-`zz-platform` was the shelf AND the platform's own team, which meant one word for two
-unrelated objects and two names for one shelf.
-
-## 6p. In 0.28.0: one front end, one set of APIs, and nothing that is not the package
-
-The platform served three browser surfaces and now serves none: `/app` was a knowledge-base
-browser with its own PAT login and its own read API over data the console already serves, and
-`/architecture` was an unauthenticated page about the platform. Both are gone, with `kb.ts`
-and the API behind `/app`. The console is the front end and `/api/console/*` is the API.
-
-`docs/` is no longer part of the package. What was under it was working material — findings,
-walkthroughs, a release record — and the one file that was genuine package documentation is
-`ARCHITECTURE.md` at the root, which the gate and `console/catalog.ts` now name.
-
-**The rule the repository is now written to, because it is publishable:** a count that is a
-property of THIS repository is exact; a measurement of anything else is written as a shape.
-Two gate checks hold the line — one refuses an address, a routable host or a credential
-anywhere in the tree, the other refuses a stand-in block written about as a real deployment.
-Both were proven by break-test before being trusted, which is the only reason to believe a
-check that is green on a tree somebody just cleaned by hand.
-
-Sign-out is a POST. The console applies a URL policy to document markdown: a link is
-navigation a reader chooses, an image is a fetch nobody agreed to.
-
-## 6o. In 0.27.0: the doctor, and the difference between "wrong" and "could not look"
-
-**`npm run doctor` asks where the deployment stops matching what this checkout declares.** Six
-layers, each with one source of truth on the repository side and one on the deployment side —
-repo, image, host, doors, contract, data — asked in the order that makes a diagnosis, because
-the first layer that disagrees usually explains every layer after it. Later disagreements are
-tagged `downstream of <layer>` rather than counted as independent defects. It changes nothing,
-and a gate check enforces that rather than a sentence in its header promising it.
-
-**It exists because of a specific hour.** 0.26.1 deployed, and the release's own verification
-reported six failures — "gateway /health: PUBLIC is not defined" — which were ReferenceErrors
-thrown INSIDE the verifier by the release.mjs split. A healthy platform was rolled back by the
-thing checking it. The old runner had one `catch`, and everything it caught became a verdict
-about the deployment.
-
-**So there are three verdicts, and a release has three outcomes.** `wrong` — the two sides
-disagree — rolls back. `unknown` — the probes could not look — leaves the new version live and
-**untagged**, because rolling back undoes a release for a reason that was never about it and
-tagging stamps a version nothing verified. The rule underneath is `a probe may throw only for a
-PRECONDITION; once a request is sent, the answer is returned` — getting that wrong the other
-way is worse, and did happen in draft: curl exits 7 on a refused connection, so a crash-looping
-gateway threw out of seven probes and would have been TAGGED.
-
-**Release step 5 runs these probes and owns none.** Its eleven lived in the release and ran for
-forty seconds a release and at no other time, which is exactly how three of them came to call
-names they never imported without anybody finding out. One list, run daily; a gate check
-refuses `verify.mjs` if it grows a probe again. The release verifies 16 probes where it
-verified 11, and the doctor asks 23.
-
-**The contract layer is what the 0.26.1 restructure needed and did not have.** A door that
-fails to mount does not answer 500 — it answers 200 with a shorter tool list, and every health
-probe stays green. It compares the live tool list against what the source registers, by name
-and by module. That proof was done by hand, once, because nothing could do it.
-
-## 6n. In 0.26.1: nothing is over 700 lines, and the gate says so
-
-**Nine files held sixty-nine subjects between them.** `scripts/gate.mjs` was 11,428 lines,
-`zz-core/src/server.ts` 5,270, the console's API 2,071. The 0.26.0 audit read every file and
-found the code honest; it never asked whether the code was reachable by a reader.
-
-**Each entry file now states the ORDER or the DOOR, and the modules hold the work.**
-`gate.mjs` is 67 lines of `import` — one per subject — and `report()` refuses to pass unless
-the number of checks written under `gate/checks/` equals the number that ran, because a module
-missing from that list is a check that silently does not exist. `zz-core/server.ts` is 290
-lines and its 29 tools live one door per file under `src/tools/`. `release.mjs` is 556 and one
-step per file. The console API is 70 lines over seven resources; `settings.ts` splits by
-AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
-
-**700 lines, measured rather than chosen, with no exemption list.** Above it every file here
-held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **328 checks** and the console's
-gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
-lines with seventeen exports and passes, because line count finds "definitely too big" and
-never "more than one subject".
-
-**Nothing here was verified by reading, because the failure this restructure invites is a
-check that greps a file by path and stays green after the code moves out.** Both before and
-after are green; a verdict diff cannot see it. So: 273 verdicts diffed at every commit and
-identical every time, the live `tools/list` diffed against the rebuilt binary (29 tools,
-schemas byte-identical), the console route set diffed verb-for-verb, `--preflight` and a full
-`--dry-run` run end to end, and roughly twenty mutation tests planting a real violation at each
-new boundary. Four checks turned out to be reading nothing or the wrong thing. They are fixed.
-
-## 6m. In 0.26.0: every file was read, and what it found was not dormant code
-
-**449 files across both repositories, each read and given a verdict with its evidence.** The
-audit that produced this section is gone from the tree, as its own design document promised —
-what survives is ten gate checks and the changelog entry, because a finding that only lives in
-a report is a finding somebody has to remember.
-
-**The expensive things were not dead code. They were things that looked like they worked.**
-
-- The platform had **no backups**. The nightly run wrote all three archives, then dumped a Mongo
-  removed on 2026-09-10, and its own cleanup — "an incomplete run must not leave a file that
-  reads as a backup" — deleted all three. An empty directory and no log.
-- **713 lines of security checks had never been run.** `check:redaction` drives the real
-  redaction predicate; `check:scope` drives the real authority rules. Every mention of them in
-  the source was a comment saying they drive the real thing — true, and describing something
-  that had never happened.
-- **The console's own gate was red**, and nothing ran it.
-- **The design audit was measuring the sign-in screen** for all ten pages, because it has no
-  authentication step, and reported a disciplined-looking three type sizes and no radii.
-- **§6 of this file described a platform that was dismantled** — the Operations flow
-  "running on LibreChat", a five-scenario standing evaluation. It is re-established against the
-  deployment, and every claim in it was checked by calling the platform while writing it.
-
-**Three findings were overturned by reading one more file, and all three were wrong in the
-same direction — they made the audit look more productive than it was.** `decision_block` was
-release sequencing with a written plan, not an abandoned normalisation. The evaluation track is
-not implemented twice; the two halves score different subjects. Twenty-three files recorded
-dormant were reachable, and the eval tools answer on the live door today. In each case the
-mechanical evidence was accurate and the conclusion drawn from it was not.
-
-**The evaluation track stays.** Zero rows in five tables is nobody having used it, not nothing
-being able to. That was the owner's call and it is recorded as one.
-
-## 6l. In 0.25.0: a deck is built in stages, and the record says who looked
-
-**`/sdlc:deck` scaffolds, then fills one slide per edit.** It used to read a 252KB template and
-emit a 53-slide deck in a single write. The load-bearing reason that could not hold is not a
-claim about model quality: `max_output_tokens` is a hard cap far below the context window, so a
-long deck in one write is simply truncated. The template is split — `deck-chassis.html` is the
-runtime a scaffold copies, `deck-guidebook.html` is the 53 worked examples to consult — which
-cuts what a model must read to start by 68%, and the output is staged. Those are two
-independent fixes and it needed both.
-
-**Verified by running it, which is how the rest of this release's findings arrived too.** A
-Sonnet worker built 11 slides from a 71,905-character spec: scaffold 1:1 with the plan, one
-edit per slide, no batching, nothing left unfilled. **One claim failed.** An interrupted run
-leaves a valid, openable file and does NOT show which slides are unwritten — the placeholder is
-an HTML comment, comments render as nothing, and 7 of 10 slides were blank rectangles that the
-deck's own `?qa` panel reported as identical to finished ones. Silently truncated became
-silently blank. That is better and it is not what was promised; fixing it changes the
-placeholder format and is separate work.
-
-**`document_approve` says whether anything fetched the document since its content last changed.** The
-platform has always asked for `document_present` before a gate — a person approves bytes, and the
-fetch is the only part of "I put it in front of them" that reaches the record — and nothing
-ever said so at the moment it was skipped. The initiative that produced this release closed
-with four of its six approvals carrying no fetch, an eleven-task plan among them, approved
-twice and fetched never. **It reports and does not refuse,** and that is a standing decision,
-not an unfinished one: a refusal there would land on the one call whose job is to record a
-verdict a person already gave. A standing "approve without checking with me" waives their
-REVIEW, not the fetch.
-
-**Where a script can decide it, a script decides it.** `shownSinceLastChange` is a function, not
-a paragraph asking a model to remember. The console derives which version numbers were consumed
-by a revision and never frozen — `_versions/` holds one copy per APPROVAL while the counter
-advances per REVISION, so `v1, v3, v4` is the rule working and read as data loss. And the check
-guarding all of it RUNS the code rather than reading it (`checks/attest-shown.mjs`); the gate is
-269, from 268.
-
-## 6k. In 0.24.0: one door, and the tool list is the role
-
-**The admin door is gone, and it was never a boundary.** `/admin/mcp` said so in the platform's
-own door index — "any member; each tool authorises per call" — and behaved accordingly: a
-member-scope token opened it, listed all twenty tools, and was refused by every one. A URL that
-admits everybody sorts nothing. What the split actually bought was a shorter tool list, and it
-leaked even at that, because the two operator tools for storing a key on somebody else's behalf
-sat on the MEMBER door, where the credential store is.
-
-**So the list is shortened by the thing that was doing the work.** `/manage/mcp` builds its
-tool set per request from the caller's role — 20 tools for a member, 24 for a team admin, 34
-for a superadmin — and the predicates are the same `isSuper`/`isTeamAdmin` the handlers call,
-never `platformRole`. That equality is the property worth stating: **visibility is exactly
-executability.** A superadmin holding a member-scope PAT is not super for that request, so they
-are not offered tools that would refuse them, and the gate refuses a build where the two are
-derived differently.
-
-**Authorisation did not move.** Every handler still resolves the caller from the database and
-checks for itself, because "administers some team" is not "administers THIS team": a team
-admin carries `install_flow` and is still refused the team they do not lead, with its reason.
-The role filter is ergonomics; the handler is the boundary. What a member loses is the
-explanation — a refusal that said "superadmin required" now says "tool not found" — which is
-why `whoami` is registered for everyone and why both skills say a missing tool is a fact about
-your role.
-
-**One plugin follows the one door.** `zz-admin` is folded into `zz-access`, which ships two
-skills: `zz-access` for the person in front of you, `zz-admin` for everybody else. A package
-whose whole content was MCP wiring and no instructions is the shape 6j's predecessor kept
-producing; there is no longer one in the catalog.
-
-## 6j. In 0.23.0: one person, one host, one door
-
-**This platform belongs to one person now, and almost everything 0.23.0 does is subtraction.**
-LibreChat and ops-flow are gone, with the smoke suite and the onboarding timer that existed to
-keep a browser front end honest; the third-party building blocks live in their own
-repositories; the two shared environments are one host. What is left is the SDLC flow, our own
-MCP, and the console.
-
-**The console's door is a passkey, and there is no other.** An external identity provider's
-value is telling us who somebody is when we do not already know — we do, and its principals
-are created from the back end, so what the provider bought was a consent screen, a list of
-permitted test users and a client secret to rotate. A passkey asserts possession of a private
-key we hold the public half of, which is the fact we wanted, with nothing to rotate and nobody
-else in the path. Sign-in asks for no email: the credential is discoverable, so the browser
-offers what it holds and the person picks.
-
-**Nobody registers themselves, and that is structural rather than a convention.** An OpenID
-sign-in could create a principal it had never seen, because the provider vouched for the
-email. Nothing vouches here — an authenticator asserts possession of a key, not an identity —
-so registration requires an enrolment token naming a principal that already exists, and reads
-the principal off that token's row rather than off the request body. The first link is minted
-on the host, because before anyone has a passkey there is no superadmin session to mint one.
-
-**What it costs, said here because it is easy to meet by surprise.** A credential is bound to
-the RP ID, which is `CONSOLE_PUBLIC_URL`'s hostname, and ours encodes the droplet's IP address.
-Move the host and every registered passkey stops verifying at once. It is not a lockout — the
-host mints fresh links — but it is everyone re-enrolling.
-
-**The release ships two components to one host.** `--env`, `ZZ_DEPLOY_HOST`, the
-per-environment tokens and the zz-blocks half of the release are gone; `ZZ_TOKEN` in the
-repository's own gitignored `.env` is the only credential, and preflight now reads it through
-the same function the release does — it read a different one, so a token in the documented
-place made the release work and made preflight report "no token found".
-
-## 6i. In 0.21.0: the team discusses, and the platform writes what they decided
-
-**What 0.21.0 adds is the other half of the console initiative: a document can be talked
-about, and the talking is what produces the next version.** `zz.discussion_message` is a
-gateway-owned, append-only thread keyed to one document. Its sequence is assigned inside the
-insert and a unique constraint on (team, initiative, path, seq) is what makes it a database
-guarantee rather than an application convention — two appends racing for one number produce a
-rejection, retried once, rather than a thread that silently reorders itself.
-
-**It arrives without being asked for.** Server-sent events over an in-process EventEmitter
-keyed per thread, so the listener count that matters is people reading one document rather
-than everyone on the platform. The replay-versus-subscribe race is closed by subscribing
-first and de-duplicating on drain; reading the database first would drop whatever landed in
-between. It is single-process and per-container by construction, and the `after=<seq>` cursor
-is what makes that recoverable rather than fatal — a client reconnects with its own last seq,
-which is also why the browser does not use native EventSource retry: that reopens the URL it
-was built with, carrying a stale cursor.
-
-**Neither host could have delivered it.** Caddy sets `flush_interval -1` on the LibreChat and
-api hosts and did not on the console host, which was added later — so a stream would have
-been buffered and the thread would have appeared to hang rather than fail. That is fixed on
-both hosts and `deploy/Caddyfile`, which described neither the console host nor the ten block
-OAuth handles both machines actually run, now describes what they serve.
-
-**The platform authors the revision.** Nobody hand-edits markdown in a browser; there is no
-editor. A route reads the thread server-side, generates the next version from it, and stores
-the discussion verbatim as the source — the same string the model read, so the evidence is
-provably what the revision was made from rather than a summary of it. Nothing reaches zz-core
-unless generation succeeds, and the new version lands as a draft with the approval cleared,
-so generation can advance no gate.
-
-**And a team can ask its own folder.** Retrieval is the existing `knowledge_search`, called as
-the caller and therefore already scoped; the route adds generation only. Citations are built
-from what was retrieved, never from the model's prose, and a citation the console cannot open
-— the shared platform shelf is pooled into that search but its documents 404 outside their own
-team — is named as plain text rather than linked to a page that would refuse it.
-
-**The LLM credential never reaches the browser.** One server-held client, per-deployment, that
-cannot throw at import: a deployment with no credential still boots and serves everything
-else, and the route answers 503 naming the unset variable. A gate check runs the built module
-with the variables stripped to prove exactly that, and scans the console for any import or
-literal that would leak it.
-
-## 6h. In 0.20.0: the console stops being a window and becomes a door
-
-**What 0.20.0 adds is that the console shows one team's work and can act on it.** Every
-`/api/console` read was platform-wide by design — the file said so: "the console shows every
-team's work at once… SsoAuth is the fence." Three endpoints reached that state through a
-fail-open predicate, `($1::text is null or team_slug = $1)`, where a missing `?team=` made
-the condition true for every row; four more took the team from the URL with no membership
-check at all, so any signed-in person could read any team's documents by typing a slug.
-`resolveScope` replaces both with a union that has no unscoped member — a caller is one
-team, the platform, or refused — and a gate check refuses a console query that can fall back
-to every team.
-
-**A document can be approved from the browser**, proxied to zz-core as the caller so the
-platform stamps `approved_by` itself, exactly as it does for an agent. That is the first
-write `/api/console` has ever had, and the check standing behind it is that every console
-write route records the door it came through: the tools these routes wrap log with domain
-detail and no door, so a route that merely calls one inherits the guard but not the audit.
-
-**There is a second way in.** A password verifier on `zz.principal`, scrypt over `node:crypto`
-with no package added, for a person the directory does not cover. The door a session came
-through is a new `door` field and deliberately NOT a fourth value of `Identity.via`:
-`mayReadConsole` is the literal test `id.via === "session"` and is the whole console read
-gate, so widening that enum would have locked every browser session out, corporate directory included.
-The sign-in endpoint refuses wrong password, unknown email and deactivated principal
-identically, pays a real scrypt cost on every refusal so it cannot be asked whether an
-account exists, and throttles per address and per account on the forwarded client address —
-`trust proxy` is the number 1, because `true` would let a client prepend an address and pick
-its own bucket.
-
-**Settings exist at three tiers**, and the tiers were already in the code: `superOnly`,
-`teamAuthority`, and the `my_*` / `*_team_*` / `admin_*` naming the credential tools have
-always used. A member manages their own credentials, tokens and block connections; a team
-admin their team's membership and flows; a superadmin people, teams and block access. No
-response carries a secret — one redactor, failing closed on any field whose name looks like
-one, so a column added later is redacted by default rather than leaked by default. The single
-exception is a newly issued token, shown once.
-
-**Two engines now check what review cannot.** `check:scope` drives the real authority
-functions, `check:redaction` every settings response shape. And `check:sql` — which needs a live migrated database and had
-therefore never been run here — prepares 173 of 193 statements against a real schema; the
-eleven console queries that scoping had turned into runtime-assembled text are back to paired
-static literals, because this repository's SQL checker exists precisely because 0.4.0 shipped
-a query Postgres refused to parse.
-
-**What is not here yet:** the discussion thread, the platform-authored revision, and the
-question-and-answer surface over a team's knowledge. Those are the second half of the same
-initiative.
-
-## 6g. In 0.18.0–0.19.0: knowledge is written twice, and the console ships as an image
-
-**0.19.0 changed only the release tooling and gets no section of its own** — a build script is
-not the platform, and a heading per script change is how a state document turns into a
-changelog. What it settled, in one line each: a release goes to UAT unless somebody says
-production; one version can reach both deployments, so a component already in the registry is
-deployed rather than rebuilt; and `ZZ_DEPLOY_HOST` still means production, because
-the sync script read it to decide which host it must refuse to `rsync --delete` onto.
-(Both of those are gone now, and so is the sync script itself: deploy/sync.sh was deleted
-on 2026-09-11. A host receives the release bundle and runs published images; nothing
-rsyncs a working tree onto one any more.)
-
-**What an initiative learned is worth more to the next one than its deliverable is, and it
-disappears when the conversation does.** The knowledge base was one shelf belonging to
-`zz-platform`, so a lesson a team learned about its own stakeholders had nowhere to live that
-was not everybody's.
-
-- **Two shelves, and the write names one.** `knowledge_add(scope: "team" | "platform")`. Team
-  nodes stay the team's; platform nodes must be about a registry entry. There is no default,
-  because the shelf is a decision and guessing it wrong puts one team's material in front of
-  everybody.
-- **The handover is a step every flow inherits, derived from the manifest rather than wired
-  into a stage list.** `initiative_status` answers `action: handover` until a node names this
-  initiative; the handover carries a gate so the team approves what was distilled; `initiative_close()`
-  refuses an initiative whose handover is not approved. `learnings.md` is abolished and
-  sdlc-flow's own closing skill is deleted — `zz-handover` is the only skill that writes
-  knowledge, for every flow. (The retired skill is not named here on purpose: a gate check
-  holds that nothing outside the changelog mentions it, because a document naming it is
-  indistinguishable from one that still expects it.)
-- **A node is added because it earns its place.** An initiative that learned nothing general
-  says so rather than minting filler; the platform does not count documents to prove a step
-  ran.
-- **The console's shelf filter turns itself on.** No console code moved: the team control was
-  written to appear only once there is more than one shelf, and until now there never was.
-- **The console is a released component.** Its own version (0.1.0), its own image, its own
-  compose literal, released by `scripts/release.mjs` beside zz-stack and zz-blocks. It had
-  been reaching production by rsyncing source to the host and building there, which is how
-  production stopped running published images without anybody deciding to. One release, three
-  components; the only file on the host is the console's compose file.
-
-**What a live run found, and the check that came out of it:** on `zz-platform` the team shelf
-IS the platform shelf, so a promises-kept count was satisfied by the wrong nodes. The gate now
-holds that an approved handover kept the team nodes it promised.
-
-## 6f. In 0.17.0: five rules leave prose for code, and nobody onboards by hand
-
-**A rule stated in skill prose is a prompt, and it varies by interface. A rule stated in
-server code holds identically everywhere.** That sentence is the whole release. Five
-behaviours moved across the line, each one chosen because a live run had already shown the
-prose version being routed around.
-
-- **`document_present`** puts a document in front of a person: envelope facts, then the body
-  verbatim, never a summary. Every document-writing stage now names it. **The fetch is
-  recorded** as a `shown` entry with the path, version and caller — so "was this ever fetched
-  before its gate was approved" is answerable from the initiative's own log. That is
-  detection, not prevention: a tool result is model input, and the platform cannot vouch for
-  a pair of eyes. The refusal that WOULD make it impossible is named and deliberately unbuilt.
-- **Three tools stopped discarding a supplied value.** `initiative_close()` given both an acceptor and a
-  no-signoff reason preferred the acceptor and dropped the reason; `knowledge_reconcile()` given both an
-  initiative and a block answered one and ignored the other. Both now refuse and name the
-  contradiction.
-- **`document_revise` accepts `self_edit`** — the record could not tell "no cause" from "cause
-  not captured".
-- **A spec's acceptance criteria are indexed at all.** The reader anchored at a bold key at
-  line start, so a flow writing `- [ ] **AC-6.1**` had its requirements indexed AS its criteria
-  and its criteria indexed nowhere — and the console displayed that under the heading
-  "acceptance criteria". The console no longer claims to show criteria either.
-- **A version snapshot is indexed when it is written**, so the console's version chain — built
-  months ago and dark — renders every earlier draft with its diff and its causes.
-
-**Onboarding is automatic.** A corporate directory sign-in gets a principal, the default team and every
-agent that team's flows imply, from a timer on the host. The unit is the TEAM: install a flow
-and the next tick gives it to every member. Membership happens once, recorded as a `zz.event`
-of kind `onboard`, so it can never re-add somebody an administrator removed. It is a polling
-job rather than a hook because LibreChat authenticates against SsoAuth directly with its own
-OIDC client — the gateway never sees that sign-in, so there is nothing to hook.
-
-**The console runs in production**, for the first time, beside UAT's. It needs the four
-`SSOAUTH_*`/`CONSOLE_PUBLIC_URL` values on **`cred-proxy`**, which is what serves `/auth/*`.
-
-**What is NOT verified.** Two acceptance criteria in the initiative behind this release name
-method `human` and no human has answered them: whether `document_present`'s output reads as a
-document, and whether the spine's prose still overstates what the code does. Both were
-exercised by an agent, which is the weakest possible reviewer of its own output.
-
-## 6e. In 0.15.0: a package declares what it is, and nothing infers it
-
-`zz-admin` sat in the console's flows tab beside `ops-flow`. It is not a flow — no stages, no
-documents, no skills directory, an MCP surface and a hand-written prompt — and nothing in its
-manifest said so, because the console had been inferring shape from contents.
-
-The field that should have said it was already spoken for. `kind: "platform"` meant OWNERSHIP
-(ZZ owns this, every account has it, a team cannot install it) while being named for SHAPE, and
-`catalogEntry` carried the comment "ANY `kind` means not a flow" — false about three of the
-five packages that had it, since `zz-skill-eval` is shelved and has five stages, two documents
-and a gate. `governingPlatformFlows` then re-inferred flowness from `documents.length > 0` to
-work around it.
-
-**What was true then:** a package was a flow if and only if it declared a non-empty `stages`,
-and `entry` and `stages` travelled together in both directions — so `zz-access` declared one
-stage, named after its own entry and producing nothing, to satisfy a rule it had no method for.
-**What is true now (0.34.0):** the declaration is `documents`, and ARCHITECTURE.md §3 carries
-the rule — a flow is a discipline over documents, so the packages that have one are the packages
-that declare documents; `zz-access`'s phantom stage is deleted and it has no stages at all. Ownership is still
-`shelved: true`, a separate axis from `install: "auto"` (all three evaluation packages declare
-both, which is why one field could not carry them), and `zz-admin` still carries its own prompt,
-because the generated router assumes a flow and told it to `skill_read` an entry it does not have.
-
-`ARCHITECTURE.md` is the definition the repository is now checked against, and
-three gate checks enforce the parts a machine can read.
-
-**What is NOT yet true:** the definition covers catalog packages, the eight roots and the
-boundary between `scripts/`, `testing/` and `packages/tools`. It says nothing yet about the
-`blocks/` tests corpus or about `deploy/`.
-
-## 6d. In 0.12.0: an initiative's flow is resolved from the document that declared it
-
-The first attempt to run an evaluation flow end to end is what found this, and it found it
-the expensive way: the report reached its gate having been governed by the wrong flow from
-its second document onward, so the gate the flow declares was never the gate it passed.
-
-Two faults, one consequence. The resolver walked the initiative's folder in `readdir` order
-and took the first `flow:` it met, where the design — stated in zz-platform and repeated in
-every comment around the resolver — is that the FIRST document declares it. And the check
-that refuses an undeclared first document counted only rows in `zz.flow_install`, which a
-platform flow never has: `team-one` was excused because it had exactly one install, and
-`zz-platform`, which runs nothing BUT platform flows, was excused because it had none.
-
-**What is true now:** documents are consulted oldest first, and the set a team must choose
-from is its installs plus the platform flows the shelf ships to everyone. Every team is asked.
-
-**What is NOT yet true:** no evaluation has completed a run under the corrected resolution.
-The mis-stamped `2026-09-05-blockeval-casebox` is archived, not repaired, and its `zz.doc` rows
-still name `ops-flow`.
-
-## 6c. In 0.11.0: the evaluation track exists, and has not been run
-
-Two flows, both platform capabilities, shipped to every team and neither yet exercised end to
-end. Shipped, not installed: a platform package has no `zz.flow_install` row by construction,
-which is the fact §6d records the platform having forgotten about itself.
-
-    zz-skill-eval   locate -> profile -> define (GATE) -> judge -> report (GATE)
-    zz-block-eval   locate -> measure -> report (GATE)
-
-**What changed is that the platform can now say how well its own parts work.** Before this,
-evaluation ran by hand inside a delivery conversation and its scores went to a scratch file —
-the dashboard correctly reported every document from two full initiatives as `judged: never`.
-Seven scripts do the collecting, a pinned model does the judging, and the flow's own agent
-never scores anything.
-
-**What is NOT yet true:** neither flow has completed a run. No `rulers.md` has been approved,
-no `findings.md` has closed an initiative, and `zz-platform`'s store holds no evaluation. The
-numbers the flows already produce — a low score on one skill's weakest dimension, a block's
-read tool refusing on every recorded call — were produced by running the scripts, not the
-flows. Running both end to end is the acceptance test and has not
-happened.
-
-## 6b. In 0.10.0, deployed and verified but not yet exercised by a round
-
-**What 0.10.0 adds is that a skill can be read and judged in one place, wherever it lives.**
-The console tells flows from blocks — a flow is an agent method that runs against blocks, a
-block is something reached over MCP carrying its team's own skills — and every skill on
-either serves its own text, its reference material, what it cost and what it scored.
-`skill_read` gained a `file` argument, which is what made a block's reference material
-reachable at all: block skills are packaged into no plugin, so MCP is their only delivery
-path and it served SKILL.md and nothing else.
-
-Every document now carries the skill version that wrote it — from the run that produced it,
-then the eval that judged it, then the version in force when it was created. ops-intent went
-from the documents that happened to be attributable to all of them, and a score can be read
-against one version instead of averaged across two. The derivation was validated before it was trusted: on the
-one skill that has ever changed version, the window predicts the record on every document
-where both exist.
-
-**What is NOT proven is the half that needs a round.** The read API ships here; no evaluation
-round has yet been decided against a skill page, so the pages answer and nothing has acted on
-what they say. `zz.skill` and `zz.skill_version` were empty until this release registered
-them, so nothing before now could be attributed to a skill or a version at all.
-
-**The admin console is what 0.9.0 added to this list.** A separate browser app over a new
-read API on the gateway, showing every team's work, the knowledge base, what each skill costs
-and how it scores, and how each block actually refuses. Sign-in is a directory through SsoAuth —
-a third identity adapter beside the PAT and the forwarded header, which is the shape
-identity.ts already described. Every page has been driven in a browser against a populated
-store, and the sign-in redirect has been checked end to end; what has NOT been exercised is
-the far side of that redirect, which is somebody else's to register. So what is proven is our
-half, again.
-
-Knowledge moved to the platform's own team in this version — one shelf every team reads
-instead of a journal per team, with each team's numbering colliding at 0001. The migration
-ran; the shelf has not been written to since.
-
-**Delegated block access is the whole of what 0.6.0 adds to this list.** A person signs in to
-a building block as themselves and their own token is attached to every later call. It has
-been walked end to end for all three blocks — including one that enforces consent, which
-answered with the person's name and their own grants rather than a shared key — and the
-automated loop runs from a revoked grant so that "the block names a person" is a result and
-not a tautology. What is NOT proven is the other side: no delivery round has run through it,
-and the mocks accept a scope without enforcing it, so what is proven is the platform's half.
-
-Everything here passes the offline gate and its own engine, and 0.10.0 is the version the live
-host is running — but a release's verification proves the platform ANSWERS, not that any of
-this was used. None of it has run in front of a person. It moves into §6 when a round does.
-
-The heading used to read "not yet deployed", which stopped being true the moment the version
-went out. Deployed and exercised are two different facts and this file keeps them apart on
-purpose: a deploy is ours to do and a round is not, so collapsing them would let us confirm
-our own work.
-
-- **Every query is asked of a real Postgres before anything is pushed.** `sql-check` PREPAREs
-  each of them against an empty database the real gateway has migrated — which resolves every
-  table, column and rule without touching a row, and is therefore cheap enough to run on every
-  release and every dry run. 0.4.0 is why: a `SELECT DISTINCT` ordered by a column it did not
-  project is refused at PARSE time, so `/pkg` answered 500 to every caller and nothing offline
-  could have seen it. The six queries built at runtime are reported as not checkable, every
-  run, with the reason — a checker that quietly skips what is hard reads exactly like one that
-  found nothing wrong.
-- **The adapter walk is tested.** A door that refuses ends the request, so a revoked PAT
-  cannot fall through to be retried as a forwarded-header claim. `resolveThrough` said it was
-  "exported so the ORDERING can be tested" and nothing tested it; five cases now run against
-  the real function with stub doors, asserting the verdict AND which doors were asked.
-- **The repository was read line by line** — 152 files, 46,208 lines — and the gate grew to
-  255 checks. Most of what that found was one shape: a rule stated in one place and applied in
-  another, the two drifted, and nothing able to see it. Four were in the gate itself.
-
-- **A verdict is an act.** `document_approve(path)` and `initiative_close(initiative, disposition)` stamp
-  `status`, `approved_by`, `approved_at`, `outcome` and `closed_by` from the session, and
-  writing any of them by hand is refused. `outcome` lost `superseded` — supersession is a
-  pointer between documents, not the fate of an initiative — and now reads
-  `delivered | accepted | abandoned`, derived by `initiative_close()` from a disposition and whether a
-  person is named.
-- **`knowledge_reconcile(initiative | block)`** joins `zz.decision` against `zz.event`: what a stage
-  predicted about a block, beside what the platform later recorded happening to it.
-  `zz.decision` had been write-only since it was added — rows derived on every index, read
-  by nothing.
-- **The store is a git repository**, initialised on a team's first write, committing every
-  act under the name of the person who made it and under the name of the ACT: `approve:`,
-  `close accepted:`, `revise:`, `patch:`, `write:`. `git` is in the runtime image, which it
-  was not; without that, every commit would have failed silently.
-- **A team's own skills.** `<team store>/skills/<name>/SKILL.md` is searched LAST, so a team
-  can add a skill but can never shadow `zz-platform` or a stage of the flow they run. The
-  contribution path starts where the work already is, and costs no review by us.
-- **Everything is TypeScript.** The thirteen Python files are gone, and with them a second
-  envelope parser and a seventh copy of the MCP handshake. The tools run on a deploy host
-  through `deploy/zz-tool`, in the image already there — no toolchain installed, and no
-  docker socket mounted.
-- **Two reachability defects, one shape.** `list_catalog` was member-safe and mounted only on
-  `/admin/mcp` while `zz-access` carries `/manage` alone; ZZ Flow Builder instructed four
-  `/admin/mcp` tools with no server declared, so the agent every account gets was told to
-  perform an install it could not perform. Complete and unreachable is the most expensive
-  shape here because nothing fails, and a gate check asks the question now.
-- **The model writes the body; the platform writes the envelope.** `document_write` and
-  `document_revise` refuse content that opens with frontmatter and take the rest as named
-  arguments. Every envelope field now comes from a fact the platform holds or from an act,
-  and the third source — a model typing YAML — is closed. `version` became the platform's;
-  `sdlc-spec`'s `contract:` block moved into the body, where a reader can actually see it.
-- **One way to change an approved document.** `document_patch` and `document_write` are refused on a
-  gated document while it is approved, and point at `document_revise`. Two paths with
-  opposite behaviour was the third instance of the asymmetry the guards check for.
-- **A comment is a source.** The three comment tools are gone and `zz.comment` is dropped;
-  what a person writes on a document from the web now lands as a source, through zz-core.
-  The affordance survived, the second record did not.
-- **Identity is a port.** The PAT and the forwarded header are two adapters, so a new login
-  method is an array entry rather than surgery on identity resolution. A door that says no
-  ends the request, so a revoked PAT cannot fall through to be retried as a header claim.
-- **Credentials resolve personal, then team.** A new joiner works on day one on the team's
-  key; a personal key overrides it. Two levels, never three.
-- **Every flow ends with the platform's handover**, appended below the manifest so no flow
-  author can drop it — and the platform itself is a tenant now, with `zz-platform` holding
-  what we learn about registry entries rather than about anybody's delivery.
-- **The improvement loop is closed.** `evolve-report` says which STEP stalls and hands back
-  the platform's own refusal sentences; `flow-compare` compares flows and teams on one set
-  of metrics; `watch-results` alerts on results worsening and treats its own silence as a
-  failure. The change itself is a repository edit and a release — the catalog is read-only
-  wherever the platform runs — and `zz-skill-report` specifies it, one change with the
-  effect it expects. No flow may run the change beside its own measurement.
-- **The envelope and the manifest are defined once**, as zod schemas in `@zz/contracts`, and
-  published at `/schemas/*.json` so a team writing a flow can read the rules before a write
-  is refused rather than after.
-- **A stored XSS in the knowledge web app.** A link's body was rendered as raw source, so
-  `[<img src=x onerror=…>](https://ok.example)` came back live in a page that injects with
-  innerHTML while the reader's token sits in localStorage. Found by writing the test that
-  the two earlier fixes there never had.
-- **Secrets left the command line.** `--key`, `--pat` and `--user-pat` carried a
-  building-block credential and two platform tokens through `ps` and into shell history.
-- **The offline gate was 272 checks at 0.24.0**, from 78. Each one added that release refuses a
-  defect that was found in this repository, and each was verified by reintroducing it.
-  The newest keeps the server-held LLM client (generate.ts, Task I-22) off the console: it
-  scans the sibling zz-stack-dashboard checkout for an import of it, a read of
-  LLM_API_KEY/LLM_BASE_URL, or a NEXT_PUBLIC_* name carrying either, and separately runs
-  generate.ts with no LLM_* set to prove generateConfigured() answers false and generate()
-  refuses with a 503 naming all three variables rather than throwing at import.
-
-## 6a. Before 0.10.0: one door, a registry, a knowledge plane
-
-The four capabilities everything above is built on, and the check that proved each. They are
-listed by what they do rather than by when they landed: a delivery schedule is a fact about a
-calendar, and this file is the balance.
-
-| Capability | What it is | Proof |
-|---|---|---|
-| One door | the `zz` schema in our own database; PAT identity, hashed, scoped and revocable; `/admin/mcp` with RBAC, confirm-params and an audit trail; the `/core` proxy | a request without a PAT is refused; a spoofed identity header presented alongside a PAT is REWRITTEN to the PAT's owner, not trusted; every skill is reachable through one URL |
-| Registry | `flow.json` manifests drive the guardrail chain; `install_flow` / `grant_tool` decide what a team has; `/p` enforces it once grants exist | the chain is enforced from the manifest rather than from code that knows the flow's name |
-| Knowledge | one shelf on the platform's own team, read by every team; version snapshots taken at approval; `sources/` ungated and immutable; a mechanical ledger row at close; index-on-write with `knowledge_search` carrying provenance | a full chain test: three snapshots, a ledger row, and a search hit that cites its source |
-| Many flows | the guardrails are flow-agnostic — the chain comes from each flow's own manifest | proven with a one-document, one-gate fixture: same image, different manifest, different discipline, zero code changes. The fixture was deleted once it had done its job |
-
+## 6b. In 0.34.0: the surface is declared, and the gate reads the declaration
+
+**Held to this file's second bar: delivered, and not yet run in front of anyone.** Everything
+below is in the tree and passes the offline gate. None of it has been exercised by a person
+doing real work, and being deployed will not change that — a deploy is ours to do and a round
+is not. It moves into §6 when one happens.
+
+**A plugin declares what it is, what it ships, and what each stage leaves behind.** `purpose`,
+`skills`, `commands` and `libraries` are the four declaring fields, `documents` is what makes
+a plugin a flow, and a stage's `produces` names the document that stage leaves. All four
+plugins on the shelf were brought to it. `commandName()` — which derived a command from a
+skill's name and therefore could not be wrong in a way anybody could see — is deleted, and
+the commands are declared. The reasoning, and the check enforcing each rule, is the plugin
+standard in [ARCHITECTURE.md](ARCHITECTURE.md) §3b.
+
+**The core door's names were chosen twice and are now chosen once.** Sixteen core tools, seven
+evaluation tools and the `/manage` surface were renamed to the noun-verb shape the door already
+implied, through frozen alias maps so a caller using the old name still resolves. Three tools
+left the core door for the evaluation one, `/eval/mcp` exists, and `initiative_open` makes a
+freeform initiative a declared shape rather than a degraded one — it answers `next_move: null`
+and says why, instead of inventing a stage nobody agreed to.
+
+**Every tool call now says which plugin it was made for.** Migration 050 adds the columns, and
+attribution is written on the event row rather than derived afterwards from a name. What a
+call cost is a column beside it — including the judge's own completions, where an unreported
+figure stays null rather than becoming a confident zero, and where nothing may cap spend.
+
+**The gate stopped taking prose at its word.** It now refuses a skill that declares a tool no
+door registers, prose that names a skill no plugin ships, a stage that says nothing about what
+it produces, a plugin that ships a skill it never declared, and any shipped file stating a
+hand-kept count of this platform's own surface. It also invokes what is in `checks/`, which
+for months it did not: a check dropped in that directory is registered or named with a reason,
+and a new one that is neither turns the gate red naming the file.
+
+**What is NOT claimed.** No evaluation round has run against any of this; the eval tables still
+hold zero rows, which is the same sentence 0.11.0 wrote. The renames are proven to resolve by
+checks that import the frozen maps, not by a caller having used an old name in anger. The
+telemetry columns are proven to be written and read by a check that drives the recorder against
+a fake pool — no production row has been written through them. And the release's
+fit-for-purpose review, added in this version, has never been answered by a reviewer, because
+no release has been cut since it was added.
 ## 7. Principles (the rules that settle arguments)
 
 Thirteen, grouped by **what question they answer** rather than by the order they

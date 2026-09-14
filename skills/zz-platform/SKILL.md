@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.34
+version: 3.35
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
@@ -19,6 +19,65 @@ check: no tool refuses you for breaking it and no record catches it afterwards.
 It is written down because it is what good work looks like — and it is tagged
 because a rule stated as an absolute that nothing enforces teaches you to
 distrust the ones that are real.
+
+## The two objects, and every transition either has
+
+Everything on this page is about one of two records: an **initiative** and a **document**.
+This is the whole state machine. The prose below it is what the platform REFUSES and why —
+read the table to know what you can do, read the prose to know what will stop you.
+
+**An initiative.**
+
+| From | The act | To | Refused when |
+|---|---|---|---|
+| nothing | `initiative_open(slug)`, or `initiative_open(slug, flow)` | open | you typed a date into the slug — the platform prepends its own |
+| open | `document_write`, `document_approve`, `source_add` | open | see the document table |
+| open | `initiative_close(initiative, disposition)` | closed, with an `outcome` | a declared document is missing or its gate was never recorded |
+| closed | — | nothing reopens it | a closed initiative is a finished record, and a record's value is that it is not edited afterwards |
+
+`outcome` is exactly `delivered`, `accepted` or `abandoned`, and `initiative_close` derives it
+from your disposition and from whether a person is named. You never write it.
+
+`flow` is decided at open and only at open. Pass it and the platform tells you what comes next;
+leave it out and it answers `next_move: null` with `next_move_absent` saying why — a freeform
+initiative, which is a supported shape and not a degraded one. There is no way to adopt a flow
+afterwards, deliberately: the gates it declares would land on documents already written.
+
+**A document.**
+
+| From | The act | To | Who writes the envelope |
+|---|---|---|---|
+| nothing | `document_write` | `status: draft` | the platform |
+| draft | `document_patch`, `document_write` | draft | the platform |
+| draft | `document_approve(path)` | `status: approved`, plus `approved_by` and `approved_at` | the platform, from your session |
+| approved | `document_patch`, `document_write` | **refused**, pointing you at `document_revise` | — |
+| approved | `document_revise` | draft again, a new `version`, the cause recorded | the platform |
+| any | `document_present(path)` | unchanged — a `shown` entry is appended to the activity log | the platform |
+| approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
+
+`status` is exactly `draft` or `approved`. **You write neither it nor any other envelope field
+by hand; every one of them is refused.** The body is yours, the envelope is the platform's.
+
+**What comes next is computed, never guessed.** `initiative_status(initiative)` answers a
+`next_move` carrying four things: an action, the document it is about, who it is waiting on,
+and why. These are the situations it distinguishes:
+
+| The situation | Waiting on |
+|---|---|
+| the next document the flow declares is not there, or is there and still draft | you |
+| a gated document is written and nobody has recorded a verdict on it | the stakeholder |
+| the declared documents are done and the platform's handover is not | you, then the person |
+| the chain's last document is ready and the initiative can be closed | you |
+| an outcome is recorded — it is over | nobody |
+| nothing declared a chain: freeform, `next_move: null`, and `next_move_absent` says so | nobody |
+
+**The verb itself comes back in the answer — read it there, not from a list here.** A skill
+carrying its own copy of the platform's vocabulary is a copy that goes stale silently, which is
+the one failure this page is least allowed to have.
+
+Ask it rather than reasoning about the folder. A model working out the state from what it
+remembers writing is how a wrong fact reaches a document that outlives the conversation.
+
 
 ## A block is checked when something needs it, never before
 

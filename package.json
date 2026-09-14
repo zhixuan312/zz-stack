@@ -30,6 +30,7 @@
     "check:scope": "node services/gateway/dist/scope-check.js",
     "check:redaction": "node services/gateway/dist/redact-check.js",
     "refresh-block-tools": "node packages/tools/dist/ops/refresh-block-tools.js",
+    "block-surface": "node packages/tools/dist/ops/block-surface.js",
     "register-skills": "node packages/tools/dist/ops/register-skills.js",
     "register-plugins": "node packages/tools/dist/ops/register-plugins.js",
     "step-score": "node packages/tools/dist/testing/step-score.js",

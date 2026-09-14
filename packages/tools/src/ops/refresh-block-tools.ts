@@ -103,6 +103,11 @@ function main(argv: string[]): number {
         `${Math.round(avg / 1024)}KB avg, ${Math.round(max / 1024)}KB peak, ${calls} calls`);
     }
     if (args.flags.has("dry-run")) continue;
+    // `door` IS IN NEITHER THE INSERT NOR THE UPDATE, ON PURPOSE. This derives a block's tools
+    // from the event log, which never says which door served them — and somebody else's block
+    // has one surface anyway. Naming it here would write a null over the door zz-core recorded
+    // about ITSELF, on a row this pass has no business touching. Null is migration 052's word
+    // for "not recorded", and that is honestly what these rows are.
     psqlText(psql, `
       insert into zz.block_tool (block_version_id, name, verdict, observed_bytes_avg,
                                  observed_bytes_max, observed_ms_max, calls_observed, note)

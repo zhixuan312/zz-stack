@@ -307,14 +307,138 @@ Audit it by diffing the three sets per team. Both environments read zero in ever
 `_knowledge` is a reserved directory inside a team's store, not an initiative. Anything
 walking initiatives excludes it by name.
 
-## 4. What the gate checks
+## 3b. The plugin standard
+
+This section is for whoever builds the next plugin. It states each rule, the reason for it,
+and the gate check that enforces it — by name, because a name is stable and greppable and a
+position is not.
+
+Three properties of this standard are the standard, as much as any row below:
+
+- **A rule nothing checks says so, in the same line, tagged [convention]** — the tag
+  `zz-platform` uses, for the reason it gives: a rule stated as an absolute that nothing
+  enforces teaches a reader to distrust the ones that are real.
+- **There is no "this will hard-fail later".** A promised flip to blocking is the documented
+  way a standard in this repository becomes decoration, and `plugin-declaration.mjs` says so
+  in its own header. A rule either has a check on the day it is written, or it is a convention.
+- **Where this document and the repository disagree, the repository is wrong.** That is what
+  makes the rows below rules rather than description.
+
+### The three shapes, and the one field that decides
+
+`documents` is the only field that decides what a package IS. Nothing infers shape from
+contents — §1 is the bug that produced that rule.
+
+| Shape | `documents` | `stages` | What it is | Example |
+|---|---|---|---|---|
+| **Flow** | yes | required | a discipline over documents: which exist, in what order, which gate, which closes | `sdlc-flow`, `zz-plugin-eval` |
+| **Method** | no | yes | steps somebody follows that leave no governed document behind | none on this shelf today |
+| **Surface** | no | no | an agent and its doors: no steps, no position, never in a flow menu | `zz-access` |
+
+`documents` without `stages` is refused by `manifestAt`, naming `stages` — a document has to
+be produced by something. `stages` without `documents` is an ordinary Method and is not an
+error. Check: `check "a package declares whether it is a flow, and the console reads the
+declaration"`, and `check "a flow is a plugin that declares documents, and zz-access is not one"`.
+
+**A Surface must carry its own `agents/<name>/system-prompt.md`. [convention]** The generated
+router ends every agent with `skill_read("<entry>")` and describes running a flow for a team,
+which is right for a Flow and wrong for a Surface. `zz-access` carries one. Nothing checks
+that the next Surface does; getting it wrong costs an agent described as something it is not.
+
+### What every plugin declares
+
+| Field | Required | Rule, and why | Enforced by |
+|---|---|---|---|
+| `purpose` | yes | the sentence that decides whether a capability belongs in THIS plugin or the next one. `description` is what a reader sees in a listing; `purpose` is what you argue against when the plugin starts accreting whatever was convenient | `check "a plugin manifest says what the plugin is for"` |
+| `entry` | yes, if it has stages | the skill the agent opens first. Orthogonal to shape: an `entry` says nothing about whether the package is a Flow | `check "every flow.json parses, and its entry names a skill it ships"` |
+| `commands` | yes, for every skill a person types | a command is DECLARED, never derived. `commandName()` derived one from a skill's name, so it could not be wrong in a way anybody could see | `check "a command is what a manifest declares, not what a function derives from a skill name"` |
+| `libraries` | yes, for every skill another skill loads | a library is a skill nobody types and no stage names, so without this field it is shipped and declared nowhere. That was the hole: `catalog-manifest.mjs` never read `libraries` | `check "a plugin declares every skill it ships, and ships every skill it declares"` |
+| `stages[].name` | yes, per stage | the stage's own skill | same check |
+| `stages[].produces` | yes, per stage | what the stage LEAVES, and the vocabulary is closed: **a document name** the stage writes, **`"record"`** where the result is stored by the platform rather than as a file, or **`"nothing"`**. The last two are ANSWERS, not omissions — that is the whole reason the field is required, because an absent field cannot tell "the author forgot" from "this stage genuinely produces nothing". A document it names must name the stage back | `check "every stage says what it leaves behind, and the document it names names it back"` |
+| `documents` | only if it is a Flow | see the table above | `check "every flow declares which document closes it"` |
+| `servers` | when the agent needs a door | which MCP doors the plugin's agent gets. Orthogonal to shape — a Flow may have none, a Surface may have one. A plugin does NOT ship its own server to add a tool; it adds the tool to `zz-core` and asks for the door | `check "every server a manifest declares is a door the gateway mounts"` |
+| `shelved` | when ZZ owns it | ownership, not shape: every account already has it and no team can install it. It is `true` or absent; `kind` is gone, and `kind` is what put a non-flow in the flow menu | `check "every catalog entry has a flow.json and declares what it is"` |
+
+The four fields a skill can be NAMED in are `entry`, `commands`, `libraries` and `stages[].name`.
+The set difference is taken both ways: a plugin that ships a skill its manifest names nowhere
+fails, and a manifest naming a skill the plugin does not carry fails. Shipped means a directory
+with a `SKILL.md` in it — the same test the packager applies.
+
+### What every plugin's use records
+
+The platform's claim is that evidence falls out of the work rather than being written by
+anybody. These are the rows that have to exist for that to be true.
+
+| Recorded | Rule, and why | Enforced by |
+|---|---|---|
+| the plugin | every tool call leaves a row naming the plugin it was made for. Attributed at the call, never derived afterwards from a tool's name — a rename would otherwise rewrite history | `check "every tool call says which plugin it was made for"` |
+| the act | a tool that changes something records that it did, through the shared guard, once | `check "a tool that changes something records that it did"`, `check "a record that is counted is a record that is written once"` |
+| what it cost | a column beside the row, where the platform made the call. Detail keeps no second copy of it | `check "what a call cost is a column, and detail keeps no second copy"` |
+| what it cost, unobtainably | where the caller is a client we do not run, the figure cannot be had, and it is recorded as **null** — never as zero. A confident zero is a measurement nobody took | `check "every completion the judge asks for is recorded, and an unreported figure stays null"`, `check "an aggregate nothing measured renders as null, never a confident zero"` |
+| the spend, uncapped | an evaluation run's cost is readable without paying for it again, and nothing may cap spend. A ceiling turns "what does this cost" into "what did we allow" | `check "what a recorded eval run cost is readable without paying for it again, and nothing caps spend"` |
+| the content identity | a plugin's identity moves with its content, not with its address, and `plugins.lock.json` records version AND digest | `check "a plugin's content identity moves with its content and not with its address"`, `check "plugins.lock.json says what the catalog ships, on both version and digest"` |
+
+### A description of the surface is derived, never asserted
+
+The most expensive defect this repository has found repeatedly is a person keeping a
+description beside the thing instead of computing it from the thing. Three rules fall out:
+
+- **No shipped file states a count of this platform's own surface.** "A member sees twenty
+  tools" against a real nineteen, a table headed "THESE TWENTY-NINE" over thirty-one rows.
+  A historical measurement — "three tools were renamed in the 2026-08 pass" — is not this and
+  stays. Check: `check "no shipped file states a count of this platform's own surface"`.
+- **No shipped prose names a tool no door registers, or a skill no plugin ships.** Prose is
+  read as an instruction, so a name that resolves to nothing is an agent told to do something
+  impossible. Checks: `check "no shipped prose names a tool no door registers"`,
+  `check "no shipped prose names a skill no plugin ships"`.
+- **A count the platform reports says when it was counted.** Checks:
+  `check "a count of what is on this deployment says when it was counted"`,
+  `check "the platform records its own surface, the way it records everybody else's"`.
+
+### Where a plugin's files go
+
+```
+catalog/<owner>/<plugin>/flow.json                       the manifest — the declaration
+catalog/<owner>/<plugin>/skills/<skill>/SKILL.md         every skill it ships
+catalog/<owner>/<plugin>/agents/<name>/system-prompt.md  optional; REQUIRED for a Surface
+catalog/<owner>/<plugin>/tests/                          fixtures — never enter the image
+```
+
+`<owner>` is the team that owns the content, and ownership is the directory rather than a
+manifest field. The baseline is the one exception and it is a structural one: `zz-router` is
+generated per person from the flows they installed, so `skills/` at the repository root holds
+what every plugin carries. **A skill placed under `catalog/zz/zz-core/skills/` ships in no
+plugin at all** — see §2.
+
+### Releasing one
+
+`scripts/release.mjs` is the only release procedure this repository has. Step 1a is the
+fit-for-purpose review, and it is the one step no check can do for you: it prints each
+plugin's declared purpose beside the tools its declared doors actually register, and asks
+whether that surface delivers that purpose. A check that computed a verdict there would be
+claiming to judge fit, which is exactly the over-reach the rest of this section avoids — so
+the script prints, pauses, and requires the reviewer to say they looked.
+
+## 4. What the gate checks about the repository's shape
+
+The plugin standard's own rules, and the check enforcing each, are §3b. This table is the
+smaller set: what the gate holds about where things LIVE.
 
 | Rule | Check |
 |---|---|
-| `entry` and `stages` travel together | `flowShapeDeclared` |
-| Console flow listing reads `stages`, never infers | same check, second half |
-| `kind` is gone; `shelved` is `true` or absent | in the manifest-fields check |
-| A shelved or surface package carries its own system prompt | in the agent-prompt check |
-| Nothing in `testing/` computes — it drives | `testingDrivesOnly` |
-| No skill under `blocks/<block>/` is edited by us | existing `skills.lock.json` |
-| No `tests/` fixture directory enters the image | `imageCarriesNoFixtures` |
+| `entry` names a skill the package ships | `check "every flow.json parses, and its entry names a skill it ships"` |
+| A package declares whether it is a flow, and the console reads the declaration | `check "a package declares whether it is a flow, and the console reads the declaration"` |
+| `kind` is gone; `shelved` is `true` or absent | `check "every catalog entry has a flow.json and declares what it is"` |
+| A Surface carries its own system prompt | nothing checks it — **[convention]**, §3b |
+| Nothing in `testing/` computes — it drives | `check "nothing in testing/ computes — it drives, and the computing lives in packages/tools"` |
+| No skill under `blocks/<block>/` is edited by us | `check "a skill that changed says so in its version"` hashes every `SKILL.md` including `blocks/`, so an edit shows up as a changed sha with no version bump. It reports the edit; nothing REFUSES one — **[convention]** |
+| No `tests/` fixture directory enters the image | `check "no fixture directory enters the image"` |
+| No source file is over 700 lines | `check "no source file is larger than one subject usually is"` — `.md` is outside it, so the documents this repository ships are held by `checks/docs-current.mjs` instead |
+| The written record matches the delivered surface | `check "the written record matches the delivered surface, and no document outgrew the ceiling"` |
+
+The rows above used to name `flowShapeDeclared`, `testingDrivesOnly`, `imageCarriesNoFixtures`
+and "the agent-prompt check". Not one of those existed: three were function names from before
+the gate was split into `scripts/gate/checks/`, and the fourth named a check nobody ever wrote.
+The ruler was citing its own enforcement and the citations resolved to nothing — which is the
+defect `check "a gate check cited elsewhere is cited by a name that exists"` now refuses,
+this file included.

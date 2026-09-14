@@ -9,25 +9,44 @@
  * are silent, which is why this is a module and not a paragraph telling the next author to
  * remember.
  *
- * OUR OWN SURFACE IS ONE SET ACROSS BOTH DOORS, and that is a deliberate limitation rather
- * than an oversight. `zz.block_tool` records `(block_version_id, name)` — it has no column for
- * which door a tool was served on — so what `eval_block_surface('platform')` can answer is
- * "these are the tools this version of the platform served", which stays TRUE with two doors,
- * and not "this one is on the evaluation door", which it could not answer before either. The
- * day that distinction is worth having is the day it needs a migration, and that is a
- * different change from this one.
+ * OUR OWN SURFACE IS RECORDED PER DOOR, and the door is passed IN rather than sniffed out.
+ * This was one flat set of names for as long as `zz.block_tool` had no column for a door, and
+ * that made a surface diff answer NO CHANGE when ten tools moved from one door to the other —
+ * the largest surface change this platform has had, reported as nothing happening. Migration
+ * 052 adds the column; this map is what fills it.
+ *
+ * THE DOOR IS THE BUILDER'S TO STATE. There is nothing on an `McpServer` that says which path
+ * it will be mounted at — the mount happens in server.ts, long after the tools are registered —
+ * so the only honest source is the builder that is about to hand it over. A `door` argument is
+ * a thing TypeScript makes you supply; a heuristic over the server's `name` is a thing that
+ * quietly answers "core" for the door it has never heard of.
+ *
+ * THE WORDS ARE THE GATEWAY'S, NOT A SECOND VOCABULARY. `core` and `eval` are what
+ * `doorSurface()` answers for `/core/mcp` and `/eval/mcp`, which is also the left half of
+ * `zz.event.tool_key` — so the recorded surface and the recorded calls line up with no
+ * translation. checks/eval-door.mjs asserts that by comparing what a real build recorded here
+ * against what that function returns, so the two cannot drift on a rename.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { text } from "@zz/mcp-http";
 
 import { Refusal } from "./refusal.js";
 
-/** Every tool name either door has registered, in this process, since it started.
+/** Every tool name either door has registered, in this process, since it started, and WHICH
+ *  DOOR registered it.
  *
  * ACCUMULATED ACROSS DOORS AND ACROSS BUILDS. The doors are stateless, so a server is built
- * per request and this set is filled again on every one of them — a Set of names, so that
- * costs nothing and means the record does not depend on which door was asked first. */
-export const OWN_TOOLS = new Set<string>();
+ * per request and this map is filled again on every one of them — keyed by name, so that costs
+ * nothing and means the record does not depend on which door was asked first.
+ *
+ * A NAME BELONGS TO ONE DOOR, and a second registration of it overwrites the first rather than
+ * accumulating a list. That is not a guess about which door wins: a tool served by both doors
+ * is a defect this repository already refuses — checks/eval-door.mjs fails on any name in both
+ * tool lists, because the core door is in the required baseline plugin and a tool on both is a
+ * tool everybody has after a move that was supposed to take it away. So the case this would
+ * have to disambiguate cannot reach a green gate, and inventing a representation for it here
+ * would be a second answer to a question one check already settles. */
+export const OWN_TOOLS = new Map<string, string>();
 
 /**
  * A door that RECORDS what it registers and softens a thrown `Refusal` into our refusal shape.
@@ -49,15 +68,18 @@ export const OWN_TOOLS = new Set<string>();
  * signature, because TypeScript resolves the call against the declared type of the property,
  * not the value assigned to it at runtime.
  */
-export function recordingDoor(server: McpServer): McpServer {
+export function recordingDoor(server: McpServer, door: string): McpServer {
   type RegisterTool = typeof server.registerTool;
   const rawRegisterTool: RegisterTool = server.registerTool.bind(server);
   (server as unknown as { registerTool: RegisterTool }).registerTool = ((
     name: string, config: unknown, cb: (...a: unknown[]) => unknown,
   ) => {
-    // OUR OWN SURFACE, RECORDED AS IT IS DECLARED. Every other block is measured by probing
-    // it — we do not have to guess at ours, because this is the line that creates it.
-    OWN_TOOLS.add(name);
+    // OUR OWN SURFACE, RECORDED AS IT IS DECLARED, WITH THE DOOR IT IS DECLARED ON. Every
+    // other block is measured by probing it — we do not have to guess at ours, because this is
+    // the line that creates it. The door comes from the builder because this is the only
+    // moment both facts are in one place: after the mount, nothing knows which registrations
+    // belonged to which server.
+    OWN_TOOLS.set(name, door);
     return rawRegisterTool(name, config as never, (async (...args: unknown[]) => {
       try {
         return await cb(...args);

@@ -29,7 +29,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /** The paragraph a client is handed at `initialize`.
  *
- * `zz-backbone` is named rather than described because a name is what `skill_read` takes.
+ * `zz-platform` is named rather than described because a name is what `skill_read` takes.
  * It must stay the name of a skill that exists: if the skill is ever renamed, this text and
  * `session_whoami`'s `how_this_works` move together, and checks/orientation.mjs fails unless
  * both point at a SKILL.md on disk.
@@ -43,7 +43,7 @@ const CORE_INSTRUCTIONS =
   "before anything downstream of them may be written, and what an initiative settled " +
   "outlives it in a knowledge store the next one reads.\n\n" +
   "START HERE: call session_whoami — it answers today's date and which team you are acting " +
-  'for — then skill_read("zz-backbone") before your first write. The backbone carries the ' +
+  'for — then skill_read("zz-platform") before your first write. The platform skill carries the ' +
   "gates, the frontmatter every document needs, and how the store is laid out. Guessing " +
   "those costs a rewrite; reading them costs one call.\n\n" +
   "The nouns, one line each:\n" +

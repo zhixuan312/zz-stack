@@ -12,7 +12,7 @@
 # — which the root target does not, because buildClientPackage generates it per caller. A case
 # here may therefore depend on the router; none currently does.
 #
-# Provenance — skills/zz-backbone/SKILL.md, "Gates and the envelope", which states both
+# Provenance — skills/zz-platform/SKILL.md, "Gates and the envelope", which states both
 #   halves of the rule and both are load-bearing:
 #     "A gate is not passed until it is recorded: the moment they agree, call zz-core's
 #     `document_approve(path)` in that same turn, before moving on."
@@ -38,7 +38,12 @@
 #   MESSAGE only, and any string quoted in the prompt is free to the baseline arm.
 #
 # Expected Δ (with-plugin minus no-plugin):
-#   backbone-skill-fired ~1.0 — the skill does not exist in the baseline arm.
+#   platform-skill-fired ~1.0 — the skill does not exist in the baseline arm.
+#     RENAMED, not replaced: through the 2026-09-13 frozen run this grader was
+#     `backbone-skill-fired` and matched the platform spine skill under its former name.
+#     Task I-26 renamed that skill, so the grader and its `tool:` followed. A diff of the
+#     next run against the frozen one shows a grader that vanished beside one that
+#     appeared; it is the same measurement. CHANGELOG.md carries the former spelling.
 #   names-the-approve-call ~0.9 — `document_approve(` as the platform's own call, alongside
 #                              `document_revise` / `document_present`. Plugin vocabulary.
 #   platform-writes-the-envelope ~0.6 — the weakest here, and kept deliberately: a baseline
@@ -58,9 +63,9 @@ execution:
     next step is.
   max_turns: 15
 graders:
-  - name: backbone-skill-fired
+  - name: platform-skill-fired
     type: tool_used
-    tool: Skill(zz-backbone)
+    tool: Skill(zz-platform)
   - name: names-the-approve-call
     type: regex
     pattern: 'document_approve\(|document_present|initiative_status'

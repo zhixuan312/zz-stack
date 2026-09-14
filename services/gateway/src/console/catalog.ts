@@ -165,7 +165,7 @@ export function mountCatalog(app: Express): void {
     const [ran, released, blocks] = await Promise.all([
       // EVERY SKILL THE STORE HAS SEEN, whatever kind it is. The flows route filtered
       // `kind = 'flow_step'`, which was right when the only subject was a flow's stages and
-      // is wrong now: `zz` ships common skills (zz-backbone) and a block ships block_usage
+      // is wrong now: `zz` ships common skills (zz-platform) and a block ships block_usage
       // skills, and both are skills of a plugin here. A filter on kind would have shown them
       // all as never run.
       db.query(`select s.name,
@@ -197,7 +197,8 @@ export function mountCatalog(app: Express): void {
       db.query(`select p.name as plugin, p.origin, pv.version, pv.digest, pv.cases_digest,
                        (select count(*) from zz.eval ev where ev.plugin_version_id = pv.id) as evals,
                        to_char(r.ran_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')     as ran_at,
-                       r.cases_digest as run_cases, r.n_cases, r.mean_delta
+                       r.cases_digest as run_cases, r.n_cases, r.mean_delta,
+                       r.errored_runs, r.partial
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id
                   left join lateral (
@@ -205,6 +206,48 @@ export function mountCatalog(app: Express): void {
                            (select avg((c->>'delta')::numeric)
                               from jsonb_array_elements(cr.result->'cases') c
                              where jsonb_typeof(c->'delta') = 'number')                      as mean_delta,
+                           -- HOW MUCH OF THE SUITE ACTUALLY RAN, beside the delta rather than
+                           -- anywhere else. A mean taken over a suite that half fell over is
+                           -- not a smaller measurement, it is a different one, and a page that
+                           -- shows the number without the caveat invites exactly the reading
+                           -- the caveat exists to prevent. zz-core learned this the expensive
+                           -- way: errored_runs was counted after the skip that drops an
+                           -- unreadable case, so a run in which nine of thirty-six runs died
+                           -- reported a clean suite. Fixing it there and not here would have
+                           -- left the same wrong answer on the surface people actually read.
+                           --
+                           -- NOT A SECOND PARSER, which is the rule this file already keeps
+                           -- for the delta. Neither field is derived: the error key is a key the CLI
+                           -- either wrote on a run or did not, and partial is its own
+                           -- top-level flag. The typeof guards match the ones above for the
+                           -- same reason they exist there — result is whatever the CLI
+                           -- printed, and a shape that moved must leave the row without a
+                           -- number rather than throwing at every reader of the page.
+                           -- THE TYPE GUARDS ARE INSIDE THE CALLS, not in a where clause, and
+                           -- the reason is narrower than it first looks. jsonb_each on a
+                           -- non-object raises 22023 -- that much is certain, and a case whose
+                           -- arms came back as an array is exactly the payload that would do
+                           -- it. Written as where jsonb_typeof(c->'arms') = 'object' the
+                           -- query nonetheless survives, because the planner pushes that qual
+                           -- below the function expansion and never makes the call. Measured on
+                           -- PostgreSQL 17.10, against both an all-bad row and a mixed one.
+                           --
+                           -- So this is not a bug fix. It is a refusal to depend on a planner
+                           -- decision for correctness: nothing in the query says the qual must
+                           -- be pushed down, and a future plan that evaluates the join first
+                           -- takes the whole catalogue page down with a 22023 for one malformed
+                           -- row. The CASE form cannot be planned into throwing. It costs a
+                           -- line and removes the question.
+                           (select count(*)
+                              from jsonb_array_elements(cr.result->'cases') c
+                              cross join lateral jsonb_each(
+                                case when jsonb_typeof(c->'arms') = 'object'
+                                     then c->'arms' else '{}'::jsonb end) arm
+                              cross join lateral jsonb_array_elements(
+                                case when jsonb_typeof(arm.value) = 'array'
+                                     then arm.value else '[]'::jsonb end) run
+                             where nullif(run->>'error', '') is not null)                    as errored_runs,
+                           (cr.result->>'partial' = 'true')                                  as partial,
                            -- ran_at IS LAST IN THIS SELECT LIST, and it has to stay there.
                            -- The gate reads every timestamp column and asks whether anything
                            -- writes one it guards on; its test for "guarded" is a comparison
@@ -304,7 +347,27 @@ export function mountCatalog(app: Express): void {
         eval: rel?.ran_at
           ? { ranAt: rel.ran_at as string, casesDigest: (rel.run_cases as string) || null,
               cases: +rel.n_cases,
-              meanDelta: rel.mean_delta === null ? null : +rel.mean_delta }
+              meanDelta: rel.mean_delta === null ? null : +rel.mean_delta,
+              // TRAVELS WITH THE DELTA, never optional. Dropped from the object when zero, a
+              // caller reading this JSON cannot tell "no runs died" from "this build of the
+              // page does not report that", and the second is the reading that gets somebody to
+              // trust a number they should not.
+              //
+              // A BARE UNARY PLUS, deliberately, and the same one `cases` above uses. The rule
+              // console-nulls.mjs enforces is that an aggregate which can be SQL null must not
+              // reach JSON through `+`, because `+null` is 0 and a group nothing measured then
+              // reports as measured. `errored_runs` is a count(*), not an avg: it is null only
+              // when the lateral matched no run at all, and that case never reaches here
+              // because `rel?.ran_at` has already sent it to `eval: null`. Guarding it anyway
+              // would read as a null this branch can produce, and it cannot. `mean_delta` two
+              // lines up is the field that genuinely needs the guard — avg over no matching row
+              // is null with the run right there.
+              erroredRuns: +rel.errored_runs,
+              // Absent collapses to false, matching parseCaseRun's `root?.partial === true`
+              // exactly. Two surfaces reading one payload must not disagree about what a
+              // missing flag means, and this flag is one every run the CLI has ever written
+              // carries.
+              partial: rel.partial === true }
           : null,
       };
     });

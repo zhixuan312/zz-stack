@@ -143,7 +143,7 @@ for id in $IDS; do
   # platform attribute everything after it to this step and this version. A prompt that pasted
   # the skill's text would exercise the same words and record them against nothing.
   if [ -n "$CONTINUE" ]; then
-    PROMPT="Call the zz-core tool skill_read, passing zz-backbone as its name argument, and then
+    PROMPT="Call the zz-core tool skill_read, passing zz-platform as its name argument, and then
 again passing ${STEP}. Follow those skills exactly — they are the method.
 
 You are continuing the initiative ${CONTINUE}. Read what is already in it first.
@@ -157,7 +157,7 @@ ${BRIEF}
 Do only what ${STEP} says to do, and stop when its document is written. Do not run any later
 stage of the flow."
   else
-    PROMPT="Call the zz-core tool skill_read, passing zz-backbone as its name argument, and then
+    PROMPT="Call the zz-core tool skill_read, passing zz-platform as its name argument, and then
 again passing ${STEP}. Follow those skills exactly — they are the method.
 
 A stakeholder has sent you this, and it is all you have. There is nobody to ask: work from

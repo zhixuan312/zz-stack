@@ -92,14 +92,31 @@ interface PluginCases {
  *  THAT RUN IS A ROW THIS PLATFORM CAN ACTUALLY HOLD, which it was not until `worthRecording`
  *  below replaced a `!read.count` guard at the recording door. A path built for a payload the
  *  only writer refuses is not a path. */
-const EMPTY = (reason: string, cost: RunCost = NO_COST): PluginCases => ({
+const EMPTY = (reason: string, facts: RunFacts = NO_FACTS): PluginCases => ({
   count: 0, mean_delta: null, last_run: null, cases_digest: "", sufficient: false, cases: [],
-  errored_runs: 0, partial: false, cost_usd: cost.cost_usd, judge_cost_usd: cost.judge_cost_usd,
+  errored_runs: facts.errored_runs, partial: facts.partial,
+  cost_usd: facts.cost_usd, judge_cost_usd: facts.judge_cost_usd,
   reason,
 });
 
-interface RunCost { cost_usd: number | null; judge_cost_usd: number | null; }
-const NO_COST: RunCost = { cost_usd: null, judge_cost_usd: null };
+/** WHAT THE RUN IS, as against what its cases scored — the four facts that are true of a
+ *  payload whether or not a single delta can be read out of it.
+ *
+ *  It carried the cost alone at first, and that was the bug rather than an omission. The
+ *  error count was moved above the delta skip so a case with no delta would still contribute
+ *  its dead runs, and the number it produced was then dropped on the next line, because the
+ *  `EMPTY` the frozen run returns through hardcoded `errored_runs: 0` and `partial: false`.
+ *  Nine runs that the host slept through still reported a clean suite. So the fields travel
+ *  together: a fact about the RUN cannot be conditional on a case being readable, and
+ *  `partial` — the CLI's own "this suite did not finish" — is exactly the same kind of fact
+ *  as the cost, which is why it sits here and not beside the scores. */
+interface RunFacts {
+  cost_usd: number | null;
+  judge_cost_usd: number | null;
+  errored_runs: number;
+  partial: boolean;
+}
+const NO_FACTS: RunFacts = { cost_usd: null, judge_cost_usd: null, errored_runs: 0, partial: false };
 
 /** Whether a parsed payload is worth storing at all.
  *
@@ -182,10 +199,15 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
   const rootCost = root && typeof root.costUsd === "number" ? root.costUsd : null;
   const raw = root && Array.isArray(root.cases) ? root.cases : null;
   if (!raw) {
+    // `partial` is read here too, and `errored_runs` deliberately is not. Both are run facts,
+    // but the per-run errors live inside the `cases` array this branch has just established is
+    // missing, so 0 is the honest count rather than a hardcoded one — there are no runs to
+    // count. `partial` is at the top level and readable, so reading it costs a field access
+    // and saying "the suite finished" about a suite that did not would be a lie.
     return EMPTY(
       "the recorded result has no `cases` array — `claude plugin eval --json` has changed shape, " +
       "and this reports that rather than guessing a delta from it",
-      { cost_usd: rootCost, judge_cost_usd: null });
+      { cost_usd: rootCost, judge_cost_usd: null, errored_runs: 0, partial: root?.partial === true });
   }
 
   const cases: PluginCase[] = [];
@@ -249,11 +271,15 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
     if (caseCost !== null) summedCost = (summedCost ?? 0) + caseCost;
     if (caseJudge !== null) summedJudge = (summedJudge ?? 0) + caseJudge;
 
-    if (delta === null) continue;
-
-    // A run that errored or timed out scored 0 and is already inside the arm means above.
-    // Counted so the reader can see how much of the suite actually ran.
+    // COUNTED ABOVE THE DELTA SKIP, for the same reason the cost is. Below it, a case that
+    // cannot be parsed contributes no errors — so the frozen 2.1.269 run, in which NINE runs
+    // died when the host slept through them, reported `errored_runs: 0`. The field exists
+    // precisely so a half-fallen-over suite cannot be read as a measurement, and it said the
+    // suite was clean. A run that errored is a fact about the run; a delta is a fact about the
+    // case, and the second being absent does not make the first untrue.
     for (const r of armRuns) if (r.error) errored += 1;
+
+    if (delta === null) continue;
 
     cases.push({
       name: typeof c.name === "string" ? c.name : "(unnamed)",
@@ -271,10 +297,19 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
   // frozen run the two agree to the cent (4.266979 against 4.266979), which is why either is
   // trusted; the sum is the fallback rather than the answer because the top level is what the
   // CLI itself declares the run cost.
-  const runCost: RunCost = { cost_usd: rootCost ?? summedCost, judge_cost_usd: summedJudge };
+  //
+  // BUILT ONCE AND USED BY BOTH RETURNS BELOW, which is what stops the two from drifting: the
+  // readable path and the unreadable one report the same four run facts, and a fact can only
+  // be dropped from one of them by being deleted from here.
+  const facts: RunFacts = {
+    cost_usd: rootCost ?? summedCost,
+    judge_cost_usd: summedJudge,
+    errored_runs: errored,
+    partial: root?.partial === true,
+  };
 
   if (!cases.length) {
-    return EMPTY("the recorded result carries no case this module could read a delta from", runCost);
+    return EMPTY("the recorded result carries no case this module could read a delta from", facts);
   }
   return {
     count: cases.length,
@@ -284,9 +319,6 @@ export function parseCaseRun(result: unknown, ranAt: string, casesDigest: string
     // ONE case is enough. Cases need no history, which is the whole reason this half exists.
     sufficient: cases.length >= 1,
     cases,
-    errored_runs: errored,
-    partial: root?.partial === true,
-    cost_usd: runCost.cost_usd,
-    judge_cost_usd: runCost.judge_cost_usd,
+    ...facts,
   };
 }

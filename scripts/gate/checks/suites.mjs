@@ -303,3 +303,6 @@ check("the evaluation door speaks four nouns, three names are deliberately untou
 
 check("seven skills ship from the plugin that owns them, and their commands follow",
       runsCheck("skill-homes.mjs"));
+
+check("the two misnamed core skills are renamed, every caller moved, and an old step still resolves",
+      runsCheck("skill-renames.mjs"));

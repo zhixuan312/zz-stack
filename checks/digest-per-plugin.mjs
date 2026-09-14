@@ -7,10 +7,13 @@
 // running byte-identical code have to agree on.
 import { digestOf, digestOfPlugin } from "../services/gateway/dist/package/describe.js";
 
+// SYNTHETIC: these two paths are fields of an in-memory package, never opened — the digest is
+// computed over the object. `skill-renames.mjs` asserts that every skills/<name>/SKILL.md
+// literal in a script resolves on disk, and these are the exception it makes you declare.
 const base = () => ({
   name: "demo", description: "a demo plugin", required: false,
   servers: [{ name: "zz-core", url: "http://x/core/mcp" }],
-  files: [{ path: "skills/a/SKILL.md", content: "hello" }],
+  files: [{ path: "skills/a/SKILL.md", content: "hello" }],   // SYNTHETIC:
 });
 const fail = (m) => { console.error("FAIL: " + m); process.exit(1); };
 
@@ -23,7 +26,7 @@ for (const [what, mutate] of [
   ["description",  (p) => { p.description += "!"; }],
   ["required",     (p) => { p.required = true; }],
   ["server name",  (p) => { p.servers[0].name = "other"; }],
-  ["file path",    (p) => { p.files[0].path = "skills/b/SKILL.md"; }],
+  ["file path",    (p) => { p.files[0].path = "skills/b/SKILL.md"; }],   // SYNTHETIC:
   ["file content", (p) => { p.files[0].content = "goodbye"; }],
 ]) {
   const p = base(); mutate(p);

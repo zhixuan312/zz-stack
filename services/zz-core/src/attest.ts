@@ -18,7 +18,7 @@ const CHANGED = new Set(["document_write", "document_patch", "document_revise"])
 
 /** Was this document FETCHED BACK since the last time its content changed?
  *
- * `zz-backbone` asks for `document_present` before a gate: a person approves bytes, and the
+ * `zz-platform` asks for `document_present` before a gate: a person approves bytes, and the
  * fetch is the only part of "I put it in front of them" the platform can see. It also says,
  * in as many words, that no approval is refused over it — the record makes the gap visible
  * and does not close it. That stays true: this returns a fact, `document_approve` reports the fact,

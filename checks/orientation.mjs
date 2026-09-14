@@ -14,11 +14,13 @@
 //     source the plan told an implementer to write would have matched the check the plan told
 //     them to run and shipped a handshake with no instructions in it.
 //   - Its only content assertions were `length >= 80` and /zz-platform/. Eighty characters of
-//     anything passes the first. The second names a skill THAT DOES NOT EXIST: `zz-platform`
-//     is DESIGN-platform.md's phase-6 rename of `zz-backbone` (line 302), this is phase 4, and
-//     `ls skills/` has no such directory. A door whose one orientation pointer names an
-//     unloadable skill is worse than a door that says nothing, and the plan's check REQUIRED
-//     that pointer.
+//     anything passes the first. The second named a skill THAT DID NOT EXIST WHEN THIS WAS
+//     WRITTEN: `zz-platform` was DESIGN-platform.md's phase-6 rename of the skill then called
+//     `zz-backbone` (line 302), this is phase 4, and `ls skills/` had no such directory. A
+//     door whose one orientation pointer names an unloadable skill is worse than a door that
+//     says nothing, and the plan's check REQUIRED that pointer. Phase 6 (task I-26) has since
+//     landed the rename, so the name resolves now — the clauses below assert EXISTENCE rather
+//     than a spelling, which is why they kept working across it.
 //   - Its identity-tool section asserted that three names appear somewhere in three files.
 //     All three already did before this task started. That clause could never have gone red.
 //
@@ -198,8 +200,9 @@ if (coreTools.has("session_whoami")) {
                 "that lives only in the handshake does not apply there.");
     }
     // The skill the pointer names has to be one that can be loaded. This is where the plan's
-    // `zz-platform` would have been caught: it is a phase-6 rename of `zz-backbone` and no
-    // such skill is on disk today.
+    // `zz-platform` would have been caught when this was written: it was a phase-6 rename of
+    // `zz-backbone` and no such skill was on disk then. Phase 6 has since landed it, and the
+    // clause is unchanged — it asks whether the named skill exists, not what it is called.
     const named = /skill_read\(\s*["']([\w-]+)["']\s*\)/.exec(pointer);
     if (pointer && !named) {
       fail.push(`how_this_works does not name a skill as skill_read("…"): ${JSON.stringify(pointer)}`);
@@ -326,9 +329,10 @@ for (const { name: door, client, tools, nouns, skill, skillAt, mustName } of DOO
       fail.push(`the ${door} door's first ${HEAD} characters do not name ${skill}, the skill ` +
                 "that orients it — a client that keeps only those is told where nothing is");
     }
-    // AND THE SKILL HAS TO EXIST. This is the clause the plan's own wording fails: it
-    // required the text to name `zz-platform`, which is DESIGN-platform.md's phase-6 rename
-    // of `zz-backbone` and is on disk nowhere.
+    // AND THE SKILL HAS TO EXIST. This is the clause the plan's own wording failed: it
+    // required the text to name `zz-platform`, which was DESIGN-platform.md's phase-6 rename
+    // of `zz-backbone` and was on disk nowhere at phase 4. Phase 6 landed it; the clause is
+    // still about existence and not about the spelling.
     const where = skillAt(skill);
     if (!where.some((p) => existsSync(p))) {
       fail.push(`the ${door} door points at "${skill}", and no SKILL.md for it exists ` +

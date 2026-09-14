@@ -14,10 +14,10 @@
 // Hence the two halves below: the four are asserted at `skills/`, AND asserted absent from
 // the catalog path, so an implementation that hedged by writing both is red.
 //
-// zz-backbone and zz-knowledge are named here at their CURRENT names. Task I-26 renames them
-// to zz-platform and zz-handover and must edit the line below when it does; naming the
-// post-rename names here would register a check that is red until an unrelated task lands,
-// which is how a gate teaches people to read past it.
+// zz-platform and zz-handover are named here at their CURRENT names. They were zz-backbone
+// and zz-knowledge until task I-26 renamed them, and this list was edited in that same
+// change — a list naming a skill before its rename lands registers a check that is red until
+// an unrelated task fixes it, which is how a gate teaches people to read past it.
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 const fail = [];
 
@@ -37,7 +37,7 @@ const MANIFEST = {
 const ships = (p) => (existsSync(SOURCE[p]) ? readdirSync(SOURCE[p]) : []);
 
 const expect = {
-  "zz-core":   ["zz-backbone", "zz-knowledge", "zz-deck", "zz-tldr", "zz-breakout", "zz-authoring"],
+  "zz-core":   ["zz-platform", "zz-handover", "zz-deck", "zz-tldr", "zz-breakout", "zz-authoring"],
   "zz-access": ["zz-access", "zz-admin", "zz-doctor", "zz-update", "zz-migrate"],
 };
 const gone = {

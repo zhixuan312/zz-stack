@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 0.3
+version: 0.4
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into rulers.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.md, which is gated — judging does not start until somebody approves it."
 ---
@@ -110,7 +110,7 @@ spelled exactly:
 
 Then `document_present` it and put what comes back in front of the person. They are approving this
 document, not your account of it. Record their agreement with `document_approve` the moment it arrives,
-under their name, in the same turn — `zz-backbone` carries that rule and it holds here.
+under their name, in the same turn — `zz-platform` carries that rule and it holds here.
 
 ## Pitfalls
 

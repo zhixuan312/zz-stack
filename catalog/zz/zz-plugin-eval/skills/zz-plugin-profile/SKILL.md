@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.4
+version: 0.5
 description: Stage 2 of plugin evaluation. Compute the two evidence blocks — traces from real runs and cases from the ablation suite — each with its own sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -85,11 +85,27 @@ repository that is `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-
 `marketplace/zz-core` — not the `@zz-stack` form, and above all **not the repository root.**
 
 The root resolves too, which is the trap. It resolves ALL FOUR plugins at once and runs every
-case in the repository as a single suite: measured 2026-09-13, that ran for two hours and twenty
-minutes over twelve cases, never reached a single baseline arm, and had to be killed — and what
-it wrote was `partial: true` carrying with-arm scores only, which reads like a suite where the
-plugin helped with nothing. 89MB of repository against 144KB of built plugin. Point it at one
-plugin.
+case in the repository as a single suite: measured 2026-09-13, twelve cases over four plugins,
+with `audit-catches-an-unverified-claim` discovered twice — once under `catalog/` and once under
+`marketplace/` — never reaching a single baseline arm before it was killed, and what it wrote was
+`partial: true` carrying with-arm scores only, which reads like a suite where the plugin helped
+with nothing. 89MB of repository against 144KB of built plugin. Point it at one plugin.
+
+**Keep the host awake for the whole run, lid open and on mains.** That same 2026-09-13 run is on
+disk as two hours and twenty minutes, and two hours and thirteen of them were the laptop asleep:
+the lid was closed on battery at 18:30:01 and not opened again until 21:15:49, and in between
+macOS dark-woke it for two to forty-five seconds every sixteen minutes or so. Nine runs launched
+inside those windows, made no API call at all, and were killed at the next one. `caffeinate -i` does
+NOT cover this — no caffeinate assertion survives a closed lid.
+
+**What a slept-through run looks like in the JSON**, because it does not look like an error:
+`turns: 0`, an agent cost of exactly 0 (`costUsd` minus `judgeCostUsd`), and `durationSeconds`
+far past the case's own `timeoutSeconds` — 974 and 6204 against a 300s timeout — with all three
+runs of a case sharing a duration to the second. The timeout message is the symptom and raising
+the timeout does nothing: the clock the harness compares against ran while the process did not.
+Judges still run on the empty transcript, so one of those runs scored **0.25** on an LLM grader
+having spent every cent it cost on grading nothing. A run the host slept through can look like a
+weak case, or like a partial success. It is neither: it is a case that did not run.
 
 The other way to get it wrong is quieter: point it somewhere with no `evals/` below it and it
 reports "no eval cases found", which reads exactly like a plugin that has none.

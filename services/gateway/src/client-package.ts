@@ -96,7 +96,7 @@ export interface InstalledFlow {
  * and the branch it guarded had one live side. Keeping the machinery would have been a
  * matrix with one cell. */
 
-/** The platform's OWN skills — zz-backbone, zz-distil, zz-evolve, zz-kb-usage,
+/** The platform's OWN skills — zz-platform, zz-distil, zz-evolve, zz-kb-usage,
  * blocks-capabilities. A tree of their own, beside the catalog rather than in it,
  * because they are true wherever this runs and belong to nobody's flow.
  *
@@ -333,7 +333,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       // router in the package. Pushing a second copy in the hermes branch put two entries at
       // the same tar path, and the one that won on extraction was the wrong one.
       // MCP *AND* SKILLS. This carried the router and nothing else, so the five
-      // skills in `/skills` — the platform's own, zz-backbone among them, which
+      // skills in `/skills` — the platform's own, zz-platform among them, which
       // has been read 194 times through skill_read — shipped in no plugin at all.
       // They were reachable over MCP and installable by nobody. This is the one
       // plugin everybody must have, and what we are is our MCP and our method.

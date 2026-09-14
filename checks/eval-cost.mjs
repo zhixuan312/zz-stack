@@ -78,6 +78,62 @@ if (measuredZero.cost_usd !== 0) {
   fail.push(`a measured zero cost became ${JSON.stringify(measuredZero.cost_usd)}`);
 }
 
+// ── EVERY RUN FACT SURVIVES AN UNREADABLE PAYLOAD, NOT JUST THE COST ──────────────────────
+//
+// The cost was carried past the delta skip first, and the argument for carrying it applies
+// word for word to the other three facts about the run: what it cost to grade, how many of
+// its runs died, and whether the CLI itself says the suite finished. The frozen 2.1.269 run
+// is the payload that proves it — one arm, so no delta, so no readable case, so it returned
+// through the empty path, which hardcoded `errored_runs: 0` and `partial: false`. Nine runs
+// timed out and three were interrupted, the CLI set `partial: true, partialReason:
+// "interrupted"`, and the platform reported a clean, complete suite that cost $4.27.
+//
+// So the fixture below is that payload's shape: errors and a partial flag on a run no delta
+// can be read from. A check that only fed the readable path would have stayed green through
+// the entire defect, because the readable path always reported both correctly.
+const unreadable = () => ({
+  costUsd: 0.5, partial: true, partialReason: "interrupted",
+  cases: [{
+    name: "a-case", runsPerCase: 3,
+    aggregates: { score: 0, passRate: 0 },              // no scoreWithout, no delta
+    arms: {
+      with: [{ score: 0, costUsd: 0, judgeCostUsd: 0, turns: 0, error: "timed out after 300s" },
+             { score: 0, costUsd: 0, judgeCostUsd: 0, turns: 0, error: "interrupted" },
+             { score: 1, costUsd: 0.3, judgeCostUsd: 0.02 }],
+    },
+  }],
+});
+const dead = parseCaseRun(unreadable(), "2026-09-13T11:02:43Z", "d");
+if (dead.count !== 0) {
+  fail.push(`the fixture is meant to be unreadable and ${dead.count} cases parsed — ` +
+            "it no longer exercises the path it was written for");
+}
+if (dead.errored_runs !== 2) {
+  fail.push(`a run with no readable case reports errored_runs: ${dead.errored_runs}, not 2 — ` +
+            "a suite that half fell over reads as a clean one");
+}
+if (dead.partial !== true) {
+  fail.push("a run the CLI marked partial reports partial: false once its cases stop parsing");
+}
+if (!near(dead.cost_usd, 0.5)) fail.push(`the unreadable path lost the run cost: ${dead.cost_usd}`);
+if (!near(dead.judge_cost_usd, 0.02)) {
+  fail.push(`the unreadable path lost the judge cost: ${dead.judge_cost_usd}`);
+}
+// CONTROL: none of the four is hardcoded the other way. The same assertions on a clean,
+// readable payload must report a clean, readable run — otherwise `errored_runs = 2` could be
+// satisfied by a constant and `partial = true` by never reading the flag at all.
+if (paid.errored_runs !== 0) fail.push(`a clean run reports errored_runs: ${paid.errored_runs}`);
+if (paid.partial !== false) fail.push("a run the CLI did not mark partial reports partial: true");
+// And the error count is per RUN, not per case: the readable path counts them too, or a
+// suite whose deltas happen to parse hides its dead runs instead.
+const halfDead = withCost();
+halfDead.cases[0].arms.with[0].error = "timed out after 300s";
+const scored = parseCaseRun(halfDead, "2026-09-13T11:02:43Z", "d");
+if (scored.count !== 1 || scored.errored_runs !== 1) {
+  fail.push(`a scored case with one dead run reports ${scored.errored_runs} errors over ` +
+            `${scored.count} cases, not 1 over 1`);
+}
+
 // The raw payload keeps being stored whole — parsing more of it changes nothing there.
 const sql = readFileSync("services/gateway/migrations/047_plugin_eval.sql", "utf8");
 if (!/result\s+jsonb\s+not\s+null/.test(sql)) {
@@ -147,11 +203,63 @@ const returned = (src) => {
 };
 const answer = returned(door);
 if (!answer) fail.push("case_record no longer answers with a json object");
-for (const f of ["cost_usd", "judge_cost_usd"]) {
+// The money AND how much of the suite actually ran. `errored_runs` and `partial` are on this
+// list for the same reason the costs are: the caller has just spent it, and this is the last
+// moment re-running is cheap. Scoped to the returned object, not the file — the comment above
+// the return names both fields, and a whole-file grep would pass on the comment alone.
+for (const f of ["cost_usd", "judge_cost_usd", "errored_runs", "partial"]) {
   if (!answer.includes(f)) fail.push(`case_record does not return ${f}`);
+}
+if (!/warning\s*:/.test(answer)) {
+  fail.push("case_record reports a half-dead suite without saying so");
 }
 if (!/note\s*:/.test(answer)) {
   fail.push("case_record answers a stored-but-unreadable run with bare counts");
+}
+
+// ── AND THE CONSOLE SAYS IT TOO, BESIDE THE DELTA IT SHOWS ────────────────────────────────
+//
+// Fixing the count in zz-core and stopping there would have left the wrong answer on the
+// surface people actually read: the catalogue page runs its own SQL over the same payload and
+// showed a mean delta with nothing next to it. A suite in which twelve of thirty-six runs died
+// rendered exactly like a clean one.
+const cat = strip("x.ts", readFileSync("services/gateway/src/console/catalog.ts", "utf8"));
+const evalObj = (() => {
+  const at = cat.indexOf("eval: rel?.ran_at");
+  if (at < 0) return "";
+  const open = cat.indexOf("{", at);
+  let depth = 0;
+  for (let i = open; i < cat.length; i += 1) {
+    if (cat[i] === "{") depth += 1;
+    else if (cat[i] === "}" && (depth -= 1) === 0) return cat.slice(open, i + 1);
+  }
+  return "";
+})();
+if (!evalObj) {
+  fail.push("the catalogue page no longer projects an `eval` object — this check reads nothing");
+} else {
+  for (const f of ["erroredRuns", "partial"]) {
+    if (!evalObj.includes(f)) {
+      fail.push(`the console shows a delta without ${f}; a suite that half fell over renders ` +
+                "as a clean one");
+    }
+  }
+  // The guard that must stay, on the one field of the four that can genuinely be SQL null:
+  // avg over no matching row returns null with the run row right there, and `+null` is 0.
+  if (!/meanDelta:\s*rel\.mean_delta\s*===\s*null/.test(evalObj)) {
+    fail.push("meanDelta lost its null guard — an unmeasurable delta renders as a confident 0");
+  }
+}
+// A LATERAL THAT COULD BE PLANNED INTO THROWING. jsonb_each on a non-object raises 22023, and
+// `where jsonb_typeof(...) = 'object'` only saves the page for as long as the planner pushes
+// that qual below the function expansion — which it does today and is nowhere obliged to do.
+// One malformed row would take the whole catalogue page down. The CASE form cannot be planned
+// into throwing, so every jsonb expansion in this file is required to carry one.
+for (const m of cat.matchAll(/cross join lateral\s+(jsonb_each|jsonb_array_elements)\s*\(([^)]*)/g)) {
+  if (!/case\s+when\s+jsonb_typeof/.test(m[2])) {
+    fail.push(`console/catalog.ts expands ${m[1]} without an inline jsonb_typeof CASE guard — ` +
+              "a malformed payload can be planned into a 22023 that takes the page down");
+  }
 }
 
 // ── NO SPEND CEILING ANYWHERE THE PLATFORM CONTROLS (FR-8a) ───────────────────────────────

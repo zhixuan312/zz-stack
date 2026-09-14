@@ -63,13 +63,13 @@ export function registerSkillTools(server: McpServer): void {
         team: active,
         // WHERE THE RULES ARE, said to everybody, because nothing else says it.
         //
-        // A flow's entry skill tells you to read the backbone first. An agent that connected
+        // A flow's entry skill tells you to read zz-platform first. An agent that connected
         // this server WITHOUT a flow — a person wiring zz-core into Claude Code, an operator
         // on the admin door — is told by nothing at all, and then works out the gates, the
         // envelope and the store from error messages. The spine is one call away and its
         // name is not guessable, so the one tool every session already calls carries the
         // pointer.
-        how_this_works: 'skill_read("zz-backbone") — gates, the envelope, the artifact store, ' +
+        how_this_works: 'skill_read("zz-platform") — gates, the envelope, the artifact store, ' +
                         "and when a building block is checked. Read it before your first write.",
         // The clock, because the alternative is a guess and the guess has been wrong.
         //
@@ -379,7 +379,7 @@ export function registerSkillTools(server: McpServer): void {
    * APPENDED, never substituted, and the difference is the whole design. A replacement can
    * quietly delete a rule the platform depends on; an addition cannot. So the shelf's text
    * arrives first and entire, the team's follows under a heading that says whose it is, and
-   * no overlay can shadow zz-backbone or a stage of the flow — not by policy, but because
+   * no overlay can shadow zz-platform or a stage of the flow — not by policy, but because
    * substitution is not a thing this can express.
    *
    * Structure stays the platform's. flow.json — documents, gate, requires, closing,

@@ -1,7 +1,7 @@
 ---
 name: sdlc-flow
-version: 1.5
-description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-knowledge. The entry point for the SDLC flow.
+version: 1.6
+description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
 
@@ -122,7 +122,7 @@ is not yours.
 ### After review · the close is an act, not a stage
 
 `sdlc-review` is the flow's last STAGE. There is no stage after it — you were present for
-the whole initiative, and closing it is yours to do directly, the way `zz-backbone` describes
+the whole initiative, and closing it is yours to do directly, the way `zz-platform` describes
 every close: one `initiative_close()` call, never a block's own close. Say the one thing you know —
 `initiative_close(initiative, "finished", accepted_by: "<their name>")` when somebody accepted it,
 `initiative_close(initiative, "finished", no_signoff_reason: "<one line>")` when nobody signed off, or
@@ -138,7 +138,7 @@ agreement written before any code existed. Ask for the approval the way stage 4 
 plan's, and write it down in the same turn.
 
 One step does follow, and it is the platform's rather than this flow's: `initiative_status`
-returns `action: handover` until `handover.md` exists and is approved, and `zz-knowledge` is
+returns `action: handover` until `handover.md` exists and is approved, and `zz-handover` is
 what writes it, cold and afterwards. So the close ends DELIVERY, not the cycle — report the
 initiative closed and say the handover is what remains.
 
@@ -151,7 +151,7 @@ zz-core, which arrives with the required `zz` plugin:
 |---|---|---|
 | `sdlc-recall` | `knowledge_search(query, type, initiative, flow, limit)` | Team-scoped, returns results with provenance — status, approvals, outcome, path |
 
-Writing to that journal is not a stage of this flow at all. Once you close, `zz-knowledge`
+Writing to that journal is not a stage of this flow at all. Once you close, `zz-handover`
 reads the closed initiative — cold, after delivery is over — and mints what generalises with
 `knowledge_add(title, type, body, evidence, tags, scope)`. `scope` decides the shelf:
 `platform` for a fact that holds for anyone touching a registry entry, `team` for one that is
@@ -166,7 +166,7 @@ has. This is the whole reason recall is not local — the next initiative that s
 **A node with no evidence is refused, and that is correct.** `knowledge_add` will not mint an
 entry that cannot point at the initiative it came from — without it the entry is an opinion.
 
-Neither `sdlc-recall` nor `zz-knowledge` is this flow's to reimplement. Storage, indexing and
+Neither `sdlc-recall` nor `zz-handover` is this flow's to reimplement. Storage, indexing and
 retrieval are the platform's job and it is already done; rebuilding any of it produces a
 second store nobody searches.
 

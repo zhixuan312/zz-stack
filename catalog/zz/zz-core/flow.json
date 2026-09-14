@@ -11,8 +11,8 @@
   },
   "libraries": [
     "zz-authoring",
-    "zz-backbone",
-    "zz-knowledge"
+    "zz-platform",
+    "zz-handover"
   ],
   "servers": [
     {

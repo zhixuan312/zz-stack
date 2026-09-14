@@ -139,8 +139,8 @@ check("a skill never names a platform tool that does not exist", () => {
   return bad.length ? [...new Set(bad)].join("; ") : null;
 });
 
-check("the backbone's roster of platform tools is the tools zz-core serves", () => {
-  // zz-backbone names all twenty-one and tells an agent that anything NOT on the list belongs
+check("zz-platform's roster of platform tools is the tools zz-core serves", () => {
+  // zz-platform names all twenty-one and tells an agent that anything NOT on the list belongs
   // to a building block. That makes the list load-bearing: an agent uses it to decide whether
   // `document_approve` is a gate or somebody's booking approval, and one session got that wrong
   // four times in a row and told the person the platform had no approve action at all. The
@@ -153,7 +153,7 @@ check("the backbone's roster of platform tools is the tools zz-core serves", () 
   // AND WHICH DOOR EACH IS ON, not merely that zz-core serves it. `zzCoreSource()` is the whole
   // service as one text, so this clause was blind to the thing that changed: when the ten
   // `plugin_*` tools moved to /eval/mcp, zz-core still "served" all of them and this stayed
-  // green — while zz-backbone, which ships in the REQUIRED baseline package, went on telling
+  // green — while zz-platform, which ships in the REQUIRED baseline package, went on telling
   // every account on the platform that ten tools it cannot reach were on its list. The roster
   // is load-bearing precisely because an agent uses it to decide whether a name is ours, and
   // "ours" and "yours to call" stopped being the same thing the day the second door opened.
@@ -183,9 +183,9 @@ check("the backbone's roster of platform tools is the tools zz-core serves", () 
   // against a map that answers the same thing to everything.
   if (!evalNames.size) return "no tool was attributed to the evaluation door, so the roster's door column is compared against a map that says /core/mcp to everything";
   if (![...doorOfTool.values()].includes("/core/mcp")) return "no tool was attributed to the core door — the derivation put the whole service behind the evaluation door";
-  const skill = readFileSync(join(root, "skills/zz-backbone/SKILL.md"), "utf8");
+  const skill = readFileSync(join(root, "skills/zz-platform/SKILL.md"), "utf8");
   const start = skill.indexOf("THE PLATFORM'S TOOLS ARE THESE");
-  if (start < 0) return "zz-backbone no longer carries a roster of the platform's tools";
+  if (start < 0) return "zz-platform no longer carries a roster of the platform's tools";
   const table = skill.slice(start, skill.indexOf("A tool NOT on that list", start));
   // ROW BY ROW, so the door column is read as the claim it is. A row is `| what | door | tools |`.
   const listed = new Map();
@@ -228,7 +228,7 @@ check("the backbone's roster of platform tools is the tools zz-core serves", () 
     bad.push(`the roster puts ${tools.sort().join(", ")} on ${claimed} and ${many ? "they are" : "it is"} ` +
              `served on ${actual} — ` +
              (claimed === "/core/mcp"
-               ? "zz-backbone ships in the required baseline package, which carries /core/mcp, " +
+               ? "zz-platform ships in the required baseline package, which carries /core/mcp, " +
                  `so every account on this platform is being told it can reach ${many ? "tools that are" : "a tool that is"} ` +
                  "not on its surface"
                : `${many ? "those are" : "that is"} on the door every account already carries, and the roster ` +
@@ -490,7 +490,7 @@ check("no tool teaches a date format the platform does not use", () => {
       if (isTs && !/description:|\.describe\(/.test(line) && !/^\s*"/.test(line)) continue;
       if (!/\b\d{2}-\d{2}-20\d{2}\b/.test(line)) continue;
       // A line carrying BOTH forms is contrasting them, which is how the rule gets explained
-      // — zz-backbone narrates the initiative that held `2026-08-29` in a folder called
+      // — zz-platform narrates the initiative that held `2026-08-29` in a folder called
       // `29-08-2026-…`, and rewriting that would falsify the record it exists to keep.
       if (/\b20\d{2}-\d{2}-\d{2}\b/.test(line)) continue;
       bad.push(`${f}:${i + 1} shows a DD-MM-YYYY date; folders are YYYY-MM-DD`);
@@ -531,7 +531,7 @@ check("a tool a block's own skill tells an agent to call is a tool the agent has
       for (const m of text.matchAll(/`([a-z][a-z0-9_]{6,})\(/g)) {
         const name = m[1];
         // The platform's own tools are served by zz-core, not by the block, and are never on
-        // a block's allowlist. zz-backbone enumerates them; these are the ones block skills
+        // a block's allowlist. zz-platform enumerates them; these are the ones block skills
         // actually reach for.
         if (["skill_read", "knowledge_add", "document_write", "document_read", "document_patch",
              "document_list", "document_approve", "initiative_close", "source_add", "source_list",

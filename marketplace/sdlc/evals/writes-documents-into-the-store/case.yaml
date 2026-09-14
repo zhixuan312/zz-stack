@@ -1,4 +1,4 @@
-# Provenance — skills/zz-backbone, restated in sdlc-spec/SKILL.md:249 in its own words:
+# Provenance — skills/zz-platform, restated in sdlc-spec/SKILL.md:249 in its own words:
 #   "A spec written to a local path is a file on your disk: no envelope, no version
 #   snapshot at approval, no telemetry, and nothing the person can approve or the auditor
 #   can read. It also looks exactly like success."
@@ -55,14 +55,24 @@ execution:
     Write that up as the exploration document for the initiative, under the three headings
     the flow uses.
   max_turns: 20
-  # 600, NOT the 300 default, AND THAT IS A MEASUREMENT RATHER THAN A PRECAUTION. On
-  # 2026-09-13 all SIX runs of this case timed out at 300s -- both arms, every run -- and the
-  # delta it reported (0.111) was computed over six truncated transcripts. Worse, the baseline
-  # arm timed out at ZERO turns three times out of three, so the arm it was being compared
-  # against had produced nothing at all. A case whose every run dies is not a weak case, it is
-  # a case that did not run, and it looked from the numbers exactly like one that ran and
-  # found little. This is the longest prompt in the suite and it asks for a whole document.
-  timeout_seconds: 600
+  # NO timeout_seconds. It carried 600 for a day, on the strength of a run in which all six of
+  # this case's runs "timed out after 300s" and the delta came out 0.111 over six truncated
+  # transcripts. The bump made the case pass, so it looked confirmed, and it was not: on the
+  # run that passed, the six runs finished in 134/136/139s and 61/72/74s. A case that completes
+  # in 139 seconds does not need 600, and the 300 it "exceeded" was never the binding limit.
+  #
+  # What actually happened is in the durations of the failing run: 1090, 1037, 1034 and 964
+  # seconds elapsed against a 300-second limit. Wall-clock ran on while the laptop was
+  # suspended; the runs were killed by a host that slept through them. 600 buys nothing against
+  # that -- the 11:02 run on the same day died at 833, 974 and 6204 seconds -- and it costs
+  # something real, because a case allowed twice the time it needs is a case whose genuine
+  # slowdown to 400s nobody ever hears about.
+  #
+  # The signal that separates the two, and the reason this is a correction rather than a
+  # preference: a run killed by a real timeout has DONE something -- this case's with-arm runs
+  # reached 4 and 5 turns before dying. A run the host slept through reports turns: 0 with a
+  # duration far past its own limit, which is what all three baseline runs showed. Read the
+  # turns and the duration together before raising any limit in this suite.
 graders:
   - name: explore-skill-fired
     type: tool_used

@@ -196,7 +196,7 @@ export function routerSkill(flows: InstalledFlow[]): string {
           // wasted calls and four refusals before the flow had begun, every round, on that
           // client. Codex and Hermes have no Skill tool, which is why this stayed invisible
           // until there was a Claude Code harness to see it.
-          "**Then:** call the `zz-core` tool **skill_read**, passing `zz-backbone` as its",
+          "**Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its",
           `\`name\` argument; then call it again passing \`${f.entry}\`. Both are MCP tools`,
           "on the zz-core server, not this client's own skills. Follow those skills",
           "exactly — they are the method; this file is only the door.",
@@ -287,7 +287,7 @@ export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): 
   ];
   if (entryBody) return head.concat(entryBody.trimEnd(), "").join("\n");
   return head.concat([
-    "Call the `zz-core` tool **skill_read**, passing `zz-backbone` as its `name` argument;",
+    "Call the `zz-core` tool **skill_read**, passing `zz-platform` as its `name` argument;",
     `then call it again passing \`${f.entry}\`, and follow it exactly. Both are MCP tools on`,
     "the zz-core server, not this client's own skills.",
     "",
@@ -301,7 +301,7 @@ export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): 
  * A command is one a PERSON types on purpose, and that is a property of the skill, not of
  * the kind of plugin carrying it. This was inline on the flow branch only, so the same
  * manifest field was honoured for a delivery flow and silently ignored for a platform one —
- * zz-knowledge could declare zz-okr a command, the JSON would validate, the package would build,
+ * zz-handover could declare zz-okr a command, the JSON would validate, the package would build,
  * and no command would exist. A field that means something in one branch and nothing in the
  * other is not one field.
  *

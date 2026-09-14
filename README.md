@@ -101,10 +101,10 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             live here rather than under the baseline's catalog entry because the
             router skill is generated per person from the flows they installed and
             cannot live in a catalog shared by everyone. Two are
-            UNIVERSAL and bookend every flow: zz-backbone (the spine, loaded first
+            UNIVERSAL and bookend every flow: zz-platform (the spine, loaded first
             — file tools, gates, documents, credentials, the tag kinds the
             knowledge base enforces, and what a team overlay may and may not do)
-            and zz-knowledge (the handover, run last — one closed initiative's
+            and zz-handover (the handover, run last — one closed initiative's
             documents and telemetry turned into what the next team should know).
             Three more are TYPED rather than loaded, and ship as the baseline's
             commands: zz-deck (turn something already written into a slide deck

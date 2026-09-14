@@ -2,7 +2,7 @@
 name: "eval"
 description: "Run the zz-plugin-eval flow for your team."
 when_to_use: "The person typed /zz-plugin-eval:eval. This is a command, not an auto-matched skill."
-version: "0.3.0"
+version: "0.4.0"
 disable-model-invocation: true
 ---
 
@@ -42,7 +42,7 @@ not a defect in any of them — it is what "a person invokes this on purpose" co
 number. A case written for this plugin has to name the flow, the way a person does, or it
 measures the shelf's routing rather than this flow's content.
 
-Load `zz-backbone` first, as with every flow on this platform.
+Load `zz-platform` first, as with every flow on this platform.
 
 ## Two kinds of evidence, and each has its own sufficiency line
 
@@ -80,7 +80,7 @@ conversation makes every number incomparable with every other number.
 | 5 | `zz-plugin-report` | `findings.md` — gated, and it closes the initiative |
 
 After report, the close is an act rather than a stage — one `initiative_close()` call — and the platform
-then reports `action: handover`, which `zz-knowledge` writes cold, afterwards. The close ends
+then reports `action: handover`, which `zz-handover` writes cold, afterwards. The close ends
 the evaluation; the handover ends the cycle.
 
 **Two gates**: `rulers.md` after define, `findings.md` after report. Nothing is scored before a

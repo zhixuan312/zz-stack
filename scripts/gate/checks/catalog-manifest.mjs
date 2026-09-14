@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { codeOnly, consoleSource, firstOf, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.mjs";
@@ -126,7 +126,7 @@ check("no two flows collapse to the same command namespace", () => {
 });
 
 check("every catalog entry has a flow.json and declares what it is", () => {
-  // One manifest name, one rule. zz-knowledge shipped nothing for weeks because it carried
+  // One manifest name, one rule. zz-handover shipped nothing for weeks because it carried
   // plugin.json while every reader looks for flow.json — and nothing failed, it was simply
   // invisible.
   //
@@ -138,7 +138,7 @@ check("every catalog entry has a flow.json and declares what it is", () => {
   // flow.json. This check would have failed the build the first time a team did as they were
   // told.
   //
-  // What it looks for now is the actual zz-knowledge shape: a manifest filed under some other
+  // What it looks for now is the actual zz-handover shape: a manifest filed under some other
   // name. And `agents/` still needs a manifest, because a preset is created from one.
   const bad = [];
   // EVERY package, because the subject is a package with no manifest. Iterating `flows` here
@@ -147,7 +147,7 @@ check("every catalog entry has a flow.json and declares what it is", () => {
     const dir = f.dir;
     const manifest = join(dir, "flow.json");
     if (!f.hasManifest) {
-      // A stray .json is a suspected MISNAMED MANIFEST, not any JSON at all. zz-knowledge's was
+      // A stray .json is a suspected MISNAMED MANIFEST, not any JSON at all. zz-handover's was
       // plugin.json and declared a `name`, which is what a manifest does; a flow's
       // tests/scenarios.json declares scenarios and answers and is content. Reading the file
       // rather than its extension is what tells them apart — and it keeps the rule about
@@ -323,11 +323,16 @@ check("a stray file in the catalog cannot empty it", () => {
   // A catalog with a stray file at its root, a package that ships a manifest, and one that
   // ships only skills — which is a package kind the platform supports.
   const dir = join(root, "node_modules", ".zz-catalog-probe");
-  for (const p of [join(dir, "zz", "zz-knowledge"), join(dir, "ops", "ops-flow", "skills")]) {
+  // CLEARED FIRST, because `mkdir -p` adds and never removes. The probe's expected answer is an
+  // EXACT package list, so a package left behind by a previous run — a fixture that has since
+  // been renamed, say — fails this check with a ghost that is not in any source file. It cost a
+  // rename exactly that, and the directory lives under node_modules where nobody thinks to look.
+  rmSync(dir, { recursive: true, force: true });
+  for (const p of [join(dir, "zz", "zz-handover"), join(dir, "ops", "ops-flow", "skills")]) {
     execFileSync("mkdir", ["-p", p]);
   }
   writeFileSync(join(dir, ".DS_Store"), "");
-  writeFileSync(join(dir, "zz", "zz-knowledge", "flow.json"), JSON.stringify({ name: "zz-knowledge" }));
+  writeFileSync(join(dir, "zz", "zz-handover", "flow.json"), JSON.stringify({ name: "zz-handover" }));
   const probe = `
     import { catalogPackages, catalogEntries } from ${JSON.stringify(join(root, "packages/catalog/dist/index.js"))};
     const names = catalogPackages().map((p) => p.owner + "/" + p.name).sort();
@@ -341,13 +346,13 @@ check("a stray file in the catalog cannot empty it", () => {
   } catch (err) {
     return `the catalog walk could not be run: ${String(err.stderr ?? err).slice(-200)}`;
   }
-  if (got.names.join(",") !== "ops/ops-flow,zz/zz-knowledge") {
+  if (got.names.join(",") !== "ops/ops-flow,zz/zz-handover") {
     bad.push(`a stray file at the catalog root left ${JSON.stringify(got.names)} — every ` +
              "package after it in sort order is gone, and skill_read would find nothing");
   }
   // And the narrower question must still be the narrower one: only the package with a
   // manifest is an entry, and the skills-only package is a package all the same.
-  if (got.entries.join(",") !== "zz-knowledge") {
+  if (got.entries.join(",") !== "zz-handover") {
     bad.push(`catalogEntries returned ${JSON.stringify(got.entries)} — it is keyed on the ` +
              "manifest, and a skills-only package is not one");
   }

@@ -1,11 +1,11 @@
 ---
-name: zz-backbone
-version: 3.31
+name: zz-platform
+version: 3.32
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
 ---
 
-# zz-backbone
+# zz-platform
 
 These rules hold for every flow on this platform — sdlc, sm, and every flow
 written after them. A flow's skills add its method on top and do not restate
@@ -236,7 +236,7 @@ what delegated access is for.
   `scope: "platform"`. A correction somebody can find beats an overwrite nobody can.
 - **After the close comes the handover, and it belongs to the platform.**
   Every flow ends the same way, whatever its manifest says: once the outcome
-  is recorded, load `zz-knowledge` with `skill_read` and run it now — it
+  is recorded, load `zz-handover` with `skill_read` and run it now — it
   writes `handover.md`, the one document the handover is. `initiative_status`
   keeps returning `action: "handover"` until a team member approves it; only
   then does the initiative report `action: "closed"`. It is not the flow
@@ -245,7 +245,7 @@ what delegated access is for.
   lesson about how this team works, `scope: "platform"` for a fact about a
   registry entry — a
   block, a flow, a provider, an interface — that holds for everybody.
-  Platform-scoped nodes are minted the moment `zz-knowledge` decides them;
+  Platform-scoped nodes are minted the moment `zz-handover` decides them;
   team-scoped ones wait for that approval. Knowledge is written because it
   is worth writing, not to fill a quota — zero nodes on either shelf is a
   correct, approvable outcome when nothing here generalised. What made this
@@ -366,8 +366,10 @@ The knowledge store is the team's, not one agent's session:
   name in `supports` every document it bears on (one or several). It is
   ungated and immutable; anyone on the team may add one at any time from
   any harness.
-- **The platform is a tenant too.** `zz-platform` is its team, with the same
-  store and the same `_knowledge/` yours has. What lives there is not about
+- **The platform is a tenant too.** Its TEAM slug is also `zz-platform` —
+  the same word as this skill's name and a different thing: a team shelf in
+  the store, not a skill you can load. No tenant may claim it. That shelf has
+  the same store and the same `_knowledge/` yours has. What lives there is not about
   anybody's delivery — it is what we have learned about a **registry entry**:
   a block, a flow, a provider, an interface. Your team's lessons stay yours;
   which of them generalise is a judgement made in your own initiative, at
@@ -555,7 +557,7 @@ that skill, under a heading saying it is yours.
 
 - **It adds; it never replaces.** The shelf's skill arrives first and entire, yours follows.
   Where the two differ on a rule the platform sets, the platform's wins — an overlay cannot
-  shadow `zz-backbone` or take over a stage, because appending is the only thing it can do.
+  shadow `zz-platform` or take over a stage, because appending is the only thing it can do.
 - **Structure stays the platform's.** Which documents a flow has, which carry gates, and
   which headings they need are `flow.json`'s, not an overlay's. An overlay that talks an
   agent into writing different headings meets the section check at the write.

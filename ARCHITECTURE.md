@@ -76,7 +76,7 @@ tests/                          fixtures for this package — requirements, step
 
 ### `skills/` — carried by everyone
 
-`zz-backbone` and `zz-knowledge`, which a flow loads; `zz-deck`, `zz-tldr` and
+`zz-platform` and `zz-handover`, which a flow loads; `zz-deck`, `zz-tldr` and
 `zz-breakout`, which a person types; and `zz-authoring`, the library the first two of those
 load. The typed three are named in the baseline's own manifest at
 `catalog/zz/zz-core/flow.json`, in the same `commands` map every other package uses — the

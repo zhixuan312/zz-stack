@@ -61,7 +61,7 @@ check("every flow ends with the platform's handover", () => {
   if (!/action: "handover"/.test(src)) {
     bad.push("initiative_status never returns action: handover — a closed initiative reports done with nothing handed over");
   }
-  if (!/zz-knowledge/.test(src)) bad.push("nothing in zz-core names the handover skill");
+  if (!/zz-handover/.test(src)) bad.push("nothing in zz-core names the handover skill");
   // And the flow that CLOSES has to know the step exists. A closing skill saying "you are
   // the last stage, nobody after you can do it" was true until the platform started
   // appending the handover below the manifest — after which the agent closes, reports
@@ -85,18 +85,18 @@ check("every flow ends with the platform's handover", () => {
       //
       // So: a call with an argument, or the plain English for doing it.
       if (!/initiative_close\(\s*(initiative|"|<)/.test(text) && !/closes? the initiative/i.test(text)) continue;
-      if (!/handover|zz-knowledge/.test(text)) {
+      if (!/handover|zz-handover/.test(text)) {
         bad.push(`${f.owner}/${f.flow}/${sk} calls initiative_close() and never mentions the handover that follows it`);
       }
     }
   }
-  // zz-knowledge stopped being a flow of its own on 2026-09-04 and became a PLATFORM SKILL, the
-  // bookend to zz-backbone: the spine is loaded at the start of every flow, the handover is
+  // zz-handover stopped being a flow of its own on 2026-09-04 and became a PLATFORM SKILL, the
+  // bookend to zz-platform: the spine is loaded at the start of every flow, the handover is
   // run at the end of every one. A capability every flow must finish with is not something a
   // team installs, and it was never really a flow — it had one stage and no gates.
-  const learnSkill = join(root, "skills", "zz-knowledge", "SKILL.md");
+  const learnSkill = join(root, "skills", "zz-handover", "SKILL.md");
   if (!existsSync(learnSkill)) {
-    bad.push("skills/zz-knowledge is missing — every flow names the handover and nothing performs it");
+    bad.push("skills/zz-handover is missing — every flow names the handover and nothing performs it");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -156,29 +156,29 @@ check("the platform's own knowledge has a home, and it is reserved", () => {
 check("the second distillation exists and is reachable", () => {
   // A lesson written for one team stays useful to one team until somebody generalises it,
   // and that is the only real advantage a shared knowledge base has over many separate
-  // ones. It does not happen on its own: zz-knowledge records what a cycle taught THAT team,
+  // ones. It does not happen on its own: zz-handover records what a cycle taught THAT team,
   // and some of it is a fact about a block, a flow, a provider or an interface that every
   // team depends on.
   //
   // The tenant is deliberately not asked to sort their own experience into "ours" and
   // "everyone's" — that hands platform work to the user. So the promoting act has to exist
-  // as its own skill, and zz-knowledge has to say where its platform-layer findings go, or the
+  // as its own skill, and zz-handover has to say where its platform-layer findings go, or the
   // handover ends in a file nobody reads twice.
   const bad = [];
-  const distil = join(root, "skills/zz-knowledge/SKILL.md");
+  const distil = join(root, "skills/zz-handover/SKILL.md");
   if (!existsSync(distil)) {
-    bad.push("skills/zz-knowledge is missing — nothing promotes a tenant's finding to platform knowledge");
+    bad.push("skills/zz-handover is missing — nothing promotes a tenant's finding to platform knowledge");
     return bad.join("; ");
   }
   const text = readFileSync(distil, "utf8");
   // It must name the closed subject vocabulary it writes against, and the evidence rule —
   // an unsourced conclusion about a block is the thing nobody can check later.
   for (const need of ["knowledge_add", "block:", "flow:", "evidence"]) {
-    if (!text.includes(need)) bad.push(`zz-knowledge never mentions ${need}`);
+    if (!text.includes(need)) bad.push(`zz-handover never mentions ${need}`);
   }
-  const learn = readFileSync(join(root, "skills/zz-knowledge/SKILL.md"), "utf8");
-  if (!learn.includes("zz-knowledge")) {
-    bad.push("zz-knowledge does not name zz-knowledge — its platform-layer findings have no onward path");
+  const learn = readFileSync(join(root, "skills/zz-handover/SKILL.md"), "utf8");
+  if (!learn.includes("zz-handover")) {
+    bad.push("zz-handover does not name zz-handover — its platform-layer findings have no onward path");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -415,7 +415,7 @@ check("the handover is complete when its document is approved, not when a node m
 });
 
 check("close names the handover document and not a file that was abolished", () => {
-  // initiative_close() told agents to "write learnings.md" for months after zz-knowledge abolished it.
+  // initiative_close() told agents to "write learnings.md" for months after zz-handover abolished it.
   // Two independent agents hit that confusion in one day, and so did the author of the plan
   // this check comes from. A tool's own return text is documentation and rots like it.
   const src = zzCoreSource();
@@ -423,7 +423,7 @@ check("close names the handover document and not a file that was abolished", () 
   if (at < 0) return "close is no longer registered";
   const body = src.slice(at, src.indexOf("\n  );", at));
   const bad = [];
-  if (/learnings\.md/.test(body)) bad.push("close still names learnings.md, which zz-knowledge abolished");
+  if (/learnings\.md/.test(body)) bad.push("close still names learnings.md, which zz-handover abolished");
   if (!/handover\.md/.test(body)) bad.push("close does not name the handover document the initiative now needs");
   return bad.length ? bad.join("; ") : null;
 });
@@ -468,7 +468,7 @@ check("the spine states the handover sequence and nothing it superseded", () => 
   // The second phrase uses \s+ because the sentence LINE-WRAPS in the source. Written without
   // it, the condition returned false against the unfixed file — reporting clean before and
   // after the change alike, and flagging the defect it exists to catch never.
-  const src = readFileSync(join(root, "skills/zz-backbone/SKILL.md"), "utf8");
+  const src = readFileSync(join(root, "skills/zz-platform/SKILL.md"), "utf8");
   const bad = [];
   if (/there is no document to write/.test(src)) {
     bad.push("the spine still says there is no document to write — handover.md is one");
@@ -517,7 +517,7 @@ check("no skill states the abolished learnings.md completion test as current", (
   // substring-scan test this change deleted, described as current behaviour, in a flow that
   // now carries handover.md itself.
   //
-  // NARROW ON PURPOSE: the phrase "learnings.md` exists" is the CLAIM. zz-knowledge names the
+  // NARROW ON PURPOSE: the phrase "learnings.md` exists" is the CLAIM. zz-handover names the
   // file twice while recounting the design that failed, and that history is worth keeping —
   // a check that banned the word outright would delete the record of why this exists.
   const bad = [];
@@ -564,7 +564,7 @@ check("the abandon-contradiction refusal is not disabled by the derived handover
 
 check("an approved handover must have kept the team nodes it promised", () => {
   // FOUND BY REVIEW. document_approve() is a generic gate recorder with no side effect, so nothing
-  // makes zz-knowledge's second pass happen — and reading "closed" the instant handover.md
+  // makes zz-handover's second pass happen — and reading "closed" the instant handover.md
   // was approved let an initiative report complete with every promised team node unwritten.
   // A promise recorded whose keeping went unverified: the same shape as the substring scan
   // this initiative deleted, one level up.
@@ -584,9 +584,9 @@ check("an approved handover must have kept the team nodes it promised", () => {
   // every time. Round 1 of the 09-09 smoke closed with two team nodes promised in its own
   // prose and none on the shelf, and nothing anywhere disagreed. A read with no writer is
   // invisible: the code is present, the check runs, and it always passes.
-  const knowledgeSkill = readFileSync(join(root, "skills/zz-knowledge/SKILL.md"), "utf8");
+  const knowledgeSkill = readFileSync(join(root, "skills/zz-handover/SKILL.md"), "utf8");
   if (!/proposed_team_nodes/.test(knowledgeSkill)) {
-    return "the server counts handover.md's `proposed_team_nodes` and zz-knowledge never tells an agent to write it — the field is always absent, always reads as zero, and the promise-kept check can never fail";
+    return "the server counts handover.md's `proposed_team_nodes` and zz-handover never tells an agent to write it — the field is always absent, always reads as zero, and the promise-kept check can never fail";
   }
   const at = src.indexOf("proposed_team_nodes");
   if (at < 0) {

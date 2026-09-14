@@ -318,7 +318,7 @@ check("the audit criteria are written once", () => {
   //
   // Two auditors is deliberate: a spec and a plan fail in different ways, and one generic
   // auditor finds the generic half of both. Two COPIES of the generic half is a different
-  // thing, and the platform already has the answer — a flow loads zz-backbone rather than
+  // thing, and the platform already has the answer — a flow loads zz-platform rather than
   // restating it.
   const dir = join(catalogRoot, "sdlc/sdlc-flow/skills");
   const shared = join(dir, "sdlc-audit-criteria/SKILL.md");

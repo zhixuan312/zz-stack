@@ -279,7 +279,7 @@ check("no flow tells an agent to refuse a person's own words", () => {
   // The platform default used to be that an approval passes ONLY on "approved" or "yes, I
   // approve", and that "ok" and "go ahead" do NOT pass — the agent was to hold and ask again.
   // That is the platform instructing every flow to make a person repeat a decision they had
-  // already made. It is gone from zz-backbone, and the risk now is a flow reintroducing it
+  // already made. It is gone from zz-platform, and the risk now is a flow reintroducing it
   // locally, where nobody would see it.
   //
   // Deliberately narrow: it looks for the shape of a phrase whitelist near an approval, not
@@ -598,11 +598,11 @@ check("a skill a person types is not one a model is told to load", () => {
 check("a skill citing another's section cites one that is there", () => {
   // Three skills read `learnings.md` by section NUMBER and TITLE — ops-select wants section 4
   // ("platform gaps"), ops-spec wants 5 ("stakeholder patterns") and 6 ("repeated-question
-  // candidates"). zz-knowledge is what writes that file, as a numbered list in its own text, and
+  // candidates"). zz-handover is what writes that file, as a numbered list in its own text, and
   // nothing tied the two together: renumbering the list, or renaming an item, sends a reader
   // to a section that is not there and nothing says so.
   //
-  // Found by changing zz-knowledge's section 4 and leaving ops-select describing what it used to
+  // Found by changing zz-handover's section 4 and leaving ops-select describing what it used to
   // say. The citation still resolved by number, so only the description was wrong — which is
   // the version of this that no reader catches, because the section exists.
   //

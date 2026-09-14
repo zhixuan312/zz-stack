@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-report
-version: 0.3
+version: 0.4
 description: Stage 5 of plugin evaluation. Read the scores back, say what the pattern is, propose the cases the next round should lock in, and write findings.md — which is gated and closes the initiative.
 when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation and what admits the proposed cases into the suite."
 ---
@@ -128,12 +128,12 @@ front of the person. They are approving the document, not your account of it —
 succeeded is not a document anybody read.
 
 `findings.md` is gated and closing. Once a person approves it, close the initiative directly —
-one `initiative_close()` call, as `zz-backbone` describes — and say plainly whether the evaluation reached
+one `initiative_close()` call, as `zz-platform` describes — and say plainly whether the evaluation reached
 a verdict or stopped for want of evidence. Both are complete outcomes; only one of them is a
 score.
 
 **The close ends the evaluation, not the cycle.** `initiative_status` returns
-`action: handover` afterwards, and `zz-knowledge` is what writes it — cold, after the work is
+`action: handover` afterwards, and `zz-handover` is what writes it — cold, after the work is
 over. Report the initiative closed and say the handover is what remains.
 
 ## Pitfalls

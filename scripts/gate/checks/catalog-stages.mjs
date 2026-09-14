@@ -404,7 +404,7 @@ check("a team overlay adds and cannot replace", () => {
   // So an overlay is APPENDED to the skill, never substituted for it, and that is a property
   // of the code rather than a rule anybody has to follow: the shelf's text is returned first
   // and entire, the team's follows under a heading naming it. Substitution is not something
-  // this can express, which is why no overlay can shadow zz-backbone or take over a stage.
+  // this can express, which is why no overlay can shadow zz-platform or take over a stage.
   //
   // Reads for the shape that guarantees it — the platform's text concatenated ahead of the
   // team's — because an overlay that REPLACED would be a one-character change here.
@@ -421,7 +421,7 @@ check("a team overlay adds and cannot replace", () => {
   // zz-kb-usage was removed on 2026-09-04 (never loaded once, by anybody). The rule it
   // carried is a PLATFORM rule, so it moved to the spine rather than out of the repository —
   // the check follows the rule, not the file that used to hold it.
-  const usage = join(root, "skills/zz-backbone/SKILL.md");
+  const usage = join(root, "skills/zz-platform/SKILL.md");
   if (!readFileSync(usage, "utf8").includes("overlays/")) {
     bad.push("no skill tells a team the overlay exists");
   }

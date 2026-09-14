@@ -109,10 +109,10 @@ writeFileSync(join(manifestDir, "marketplace.json"), JSON.stringify(shelf, null,
 // The one failure this script cannot see any other way. Everything above succeeds with an
 // empty skills tree, so without this a wrong ZZ_SKILLS_DIR commits a shelf whose REQUIRED
 // plugin carries no method — and the first person to notice is whoever installs it.
-const backbone = join(market, "zz-core/skills/zz-backbone/SKILL.md");
-if (!existsSync(backbone)) {
+const spine = join(market, "zz-core/skills/zz-platform/SKILL.md");
+if (!existsSync(spine)) {
   throw new Error(
-    `built shelf has no zz-backbone skill — ZZ_SKILLS_DIR is '${process.env.ZZ_SKILLS_DIR}', ` +
+    `built shelf has no zz-platform skill — ZZ_SKILLS_DIR is '${process.env.ZZ_SKILLS_DIR}', ` +
     "which is not this repository's skills/ directory.");
 }
 

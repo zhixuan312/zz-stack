@@ -82,7 +82,7 @@ check("a stage skill's ordinal for its own gate matches the manifest", () => {
 });
 
 check("a skill counting the platform's vocabulary counts it right", () => {
-  // zz-backbone teaches the outcome words and then says "so a fifth word invents a row nobody
+  // zz-platform teaches the outcome words and then says "so a fifth word invents a row nobody
   // can total". There are three, so a new one is the fourth. The sentence was written when
   // there were four and stayed when `superseded` went — the identical drift the platform's own
   // refusal carried, in the skill every agent loads before anything else.

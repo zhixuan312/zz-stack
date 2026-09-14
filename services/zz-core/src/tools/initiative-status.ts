@@ -177,7 +177,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       ? {
           action: "handover", waiting_on: "agent",
           why: `closed with outcome: ${outcome}; the platform's closing step is the ` +
-               "handover — run `skill_read(\"zz-knowledge\")`, mint what generalises with " +
+               "handover — run `skill_read(\"zz-handover\")`, mint what generalises with " +
                "`knowledge_add`, and write handover.md, so what this cycle learned " +
                "outlives the conversation that learned it",
         }
@@ -192,7 +192,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       : (() => {
           // THE APPROVAL AUTHORISES THE TEAM NODES; IT DOES NOT WRITE THEM.
           //
-          // zz-knowledge mints platform nodes immediately and PROPOSES team nodes in
+          // zz-handover mints platform nodes immediately and PROPOSES team nodes in
           // handover.md, minting them only once a team member has approved. But document_approve()
           // is a generic gate recorder with no side effect, so nothing makes that second
           // pass happen. Reading "closed" the moment the document was approved therefore
@@ -232,7 +232,7 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
             : { action: "handover", waiting_on: "agent",
                 why: `closed with outcome: ${outcome}; handover.md is approved but only ` +
                      `${minted} of the ${promised} team node(s) it proposed have been ` +
-                     "written — run `skill_read(\"zz-knowledge\")` and mint the rest with " +
+                     "written — run `skill_read(\"zz-handover\")` and mint the rest with " +
                      "`knowledge_add(scope: \"team\")`, exactly as the approved document " +
                      "promised them" };
         })();
@@ -380,14 +380,14 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         ? [initiative]
         // Dot-entries are not initiatives, and since the store became a git repository there
         // is one sitting in every root. walk() was taught this and this listing was not, so
-        // the no-argument call — the one zz-backbone tells every agent to make before
+        // the no-argument call — the one zz-platform tells every agent to make before
         // continuing any work — answered with `.git` as an open initiative whose next move
         // was to write the flow's first document into it.
         : readdirSync(root).filter((n) => !n.startsWith("_") && !n.startsWith(".") &&
             !n.endsWith(".md") && statSync(join(root, n)).isDirectory());
       const out = [];
       // The no-argument call promises OPEN initiatives — its own description says so and so
-      // does zz-backbone, which is where every agent reads about it. It returned all of
+      // does zz-platform, which is where every agent reads about it. It returned all of
       // them: on this store that is eight, seven of them closed, so the answer to "what is
       // open" was one useful line in eight. Closed ones are counted rather than dropped,
       // because a listing that quietly omits things is the other half of the same problem.
@@ -400,7 +400,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         const chain = await chainFor(root, `${name}/x.md`, team);
         const state = initiativeState(root, name, chain, chain.documents);
         // OPTIONAL-CHAINED, because `next_move` is null for a freeform initiative. Indexing
-        // it bare threw here, in the no-argument listing — the one call zz-backbone tells
+        // it bare threw here, in the no-argument listing — the one call zz-platform tells
         // every agent to make before continuing any work — so one freeform folder in the
         // store would have taken down the listing of every other initiative beside it.
         if (!initiative && state.next_move?.action === "closed") { closedCount++; continue; }

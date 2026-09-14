@@ -107,7 +107,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         // eleven-task plan among them, approved twice, fetched never. Nothing disagreed,
         // because nothing was looking.
         //
-        // It does not refuse, and it must not start to. `zz-backbone` chose that, and there
+        // It does not refuse, and it must not start to. `zz-platform` chose that, and there
         // is a second reason on top: a refusal here lands on the ONE call whose job is to
         // record a decision a person already made, so the cost of a false positive is a
         // model telling somebody their own approval was rejected. A line the caller reads
@@ -210,7 +210,7 @@ export function registerInitiativeActTools(server: McpServer): void {
         // THE HANDOVER IS EXCLUDED, and leaving it in silently disabled this whole refusal.
         //
         // `chain.documents` now carries a derived `handover.md` for every flow that gates a
-        // document, and that document CANNOT exist at close time — zz-knowledge writes it
+        // document, and that document CANNOT exist at close time — zz-handover writes it
         // after the close. So `frontmatterStatus` returned null for it, `every(...)` was
         // permanently false, `gatesPassed` could never be true, and the refusal below could
         // never fire — for all five qualifying flows. That is exactly the false-abandon
@@ -318,7 +318,7 @@ export function registerInitiativeActTools(server: McpServer): void {
                   : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
         "Closed is not yet complete — one step remains, and it belongs to the platform rather " +
-        "than to this flow. Run `skill_read(\"zz-knowledge\")` next: it mints whatever " +
+        "than to this flow. Run `skill_read(\"zz-handover\")` next: it mints whatever " +
         "generalises from this cycle and writes handover.md. That document is gated — a team " +
         "member approves it, and only then does `initiative_status` read `action: \"closed\"`.",
       );

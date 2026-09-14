@@ -23,7 +23,10 @@ import { db, teamFor } from "./platform-db.js";
  * to what the caller's team has installed, which is what stops one team reading another team's
  * method.
  *
- * `/skills` is the platform's own — zz-backbone, zz-distil — true wherever this runs and ours.
+ * `/skills` is the platform's own — the SKILLS zz-platform and zz-distil — true wherever this
+ * runs and ours. (`zz-platform` is also the platform TEAM's slug, at :158 below and in
+ * identity.ts/paths.ts. Different namespace: a team is a directory under `teams/`, a skill is
+ * a directory under a skills root, and nothing resolves a bare slug against both.)
  * `/blocks/<block>/skills` is a different kind of thing: written ABOUT somebody else's server,
  * from evidence gathered by calling it, and true only against the version it was checked on.
  * Mixed into one directory those two look identical and age completely differently, and when a
@@ -170,8 +173,9 @@ export async function governingFlows(team: string | null): Promise<Set<string> |
  *
  * LAST is the team's OWN store — `<team root>/skills/<name>/SKILL.md` — and it is last for
  * the same reason the catalog's team packages are: skill_read returns the first match, so a
- * root that comes after can add a name but can never take one. A team cannot shadow
- * zz-backbone by accident, and cannot shadow a stage of the flow it runs.
+ * root that comes after can add a name but can never take one. A team cannot shadow the
+ * zz-platform SKILL by accident, and cannot shadow a stage of the flow it runs — not even the
+ * platform's own team, whose slug is that same word.
  *
  * That it lives in the team's own store is the point. A team package under `catalog/<team>/`
  * works, and reaching it means a pull request into the product repository — so the cheapest

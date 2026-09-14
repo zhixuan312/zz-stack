@@ -6,7 +6,7 @@
 #   ./testing/reset-store.sh --team smoke-0828 --prefix 2026-08-3 --dry-run
 #
 # WHY THIS HAS TO EXIST. ops-intent names its folder from the date and the title, and both
-# zz-backbone and ops-intent instruct a step that finds an existing folder to RESUME it rather than
+# zz-platform and ops-intent instruct a step that finds an existing folder to RESUME it rather than
 # create a duplicate — which is correct behaviour and the reason a second run of one corpus is not
 # a second measurement. Eight held-out requirements at ops-intent 1.1 produced five documents;
 # three resumed 1.0's initiatives, and the five that wrote could read 1.0's answer while writing.

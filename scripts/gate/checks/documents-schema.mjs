@@ -187,7 +187,7 @@ check("every subject kind the platform accepts is one a skill teaches", () => {
   const kinds = [...decl.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
   if (!kinds.length) return "SUBJECT_KINDS is empty";
   const bad = [];
-  for (const rel of ["skills/zz-backbone/SKILL.md", "skills/zz-knowledge/SKILL.md"]) {
+  for (const rel of ["skills/zz-platform/SKILL.md", "skills/zz-handover/SKILL.md"]) {
     const f = join(root, rel);
     if (!existsSync(f)) { bad.push(`${rel} is missing — it is where a tag kind is taught`); continue; }
     const text = readFileSync(f, "utf8");

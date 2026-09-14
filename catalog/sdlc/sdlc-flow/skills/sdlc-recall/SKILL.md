@@ -1,6 +1,6 @@
 ---
 name: sdlc-recall
-version: 1.3
+version: 1.4
 description: Search the ZZ knowledge base for what earlier work already decided or learned about a question, read the nodes that matter, and report what it means for the decision in front of someone. Read-only. Dispatched by sdlc-explore, one topic per worker.
 when_to_use: "Before designing, attempting or deciding something, to find out what this team already settled — decisions, design rationale, observed behaviour, process learnings, conventions. Dispatched by sdlc-explore as part of its fan-out. Searches the platform's knowledge base, which is shared across the team and across initiatives."
 ---
@@ -94,7 +94,7 @@ mechanics.** Keep node ids in the structured findings, not woven through the pro
 1. **Cite only what you retrieved.** Every `nodeId` and `path` must come from a search result you
    actually got back. Never invent a node.
 2. **Read-only.** Never `knowledge_add`, never `knowledge_supersede`, never modify a node. Recording
-   is `zz-knowledge`'s job, and it runs after the initiative closes, not here.
+   is `zz-handover`'s job, and it runs after the initiative closes, not here.
 3. **Say what you searched.** One line at the end naming the queries you ran and roughly how many
    rows came back. A recall that found nothing after two narrow queries is a different fact from
    one that found nothing after six broad ones, and the caller cannot tell them apart otherwise.

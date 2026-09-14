@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec
-version: 1.3
+version: 1.4
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
 when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Local runtimes only (Claude Code, Codex)."
 ---
@@ -450,7 +450,7 @@ Then ask for agreement, and hold. `spec.md` carries `gate: true`; the platform r
 until this document's approval is recorded, so an agreement that stays in the
 conversation stops the flow at its next step.
 
-**How to tell that they agreed, and what to write, is `zz-backbone`'s rule, not this
+**How to tell that they agreed, and what to write, is `zz-platform`'s rule, not this
 skill's** — judge it rather than matching phrases, record it under their name in the same
 turn, and never send a decision back to somebody who already made it. It is written once,
 there, because it holds for every flow.

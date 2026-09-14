@@ -145,7 +145,7 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
  * document to draft, clears the approval and stores what caused the change. `document_patch` ran
  * the same content guards and then simply wrote, leaving `status: approved` and the signature
  * standing over bytes the approver never read — and `document_write` did the same. So the rule
- * "never overwrite an approved document" was prose in zz-backbone that nothing enforced, and
+ * "never overwrite an approved document" was prose in zz-platform that nothing enforced, and
  * the cheaper path was the one that skipped the record.
  *
  * A signature has to cover the bytes it signed. `approved_by: X` on a document X never saw is

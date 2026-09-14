@@ -39,7 +39,7 @@ check("document_revise records whether a revision had an external cause", () => 
 });
 
 check("document_present returns a document, not a rendering or a summary", () => {
-  // "Your reply includes the document's full content" lived only in zz-backbone's prose and
+  // "Your reply includes the document's full content" lived only in zz-platform's prose and
   // was routed around — including by the agent writing the spec about routing around it,
   // twice in one session. A tool can be checked; prose cannot.
   //

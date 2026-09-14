@@ -62,7 +62,7 @@ const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
  * `never_called` was empty, so the one finding this whole half exists to produce — a tool a
  * skill tells an agent to call and no agent ever called — was structurally impossible for the
  * plugin every account installs, and read as a clean bill of health. The `tool fit` dimension
- * found `knowledge_add` for sdlc on its first real round; zz-knowledge names `knowledge_add`
+ * found `knowledge_add` for sdlc on its first real round; zz-handover names `knowledge_add`
  * too, and the question could never have been asked of it.
  *
  * Asking the catalog first would restore that failure by a new route rather than by an absence:
@@ -277,9 +277,29 @@ export function registerPluginEvalTools(server: McpServer): void {
         ? "the payload carries no cost figure"
         : `it cost $${read.cost_usd} to run` +
           (read.judge_cost_usd === null ? "" : `, plus $${read.judge_cost_usd} to grade`);
+      // HOW MUCH OF THE SUITE ACTUALLY RAN, said here rather than left for a reader to notice.
+      // This is the only moment the caller can still do something about it: they have the
+      // command in their shell and the money is already spent. The frozen 2.1.269 run is the
+      // case that argues for it — twelve of its thirty-six runs died and the CLI marked the
+      // whole suite `partial: "interrupted"`, and everything downstream of it went on treating
+      // a mean over what survived as a measurement. A `mean_delta` taken across a suite that
+      // half fell over is not a smaller measurement, it is a different one.
+      //
+      // Both fields go back unconditionally, and the sentence only when there is something to
+      // say. A caller that reads fields gets them either way; one that reads prose is not made
+      // to parse "errored_runs: 0" to learn that nothing went wrong.
+      const damage = [
+        read.errored_runs ? `${read.errored_runs} run${read.errored_runs === 1 ? "" : "s"} errored or timed out` : "",
+        read.partial ? "`claude plugin eval` marked the suite partial — it did not finish" : "",
+      ].filter(Boolean);
       return json({
         recorded: read.count, mean_delta: read.mean_delta,
-        cost_usd: read.cost_usd, judge_cost_usd: read.judge_cost_usd, plugin, version,
+        cost_usd: read.cost_usd, judge_cost_usd: read.judge_cost_usd,
+        errored_runs: read.errored_runs, partial: read.partial, plugin, version,
+        ...(damage.length ? {
+          warning: `${damage.join("; ")}. Whatever was recorded is a measurement of a suite ` +
+                   "that did not fully run; re-run it before reading a delta off it.",
+        } : {}),
         ...(read.count ? {} : {
           note: `no case was readable — ${read.reason}. The result was stored whole anyway ` +
                 `and ${money}, so nothing has to be re-run to ask about it.`,

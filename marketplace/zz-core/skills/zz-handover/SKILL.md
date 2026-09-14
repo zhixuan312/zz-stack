@@ -1,15 +1,15 @@
 ---
-name: zz-knowledge
-version: 2.5
+name: zz-handover
+version: 2.6
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
 
-# zz-knowledge
+# zz-handover
 
 Delivery produces documents and telemetry. This turns one finished cycle into knowledge the
 next team can query — and it is the last step of every flow on this platform, the way
-`zz-backbone` is the first.
+`zz-platform` is the first.
 
 **It writes one document, `handover.md`, and it is the whole handover — not a first draft
 of one.** The earlier design wrote `<initiative>/learnings.md` and left a second skill to
@@ -133,7 +133,8 @@ names. Never write a node by hand, on either shelf; the store refuses it, and it
 none of those things.
 
 - **`scope` has no default and every call must send it.** `"platform"` lands under
-  zz-platform's own store, readable and citable by every team; `"team"` lands under your own
+  the platform TEAM's own store — `zz-platform` is a team slug here, not the skill of
+  that name — readable and citable by every team; `"team"` lands under your own
   team's store. Get this from the judgement above — do not guess it from habit.
 - **A `platform`-scoped node needs a registry-entry tag** — `block:`, `flow:`, `provider:`,
   `interface:` or `platform:` — because platform knowledge is by definition about one of

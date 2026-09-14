@@ -77,7 +77,7 @@ export function recordOpen(root: string, name: string, flow: string | null, who:
  * a caller must be able to tell apart from "no record at all", or it cannot honour it.
  *
  * A malformed one is null rather than a throw. `initiative_status` is the one call
- * zz-backbone tells every agent to make before continuing any work, and taking it down over
+ * zz-platform tells every agent to make before continuing any work, and taking it down over
  * an unparseable byte in a file the platform wrote is the failure mode `envelopeOf`'s isFile()
  * test already exists to prevent on the document beside it. */
 export function openRecord(root: string, name: string): OpenRecord | null {

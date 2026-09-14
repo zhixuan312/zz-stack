@@ -41,7 +41,7 @@ is what some other product gets wrong:
   outcomes, telemetry and the team's own git history fall out of the work being
   done, which is the only way a record stays true.
 - **Evidence is the input to the next round.** The record exists to be read
-  back — by `knowledge_reconcile`, by zz-knowledge, by the next person who asks what this team
+  back — by `knowledge_reconcile`, by zz-handover, by the next person who asks what this team
   already decided about this block. A record nobody reads is filing, not memory.
 - **The parts are yours.** Models, front ends, building blocks and flows are all
   replaceable, by design and one at a time. What the platform owns is the seam
@@ -63,7 +63,7 @@ Two mechanical capabilities serve all four and are platform-owned forever:
 **activity telemetry** (never model-written) and the **computed initiative state** —
 `initiative_status`, derived from the documents rather than kept as a list, so it cannot disagree
 with them.
-One tool capability is likewise platform-owned: **zz-knowledge**, the
+One tool capability is likewise platform-owned: **zz-handover**, the
 improvement analysis every team's every flow gets for free.
 
 Everything else is deliberately replaceable: flows evolve and get
@@ -122,9 +122,9 @@ trustworthy while every team works its own way.
 ## 5. Naming boundary
 
 Platform vocabulary is **zz** (zz-stack, zz-core, gateway, the team store,
-`@zz/*`, zz-blocks, future zz-kb, zz-knowledge). Product vocabulary lives under
+`@zz/*`, zz-blocks, future zz-kb, zz-handover). Product vocabulary lives under
 `catalog/<owner>/` — `catalog/sdlc/` is software delivery (sdlc-flow and its tests),
-and `catalog/zz/` holds the platform's own entries (zz-access, zz-admin, zz-knowledge, zz-flow-builder). Referring to
+and `catalog/zz/` holds the platform's own entries (zz-access, zz-admin, zz-handover, zz-flow-builder). Referring to
 the platform from a flow uses the platform's real names; declaring a
 flow's identity uses its own.
 
@@ -141,7 +141,7 @@ Two shapes live under one word there, and §6e says which is which: a package th
 
 **Improvement is a service, not a user duty.** Business teams only use the
 flow; their usage mechanically produces documents, telemetry and ledger
-rows. The platform team (the professionals) runs zz-knowledge across all teams,
+rows. The platform team (the professionals) runs zz-handover across all teams,
 mints journal nodes, amends skills/defaults, and re-validates with the
 smoke suite. Teams leave footprints; we read them and pave the road.
 Roles: superadmin (platform-wide) → team admin (membership, own team) →
@@ -171,7 +171,7 @@ and confirm-parameters on destructive tools.
   Envelope, telemetry and index are the only mandatory layers; the ledger
   is automatic; journal is recommended; OKR is ambition.
 - **Tools do format, skills do judgment**: source_add / knowledge_add /
-  knowledge_supersede keep users out of format work; `zz-knowledge`, the skill
+  knowledge_supersede keep users out of format work; `zz-handover`, the skill
   every flow ends with, guides what is worth writing.
 - Visibility: records default team-private. **Distillates go on one of two
   shelves and the write says which** — `knowledge_add` takes
@@ -184,7 +184,7 @@ and confirm-parameters on destructive tools.
 
 ## 5c. Knowledge law — what changes a document is stored with it
 
-Stated once, in `zz-backbone`, inherited by every flow on every harness.
+Stated once, in `zz-platform`, inherited by every flow on every harness.
 
 - **The initiative is the unit of work, not the chat.** Someone starts in
   LibreChat, a colleague continues in Claude Code, it finishes back in the
@@ -403,7 +403,7 @@ around a gate.
 | Guardrails | gate chain, status vocabulary, close requirements, envelope stamping, system-file protection | zz-core |
 | Provenance | approval snapshots, immutable sources, mechanical ledger, activity telemetry | zz-core |
 | Knowledge | team store, full-text + envelope search with citations, sources, journal, OKRs | zz-core + `zz` schema |
-| Team skills | two roots, both readable by that team from every client and invisible to others: the team's OWN STORE at `skills/<name>/SKILL.md`, written with `document_write` and needing nobody's approval, and a skills-only package under `catalog/<team>/` once one earns its keep beyond the team. Both are searched after the platform's and the flow's, so neither can shadow `zz-backbone` or a stage | zz-core |
+| Team skills | two roots, both readable by that team from every client and invisible to others: the team's OWN STORE at `skills/<name>/SKILL.md`, written with `document_write` and needing nobody's approval, and a skills-only package under `catalog/<team>/` once one earns its keep beyond the team. Both are searched after the platform's and the flow's, so neither can shadow `zz-platform` or a stage | zz-core |
 | Continuity | `initiative_status`: the same next move in every harness | zz-core |
 | Credentials | each person's own block keys, stored once, injected per call, never echoed | gateway |
 | Evaluation | smoke engine, manifest audit, the tool record, block conformance against the published standard, the cross-flow comparison, and the claim index — all flow-agnostic | packages/tools + zz-core (`testing/` is the shell around them) |
@@ -443,7 +443,7 @@ is the balance, and the balance is:
   dumped a Mongo that had been removed and the cleanup treated the failure as a partial run.
   Now verified: three archives kept, 903 artifact entries read back and matched, and the restore
   drill returns 3 principals.
-- **The offline gate is 315 checks**, and fifteen of them RUN code rather than reading it: the
+- **The offline gate is 318 checks**, and fifteen of them RUN code rather than reading it: the
   identity resolver's ordering, the markdown sanitiser, the redaction predicate, the scope and
   authority rules, the fetched-before-approval record, the two behaviour suites the zz-core
   split made reachable, the two alias checks that import the frozen maps and resolve through
@@ -691,7 +691,7 @@ AUTHORISATION rather than resource, so a route in the wrong file looks wrong.
 
 **700 lines, measured rather than chosen, with no exemption list.** Above it every file here
 held a whole second subject; `judge.ts` at 676 with three exports is genuinely one. A list of
-files allowed to be large is a list nobody prunes. The gate is **315 checks** and the console's
+files allowed to be large is a list nobody prunes. The gate is **318 checks** and the console's
 gate holds the same ceiling. Stated beside the rule is what it cannot do: `identity.ts` is 619
 lines with seventeen exports and passes, because line count finds "definitely too big" and
 never "more than one subject".
@@ -953,7 +953,7 @@ was not everybody's.
   into a stage list.** `initiative_status` answers `action: handover` until a node names this
   initiative; the handover carries a gate so the team approves what was distilled; `initiative_close()`
   refuses an initiative whose handover is not approved. `learnings.md` is abolished and
-  sdlc-flow's own closing skill is deleted — `zz-knowledge` is the only skill that writes
+  sdlc-flow's own closing skill is deleted — `zz-handover` is the only skill that writes
   knowledge, for every flow. (The retired skill is not named here on purpose: a gate check
   holds that nothing outside the changelog mentions it, because a document naming it is
   indistinguishable from one that still expects it.)
@@ -1050,7 +1050,7 @@ the expensive way: the report reached its gate having been governed by the wrong
 its second document onward, so the gate the flow declares was never the gate it passed.
 
 Two faults, one consequence. The resolver walked the initiative's folder in `readdir` order
-and took the first `flow:` it met, where the design — stated in zz-backbone and repeated in
+and took the first `flow:` it met, where the design — stated in zz-platform and repeated in
 every comment around the resolver — is that the FIRST document declares it. And the check
 that refuses an undeclared first document counted only rows in `zz.flow_install`, which a
 platform flow never has: `team-one` was excused because it had exactly one install, and
@@ -1168,7 +1168,7 @@ our own work.
   `close accepted:`, `revise:`, `patch:`, `write:`. `git` is in the runtime image, which it
   was not; without that, every commit would have failed silently.
 - **A team's own skills.** `<team store>/skills/<name>/SKILL.md` is searched LAST, so a team
-  can add a skill but can never shadow `zz-backbone` or a stage of the flow they run. The
+  can add a skill but can never shadow `zz-platform` or a stage of the flow they run. The
   contribution path starts where the work already is, and costs no review by us.
 - **Everything is TypeScript.** The thirteen Python files are gone, and with them a second
   envelope parser and a seventh copy of the MCP handshake. The tools run on a deploy host

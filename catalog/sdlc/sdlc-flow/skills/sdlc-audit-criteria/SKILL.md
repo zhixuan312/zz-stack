@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 1.1
+version: 1.2
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -14,7 +14,7 @@ the same.
 Split out because it was written twice. The eleven failure modes, the evidence shapes and the
 output format sat verbatim in both auditors — 165 identical lines — with nothing holding them
 together, so an edit to one would have left two auditors applying different standards and
-nobody able to say which was current. Same reason a flow loads `zz-backbone` rather than
+nobody able to say which was current. Same reason a flow loads `zz-platform` rather than
 restating it.
 
 **You were dispatched for one round on one document.** The caller runs at most three rounds,

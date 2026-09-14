@@ -301,7 +301,7 @@ check("nothing under a store root that begins with a dot is reachable", () => {
   }
 
   // And every listing that walks a store root by hand. walk() knows; these did not, so the
-  // no-argument initiative_status — the call zz-backbone tells every agent to make before
+  // no-argument initiative_status — the call zz-platform tells every agent to make before
   // continuing any work — answered with `.git` as an open initiative whose next move was to
   // write the flow's first document into it.
   // EVERY LISTING OF A STORE ROOT, in any service or tool — not just zz-core's, because the

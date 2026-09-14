@@ -438,11 +438,11 @@ async function main(): Promise<number> {
   // as ordinary above, and these two tools document the identical fallback.
   eitherOr("skill_list lists what this caller can reach",
     await call("skill_list", {}), /platform database is unreachable/);
-  // zz-backbone ships with the `zz` plugin, which every account carries — session_whoami points
-  // here itself ("skill_read(\"zz-backbone\")"), so this is the one skill name the door can
+  // zz-platform ships with the `zz` plugin, which every account carries — session_whoami points
+  // here itself ("skill_read(\"zz-platform\")"), so this is the one skill name the door can
   // promise exists without reading this deployment's own catalog first.
-  check("skill_read reads the platform's own backbone skill",
-    await call("skill_read", { name: "zz-backbone" }), false);
+  check("skill_read reads the platform's own spine skill",
+    await call("skill_read", { name: "zz-platform" }), false);
   // THE MERGE, asserted on the half that has a right answer whatever this deployment holds.
   // Which owners exist depends on which flows are installed and which blocks are routed, so
   // the shelf itself can only be checked for shape (above). The refusal cannot: an owner id

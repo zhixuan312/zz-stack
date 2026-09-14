@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.5
+version: 1.6
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -65,9 +65,9 @@ A dispatched plan is a plausible ordering nobody chose.
 
 **`sdlc-explore`** owns the fan-out and the synthesis around it.
 
-**Closing the initiative** is an act, not a stage — one `initiative_close()` call, the way `zz-backbone`
+**Closing the initiative** is an act, not a stage — one `initiative_close()` call, the way `zz-platform`
 describes it, once `sdlc-review` is done. You are the only party who was present for the
-whole initiative, so there is nobody else to dispatch it to. `zz-knowledge` runs afterward
+whole initiative, so there is nobody else to dispatch it to. `zz-handover` runs afterward
 and is what turns the closed initiative into what the next one recalls; that is the
 platform's step, not this flow's.
 

@@ -32,7 +32,7 @@ function deriveChain(list: FlowDoc[], name: string | null = null): Chain {
           {
             name: "handover.md",
             role: "handover",
-            stage: "zz-knowledge",
+            stage: "zz-handover",
             // Gated so somebody signs it, but never `closing` or `requiredForClose`: the
             // flow's own closing document still closes the flow, and documentGuards skips a
             // gated document that does not exist yet, which is what lets handover.md be
@@ -222,7 +222,7 @@ export async function chainFor(root: string, relPath: string, team: string | nul
   // THE OLDEST DOCUMENT ANSWERS, not whichever one readdir hands back first.
   //
   // This walked the directory in readdir order and took the first `flow:` it met, while
-  // every comment around it — and zz-backbone's own instruction — says the FIRST document
+  // every comment around it — and zz-platform's own instruction — says the FIRST document
   // is what declares the flow. Those are the same thing only by luck. On ext4 the order is
   // a hash of the names, and in `2026-09-05-blockeval-casebox` it was `findings.md surface.md
   // target.md usage.md`: the initiative opened with `target.md` declaring zz-block-eval,

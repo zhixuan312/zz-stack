@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.5
+version: 0.6
 description: Stage 2 of plugin evaluation. Compute the two evidence blocks — traces from real runs and cases from the ablation suite — each with its own sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -69,16 +69,34 @@ denominator can be wrong by three orders of magnitude and look fine.**
 
 ## If the case block is empty and somebody wants one
 
+**`plugin_profile` tells you.** When neither block has enough to judge against it returns a
+`next_action`, and that is the instruction — the command with this plugin's name already in
+it, the `case_record` call that follows, what it costs, and the one trap worth naming. Read it
+from the answer rather than from here: this page can go stale and the tool's answer is
+generated from the plugin you actually asked about.
+
+```json
+"next_action": {
+  "action": "record_a_suite_run",
+  "why":    "no case evidence: ...",
+  "run":    "claude plugin eval <plugin>@zz-stack --json <path>",
+  "then":   "case_record(plugin, version, result: <the JSON at that path, verbatim>)",
+  "costs":  "roughly $0.40 per case, on this machine, against this account's credential",
+  "target": "ONE built plugin directory — marketplace/<plugin> — never the repository root"
+}
+```
+
+**THE TWO STEPS ARE ONE ACT, and the second is the one that gets forgotten.** The CLI writes
+JSON to a file on your disk and exits; it knows nothing about this platform. Until
+`case_record` carries that JSON across, the run did not happen as far as every stage after
+this one is concerned — and nothing anywhere will tell you so. It has happened here: four
+suites run, eleven cases measured, and the platform went on serving a three-week-old
+measurement with twelve errored runs in it, because the person read the numbers off their
+terminal and stopped.
+
 Running the suite is a deliberate act and nothing here does it for you: it is a CLI on this
-machine spending this account's own credential, roughly $0.40 a case.
-
-```
-claude plugin eval <plugin>@zz-stack --json <path>
-case_record(plugin, version, result: "<the JSON at that path, verbatim>")
-```
-
-Recording is what gives a delta a timestamp. Ask before spending; do not run it because a
-profile looked thin.
+machine spending this account's own credential. Recording is what gives a delta a timestamp.
+Ask before spending; do not run it because a profile looked thin.
 
 **The target is ONE built plugin directory: `marketplace/<plugin>`.** From a checkout of this
 repository that is `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-plugin-eval` or

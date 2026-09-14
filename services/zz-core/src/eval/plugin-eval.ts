@@ -208,6 +208,7 @@ export function registerPluginEvalTools(server: McpServer): void {
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
       const traces = await pluginTraces(pool, plugin, version, toolsNamedBy(plugin), stages);
       const cases = await pluginCases(pool, plugin, version);
+      const enough = traces.sufficient || cases.sufficient;
       return json({
         plugin, version,
         traces,
@@ -215,7 +216,35 @@ export function registerPluginEvalTools(server: McpServer): void {
         // BOTH may be read, and only both being insufficient is a reason to stop. Cases need no
         // history at all, so a plugin nobody has run is still evaluable — which is the whole
         // reason the case half exists. Said here rather than left for a reader to infer.
-        sufficient_for_judging: traces.sufficient || cases.sufficient,
+        sufficient_for_judging: enough,
+        // AND WHAT TO DO ABOUT IT, in the same shape `initiative_status` answers with.
+        //
+        // The suite and this platform are ONE pipeline and were reachable only as two: the CLI
+        // measures, `case_record` stores what it measured, and the stages after this one judge
+        // what was stored. Nothing joined them. A person ran `claude plugin eval`, read the
+        // numbers off their terminal, and stopped — because the recording step is a separate act
+        // that nothing asks for and nothing notices the absence of. It happened on this platform:
+        // four suites were run, eleven cases measured, and the platform went on holding a three-
+        // week-old run with twelve errored cases in it, because nobody carried the JSON across.
+        //
+        // `sufficient_for_judging: false` was the whole answer, and a boolean is not an
+        // instruction. This says which command, with which arguments, and what to do with its
+        // output — so the next step is in the answer rather than in somebody's memory of the
+        // skill. It is null when there is enough evidence, because a next action nobody needs
+        // is noise on every profile that is already fine.
+        next_action: enough ? null : {
+          action: "record_a_suite_run",
+          why: cases.reason
+            ? `no case evidence: ${cases.reason}`
+            : "neither the run history nor a recorded suite carries enough to judge against",
+          run: `claude plugin eval ${plugin}@zz-stack --json <path>`,
+          then: `case_record(plugin: "${plugin}", version: "${version}", result: <the JSON at that path, verbatim>)`,
+          // Said before it is spent, not after. It is this account's own credential.
+          costs: "roughly $0.40 per case, on this machine, against this account's credential",
+          // The trap that produced a two-hour partial run reading as a plugin that helped with
+          // nothing. Named here because this is where somebody is about to run the command.
+          target: "ONE built plugin directory — marketplace/<plugin> — never the repository root",
+        },
       });
     },
   );

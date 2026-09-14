@@ -150,7 +150,7 @@ const DOORS: Record<string, { name: string; who: string; what: string; auth: str
   "/eval/mcp": { name: "zz-plugin-eval", who: "teams that installed the zz-plugin-eval flow",
     what: "Evaluating a plugin: what its real runs did, what a recorded ablation says installing it is worth, and the ruler both are scored against. Separate from /core/mcp because it is one flow's instrument rather than everybody's process layer — it is on the door you get by installing that flow, and on no other.",
     auth: "Bearer <your token>" },
-  "/p/:platform/mcp": { name: "building blocks", who: "teams granted that block",
+  "/p/:block/mcp": { name: "building blocks", who: "teams granted that block",
     what: "A third-party platform, called with YOUR OWN key. Store the key first via /manage.",
     auth: "Bearer <your token>" },
 };
@@ -191,9 +191,15 @@ const mountedDoors = (): string[] => {
  * would otherwise be served and never announced; prose for a door nothing mounts would
  * otherwise be announced and 404 the person who believed it.
  *
- * The express parameter is rewritten the way a person types it — `/p/:platform/mcp` is
- * `/p/<platform>/mcp` to anyone who is not express — and that is the only difference between
- * what is mounted and what is printed. */
+ * The express parameter is rewritten the way a person types it — `/p/:block/mcp` is
+ * `/p/<block>/mcp` to anyone who is not express — and that is the only difference between
+ * what is mounted and what is printed.
+ *
+ * THE PARAMETER IS NAMED `block` BECAUSE THAT IS THE PLATFORM'S WORD. It was `:platform`,
+ * and since the printed path is derived from the parameter, `/` announced `/p/<platform>/mcp`
+ * while `zz.block_tool`, `blocks/<block>/`, the CLI and this very entry's own name — "building
+ * blocks" — all said block. One concept, two words, and the one a stranger read first was the
+ * one no other surface used. */
 const doorIndex = (): { path: string; name: string; who: string; what: string; auth: string }[] => {
   const mounted = mountedDoors();
   if (mounted.length === 0) {
@@ -367,10 +373,10 @@ app.all("/eval/mcp", passThrough(EVAL_URL, "eval proxy",
   "unaffected, nothing about your access has changed and nothing needs reconnecting — retry " +
   "the call."));
 
-app.all("/p/:platform/mcp", (req, res) => {
+app.all("/p/:block/mcp", (req, res) => {
   void proxy(req, res).catch((err: unknown) => {
     console.error("proxy failed:", err);
-    mcpRefusal(req, res, `Block '${req.params.platform}' did not answer. Its own service is ` +
+    mcpRefusal(req, res, `Block '${req.params.block}' did not answer. Its own service is ` +
       "unreachable or timed out; your credential for it is unaffected and needs no reconnecting. " +
       "Retry, and if it keeps failing report the block as down rather than asking anyone to sign in again.");
   });

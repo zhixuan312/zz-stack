@@ -564,7 +564,14 @@ check("an MCP door answers MCP, whatever the block's edge did", () => {
   // The cost is not the blip. It is a diagnosis that sends somebody to redo the one thing
   // that was working.
   const src = gatewaySource();
-  const at = src.indexOf("relayBody(upstream.body, res, `block ${platform}`)");
+  // ANCHORED ON THE LABEL'S LITERAL HALF, NOT ON THE VARIABLE INSIDE IT. This matched the whole
+  // expression including the interpolated name, so renaming that local — `platform` to `block`,
+  // when the express parameter took the platform's own word — reported the HTML guard as gone.
+  // Dropping the label entirely is the other way to be wrong: relayBody has two call sites and
+  // `indexOf` then finds the generic one, whose guard is somewhere else, so the check fails for
+  // a proxy that is correct. The literal "block " is what separates the two and it is not a
+  // variable, so it survives a rename.
+  const at = src.indexOf("relayBody(upstream.body, res, `block ");
   if (at < 0) return "the block proxy no longer relays through relayBody — re-check this rule against whatever replaced it";
   // Read BACKWARD from the relay: the guard has to sit before it, or the HTML is already gone.
   const before = src.slice(Math.max(0, at - 2600), at);

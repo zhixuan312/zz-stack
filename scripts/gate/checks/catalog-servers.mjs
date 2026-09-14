@@ -42,6 +42,38 @@ check("every server a manifest declares is a door the gateway mounts", () => {
   const literal = new Set(doors.filter((d) => !d.includes(":")));
   const known = (p) => literal.has(p) || templates.some((re) => re.test(p));
 
+  // AND THE CLIENT'S COPY OF THE SAME SET. `packages/tools` cannot import a service, so
+  // `zz-tool call` validates a door against `DOORS_PRINTED` in @zz/contracts before it opens a
+  // socket. That is a SECOND statement of what this gateway serves, and the only thing that
+  // makes a second statement honest is this comparison — without it the CLI drifts silently,
+  // which is exactly what it had done: it accepted `/admin/mcp`, a door retired long enough ago
+  // that admin.ts opens by saying so.
+  //
+  // Compared on the PRINTED spelling, because that is what the two sets have in common: the
+  // gateway keys DOORS by express's mount path (`/p/:block/mcp`) and `/` rewrites the parameter
+  // for a reader (`/p/<block>/mcp`), which is the form a person types and the CLI validates.
+  // READ FROM alias.ts's SOURCE, not from @zz/contracts' dist. A module under scripts/gate may
+  // not import build output: dist/ is gitignored, so it is here on the machine that just built
+  // and absent on a fresh clone, where the gate would throw before reporting anything. The gate
+  // told me so when this first imported it. server.ts is read the same way, two lines up.
+  const aliasSrc = readFileSync(join(root, "packages/contracts/src/alias.ts"), "utf8");
+  const fixed = /export const FIXED_DOORS = Object\.freeze\(\[([^\]]*)\]\)/.exec(aliasSrc)?.[1];
+  const blockDoor = /export const BLOCK_DOOR = "([^"]+)"/.exec(aliasSrc)?.[1];
+  if (!fixed || !blockDoor) {
+    return "packages/contracts/src/alias.ts no longer declares FIXED_DOORS and BLOCK_DOOR where this can read them — the client's door set is unchecked";
+  }
+  const clientDoors = [...[...fixed.matchAll(/"([^"]+)"/g)].map((m) => m[1]), blockDoor];
+
+  const printed = doors.map((d) => d.replace(/:([A-Za-z_]\w*)/g, "<$1>"));
+  const onlyGateway = printed.filter((d) => !clientDoors.includes(d));
+  const onlyClient = clientDoors.filter((d) => !printed.includes(d));
+  if (onlyGateway.length || onlyClient.length) {
+    return [
+      onlyGateway.length ? `the gateway mounts ${onlyGateway.join(", ")}, which @zz/contracts does not name — zz-tool call would refuse a door that works` : "",
+      onlyClient.length ? `@zz/contracts names ${onlyClient.join(", ")}, which this gateway does not mount — zz-tool call would accept a door that 404s` : "",
+    ].filter(Boolean).join("; ");
+  }
+
   const bad = [];
   for (const f of flows) {
     let m;

@@ -171,10 +171,10 @@ export function passThrough(
 }
 
 export async function proxy(req: express.Request, res: express.Response): Promise<void> {
-  const platform = req.params.platform as string;
-  const conf = PLATFORMS[platform];
+  const block = req.params.block as string;
+  const conf = PLATFORMS[block];
   if (!conf) {
-    mcpRefusal(req, res, `There is no block called '${platform}' on this platform. Check the ` +
+    mcpRefusal(req, res, `There is no block called '${block}' on this platform. Check the ` +
       "name against the blocks your team is granted rather than treating this as a connection problem.",
       -32601);
     return;
@@ -215,7 +215,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   if (idn && platformDbReady()) {
     if (idn.teams.length === 0) {
       mcpRefusal(req, res, `You are in no team, and block access is granted to teams — ask a ` +
-        `platform admin to add you to one before using '${platform}'. This is not a credential ` +
+        `platform admin to add you to one before using '${block}'. This is not a credential ` +
         `problem and signing in again will not change it.`);
       return;
     }
@@ -243,17 +243,17 @@ export async function proxy(req: express.Request, res: express.Response): Promis
     const acting = idn.activeTeam;
     if (!acting) {
       mcpRefusal(req, res, `Your token is bound to team '${idn.patTeam}', which you are not a ` +
-        `member of, so it acts for no team and cannot reach block '${platform}'. Ask a platform ` +
+        `member of, so it acts for no team and cannot reach block '${block}'. Ask a platform ` +
         `admin to add you to that team or issue a token for one you are in.`);
       return;
     }
     const actingHasGrants = grants.rows.some((g) => g.team === acting);
-    if (actingHasGrants && !grants.rows.some((g) => g.team === acting && g.block === platform)) {
+    if (actingHasGrants && !grants.rows.some((g) => g.team === acting && g.block === block)) {
       // Naming the team that DOES have it turns a refusal into an instruction: switching is
       // something the caller can do themselves, asking an admin to grant is not.
-      const elsewhere = [...new Set(grants.rows.filter((g) => g.block === platform).map((g) => g.team))];
+      const elsewhere = [...new Set(grants.rows.filter((g) => g.block === block).map((g) => g.team))];
       mcpRefusal(req, res,
-        `You are acting for team '${acting}', which is not granted block '${platform}'` +
+        `You are acting for team '${acting}', which is not granted block '${block}'` +
         (elsewhere.length
           ? ` — your team ${elsewhere.join(" or ")} is: team_switch to it, or a platform admin can tool_grant it to '${acting}'.`
           : ` — a platform admin can tool_grant it.`) +
@@ -276,7 +276,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   {
     const rpc = (req.body ?? {}) as { method?: string; id?: unknown };
     const caller = callerKey(req.headers as Record<string, unknown>);
-    const why = await stageDenial(caller, req.zzIdentity?.activeTeam ?? null, platform,
+    const why = await stageDenial(caller, req.zzIdentity?.activeTeam ?? null, block,
                                   rpc.method ?? "");
     if (why) {
       res.json(denialResponse(rpc.id, why));
@@ -298,10 +298,10 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   // chain deletes the row: the next call then has no token, takes the stored key, and the
   // audit record shows the change of actor instead of hiding it.
   const delegated = conf.header
-    ? await delegatedToken(req.zzIdentity?.email ?? "", platform, conf.url)
+    ? await delegatedToken(req.zzIdentity?.email ?? "", block, conf.url)
     : null;
   const resolved = conf.header && !delegated
-    ? personalCredential(load(), email, platform)
+    ? personalCredential(load(), email, block)
     : null;
   const key = resolved?.key;
   if (conf.header && !key && !delegated) {
@@ -332,7 +332,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
     // Relative to the door the caller reached, never the public address — RFC 9728 §3.3 has
     // the client compare the two and refuse when they differ. See requestBase (identity.ts).
     res.set("WWW-Authenticate",
-            `Bearer resource_metadata="${requestBase(req)}/.well-known/oauth-protected-resource/p/${platform}/mcp"`);
+            `Bearer resource_metadata="${requestBase(req)}/.well-known/oauth-protected-resource/p/${block}/mcp"`);
     res.status(401).json({
       error: `${conf.name} is not connected for ${email || "this user"}. Sign in to it from ` +
              "the MCP settings in this front end — that runs the block's own sign-in and " +
@@ -395,7 +395,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   const ctype = (upstream.headers.get("content-type") ?? "").toLowerCase();
   const speaksMcp = ctype.includes("json") || ctype.includes("event-stream");
   if (!speaksMcp) {
-    console.error(`block ${platform}: upstream answered ${upstream.status} as '${ctype || "no content-type"}' — not MCP; ` +
+    console.error(`block ${block}: upstream answered ${upstream.status} as '${ctype || "no content-type"}' — not MCP; ` +
                   "returning a JSON-RPC error rather than relaying it");
     // The MCP layer reads the ENVELOPE, not the HTTP status, so this is a 200 carrying an
     // error — the same shape every refusal on this platform takes.
@@ -405,7 +405,7 @@ export async function proxy(req: express.Request, res: express.Response): Promis
       error: {
         code: -32603,
         message:
-          `${platform} did not answer as MCP: its server returned HTTP ${upstream.status} ` +
+          `${block} did not answer as MCP: its server returned HTTP ${upstream.status} ` +
           `as '${ctype || "no content-type"}'. This is the block's own edge, not your ` +
           "credential and not this platform — your connection is unaffected. Retry; if it " +
           "persists, the block is down.",
@@ -418,5 +418,5 @@ export async function proxy(req: express.Request, res: express.Response): Promis
   upstream.headers.forEach((v, k) => {
     if (!STRIP_RESPONSE.has(k.toLowerCase())) res.setHeader(k, v);
   });
-  relayBody(upstream.body, res, `block ${platform}`);
+  relayBody(upstream.body, res, `block ${block}`);
 }

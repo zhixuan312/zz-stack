@@ -28,12 +28,10 @@
  * What sets the exit status is whether the CALL completed, not whether the platform agreed:
  * `--strict` is there for a caller that wants a refusal to be a failure too.
  */
+import { DOORS_PRINTED, isDoor } from "@zz/contracts";
 import { Mcp, McpError } from "@zz/mcp-client";
 
 import { die, envRequired, optional, parseArgs } from "../lib/cli.js";
-
-/** A door on the gateway. `/p/<block>/mcp` is a block; the other three are the platform's. */
-const DOOR = /^\/(core|eval|manage|admin|p\/[a-z0-9-]+)\/mcp$/;
 
 async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv, ["list", "strict", "json"]);
@@ -43,11 +41,15 @@ async function main(argv: string[]): Promise<number> {
 
   if (!door || (!tool && !listing)) {
     die("usage: call <door> <tool> ['<json args>']   |   call <door> --list\n" +
-        "       doors: /core/mcp  /eval/mcp  /manage/mcp  /p/<block>/mcp");
+        `       doors: ${DOORS_PRINTED.join("  ")}`);
   }
-  if (!DOOR.test(door)) {
+  // FROM @zz/contracts, where the gateway's door set is stated once and the gate holds it
+  // against server.ts's own DOORS. Retyped here, this list said `admin` — a door retired
+  // before it was written down — so `call /admin/mcp` passed validation and failed as a
+  // connection error with nothing pointing at the real cause.
+  if (!isDoor(door)) {
     die(`${JSON.stringify(door)} is not a door on this gateway — ` +
-        "expected /core/mcp, /eval/mcp, /manage/mcp or /p/<block>/mcp");
+        `expected ${DOORS_PRINTED.join(", ")}`);
   }
 
   // PARSED BEFORE THE NETWORK CALL. A mistyped argument object should cost nothing, and the

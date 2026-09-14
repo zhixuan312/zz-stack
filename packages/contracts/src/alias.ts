@@ -139,3 +139,38 @@ export function resolveToolKey(subject: string): string {
 export function resolveStep(step: string): string {
   return SKILL_ALIAS[step] ?? step;
 }
+
+/** THE DOORS THIS GATEWAY SERVES, as a person types them.
+ *
+ * The gateway's own `DOORS` in services/gateway/src/server.ts is the authority on what is
+ * MOUNTED — it is keyed by the express path and cross-validated against express's router at
+ * boot. This is the same set stated where a CLIENT can reach it: `packages/tools` cannot
+ * import a service, and `zz-tool call` has to reject a door before it opens a socket if the
+ * person is to get a useful error instead of a connection failure.
+ *
+ * IT IS NOT A SECOND SOURCE OF TRUTH. `scripts/gate/checks/catalog-servers.mjs` reads
+ * server.ts's DOORS and asserts these two agree, so a door added on one side and not the
+ * other is red before it ships. That is the only reason a second statement is allowed to
+ * exist at all: it is checked against the first.
+ *
+ * `admin` IS DELIBERATELY ABSENT. `zz-tool call` accepted `/admin/mcp` until this was
+ * written, and that door was retired — see services/gateway/src/admin.ts, "There is no
+ * separate admin door." A validator that accepts a path the gateway does not mount turns a
+ * clear refusal into a connection error somewhere further down. */
+export const FIXED_DOORS = Object.freeze(["/core/mcp", "/manage/mcp", "/eval/mcp"]);
+
+/** The block door, spelled the way a person types it rather than the way express mounts it.
+ *
+ * `/p/<block>/mcp` in prose, `/p/:block/mcp` in the router. The word is `block` on every
+ * surface this platform has — `zz.block_tool`, `blocks/<block>/`, "building blocks" in the
+ * door index itself — and it reads `<platform>` nowhere any more. */
+export const BLOCK_DOOR = "/p/<block>/mcp";
+
+/** Every door, for a usage line or an error message. */
+export const DOORS_PRINTED: readonly string[] = Object.freeze([...FIXED_DOORS, BLOCK_DOOR]);
+
+/** Whether a string is a door this gateway mounts, with a real block name in the block door's
+ *  slot. The block half is matched on shape — one path segment, the same character class the
+ *  registry admits — because the set of blocks is a runtime fact no client carries. */
+export const isDoor = (path: string): boolean =>
+  FIXED_DOORS.includes(path) || /^\/p\/[a-z0-9-]+\/mcp$/.test(path);

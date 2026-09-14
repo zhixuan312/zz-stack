@@ -15,7 +15,7 @@ export { actingTeam, addressResolver, mintPat, parseCaller, PAT_TOKEN,
 // through this one door rather than a deep import — the same reason identity.ts is re-exported
 // above instead of letting callers reach it directly.
 export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
-         FIXED_DOORS, BLOCK_DOOR, DOORS_PRINTED, isDoor,
+         FIXED_DOORS, BLOCK_DOOR, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING,
          resolveTool, resolveToolKey, resolveStep } from "./alias.js";
 
 /** A building-block platform reachable through the credential gateway. */

@@ -193,13 +193,13 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       "WHEN somebody needs to connect an MCP client — Claude Code, Codex, Hermes — to this " +
       "platform, or an automation needs its own credential. RETURNS the token plaintext " +
       "EXACTLY ONCE: it cannot be read back, so it has to be stored now. A labelled token " +
-      "REPLACES any earlier one with the same label, because a purpose has one current " +
-      "credential. REFUSES issuing for anybody but yourself without superadmin or team-admin " +
-      "authority, refuses admin scope on the same rule, and refuses to bind a token to a " +
-      "team its holder is not in — that token would authenticate nowhere.",
+      "The token carries whatever its holder may do — there is no lesser kind. REPLACES any " +
+      "earlier one with the same label, because a purpose has one current credential. REFUSES " +
+      "issuing for anybody but yourself without superadmin or team-admin authority, and " +
+      "refuses to bind a token to a team its holder is not in — that token would " +
+      "authenticate nowhere.",
     inputSchema: {
       email: z.string().email().optional(),
-      scope: z.enum(["member", "admin"]).optional(),
       team: z.string().optional().describe(
         "CONFINE this token to one team — for automation that should never touch another, " +
         "not for a person who works in several. A person needs ONE token: they pick the " +
@@ -211,16 +211,13 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
         "issued to somebody else; a person's everyday token is usually left open-ended and " +
         "revoked when it is no longer wanted."),
     },
-  }, async ({ email, scope, team, label, expires_in_days }) => {
+  }, async ({ email, team, label, expires_in_days }) => {
     const id = await caller();
     if (!id) return text("ERROR: no platform identity");
     const target = (email ?? id.email).toLowerCase();
-    const wantScope = scope ?? "member";
     if (target !== id.email && !superOnly(id)) {
       if (!team || !teamAuthority(id, team)) return text("ERROR: issuing for others needs superadmin, or team admin with team specified");
     }
-    if (wantScope === "admin" && !superOnly(id) && !(team && teamAuthority(id, team)))
-      return text("ERROR: admin-scope PATs need superadmin or team-admin authority");
     const db = platformDb();
     const pid = await principalId(db, target);
     if (!pid) return text(`ERROR: no principal '${target}'`);
@@ -266,15 +263,15 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       ? (await db.query("delete from pat where principal_id = $1 and label = $2", [pid, label])).rowCount ?? 0
       : 0;
     await db.query(
-      "insert into pat (principal_id, token_hash, label, scope, team_id, expires_at) values ($1,$2,$3,$4,$5,$6)",
-      [pid, sha256(token), label ?? "", wantScope, tid, expiry],
+      "insert into pat (principal_id, token_hash, label, team_id, expires_at) values ($1,$2,$3,$4,$5)",
+      [pid, sha256(token), label ?? "", tid, expiry],
     );
     auditAdmin(id, "issue_pat", target,
-               { scope: wantScope, team: team ?? null, label: label ?? "", expires_at: expiry,
+               { team: team ?? null, label: label ?? "", expires_at: expiry,
                  ...(replaced ? { replaced } : {}) },
                team ?? null);
     return text(
-      `PAT for ${target} (scope ${wantScope}${team ? ", team " + team : ""}` +
+      `PAT for ${target} (${team ? "team " + team : "all your teams"}` +
       `${expiry ? `, expires ${expiry.slice(0, 10)}` : ", no expiry"}):\n\n${token}\n\n` +
       "Shown once — store it now. Use as:  Authorization: Bearer <token>" +
       (replaced ? `\n\nThis REPLACED ${replaced} earlier token(s) labelled '${label}' — those no longer work.` : ""),
@@ -328,7 +325,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     const target = (email ?? id.email).toLowerCase();
     if (target !== id.email && !superOnly(id)) return text("ERROR: superadmin required for others");
     const r = await platformDb().query(
-      `select pat.id, p.email, pat.label, pat.scope, t.slug as team, pat.created_at, pat.last_used_at, pat.revoked_at
+      `select pat.id, p.email, pat.label, t.slug as team, pat.created_at, pat.last_used_at, pat.revoked_at
        from pat join principal p on p.id = pat.principal_id left join team t on t.id = pat.team_id
        where $1 = '*' or p.email = $1 order by pat.created_at desc`,
       [superOnly(id) && !email ? "*" : target],

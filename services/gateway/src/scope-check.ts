@@ -205,7 +205,6 @@ const superadminBoundToP2 = identity({
   teams: [{ slug: "product_group_2", role: "admin" }],
   activeTeam: "product_group_2",
   via: "pat",
-  patScope: "admin",
   patTeam: "product_group_2",
 });
 

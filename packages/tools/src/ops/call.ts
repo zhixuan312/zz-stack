@@ -31,7 +31,7 @@
 import { DOORS_PRINTED, isDoor } from "@zz/contracts";
 import { Mcp, McpError } from "@zz/mcp-client";
 
-import { die, envRequired, optional, parseArgs } from "../lib/cli.js";
+import { die, envRequired, optional, parseArgs, platformToken } from "../lib/cli.js";
 
 async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv, ["list", "strict", "json"]);
@@ -71,7 +71,9 @@ async function main(argv: string[]): Promise<number> {
 
   const base = envRequired("ZZ_URL", "the gateway to call, e.g. https://api.example.com")
     .replace(/\/+$/, "");
-  const pat = envRequired("ZZ_TOKEN", "a platform token — every door authenticates the caller");
+  // Resolved, not demanded. This read $ZZ_TOKEN alone and died otherwise, on machines where
+  // the platform's own install step had already written ~/.zz/token — see platformToken().
+  const pat = platformToken();
   const timeout = Number(optional(args, "timeout", "milliseconds to wait for one call") ?? "180000");
 
   const mcp = new Mcp(`${base}${door}`, { pat, client: "call", timeoutMs: timeout });

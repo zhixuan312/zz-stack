@@ -11,7 +11,7 @@
  * the same drift the boot line had, and a header that is a stale part of a list further down
  * teaches nothing the list does not.
  */
-import { CatalogManifest, Envelope, jsonSchema } from "@zz/contracts";
+import { CatalogManifest, Envelope, jsonSchema, NO_TOKEN_ONBOARDING } from "@zz/contracts";
 import { serveMcp } from "@zz/mcp-http";
 import express from "express";
 import { z } from "zod";
@@ -249,12 +249,9 @@ app.get("/", (req, res) => {
       `    auth: ${d.auth}`,
       "",
     ]),
-    "No token yet?",
-    "  Open the platform and pick the ZZ Access agent. Ask it for a token:",
-    "  it is shown once, carries your identity and your team's access, and",
-    "  you can revoke it yourself at any time. That same agent stores your",
-    "  keys for the building blocks and prints the setup for Claude Code,",
-    "  Codex or Hermes. One agent, everything about your access.",
+    // FROM @zz/contracts, because `zz-tool` prints the same six lines when it cannot find a
+    // token. The person who needs onboarding is more often at a terminal than at this URL.
+    ...NO_TOKEN_ONBOARDING,
     "",
   ].join("\n"));
 });

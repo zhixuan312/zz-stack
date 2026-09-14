@@ -174,3 +174,26 @@ export const DOORS_PRINTED: readonly string[] = Object.freeze([...FIXED_DOORS, B
  *  registry admits — because the set of blocks is a runtime fact no client carries. */
 export const isDoor = (path: string): boolean =>
   FIXED_DOORS.includes(path) || /^\/p\/[a-z0-9-]+\/mcp$/.test(path);
+
+/** WHAT SOMEBODY WITH NO TOKEN IS TOLD, in one place.
+ *
+ * The gateway's front door has said this since there was a front door, and it is the only
+ * onboarding this platform has: there is no signup form and no token in a config file — an
+ * agent issues one, once, against your own identity.
+ *
+ * IT IS HERE BECAUSE THE CLI NEEDS THE SAME SENTENCE. `zz-tool` used to fail with "no
+ * ZZ_TOKEN: a platform token — every door authenticates the caller", which tells a person
+ * what is missing and not one thing about how to get it. A dead end is not an error message
+ * problem; it is a missing onboarding step, and the step already existed twenty feet away at
+ * `GET /`. Two wordings of it would be two onboardings, so there is one, and
+ * `scripts/gate/checks/catalog-servers.mjs` holds the door's copy against this one.
+ *
+ * Written as lines rather than a paragraph because both readers print it to a terminal. */
+export const NO_TOKEN_ONBOARDING: readonly string[] = Object.freeze([
+  "No token yet?",
+  "  Open the platform and pick the ZZ Access agent. Ask it for a token:",
+  "  it is shown once, carries your identity and your team's access, and",
+  "  you can revoke it yourself at any time. That same agent stores your",
+  "  keys for the building blocks and prints the setup for Claude Code,",
+  "  Codex or Hermes. One agent, everything about your access.",
+]);

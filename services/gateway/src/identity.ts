@@ -34,7 +34,8 @@ export interface Identity {
    * "signed in at the directory just now" and "holds a token minted last month"
    * are genuinely different assurances about the same person. */
   via: "pat" | "forwarded" | "session";
-  patScope?: "member" | "admin";
+  /** WHICH TEAM A TOKEN IS CONFINED TO, when one is. Not an authority narrowing — see below;
+   *  it answers "acting inside which team", which is a different question from "may do what". */
   patTeam?: string | null;
 }
 
@@ -174,9 +175,9 @@ async function resolvePat(token: string): Promise<Identity | null> {
   const db = platformDb();
   const r = await db.query<{
     id: string; email: string; display_name: string; role: "superadmin" | "member";
-    status: string; scope: "member" | "admin"; team_slug: string | null;
+    status: string; team_slug: string | null;
   }>(
-    `select pat.id, p.email, p.display_name, p.role, p.status, pat.scope, t.slug as team_slug
+    `select pat.id, p.email, p.display_name, p.role, p.status, t.slug as team_slug
      from pat join principal p on p.id = pat.principal_id
      left join team t on t.id = pat.team_id
      where pat.token_hash = $1 and pat.revoked_at is null
@@ -208,7 +209,7 @@ async function resolvePat(token: string): Promise<Identity | null> {
   return {
     ...base, teams,
     activeTeam: actingTeam(base.teams, base.activeTeam, row.team_slug),
-    via: "pat", patScope: row.scope, patTeam: row.team_slug,
+    via: "pat", patTeam: row.team_slug,
   };
 }
 
@@ -462,16 +463,13 @@ export function identityMiddleware() {
       // An MCP tool handler receives headers, not the request, so admin.ts could not see
       // req.zzIdentity and rebuilt an identity from the database instead — which knows the
       // person's ROLE but nothing about the TOKEN, so it filled in via: "forwarded" and every
-      // scope check downstream compared against a constant. A member-scope token therefore
-      // carried its owner's full superadmin authority, which is the one thing scope exists
-      // to prevent.
+      // downstream check compared against a constant.
       //
-      // These are set on EVERY request, never merged with what arrived: an unauthenticated
-      // caller writing x-zz-pat-scope: admin must not be able to promote itself, and the only
-      // way to guarantee that is to overwrite unconditionally, exactly as the three lines
-      // above already do for identity.
+      // Set on EVERY request, never merged with what arrived: an unauthenticated caller
+      // writing these must not be able to promote itself, and the only way to guarantee that
+      // is to overwrite unconditionally, exactly as the three lines above already do for
+      // identity.
       req.headers["x-zz-via"] = id.via;
-      req.headers["x-zz-pat-scope"] = id.patScope ?? "";
 
       // The team a person acts for is NOT on this request. It is a column on their
       // principal, switched in ZZ Access, and zz-core reads it per call — so there is one
@@ -496,14 +494,21 @@ export function identityMiddleware() {
  * are as trustworthy here as the identity headers beside them and cannot be forged.
  *
  * One reader, because the first one was written inline in admin.ts and /manage then went on
- * checking a header-derived role with no notion of scope at all: a member-scope token could
- * store a credential on another person's behalf. */
-export function callerAuth(headers: Record<string, string | string[] | undefined>): {
-  via: "pat" | "forwarded"; patScope: "member" | "admin"; patTeam: string | null;
+ * checking a header-derived role against a constant.
+ *
+ * NO SCOPE HERE ANY MORE. A PAT used to carry `member` or `admin` and authority checks asked
+ * the TOKEN what its holder could do. That is backwards: a person's authority is a fact about
+ * the person, and a credential that grants less than they have is a credential that lies about
+ * them — the holder is told they may not do a thing they may in fact do, and the only cure is
+ * a second token, which is a second thing to rotate and revoke. Authority is now read from the
+ * principal, every time. `patTeam` stays because it answers a different question — which team
+ * this token acts INSIDE — and narrowing the team a person acts for is not a claim about what
+ * they are allowed to do. */
+function callerAuth(headers: Record<string, string | string[] | undefined>): {
+  via: "pat" | "forwarded"; patTeam: string | null;
 } {
   return {
     via: one(headers["x-zz-via"]) === "pat" ? "pat" : "forwarded",
-    patScope: one(headers["x-zz-pat-scope"]) === "admin" ? "admin" : "member",
     patTeam: one(headers["x-zz-pat-team"]) || null,
   };
 }
@@ -520,12 +525,11 @@ export function callerAuth(headers: Record<string, string | string[] | undefined
  * they already hold is unchanged. */
 export function isSuper(id: Identity): boolean {
   if (id.via === "pat" && id.patTeam) return false;
-  return id.platformRole === "superadmin" && (id.via !== "pat" || id.patScope === "admin");
+  return id.platformRole === "superadmin";
 }
 
 export function isTeamAdmin(id: Identity, teamSlug: string): boolean {
   if (isSuper(id)) return true;
-  if (id.via === "pat" && id.patScope !== "admin") return false;
   // Belt and braces: resolvePat already narrowed `teams` to the bound team, so the check
   // below would fail anyway. Kept because it is an authorisation decision, and the cost of
   // stating it twice is nothing against the cost of the narrowing being loosened later.

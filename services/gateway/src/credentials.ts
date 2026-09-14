@@ -17,7 +17,7 @@ import { requestHeaders } from "@zz/mcp-http";
 import { PLATFORMS } from "./blocks.js";
 import { platformDb } from "./db.js";
 import { logEvent } from "./events.js";
-import { callerAuth, sha256 } from "./identity.js";
+import { sha256 } from "./identity.js";
 
 const CRED_PATH = "/data/credentials.json";
 /** The credential store, or a sentence saying what is wrong with it.
@@ -91,15 +91,15 @@ export const caller = (): ReturnType<typeof parseCaller> => parseCaller(requestH
  *
  * The role comes from the identity headers, which the middleware writes from the database —
  * trustworthy for WHO. It says nothing about the TOKEN in their hand, and `role !== "admin"`
- * was the whole check: a deliberately member-scope PAT could store a key on another
- * person's behalf, verified live before this. Acting for someone else is exactly what a
- * terminal token is scoped down to prevent. */
+ * was the whole check.
+ *
+ * IT ASKS THE PERSON, NOT THE TOKEN. This also refused when the caller held a PAT stamped
+ * `member`, which made the same act allowed or forbidden depending on which of their
+ * credentials they happened to be holding. A token does not decide what somebody may do —
+ * if the answer is no, it is no because of who they are, and it is the same no from every
+ * door and every credential they own. */
 export function operatorOnly(): string | null {
   if (caller().role !== "admin") return "ERROR: admin role required";
-  const auth = callerAuth(requestHeaders());
-  if (auth.via === "pat" && auth.patScope !== "admin") {
-    return "ERROR: this token is member-scoped — acting for another person needs an admin-scope token";
-  }
   return null;
 }
 /** Refuse something that cannot be a key, before it reaches the store.

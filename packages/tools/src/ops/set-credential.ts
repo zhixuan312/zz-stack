@@ -15,10 +15,14 @@
  * shell history, where it stays. $ZZ_BLOCK_KEY is in neither. The CSV path never had the
  * problem — a file has permissions.
  *
- * Auth: an ADMIN-SCOPE platform token, from $ZZ_TOKEN or ~/.zz/token-admin. A member-scope
- * token is refused by the gateway — acting on another person's behalf is exactly what a
- * terminal token is scoped down to prevent. Ask the ZZ Access agent, or pat_issue with
- * scope=admin.
+ * Auth: the caller's own platform token, resolved by platformToken() — $ZZ_TOKEN, then
+ * $ZZ_TOKEN_FILE, then ~/.zz/token. One token per person, carrying whatever that person may
+ * do; there is no separate admin credential to keep beside it.
+ *
+ * This command stores a key ON SOMEBODY ELSE'S BEHALF, which needs admin authority. A token
+ * deliberately CONFINED to member scope is refused by the gateway for exactly that — acting
+ * for another person is what a narrowed token exists to prevent — so if you confined the
+ * token you are holding, this is where you find out.
  *
  * --url, or $ZZ_URL, and there is NO DEFAULT on purpose. It used to fall back to the gateway
  * of the deployment this repo happens to be developed on, so an operator installing this
@@ -39,26 +43,12 @@
  * onboarding several at once.
  */
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 import { Mcp, McpError } from "@zz/mcp-client";
 
-import { die, optional, parseArgs } from "../lib/cli.js";
+import { die, optional, parseArgs, platformToken } from "../lib/cli.js";
 
-function token(): string {
-  const fromEnv = (process.env.ZZ_TOKEN ?? "").trim();
-  if (fromEnv) return fromEnv;
-  for (const p of [join(homedir(), ".zz/token-admin"), join(homedir(), ".zz/token")]) {
-    try {
-      const t = readFileSync(p, "utf8").trim();
-      if (t) return t;
-    } catch {
-      // Not there, or not readable. The next candidate, then the message below.
-    }
-  }
-  return die("no token: set $ZZ_TOKEN or write one to ~/.zz/token-admin");
-}
+const token = (): string => platformToken();
 
 /** A CSV row, split on commas with no quoting.
  *

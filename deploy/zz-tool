@@ -78,7 +78,7 @@ pass=()
 # LC_BASE and LC_EMAIL and LIBRECHAT_MONGO_URL for a front end removed on 2026-09-10, and
 # ZZ_USER_PAT for nothing at all. A passthrough list costs nothing to be wrong, which is why
 # it was — an operator reading it cannot tell a knob from a fossil.
-for v in ZZ_PAT ZZ_TOKEN ZZ_URL ZZ_GATEWAY ZZ_BLOCK_KEY CHAIN_FLOW \
+for v in ZZ_PAT ZZ_TOKEN ZZ_TOKEN_FILE ZZ_URL ZZ_GATEWAY ZZ_BLOCK_KEY CHAIN_FLOW \
          PLATFORM_BASE_MODEL LLM_BASE_URL LLM_API_KEY JUDGE_MODEL TEAM_DB_URL; do
   [ -n "${!v:-}" ] && pass+=(-e "$v")
 done

@@ -351,7 +351,7 @@ check("the /manage door is cut by role, the duplicates are gone, and the excepti
 check("the evaluation door serves its own tools, and the gateway reaches that door and not the other",
       runsCheck("eval-door.mjs"));
 
-check("sdlc closes on its review, and the two halves of its manifest name each other",
+check("sdlc closes on its review, gates it, and leaves its audits ungated",
       runsCheck("sdlc-documents.mjs"));
 
 check("the evaluation modules are on the evaluation side, and attest stays on the core one",

@@ -32,10 +32,10 @@ for (const [name, dir] of plugins) {
   const undeclared = shipped.filter((s) => !declared.has(s));
   if (undeclared.length) fail.push(`${name} ships undeclared skills: ${undeclared.join(", ")}`);
 
-  // A flow declares produces on every stage.
-  for (const s of m.stages || []) {
-    if (!s.produces) fail.push(`${name} stage ${s.name} declares no produces`);
-  }
+  // NO HAND-WRITTEN `produces` LOOP HERE. `CatalogManifest.safeParse` above is the same rule
+  // applied by the contract that defines it — `produces` is required on FlowStage — so a
+  // second copy fifteen lines down could only ever agree with it or be wrong. The generic
+  // form, over every flow rather than these four names, is scripts/gate/checks/stage-produces.mjs.
 }
 // Control: zz-core must declare NO documents, or it has been wrongly made a flow.
 //

@@ -15,13 +15,18 @@
  * THE GATE IS RUN WITHOUT --quiet ON PURPOSE. A passing check prints a line too, and that is
  * the only way to tell "this check passed" from "the gate died before reaching it".
  *
- * WHY THE MUTATIONS ARE IN zz-plugin-eval AND NOT IN sdlc-flow. `checks/sdlc-documents.mjs`
- * already asserts all three properties — presence, forward resolution, reciprocity — for
- * `catalog/sdlc/sdlc-flow/flow.json`, named as a literal. A plant that broke sdlc-flow would
- * turn two checks red and prove nothing about the new one: every case would be satisfiable by
- * the rule that was already there. zz-plugin-eval is the manifest sdlc-documents cannot see, so
- * each case below asserts it stays GREEN while the new check fires. That difference is the
- * measurement that says this check generalises rather than duplicates.
+ * WHY THE MUTATIONS ARE IN zz-plugin-eval AND NOT IN sdlc-flow. When this plant was written,
+ * `checks/sdlc-documents.mjs` asserted all three properties — presence, forward resolution,
+ * reciprocity — for `catalog/sdlc/sdlc-flow/flow.json`, named as a literal. A plant that broke
+ * sdlc-flow would have turned two checks red and proved nothing about the new one: every case
+ * would have been satisfiable by the rule that was already there. So each case below mutates
+ * the manifest that copy could not see, and asserts it stays GREEN while the new check fires.
+ *
+ * THAT COPY IS NOW GONE — the generic check made it redundant and it was deleted, which is what
+ * the measurement below was evidence for. The cases stay where they are: zz-plugin-eval exercises
+ * a flow whose stages use all three kinds of `produces`, and SDLC_DOCS staying quiet through them
+ * now says something slightly different but still worth asserting — that what remains in that
+ * file is about sdlc alone and does not fire on another flow's manifest.
  *
  * CASE 4 IS THE ONE THE TASK IS ABOUT. A one-way check — resolve `produces` forward, confirm
  * the document exists — passes a manifest where a document points at a stage that points
@@ -46,7 +51,7 @@ const KEEP = {
 };
 
 const MINE = "every stage says what it leaves behind, and the document it names names it back";
-const SDLC_DOCS = "sdlc closes on its review, and the two halves of its manifest name each other";
+const SDLC_DOCS = "sdlc closes on its review, gates it, and leaves its audits ungated";
 const CONFORM = "every plugin declares what it is, what it ships, and what each stage leaves behind";
 const DOC_STAGE = "a document's declared stage is a stage its flow has";
 

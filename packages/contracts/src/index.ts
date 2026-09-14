@@ -440,8 +440,18 @@ export const FlowStage = z.object({
    * already says which stage writes each document, so a stage that names a document the
    * flow does not declare is a stage nobody can verify. `"record"` is for the stages that
    * write into the platform's own tables — an audit's findings, a judge's scores — where
-   * there is a durable result and no document and no gate. */
-  produces: z.union([z.string().min(1), z.literal("record"), z.literal("nothing")]),
+   * there is a durable result and no document and no gate.
+   *
+   * THE UNION IS LOAD-BEARING NOW, AND WAS NOT. Beside `z.string().min(1)` the two literals
+   * decided nothing — a non-empty string already accepts them — so `produces: "garbage"`
+   * validated, while contract-fields.mjs's control claimed otherwise by testing `""`, the one
+   * value `.min(1)` catches on its own. Every reader already treats a document name as a name
+   * (stage-produces.mjs resolves it against `documents`; sdlc-documents.mjs orders the flow by
+   * which values end in `.md`), so the shape was load-bearing everywhere but here. */
+  produces: z.union([
+    z.string().regex(/^[a-z0-9][a-z0-9-]*\.md$/, "a document name, like \"spec.md\""),
+    z.literal("record"), z.literal("nothing"),
+  ]),
 }).strict();
 export type FlowStage = z.infer<typeof FlowStage>;
 
@@ -597,9 +607,22 @@ export function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
       // `.email()` and `.regex()` all have JSON Schema spellings and none of them is
       // guessable from here — adding one is a decision, not a fallthrough.
       const out: Record<string, unknown> = { type: "string" };
-      for (const c of (def.checks ?? []) as { kind: string; value?: number }[]) {
+      for (const c of (def.checks ?? []) as { kind: string; value?: number; regex?: RegExp }[]) {
         if (c.kind === "min") out.minLength = c.value;
         else if (c.kind === "max") out.maxLength = c.value;
+        // `pattern` is JSON Schema's spelling, and only `source` can cross: a RegExp's flags
+        // have nowhere to go, so `/x/i` would publish as case-SENSITIVE and admit less than
+        // the validator does. Flags are refused rather than dropped — an unrepresentable
+        // constraint is what this function exists to catch, not an exception to it.
+        else if (c.kind === "regex") {
+          const re = c.regex as RegExp;
+          if (re.flags) {
+            throw new Error(`jsonSchema: the regex ${re} carries flags (${re.flags}), which ` +
+              "`pattern` cannot hold — publishing `source` alone would accept what the " +
+              "validator refuses. Drop the flags, or add a deliberate translation here.");
+          }
+          out.pattern = re.source;
+        }
         else {
           throw new Error(
             `jsonSchema: no rule for the string check '${c.kind}'. Add one deliberately — ` +

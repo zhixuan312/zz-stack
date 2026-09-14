@@ -7,8 +7,16 @@ if (FlowStage.safeParse({ name: "s" }).success) fail.push("a stage without produ
 for (const p of ["doc.md", "record", "nothing"]) {
   if (!FlowStage.safeParse({ name: "s", produces: p }).success) fail.push(`produces: ${p} rejected`);
 }
-// Control: an arbitrary value must NOT validate, or the union is doing nothing.
-if (FlowStage.safeParse({ name: "s", produces: "" }).success) fail.push("empty produces validates");
+// Controls: the union must REFUSE something, or the two literals beside the string arm decide
+// nothing at all. `""` alone could not show this — it is caught by the string arm's own length
+// rule, so it passed while `produces: "garbage"` validated and this line read as proof it did
+// not. The discriminating value is a non-empty string that is neither a document name nor one
+// of the two literals.
+for (const p of ["", "garbage", "spec.txt", "Spec.md", "-spec.md"]) {
+  if (FlowStage.safeParse({ name: "s", produces: p }).success) {
+    fail.push(`produces: ${JSON.stringify(p)} validates, and it is neither a document name nor "record"/"nothing"`);
+  }
+}
 
 // The new manifest fields exist.
 const ok = CatalogManifest.safeParse({

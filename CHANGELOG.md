@@ -33,6 +33,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.41.1] — 2026-09-15 · console 0.10.2
+
+The console only. The platform is unchanged and takes a patch because a release needs a
+number, not because anything in the gateway moved.
+
+### Changed
+- **The overview row draws its four marks in one shape.** Three tiles carried a composition
+  bar and the fourth a cloud of one dot per measured run, which at this platform's volume was
+  a wall — a different species of object beside three clean bars, and the untidiest thing on
+  the page. "Context pulled per run" draws size bands now: decades, because the distribution
+  spans them, and the last band is exactly the tail the strip existed to show, stated in words
+  rather than drawn as a cloud. `DotStrip` had one caller and is deleted with its tests.
+- **The inline legend is a fixed shape, not a function of its data.** It named each slice with
+  its figure — `34 not started · 5 drafting · 5 agreed · 25 settled` — which is wider than a
+  tile column, so it wrapped, and one tile in a row of four stood two lines taller than its
+  neighbours. It names the colours only now. The figures did not go anywhere: the sublabel
+  states the total, and hovering or focusing a slice gives that slice's count and share.
+  Beyond four slices the remainder folds into `+N more`.
+
+  Shortening the labels was tried first and is worth recording as the thing that does not
+  work: the width was a function of the data, so the next figure to gain a digit brings the
+  second line back. It wraps rather than clips below about a 300px column — holding one line
+  at every width meant rendering "settled" as "sett", which looks broken in a way a second
+  line never does.
+
+### Upgrade notes
+- **Nothing to do.** No migration, no env key, no API change — `runs[].kb` was already in the
+  overview payload, so the bands needed no gateway field. Only the console image moves.
+
 ## [0.41.0] — 2026-09-15 · console 0.10.1
 
 0.40.0's new field, an hour old, drawn against production for the first time and found to be

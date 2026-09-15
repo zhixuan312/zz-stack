@@ -33,6 +33,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.40.0] — 2026-09-15 · console 0.10.0
+
+A minor on both sides. The gateway's overview payload gained a field; the console's metric
+tile lost a variant. The thread running through it is one complaint — the four tiles on the
+overview did not read as four of one thing — and the two things that turned out to be true
+behind it.
+
+### Added
+- **`metrics.refusals.byBlock` on `GET /api/console/overview`** — the refused tool calls split
+  by the block that refused them, largest first. The rate says how much; this says WHICH DOOR,
+  which the rate cannot. It is the same predicate the rate already uses (`kind='tool_call'`
+  and `ok = false`) grouped rather than counted, so it sums exactly to `refused`.
+
+  It is not the `refusals[]` list the same payload already carried, and the difference is the
+  reason a new field exists: that list is a top-12 over every failed event of ANY kind, so its
+  parts neither sum to the tile's total nor compose anything the tile states. Both scopes are
+  covered — platform reads `zz.event` directly, a team reads it through the join.
+
+### Changed
+- **The overview charts answer the cursor.** They carried a native `title=` attribute and
+  nothing else: most of a second's delay, unstyled, and invisible to a keyboard. They use the
+  console's own themed tooltip now. A composition slice fades its siblings under the cursor,
+  so a 2%-wide sliver is readable as itself while the whole still reads as a whole; a 7px dot
+  in the distribution strip grows and lifts above its neighbours, so a reader in a cluster can
+  see which dot they are reading. Both are focusable, because a readout must not need a mouse.
+- **Refusal rate carries a mark.** It was the one tile of four with an empty middle, and the
+  reason was written in its own help text — "the trend below already draws refusals over time".
+  That reason did not survive being checked: the trend draws `ok = false` over every event
+  kind, and the tile counts failed tool calls. It now draws `byBlock`. At zero refusals the
+  mark is OMITTED rather than drawn empty: no refusals is this metric's goal state, and a row
+  of four where the good tile is the tallest is backwards.
+- **The trend's rose series is labelled "Failures", not "Refusals".** It draws every failed
+  event; the tile beside it counts failed tool calls. Two populations under one word invite a
+  reader to check one against the other and find that they disagree.
+
+### Removed
+- **`MetricCard` no longer takes `tone`.** `tone="attention"` drew a 4px rail in the tile's own
+  hue and recoloured the title and the number with it, above a threshold. A tile wearing it
+  stopped being this component and became a fifth silhouette in a row of four — which a reader
+  resolves by asking what is wrong with THAT CARD before they have read its number.
+
+  What that costs is worth stating, because the two things that remain are not substitutes:
+  the tinted chip is IDENTITY (Refusal rate is rose at 0.1% too) and the delta pill is
+  DIRECTION (a 9.3% rate falling from 12% wears a sage pill). So crossing a threshold has no
+  visual anywhere now, deliberately. `emphasis` remains for singling out one tile, one per row.
+
+### Upgrade notes
+- **Roll these two back together or not at all.** They ship together here, so following this
+  release needs nothing. A PARTIAL rollback does: console 0.10.0 against a gateway below
+  0.40.0 reads `byBlock` off a payload that does not carry it, and the overview page throws
+  into its error boundary rather than quietly dropping the mark. There is no guard for this
+  on purpose — a version check inside the tile would be compatibility code for a state that
+  lasts as long as somebody's mistake. `ZZ_VERSION` and `ZZ_DASHBOARD_VERSION` move together.
+- **No migration and no env key.** The new field is read from `zz.event`, which already holds
+  everything it needs.
+
 ## [0.39.1] — 2026-09-15 · console 0.9.0
 
 The console only. The platform is unchanged and takes a patch because a release needs a

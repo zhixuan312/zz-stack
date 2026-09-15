@@ -1,10 +1,25 @@
 # Contributing
 
+## Node 24
+
+`scripts/`, `checks/` and `testing/` are TypeScript with no build step — Node runs them
+directly by stripping the types, and that only reached Stable in 24.12. `engines` and
+`.nvmrc` say so, and on Node 22 the gate does not fail a check, it fails to parse.
+
+```bash
+nvm use               # reads .nvmrc
+```
+
+**The Docker images stay on `node:22.23.2-alpine` and that is not a mismatch to fix.**
+`scripts/` and `checks/` are never copied into them, so the contributor floor and the image
+are unrelated facts. (The console's image DID move to 24, because its Dockerfile installs
+against the manifest that declares the floor.)
+
 ## The gate is the contract
 
 ```bash
 npm install
-npm run gate          # 279 checks, offline, a few seconds
+npm run gate          # offline, a few seconds; it prints how many checks ran
 ```
 
 Everything this project believes about itself is a check in there, and every check
@@ -18,10 +33,12 @@ entitled to make.
 comment what it was wrong about; a check nobody trusts is worse than no check. If you
 add behaviour, add the check that would have caught its absence.
 
-`scripts/gate.ts` is an ORDER, not a list — 26 `import` lines, one per subject. A
-module missing from it is a check that silently does not run, so `report()` refuses to
-pass unless the number of checks written under `scripts/gate/checks/` equals the number
-that ran.
+`scripts/gate.ts` is an ORDER, not a list — one `import` line per subject. A module
+missing from it is a check that silently does not run, so `report()` refuses to pass
+unless the number of checks written under `scripts/gate/checks/` equals the number that
+ran. Neither number is written down here: a count in prose is a count that stops being
+true, and this file carried `279 checks` and `26 import lines` for long enough to be
+wrong about both.
 
 ## Running it
 

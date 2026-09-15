@@ -45,7 +45,7 @@ which is almost always the answer to "why was that a 403".
 | which building blocks a team may reach | `tool_grant` `tool_revoke` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
 | a team's knowledge index, when it disagrees with the files | `knowledge_reindex` |
-| what people have reported as broken | `bug_list` `bug_resolve` |
+| what people have reported as broken | `bug_list` `bug_resolve` `bug_delete` |
 
 ## Answering a bug report
 
@@ -69,6 +69,21 @@ concluded, and on what evidence, is worth more than a tidy status.
 
 **Reports are not team-scoped.** The platform is one deployment: a defect one team hits is one
 every team has, which is why this is a superadmin's list rather than a team admin's.
+
+### `bug_delete` is not a stronger `bug_resolve`
+
+Resolving is how this platform records **what it has fixed**, and it keeps every row it closes —
+`not_a_bug` included, because that is a finding about something confusing rather than a note that
+nothing happened. Never delete a report a person filed. If its resolution was wrong, file what you
+now know as a new report naming the old id.
+
+Deleting is for rows that were **never anybody's report**. `chain-check` walks this tracker end to
+end against the live deployment on its way through a release, and each run used to leave a real row
+behind reading "Safe to close; it reports nothing real." Five collected beside two genuine reports
+before anyone looked. Resolving those would have written a fake decision into the record of what
+this platform has fixed, so they are deleted instead — logged, attributed, and irreversible.
+
+In practice you will rarely call it: the walk now removes its own row.
 
 ## Rebuilding a knowledge index
 

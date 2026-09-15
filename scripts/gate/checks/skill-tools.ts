@@ -186,8 +186,11 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
   // are taught by its skills; demanding them on a roster a DELIVERY agent reads would bury the
   // twenty names it exists to state. So /manage widens what the roster may NAME and what its
   // door column is judged against, and not what it must be exhaustive about.
+  // Extended with each /manage module as it is created — admin/bugs.ts arrived at 0.38.1 with
+  // bug_delete, and until it was named here the roster's bug_list and bug_resolve read as names
+  // no door serves.
   const MANAGE_FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
-                        "services/gateway/src/admin/flows.ts"];
+                        "services/gateway/src/admin/flows.ts", "services/gateway/src/admin/bugs.ts"];
   const manageNames = new Set<string>();
   for (const rel of MANAGE_FILES) {
     if (!existsSync(join(root, rel))) {

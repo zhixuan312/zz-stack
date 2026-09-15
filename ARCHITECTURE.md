@@ -136,8 +136,10 @@ rule is what the directory means:
   answer for overviews, teams, initiatives, knowledge, skills and the catalog, split the way
   the console's own URLs are, with `shared.ts` for what more than one of them needs.
 - **`services/gateway/src/admin/<subject>.ts` and `package/<part>.ts`** — the same rule one
-  level down: authority, flows, teams and people for the admin surface; `skills.ts` and
-  `describe.ts` for the shelf a person installs. `describe.ts` was `archive.ts` until 0.29.0,
+  level down: authority, flows, teams, people and the bug tracker for the admin surface;
+  `skills.ts` and `describe.ts` for the shelf a person installs. `bugs.ts` arrived at 0.39.0
+  when `bug_delete` joined the other two and `access-door.ts` reached 661 lines — a tracker is
+  a different subject from keys and teams, and the ceiling is where that keeps being noticed. `describe.ts` was `archive.ts` until 0.29.0,
   when the tarball it wrote went with Codex and Hermes.
 - **`services/gateway/src/settings/<scope>.ts` — split by AUTHORISATION, not by resource.**
   `me.ts`, `team.ts` and `platform.ts`, because who may call a route is the property that has

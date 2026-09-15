@@ -33,10 +33,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [0.38.1] — 2026-09-15
+## [0.39.0] — 2026-09-15
 
-Two fixes found by doing 0.38.0's own release procedure properly, afterwards. Nothing a
-person running the platform has to do; the console did not move.
+A minor, because `/manage` gained a tool. Everything else here was found by doing 0.38.0's own
+release procedure properly, afterwards — it was cut without a release branch, without the
+changelog approval, and without the document accounting, and each of those omissions is
+represented below by something it would have caught. The console did not move.
+
+### Added
+- **`bug_delete` on `/manage`, superadmin — and it is not a stronger `bug_resolve`.** Resolving
+  is how this platform records what it has FIXED: the row, its status and the sentence
+  explaining the decision are kept for ever, `not_a_bug` included, because that is a finding
+  about something confusing rather than a note that nothing happened. Deleting is for rows that
+  were **never anybody's report** — `chain-check` walks the tracker end to end against the live
+  deployment on its way through a release, and every run left a real row reading "Safe to close;
+  it reports nothing real." Five collected beside two genuine reports before anyone looked, and
+  resolving them would have written fake decisions into the record of what this platform has
+  fixed. It returns the row it removed, is logged and attributed, and refuses anyone but a
+  superadmin. Never delete a report a person filed: if its resolution was wrong, file what you
+  now know as a new report naming the old id.
+
+  `/manage` is now 34 tools: 16 for a member, +4 for a lead, +14 for a superadmin. The chain
+  check removes its own probe row and then asks `bug_list` whether it is gone, rather than
+  trusting the success message.
 
 ### Fixed
 - **`CONTRIBUTING.md` never said which Node.** 0.38.0 moved the contributor floor to 24, and
@@ -55,14 +74,26 @@ person running the platform has to do; the console did not move.
   returns early. There is no `bug_delete` on any door, so before the row exists is the only
   moment the probe can avoid leaving it.
 
-### Known, and not fixed here
-- A superadmin chain-check run still closes its probe as `not_a_bug` and that row stays in
-  `zz.bug` for ever. Removing it needs a delete path the platform does not have, which is a
-  surface decision rather than a fix.
-- `register-plugins` counts an already-recorded membership as `UNRESOLVED`, so every release
-  where a plugin's version did not move prints a warning naming a problem that is not there —
-  and the remedy it prescribes makes the number go UP. The registry is correct; the counter is
-  not. Platform journal node 0057.
+- **`register-plugins` reported a healthy registry as broken.** It inserted each membership with
+  `on conflict do nothing … returning 1` and counted every empty result as missing — so a row
+  that was ALREADY recorded, which is the normal case for every plugin whose version did not
+  move, was indistinguishable from a skill the registry has never heard of. 0.38.0 printed
+  "24 plugin member(s) UNRESOLVED" against a complete and correct registry, told the reader
+  their lock described a different catalog, and prescribed a fix that took the number UP to 30.
+  It now records 30 and reports 0 — and a planted absent skill still reports 1, so the counter
+  still catches what it exists for.
+- **A split hid two tools from the gate.** Moving the bug tools into `admin/bugs.ts` took
+  `/manage` from 33 registrations to 31 without the door changing at all: two gate checks
+  discover `/manage` tools from a hardcoded list of files. Both name the new module now, and
+  the `if (sup)` guards stayed inside it — the gate parses those out of the source to decide
+  which role is offered what, so guarding at the call site read as three tools handed to every
+  member.
+
+### Upgrade notes
+- **Nothing to do.** No migration, no env key, no config change. `bug_delete` is additive and
+  superadmin-only; every existing call is unaffected.
+- `zz-access` goes to 2.3.0 and `zz-admin` to 2.5 — installed clients pick both up on their
+  next pull.
 
 ## [0.38.0] — 2026-09-15 · console 0.8.0
 

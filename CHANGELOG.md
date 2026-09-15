@@ -33,6 +33,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.42.0] — 2026-09-15 · console 0.10.3
+
+The first overview tile read 100% and could not read anything else. That is the entry; the
+other two are things noticed while looking at it.
+
+### Changed
+- **"Initiatives progressing" is the median over OPEN initiatives.** It was the median over
+  every scoreable one, closed included — and a closed initiative is 100% complete by
+  definition and never moves again, so each one is a permanent vote for the maximum. Measured
+  on production the day this changed: 29 active initiatives, 13 with no flow declared and so
+  unscoreable, **13 closed, 3 open**. Thirteen hard 100s against three real numbers put the
+  median at 100 and nothing happening in the unfinished work could have shifted it.
+
+  The tile asks "is work advancing, or only accumulating?" and, scored that way, answered
+  with the accumulation. The stage bar still counts all six stages including closed — where
+  the active set IS is a different question from how far the unfinished work has got.
+
+  A consumer of `/api/console/overview` sees a different number for `metrics.progressing`
+  from the same data, which is why this is a minor and not a patch.
+
+### Fixed
+- **Every tile's comparison read "vs the previous last 24 hours".** `PERIOD_LABEL` names the
+  option in the picker, where "Last 24 hours" is correct; lowercasing a label is not the same
+  as having a phrase. There is a `PERIOD_SPAN` now, and the sentence reads "vs the previous
+  24 hours".
+- **The delta pill sat at the far edge of its tile.** `justify-between` pinned it to the right
+  margin, so at a wide column an inch of empty tile separated the movement from the value it
+  describes, and the two stopped reading as one statement. It sits beside the number.
+
+### Upgrade notes
+- **Nothing to do.** No migration, no env key, no change to the shape of any payload — one
+  metric is computed over a different population, and the console states which on the tile.
+
 ## [0.41.1] — 2026-09-15 · console 0.10.2
 
 The console only. The platform is unchanged and takes a patch because a release needs a

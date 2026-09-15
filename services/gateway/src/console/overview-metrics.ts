@@ -42,11 +42,13 @@ const IMPORT_NODES_PER_HOUR = 50;
 type Stage = "noflow" | "notstarted" | "drafting" | "agreed" | "gated" | "closed";
 
 interface OverviewMetrics {
-  /** 1 · initiative. Median completeness across the initiatives active in the window. */
+  /** 1 · initiative. Median completeness across the OPEN initiatives active in the window —
+   *  closed ones are 100% by definition and are excluded, or they pin the tile at 100. */
   progressing: {
-    /** Null when nothing scoreable was active. Percent, 0–100. */
+    /** Null when no OPEN scoreable initiative was active. Percent, 0–100. */
     value: number | null;
     active: number;
+    /** OPEN initiatives with a declared flow — the ones the median is taken over. */
     scoreable: number;
     /** Every active initiative in exactly one stage — the mark under the tile. */
     stages: Record<Stage, number>;
@@ -343,11 +345,26 @@ export async function readMetrics(
   const stages: Record<Stage, number> = {
     noflow: 0, notstarted: 0, drafting: 0, agreed: 0, gated: 0, closed: 0,
   };
+  /* CLOSED WORK IS NOT SCORED, and scoring it is what pinned this tile at 100%.
+   *
+   * A closed initiative is 100% complete by definition and stays 100% for ever, so every
+   * one of them is a permanent vote for the maximum. Measured on production the day this
+   * changed: 29 active initiatives — 13 with no flow declared and so unscoreable, 13
+   * CLOSED, 3 open. Thirteen hard 100s against three real numbers put the median at 100
+   * and no amount of work in progress could have moved it.
+   *
+   * The tile asks "is work advancing, or only accumulating?" and, scored that way, it
+   * answered with the accumulation. Completeness is a question about work that is still
+   * going; for work that is finished the answer is not interesting, it is 100 by
+   * construction. So the median is taken over OPEN initiatives only.
+   *
+   * `stages` still counts all six — the bar shows where the active set IS, closed rows
+   * included, which is a different question from how far the unfinished work has got. */
   const scores: number[] = [];
   for (const row of inits.rows) {
     const { completeness, stage } = progressOf(row.flow, row.docs ?? []);
     stages[stage]++;
-    if (completeness !== null) scores.push(completeness);
+    if (completeness !== null && stage !== "closed") scores.push(completeness);
   }
 
   /* A RUN NOBODY MEASURED IS NOT A RUN THAT MOVED NOTHING, and `Number(null ?? 0)` is 0 —

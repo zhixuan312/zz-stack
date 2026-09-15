@@ -78,6 +78,17 @@ interface OverviewMetrics {
   refusals: {
     value: number | null; prev: number | null;
     refused: number; calls: number;
+    /**
+     * WHICH BLOCKS ARE REFUSING — the mark under the tile, and the one thing the rate
+     * itself cannot say. "9.3% refused" names a number to worry about; this names where
+     * to go. Largest first, and it sums EXACTLY to `refused`, because it is the same
+     * predicate (`kind='tool_call' and ok = false`) grouped rather than counted.
+     *
+     * NOT the `refusals[]` list on the overview payload, which is a top-12 of every
+     * failed event of any kind — a different population with a different total, and so
+     * not a composition of anything this tile states.
+     */
+    byBlock: { block: string; n: number }[];
   };
   /** 4 · system. Bytes a run hands back to the agent, which is context it must then carry. */
   context: {
@@ -185,7 +196,7 @@ function progressOf(
 export async function readMetrics(
   db: Pool, scope: ResolvedScope, since: Date | null, prevSince: Date | null,
 ): Promise<OverviewMetrics> {
-  const [calls, runs, shelf, inits] = scope.kind === "platform"
+  const [calls, runs, shelf, inits, blocks] = scope.kind === "platform"
     ? await Promise.all([
       db.query<{ calls: string; refused: string; prev_calls: string; prev_refused: string; searches: string }>(
         `select count(*) filter (where kind='tool_call'
@@ -241,6 +252,15 @@ export async function readMetrics(
                  or exists (select 1 from zz.event e
                              where e.kind = 'tool_call'
                                and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
+        [since]),
+      // A SECOND STATEMENT, not another `filter` on the one above: that query returns a
+      // single row of counts and cannot also group by block.
+      db.query<{ block: string; n: string }>(
+        `select coalesce(block,'(platform)') as block, count(*) as n
+           from zz.event
+          where kind='tool_call' and ok = false
+            and ($1::timestamptz is null or ts >= $1)
+          group by 1 order by count(*) desc`,
         [since]),
     ])
     : await Promise.all([
@@ -302,6 +322,13 @@ export async function readMetrics(
                              where e.kind = 'tool_call'
                                and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
         [since, scope.slug]),
+      db.query<{ block: string; n: string }>(
+        `select coalesce(e.block,'(platform)') as block, count(*) as n
+           from zz.event e join zz.team t on t.id = e.team_id
+          where t.slug = $2 and e.kind='tool_call' and e.ok = false
+            and ($1::timestamptz is null or e.ts >= $1)
+          group by 1 order by count(*) desc`,
+        [since, scope.slug]),
     ]);
 
   const c = calls.rows[0], k = shelf.rows[0];
@@ -356,6 +383,7 @@ export async function readMetrics(
       value: pct(count(c?.refused), count(c?.calls)),
       prev: prevSince ? pct(count(c?.prev_refused), count(c?.prev_calls)) : null,
       refused: count(c?.refused), calls: count(c?.calls),
+      byBlock: blocks.rows.map((r) => ({ block: r.block, n: +r.n })),
     },
     context: {
       value: median(nowKb),

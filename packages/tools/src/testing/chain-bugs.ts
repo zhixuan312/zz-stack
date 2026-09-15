@@ -47,7 +47,7 @@ export async function walkBugs({ call, check, record, manage, INIT }: ChainDeps)
   // and nothing removes one — so the only moment this probe can avoid the litter is before it
   // creates it. A probe that cannot clean up after itself does not get to run.
   const offered = new Set((await manage.tools()).map((t) => t.name));
-  if (!offered.has("bug_list") || !offered.has("bug_resolve")) {
+  if (!offered.has("bug_list") || !offered.has("bug_resolve") || !offered.has("bug_delete")) {
     // NOT a pass. A probe that did not run is not a probe that passed, and this file's output
     // is a count somebody reads at release.
     console.log("  skip  bug_list/bug_resolve are on /manage behind `if (sup)` and this " +
@@ -79,5 +79,16 @@ export async function walkBugs({ call, check, record, manage, INIT }: ChainDeps)
     check("a report already closed cannot be closed again",
       await manage.call("bug_resolve", { id: bugId, status: "fixed", resolution: "second opinion" }),
       true, /already closed as/);
+
+    // AND THEN IT TAKES ITS OWN ROW BACK OUT. Everything above is a real row in the real
+    // tracker, filed by nobody, saying "Safe to close; it reports nothing real." Five of them
+    // accumulated beside two genuine reports because this walk had no way to undo itself and
+    // `bug_resolve` deliberately keeps what it closes — that is the record of what the platform
+    // has FIXED, and a probe does not belong in it. `bug_delete` exists for exactly this row.
+    check("bug_delete removes a row that was never a report",
+      await manage.call("bug_delete", { id: bugId }), false, /"deleted"/);
+    // GONE MEANS GONE, asked of the tracker rather than assumed from a success message.
+    const after = await manage.call("bug_list", { query: bugTitle, status: "not_a_bug" });
+    record(!after.includes(bugId), "the probe row is gone from the tracker", after.slice(0, 200));
   }
 }

@@ -86,6 +86,19 @@ function main(argv: string[]): number {
       // anyway, and the symptom arrives much later as "this plugin was never used".
       const sv = (p.skills ?? {})[skill];
       void sv;
+      // `on conflict DO UPDATE ... returning`, never `do nothing`. A membership that is
+      // ALREADY RECORDED is the normal case — most releases move one plugin's version and
+      // leave the rest — and `do nothing` returns no row for it, which is indistinguishable
+      // from the row this counter exists to catch: a skill the registry has never heard of.
+      //
+      // It counted both as missing. 0.38.0 printed "24 plugin member(s) UNRESOLVED" with a
+      // complete and correct registry, told the reader their lock was describing a different
+      // catalog, and prescribed a fix that made the number go UP to 30 — because by then
+      // every membership existed. A warning that fires on the healthy path is a warning
+      // people learn to skip, which costs exactly the failure the comment below describes.
+      //
+      // The update is a no-op write of the key onto itself. It exists only so the row comes
+      // back, so "already there" reads as recorded rather than as missing.
       const out = psqlText(psql, `
         insert into zz.plugin_version_skill (plugin_version_id, skill_version_id)
         select pv.id, sv.id
@@ -95,7 +108,8 @@ function main(argv: string[]): number {
           join zz.skill_version sv on sv.skill_id = sk.id
          where pl.name = ${lit(name)} and pv.version = ${lit(p.version)}
          order by sv.released_at desc limit 1
-        on conflict do nothing
+        on conflict (plugin_version_id, skill_version_id)
+          do update set plugin_version_id = excluded.plugin_version_id
         returning 1`);
       if (/^\s*$/.test(out) || !/1/.test(out)) missing++; else members++;
     }

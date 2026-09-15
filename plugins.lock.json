@@ -20,12 +20,12 @@
     }
   },
   "zz-access": {
-    "version": "2.2.0",
-    "digest": "9571c3af",
+    "version": "2.3.0",
+    "digest": "3dd0e105",
     "cases_digest": "a0ba2ff9",
     "skills": {
       "zz-access": "29467f7264e8",
-      "zz-admin": "b457b4f3e4c3",
+      "zz-admin": "6f5c6daaebe1",
       "zz-doctor": "b3960436e687",
       "zz-migrate": "2ccb1e0161d2",
       "zz-update": "a5d73e2d40eb"

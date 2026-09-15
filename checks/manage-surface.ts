@@ -64,8 +64,14 @@ import { join } from "node:path";
 import { MANAGE_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail: string[] = [];
+// A LIST THAT GOES SHORT THE MOMENT A DOOR MODULE IS ADDED, and it did: the bug tools moved
+// into admin/bugs.ts when bug_delete joined them, and this check reported a superadmin was no
+// longer offered bug_list or bug_resolve — a door that had not changed at all. The list is kept
+// rather than derived because a walk of services/gateway/src would also sweep up /core and the
+// console, which are different doors; so the rule is that a new /manage module is added HERE in
+// the same commit that creates it, and the count below is what catches forgetting.
 const FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
-               "services/gateway/src/admin/flows.ts"];
+               "services/gateway/src/admin/flows.ts", "services/gateway/src/admin/bugs.ts"];
 
 /** Source with comments removed. Not for the description scan — a description is a string
  *  literal and survives this — but for every question of the form "is this name still HERE",
@@ -107,8 +113,8 @@ for (const f of FILES) {
 // DERIVED, and here is the derivation, because the spec froze "16 for a member" as a NUMBER and
 // never enumerated it: a member sees every ungated registration, which is the nine in
 // access-door.ts, the six in admin.ts, and catalog_list in admin/flows.ts. A lead adds the four
-// `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts and the
-// three in access-door.ts. The numbers are not asserted against themselves — counting a list this file
+// `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts, one in
+// access-door.ts, and the three in admin/bugs.ts, which the door registers as one call. The numbers are not asserted against themselves — counting a list this file
 // also wrote proves nothing. What carries the weight is the set equality below, against the gates
 // parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
 const MEMBER = ["block_connect", "block_disconnect", "platform_list", "team_mine", "team_switch",
@@ -123,7 +129,7 @@ const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
                "team_create", "team_archive", "tool_grant", "tool_revoke",
                "credential_admin_set", "credential_admin_delete", "knowledge_reindex",
-               "bug_list", "bug_resolve"];
+               "bug_list", "bug_resolve", "bug_delete"];
 
 // The tiers and the frozen table have to describe the same door. Without this, a name could be
 // dropped from a tier and from the rename table together and every count below would agree.
@@ -134,8 +140,12 @@ const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivat
 // `bug_resolve` were born on this door and have never been renamed, so there is no alias entry
 // to derive them from — a tool that has always had one name is invisible to a table of old
 // names, and a rename map is the wrong place to register a new tool.
+// NAMED RATHER THAN DERIVED, and each for the same reason: MANAGE_ALIAS is a table of names
+// that CHANGED, so a tool that never had an old name cannot come out of it. `bug_list` and
+// `bug_resolve` arrived from /core keeping their names; `bug_delete` was new at 0.38.1 and has
+// never been called anything else.
 const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami", "knowledge_reindex",
-                          "bug_list", "bug_resolve"]);
+                          "bug_list", "bug_resolve", "bug_delete"]);
 const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
 for (const n of expected) {
   if (!tiered.has(n)) fail.push(`${n} is a current /manage name and no tier above claims it`);
@@ -173,11 +183,11 @@ for (const [who, got, want] of tierSets) {
 // ONE PLACE, because the first version of this spelled the number in the condition and again
 // in the sentence, and a mutation that changed the condition alone printed "/manage registers
 // 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
-const DOOR_SIZE = 33;
+const DOOR_SIZE = 34;
 if (registered.size !== DOOR_SIZE) {
   fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
             `(33 before this initiative, minus the 3 duplicates, plus knowledge_reindex ` +
-            `arriving from /core at Task I-38). ` +
+            `arriving from /core at Task I-38, plus bug_delete at 0.38.1). ` +
             `Registered: ${[...registered.keys()].sort().join(", ")}`);
 }
 

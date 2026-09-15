@@ -33,6 +33,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.38.1] — 2026-09-15
+
+Two fixes found by doing 0.38.0's own release procedure properly, afterwards. Nothing a
+person running the platform has to do; the console did not move.
+
+### Fixed
+- **`CONTRIBUTING.md` never said which Node.** 0.38.0 moved the contributor floor to 24, and
+  the one document a contributor actually opens said nothing about it — so following it on
+  Node 22 did not fail a check, it failed to PARSE. It now names the floor, points at
+  `.nvmrc`, and says why the Docker images stay on 22 while the console's moved to 24.
+- **Two counts in that file had drifted** — `279 checks` where the gate runs 346, and
+  `26 import lines` where `gate.ts` has 34. Neither is replaced with a corrected number: a
+  count in prose is a count that stops being true, and these two are the demonstration. The
+  gate already refuses to pass when the modules and the checks that ran disagree.
+- **chain-check filed bug reports it could not close.** It asked the `/manage` door what the
+  token may do AFTER filing its probe report. A PAT that is not superadmin is not offered
+  `bug_resolve`, so every such run left an open report in the tracker for ever — four of them
+  accumulated across 0.36.1 to 0.38.0, sitting beside two real bugs, each one saying "Safe to
+  close; it reports nothing real." The capability check moves above `bug_report` and the walk
+  returns early. There is no `bug_delete` on any door, so before the row exists is the only
+  moment the probe can avoid leaving it.
+
+### Known, and not fixed here
+- A superadmin chain-check run still closes its probe as `not_a_bug` and that row stays in
+  `zz.bug` for ever. Removing it needs a delete path the platform does not have, which is a
+  surface decision rather than a fix.
+- `register-plugins` counts an already-recorded membership as `UNRESOLVED`, so every release
+  where a plugin's version did not move prints a warning naming a problem that is not there —
+  and the remedy it prescribes makes the number go UP. The registry is correct; the counter is
+  not. Platform journal node 0057.
+
 ## [0.38.0] — 2026-09-15 · console 0.8.0
 
 **Nothing this platform serves changed.** No tool moved, no route changed, no stored shape

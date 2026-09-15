@@ -33,6 +33,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.39.1] — 2026-09-15 · console 0.9.0
+
+The console only. The platform is unchanged and takes a patch because a release needs a
+number, not because anything in the gateway moved.
+
+### Fixed
+- **The overview tiles say what they are again.** They had become an uppercase mono label, a
+  number, and a six-colour bar with nothing naming the colours — reading one meant hovering
+  the `i` to find out what "Knowledge from work" counted, and the bar's legend was not missing
+  but SUPPRESSED, with `[&>ul]:hidden`. Back on the face: a sentence-case title with its
+  one-line definition, a soft tinted icon chip, the delta as a pill beside the value, an
+  inline legend in bar order, and the comparison as a footer. `help` keeps the caveats.
+
+  What the previous design had right is kept: a large saturated circle beside a number does
+  compete with the number, and four of them make nothing stand out. The chip is 32px against
+  a 44px value, identity and emphasis are separate registers, and `emphasis` still marks the
+  single tile carrying the finding.
+- **A tile could render a silently grey icon chip.** The colour was built by hand as
+  `var(--${tint}-tint)`, so a kit hue asked for `--blue-tint` — a variable that does not
+  exist — and fell back to grey with no error anywhere. It is a map now: a tint with no
+  measured chip pair is a type error. `--zz-blue` gained the pair it lacked, at 5.98:1.
+- **A tile needing attention spoke in two colours.** The rail was amber unconditionally, so
+  the rose tile carried a rose chip, an amber rail, an amber title and a red delta pill —
+  three signals in two colours, on the one tile whose job is to be unambiguous. The rail takes
+  the tile's own hue.
+- **A design test asserted a class name rather than a property.** It required the literal
+  `ink-faint` on a neutral delta and went red for a change that kept its intent exactly. It
+  asserts what must hold: no status hue, and a neutral ink token.
+
+### Upgrade notes
+- **Nothing to do.** No migration, no env key, no API change. The gateway is byte-for-byte
+  0.39.0; only the console image moves.
+
 ## [0.39.0] — 2026-09-15
 
 A minor, because `/manage` gained a tool. Everything else here was found by doing 0.38.0's own

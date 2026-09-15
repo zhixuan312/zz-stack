@@ -33,6 +33,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.41.0] — 2026-09-15 · console 0.10.1
+
+0.40.0's new field, an hour old, drawn against production for the first time and found to be
+decoration. This entry is that, fixed, plus the two other things looking at real data made
+obvious.
+
+### Changed
+- **`metrics.refusals.byDoor` replaces `byBlock`.** The split is read off `subject`
+  (`<door>:<tool>`) rather than `event.block`. `block` is null on every tool call this
+  platform has ever recorded — 781 of 781, all time — so grouping by it put every refusal in
+  one `(platform)` bucket and the console drew a single full-width bar restating the number
+  beside it. `subject` is always present and gives a real split: core 641 · eval 125 ·
+  admin 9 · manage 6. Same predicate, same total, an axis the data actually varies on.
+
+  The lesson is worth more than the field: a green gate, a passing test suite and 18 live
+  probes all agreed 0.40.0 was correct, because every one of them ran against a fixture or a
+  shape. Running the shipped statement against the real table is what found it.
+
+### Fixed
+- **The overview row was two lines taller than it needed to be, in three places.** The stage
+  legend named six stages under a bar that can only draw four — `no flow` and `not started`
+  are both steel, `gated` and `closed` are both sage, and two adjacent slices in one colour
+  are one slice to the eye — so it named distinctions the chart did not draw and wrapped
+  doing it. It merges where the colours already merged, and nowhere else. The context tile's
+  sublabel opened by restating the tile's own `description` one line below it. And the
+  refusal bar's single slice is now four.
+
+### Upgrade notes
+- **Roll the two together, as with 0.40.0.** Console 0.10.1 reads `byDoor`; a gateway below
+  0.41.0 does not send it, and the overview page throws rather than dropping the mark. No
+  migration, no env key — the door is parsed from a column `zz.event` already has.
+
 ## [0.40.0] — 2026-09-15 · console 0.10.0
 
 A minor on both sides. The gateway's overview payload gained a field; the console's metric

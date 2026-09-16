@@ -154,20 +154,36 @@ probe("no document carries a status its flow does not gate", () => {
 // A door IS a plugin's declared server, so a call that arrived on one is attributable by
 // construction; the only honest null is a surface no manifest claims, which today is `admin`.
 // So this counts what is NOT attributed and excludes that one.
-probe("a tool call names the plugin whose door it arrived on", () => {
+probe("recent tool calls name the plugin whose door they arrived on", () => {
+  // THE LAST 200 CALLS, NOT ALL OF THEM, and the bound is the whole design of this probe.
+  //
+  // Attribution is a property of the code that WROTE a row. Rows written before pluginForDoor
+  // landed carry nulls no deploy can fill, and counting them forever reported 94.7% on a
+  // deployment where the new path was working perfectly — a check that cannot pass is a check
+  // people learn to scroll past. Nor is `plugin_version is not null` a usable boundary: the
+  // OLD path set that column too whenever its guess resolved, so it does not mark the change.
+  //
+  // A count-bounded window needs no timestamp and no marker. It answers the question that
+  // matters — is what is running now attributing what it handles — and it corrects itself as
+  // the platform is used. Expect it red for a short while after the release that introduced
+  // this, while the window still holds rows the old code wrote. That is honest, not a defect.
+  //
+  // `admin` is excluded: it was a door and is not one now, so no manifest claims it and
+  // nothing should invent a plugin for it. That is the one null this platform is entitled to.
   const row = psql(
-    "select count(*) || '|' || count(plugin) from zz.event " +
-    "where kind = 'tool_call' and split_part(subject,':',1) <> 'admin'").trim();
+    "select count(*) || '|' || count(plugin) from (" +
+    "  select plugin from zz.event where kind = 'tool_call'" +
+    "   and split_part(subject,':',1) <> 'admin' order by ts desc limit 200) r").trim();
   const [totalRaw, withPluginRaw] = row.split("|");
   const total = Number(totalRaw);
   if (!row || Number.isNaN(total)) throw new Error("could not count zz.event on the host");
-  if (!total) return null;                       // nothing has been called: nothing to attribute
+  if (!total) return null;                       // nothing has been called: nothing to judge
   const missing = total - Number(withPluginRaw);
   if (!missing) return null;
-  const pct = Math.round((missing / total) * 1000) / 10;
-  return `${missing} of ${total} tool calls (${pct}%) name no plugin. Which plugin a call ` +
+  return `${missing} of the last ${total} tool calls name no plugin. Which plugin a call ` +
          `belongs to is a fact about the DOOR it arrived on — pluginForDoor reads it from the ` +
          `manifest that declares the server — so a null here is not a call that could not be ` +
-         `attributed, it is one that was not. Rows written before that landed keep their nulls; ` +
-         `a percentage that does not fall after a deploy means the new path is not running.`;
+         `attributed, it is one that was not. Rows the old path wrote keep their nulls and age ` +
+         `out of this window; a count that does not FALL with use means the new path is not ` +
+         `running.`;
 });

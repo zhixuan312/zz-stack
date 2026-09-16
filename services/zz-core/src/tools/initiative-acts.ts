@@ -83,6 +83,28 @@ export function registerInitiativeActTools(server: McpServer): void {
       if (chain.documents.length && !chain.docs.has(parts[1])) {
         return text(`ERROR: ${parts[1]} is not a document this flow declares`);
       }
+      // AND DECLARING A DOCUMENT IS NOT GATING IT. This checked only that the flow NAMES the
+      // document, never that it ADJUDICATES it — so `document_approve` would stamp
+      // `status: approved` on explore.md, spec-audit.md and plan-audit.md, every one of which
+      // sdlc-flow declares without a gate. That is where 179 of the rows came from.
+      //
+      // Fixing `stampEnvelope` was only half of it: that stops the platform WRITING
+      // `status: draft` where no gate exists, and this stops a caller writing `approved` there.
+      // Without both, the correction is undone by the next agent who approves an audit report
+      // because a person said it looked fine — which is a real thing to say and not a verdict
+      // the platform has anywhere to put.
+      //
+      // The refusal names the alternative, because the caller is not doing anything wrong: an
+      // ungated document is finished BY BEING WRITTEN, and saying so is the whole answer.
+      const entry = chain.documents.find((d) => d.name === parts[1]);
+      if (entry && entry.gate !== true) {
+        return text(
+          `ERROR: ${parts[1]} carries no gate in ${chain.name ?? "this flow"}, so there is ` +
+          "nothing to approve. A status records that a person was asked and answered; this " +
+          "document was never put to anyone. It is complete because it was written — say so " +
+          "and carry on. Which documents gate is the flow manifest's answer, and it can differ " +
+          "between flows: the same name may be gated in one and not in another.");
+      }
       const signer = (on_behalf_of ?? "").trim() || who.email;
       let doc = readFileSync(target, "utf8");
       const already = parseEnvelope(doc).status === "approved";

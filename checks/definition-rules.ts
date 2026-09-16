@@ -90,6 +90,31 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
+// ── R5 (the write half) · nothing can PUT a status where no gate exists ─────────────────
+//
+// The data half of R5 is a doctor probe, because the gate is offline. This is the half the
+// gate CAN hold: the two writers that can create the violation.
+//
+// `stampEnvelope` writes `status: draft` and conditioned it on `governed` — the manifest
+// DECLARES this document — where the rule is `gated`. `document_approve` writes
+// `status: approved` and checked only `chain.docs.has(...)`, which is the same predicate
+// spelled differently. Fixing one and not the other fixes nothing durable: the platform stops
+// creating the rows and the next caller who approves an audit report recreates them.
+{
+  const stamp = src("services/zz-core/src/write-guards.ts");
+  if (!/if \(gated && present\.status === undefined\)/.test(stamp)) {
+    fail.push("R5: stampEnvelope no longer conditions `status` on the manifest's gate — a " +
+              "document the flow declares WITHOUT a gate would be stamped a draft, and a " +
+              "status records a verdict nobody was asked for");
+  }
+  const acts = src("services/zz-core/src/tools/initiative-acts.ts");
+  if (!/entry\.gate !== true/.test(acts)) {
+    fail.push("R5: document_approve does not refuse a document its flow declares without a " +
+              "gate. Declaring a document is not gating it — approving an ungated one writes " +
+              "the exact rows the rule forbids, whatever stampEnvelope does");
+  }
+}
+
 // ── R7 · who the caller is arrives with the request, never as an argument ────────────────
 //
 // Identity is resolved from the credential. A tool that takes the caller as a parameter is a
@@ -147,4 +172,4 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
-console.log("definition rules: ok — R1, R3, R4, R7, R11 and R12 hold in the source");
+console.log("definition rules: ok — R1, R3, R4, R5 (write half), R7, R11 and R12 hold in the source");

@@ -171,7 +171,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
        -- (see the updated_at line written on every write), so it is authoritative
        -- rather than a model's claim. now() survives only as the fallback for a
        -- document whose envelope has no date at all.
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, coalesce($17::timestamptz, now()), $11,$12,$13::text[],$14::text[],$15,$16, $18, $19::text[],
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, coalesce($17::timestamptz, now()), $11,$12,$13::text[],$14::text[],$15,$16, $18,
                -- title A, tags B, body C. The positions moved when closed_by was inserted at
                -- $10: these pointed at $11/$12/$10, which after the shift is body/title/closed_by
                -- — a search index built from the wrong three columns, and one that would have

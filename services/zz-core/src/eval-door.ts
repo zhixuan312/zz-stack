@@ -87,7 +87,7 @@ export function buildEvalServer(): McpServer {
   ),
   // THE DOOR THIS IS, in the gateway's own word for it: `doorSurface("/eval/mcp")` is "eval"
   // and so is the left half of every `tool_key` recorded for a call through here. It is what
-  // goes into zz.block_tool.door, so the surface we record can be read against the calls we
+  // goes into zz.plugin_tool.door, so the surface we record can be read against the calls we
   // recorded. Stated here because the mount in server.ts is the wrong place to learn it from —
   // by then the registrations are over.
   "eval");

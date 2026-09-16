@@ -60,6 +60,14 @@ check("every state the schema allows can actually be reached", () => {
     [...sql.matchAll(/alter\s+table\s+(?:zz\.)?(\w+)[\s\S]{0,120}?drop\s+column\s+(?:if\s+exists\s+)?(\w+)/gi)]
       .map((d) => `${d[1]}.${d[2]}`),
   );
+  // AND A DROPPED TABLE RETIRES EVERY STATE OF EVERY COLUMN ON IT, which is stronger again.
+  // `zz.block_tool.verdict` allowed preferred / use_with_care / avoid, and `zz.block.origin`
+  // allowed stand_in; 058 drops both tables outright. Neither a constraint drop nor a column
+  // drop appears for them — you do not drop a column off a table you are dropping — so without
+  // this the check reports four unreachable states of two tables that no longer exist, forever.
+  const droppedTables = new Set(
+    [...sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?(?:zz\.)?(\w+)/gi)].map((d) => d[1]),
+  );
   for (const m of sql.matchAll(/(\w+)\s+text[^,]*?check\s*\(\s*(\w+)\s+in\s*\(([^)]*)\)\s*\)|check\s*\(\s*(\w+)\s+in\s*\(([^)]*)\)\s*\)/gi)) {
     const col = m[2] ?? m[4];
     const values = m[3] ?? m[5];
@@ -76,6 +84,7 @@ check("every state the schema allows can actually be reached", () => {
     const opens = [...before.matchAll(
       /(?:create\s+table\s+(?:if\s+not\s+exists\s+)?|alter\s+table\s+(?:only\s+)?)(?:zz\.)?(\w+)/gi)];
     const table = opens.length ? opens[opens.length - 1][1] : "";
+    if (table && droppedTables.has(table)) continue;
     if (table && dropped.has(`${table}_${col}_check`)) continue;
     if (table && droppedColumns.has(`${table}.${col}`)) continue;
     for (const lit of values.matchAll(/'([^']*)'/g)) {

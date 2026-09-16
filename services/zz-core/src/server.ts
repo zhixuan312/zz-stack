@@ -16,6 +16,7 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { pluginForDoor } from "@zz/catalog";
 import { addressResolver, peerAddress } from "@zz/contracts";
 import { reindexAllTeams } from "@zz/indexing";
 import { serveMcp, serviceVersion } from "@zz/mcp-http";
@@ -52,12 +53,12 @@ import { registerSkillTools } from "./tools/skills.js";
  * worse than a gap: with names alone, ten tools moving from this door to the evaluation door
  * left the recorded name set IDENTICAL, so a surface diff answered NO CHANGE across the largest
  * surface change this platform has had. An instrument that says "nothing moved" about the thing
- * that moved is not silent, it is wrong in the direction nobody checks. `zz-tool block-surface`
+ * that moved is not silent, it is wrong in the direction nobody checks. `zz-tool plugin-surface`
  * is the reader; it reports a move as a move, and a version recorded before 052 as one whose
  * doors were never written rather than as a core door it can only have guessed at.
  *
  * Recorded per SERVICE VERSION, which is what makes "what moved" answerable: two releases
- * leave two rows, and `zz-tool block-surface` diffs the newest against the one before. A version
+ * leave two rows, and `zz-tool plugin-surface` diffs the newest against the one before. A version
  * that has already been recorded is left alone rather than rewritten — the row means "this is
  * what that version served", and editing it would make the history agree with today by
  * construction, which is the one thing a history must not do. */
@@ -66,28 +67,40 @@ async function recordOwnSurface(): Promise<void> {
   if (!p) return;                       // no platform database: nothing to record into
   const version = serviceVersion(import.meta.url);
   try {
-    const { rows } = await p.query<{ id: string }>(
-      `insert into zz.block_version (block_id, version)
-       select b.id, $1 from zz.block b where b.name = 'platform'
-       on conflict (block_id, version) do nothing
-       returning id::text as id`, [version]);
-    // Already recorded: this version's surface is not written twice, and not edited.
-    if (!rows[0]) return;
-    const names = [...OWN_TOOLS.keys()].sort();
-    for (const name of names) {
-      // THE DOOR IS WRITTEN IN THE SAME STATEMENT AS THE NAME. A row that records the name and
-      // leaves the door for a later pass is a row that is wrong until that pass runs, on a
-      // table whose rows are never edited afterwards — so there is no later pass to have.
-      await p.query(
-        `insert into zz.block_tool (block_version_id, name, door) values ($1::uuid, $2, $3)
-         on conflict do nothing`, [rows[0].id, name, OWN_TOOLS.get(name)]);
+    // PER PLUGIN, NOT PER SERVICE, and that is the correction. This recorded every tool this
+    // process serves under one registry row named `platform` — so the ten evaluation tools,
+    // which belong to zz-plugin-eval and arrive only with that plugin, were filed as the
+    // platform's own. A door IS a plugin's declared server, so the door each tool registered
+    // on already says whose it is, and `recordingDoor` captured that at the moment of
+    // registration.
+    //
+    // ATTACHED TO A VERSION SOMEBODY ELSE WROTE. `register-plugins` creates zz.plugin_version
+    // at release, from the lock, with the digest that vouches for the content. This only ever
+    // attaches tools to a row that already exists: a version nobody has released has no
+    // surface to record, and inventing the row here would put a version in the registry with
+    // no digest behind it.
+    const byDoor = new Map<string, string[]>();
+    for (const [name, door] of OWN_TOOLS) {
+      const plugin = pluginForDoor(door);
+      if (!plugin) continue;            // a door no manifest claims: never guessed at
+      (byDoor.get(plugin) ?? byDoor.set(plugin, []).get(plugin)!).push(name);
     }
-    // THE DOORS ARE IN THE LINE, because "29 tools" is the number that was true before this
-    // recorded which door each was on, and a log line that did not change would be the first
-    // place a reader looked to decide whether it had.
-    const byDoor = [...new Set(OWN_TOOLS.values())].sort()
-      .map((d) => `${d}=${names.filter((n) => OWN_TOOLS.get(n) === d).length}`).join(" ");
-    console.log(`recorded our own surface as platform ${version}: ${names.length} tools (${byDoor})`);
+    const recorded: string[] = [];
+    for (const [plugin, names] of byDoor) {
+      const { rows } = await p.query<{ id: string }>(
+        `select pv.id::text as id from zz.plugin_version pv
+           join zz.plugin pl on pl.id = pv.plugin_id
+          where pl.name = $1 and pv.version = $2`, [plugin, version]);
+      if (!rows[0]) continue;           // this version is not in the registry yet
+      for (const name of names.sort()) {
+        await p.query(
+          `insert into zz.plugin_tool (plugin_version_id, name, door) values ($1::uuid, $2, $3)
+           on conflict (plugin_version_id, name) do nothing`,
+          [rows[0].id, name, OWN_TOOLS.get(name)]);
+      }
+      recorded.push(`${plugin}=${names.length}`);
+    }
+    if (recorded.length) console.log(`recorded our own surface at ${version}: ${recorded.join(" ")}`);
   } catch (err) {
     // NEVER FATAL. This is the platform describing itself for a measurement nobody is waiting
     // on; a service that refuses to start because it could not write its own metrics has

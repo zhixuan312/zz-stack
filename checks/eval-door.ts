@@ -35,7 +35,7 @@
 // instrument this platform has for judging a tool surface answered NO CHANGE across the largest
 // surface change it has ever had. That was not a gap, it was a wrong answer wearing the shape of
 // a right one. Migration 052 adds `door`, `recordingDoor` writes it from the builder that knows
-// it, and `zz-tool block-surface` reads it back; section 9 holds all three ends of that, and the
+// it, and `zz-tool plugin-surface` reads it back; section 9 holds all three ends of that, and the
 // green line now states what was asserted instead of what was missing.
 //
 // WHAT IS STILL NOT IN THAT RECORD, said on the green line rather than here alone: the /manage
@@ -510,7 +510,7 @@ try {
 // the largest surface change it has ever had. Silence would have been honest; "nothing moved"
 // is the sentence an instrument produces when it is working and there was nothing to find.
 //
-// Migration 052 adds `door`, `recordingDoor` writes it, and `zz-tool block-surface` reads it.
+// Migration 052 adds `door`, `recordingDoor` writes it, and `zz-tool plugin-surface` reads it.
 // The three clauses below are those three halves, and each fails on its own:
 //
 //   a. THE WRITE, from the builds already run above. `OWN_TOOLS` is filled by the registration
@@ -614,7 +614,7 @@ console.log(`eval door: ok — zz-core serves two doors a client can open: /mcp 
             `/eval/mcp.\n` +
             `           AND THE RECORD SAYS WHICH DOOR: building both doors recorded every one ` +
             `of those names against the door that registered it, in the same words doorSurface ` +
-            `answers, and the reader behind zz-tool block-surface reports all ${evalTools.size} ` +
+            `answers, and the reader behind zz-tool plugin-surface reports all ${evalTools.size} ` +
             `as MOVED when the same name set is served from the other door — the NO CHANGE this ` +
             `used to say was not covered. What it still cannot see: the /manage door is the ` +
             `gateway's own process and records no surface at all, so the platform's recorded ` +

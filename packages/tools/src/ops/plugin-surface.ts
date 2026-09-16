@@ -1,9 +1,9 @@
 /**
- * block-surface — what a block's tool surface did between its last two recorded versions.
+ * plugin-surface — what a plugin's tool surface did between its last two recorded versions.
  *
- *   zz-tool block-surface                 # the platform's own surface
- *   zz-tool block-surface casebox
- *   zz-tool block-surface --psql '<command>'
+ *   zz-tool plugin-surface                 # zz-core, the baseline
+ *   zz-tool plugin-surface zz-plugin-eval
+ *   zz-tool plugin-surface --psql '<command>'
  *
  * WHY THIS EXISTS AT ALL. `eval_block_surface` was one of six `eval_*` tools on zz-core and
  * went with `zz-skill-eval` and `zz-block-eval` when those flows were removed — so for a while
@@ -36,28 +36,28 @@ const lit = (s: string): string => `'${String(s ?? "").replace(/'/g, "''")}'`;
 function main(argv: string[]): number {
   const args = parseArgs(argv);
   const psql = args.flags.get("psql") || DEFAULT_PSQL;
-  // `platform` is US — the row zz.block has carried for zz-core since migration 024. It is the
+  // zz-core is the baseline every account carries, so it is the default subject. It is the
   // default because it is the surface this repository changes, and the one an operator is
   // asking about when they type this with no argument.
-  const block = args.positional[0] || "platform";
+  const plugin = args.positional[0] || "zz-core";
 
-  // THE TWO NEWEST VERSIONS THAT ACTUALLY RECORDED A SURFACE. A zz.block_version row exists for
-  // every version the platform has seen a handshake from, and most of them have no block_tool
+  // THE TWO NEWEST VERSIONS THAT ACTUALLY RECORDED A SURFACE. A zz.plugin_version row exists
+  // for every released version, and an older one may have no zz.plugin_tool
   // rows at all — comparing against one of those would report a whole surface DELETED. The
   // join is what makes "the version before" mean "the version before that we measured".
   const versions = psqlRows<VersionRow>(psql, `
     select bv.version, bv.id::text as id
-      from zz.block_version bv
-      join zz.block b on b.id = bv.block_id
-     where b.name = ${lit(block)}
-       and exists (select 1 from zz.block_tool t where t.block_version_id = bv.id)
+      from zz.plugin_version bv
+      join zz.plugin b on b.id = bv.plugin_id
+     where b.name = ${lit(plugin)}
+       and exists (select 1 from zz.plugin_tool t where t.plugin_version_id = bv.id)
      order by bv.first_seen_at desc
      limit 2`);
 
   if (!versions.length) {
-    console.log(`\n  No recorded surface for ${block}. That is "nobody measured it", not`);
+    console.log(`\n  No recorded surface for ${plugin}. That is "nobody measured it", not`);
     console.log("  \"it serves nothing\" — the two look identical from here and only one of them");
-    console.log("  is a fact about the block.\n");
+    console.log("  is a fact about the plugin.\n");
     return 0;
   }
 
@@ -66,8 +66,8 @@ function main(argv: string[]): number {
     // `RecordedTool` IS THE ROW SHAPE, not a local copy of it. A second interface with the
     // same two fields is where `door` eventually goes missing from one of them.
     tools: psqlRows<RecordedTool>(psql, `
-      select name, door from zz.block_tool
-       where block_version_id = ${lit(v.id)}::uuid
+      select name, door from zz.plugin_tool
+       where plugin_version_id = ${lit(v.id)}::uuid
        order by name`),
   });
 
@@ -76,7 +76,7 @@ function main(argv: string[]): number {
     const doors = new Map<string, number>();
     for (const t of after.tools) doors.set(t.door ?? "(door not recorded)",
                                            (doors.get(t.door ?? "(door not recorded)") ?? 0) + 1);
-    console.log(`\n  ${block} ${after.version}: ${after.tools.length} tool(s), ` +
+    console.log(`\n  ${plugin} ${after.version}: ${after.tools.length} tool(s), ` +
                 `${[...doors].sort().map(([d, n]) => `${d}=${n}`).join(", ")}`);
     console.log("\n  Only one version has a recorded surface, so there is nothing to diff it");
     console.log("  against. The next recorded version is the first one this can answer for.\n");
@@ -85,7 +85,7 @@ function main(argv: string[]): number {
 
   const before = surfaceOf(versions[1]);
   const change: SurfaceChange = diffSurfaces(before, after);
-  console.log(renderSurfaceChange(block, before, after, change));
+  console.log(renderSurfaceChange(plugin, before, after, change));
   console.log("");
   return 0;
 }

@@ -14,7 +14,7 @@
  *
  * ── NULL IS NOT A DOOR, AND IT IS ESPECIALLY NOT THE CORE DOOR ─────────────────────────────
  *
- * Every row written before 052 has `door` null, and so does every row `refresh-block-tools`
+ * Every row written before 052 has `door` null, and so does every row the old block probe
  * derives for somebody else's block. The tempting shortcut is `door ?? "core"` — it makes the
  * first diff after 052 read beautifully, and it invents ten moves that never happened, because
  * the `plugin_*` tools recorded before 052 would then be claimed to have started on the core

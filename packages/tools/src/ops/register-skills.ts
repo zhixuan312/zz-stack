@@ -16,10 +16,10 @@
  *
  * A SKILL'S KIND IS NOT COSMETIC. It decides what an improvement even means:
  *   flow_step    ours, sits in a flow. We edit the text directly and cut a version.
- *   block_usage  belongs to a block — the block team's own skills, or ours about theirs.
+ *   plugin_skill standalone capability: a skill that is not a step of any flow's method.
  *                Ours live on the PLATFORM block: we are an MCP surface like any other,
  *                and a skill of ours is that surface's skill.
- *   block_usage  written ABOUT somebody else's MCP server. We cannot change the block, so the
+ *   plugin_skill written about a plugin's own tools. Which PLUGIN ships it is
  *                only surface is the assistant skill beside it -- and its ASSETS, which are how
  *                a guarantee gets made that prose can only request.
  */
@@ -33,7 +33,7 @@ import { documentBody } from "@zz/contracts";
 import { optional, parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows, psqlText } from "../lib/psql.js";
 
-const SKILL_KINDS = ["flow_step", "block_usage"] as const;
+const SKILL_KINDS = ["flow_step", "plugin_skill"] as const;
 type SkillKind = (typeof SKILL_KINDS)[number];
 
 /** What a skill version can carry besides its own words.
@@ -45,11 +45,7 @@ type AssetKind = (typeof ASSET_KINDS)[number];
 
 const lit = (s: string): string => `'${String(s ?? "").replace(/'/g, "''")}'`;
 
-/** Where OUR OWN skills hang. The platform is a block — everything reaches everything
- *  else over MCP and so do we — so a skill of ours belongs to it rather than to nothing. */
-const PLATFORM_BLOCK = "platform";
-
-interface Found { name: string; kind: SkillKind; flow: string | null; block: string | null;
+interface Found { name: string; kind: SkillKind; flow: string | null;
                   version: string; hash: string; bodyHash: string; dir: string }
 
 /** sha256 of the skill BELOW its frontmatter.
@@ -107,15 +103,16 @@ function flowSkillDirs(root: string): { dir: string; flow: string }[] {
 }
 
 /** Every SKILL.md in the tree, and what kind each one is — decided by WHERE it lives, which is
- *  the one signal that cannot be mistyped. A usage skill sits under a block's directory; that is
- *  what makes it one. */
+ *  the one signal that cannot be mistyped. A skill under a flow's directory is a step of that
+ *  flow's method; anything else is standalone capability. Which PLUGIN ships it is
+ *  `zz.plugin_version_skill`, written per release by register-plugins. */
 function findSkills(root: string): Found[] {
   const out: Found[] = [];
-  const walk = (dir: string, flow: string | null, block: string | null): void => {
+  const walk = (dir: string, flow: string | null): void => {
     if (!existsSync(dir)) return;
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) { walk(p, flow, block); continue; }
+      if (e.isDirectory()) { walk(p, flow); continue; }
       if (e.name !== "SKILL.md") continue;
       const text = readFileSync(p, "utf8");
       const name = field(text, "name") || dir.split("/").pop() || "";
@@ -124,12 +121,11 @@ function findSkills(root: string): Found[] {
         name,
         // NO THIRD KIND. A skill belongs to a flow or to a block, and ours belong to
         // the PLATFORM block — which is what migration 024 recorded when it emptied
-        // `common` and stopped the constraint allowing it. This still wrote `common`,
-        // so the next registration after that migration would have been refused by
-        // the database with every skill in the tree.
-        kind: block ? "block_usage" : flow ? "flow_step" : "block_usage",
-        flow: block ? null : flow,
-        block: block ?? (flow ? null : PLATFORM_BLOCK),
+        // A skill under a flow's directory is a step of that flow's method; anything else is
+        // standalone capability. Which PLUGIN ships it is zz.plugin_version_skill, written per
+        // release by register-plugins — a second copy here could only disagree with it.
+        kind: flow ? "flow_step" : "plugin_skill",
+        flow,
         version: field(text, "version") || "unknown",
         // The hash of the FILE, so a score can prove which bytes it belongs to. Not of the
         // parsed fields: a change to the prose is exactly the change worth detecting.
@@ -151,22 +147,8 @@ function findSkills(root: string): Found[] {
   // A flow is a directory with a flow.json — the same definition the gate and the installer
   // use — and its name comes from the manifest, not the directory, so the one place that
   // decides what a flow is called stays the one place.
-  for (const flowDir of flowSkillDirs(root)) walk(flowDir.dir, flowDir.flow, null);
-  walk(join(root, "skills"), null, null);
-  const blocksDir = join(root, "blocks");
-  if (existsSync(blocksDir)) {
-    for (const b of readdirSync(blocksDir, { withFileTypes: true })) {
-      if (!b.isDirectory()) continue;
-      // `_standard` is not a block. It is where the building-block CONTRACT lives, and the
-      // skill beside it is OURS — written by this platform, for the teams who build blocks
-      // against it. Filed under a block named `_standard` it failed to register at all:
-      // there is no such row in zz.block, so block_id came back null and
-      // skill_belongs_correctly refused the insert. Silently, because the registrar reports
-      // what it registered rather than what it could not.
-      const owner = b.name.startsWith("_") ? PLATFORM_BLOCK : b.name;
-      walk(join(blocksDir, b.name, "skills"), null, owner);
-    }
-  }
+  for (const flowDir of flowSkillDirs(root)) walk(flowDir.dir, flowDir.flow);
+  walk(join(root, "skills"), null);
   return out;
 }
 
@@ -200,11 +182,10 @@ function main(argv: string[]): number {
   for (const s of found) {
     if (args.flags.has("dry-run")) continue;
     psqlText(psql, `
-      insert into zz.skill (name, kind, flow, block_id)
-      values (${lit(s.name)}, ${lit(s.kind)}, ${s.flow ? lit(s.flow) : "null"},
-              ${s.block ? `(select id from zz.block where name = ${lit(s.block)})` : "null"})
+      insert into zz.skill (name, kind, flow)
+      values (${lit(s.name)}, ${lit(s.kind)}, ${s.flow ? lit(s.flow) : "null"})
       on conflict (name) do update set kind = excluded.kind, flow = excluded.flow,
-                                       block_id = excluded.block_id, retired = false`);
+                                       retired = false`);
     // `released_at` NAMED, not left to its default. The column decides which version
     // wrote a document older than the run link — the console reads it as a window —
     // so the moment it records has to be the moment this version became the one being
@@ -233,10 +214,10 @@ function main(argv: string[]): number {
   console.log(`\n  ${found.length} skill(s) registered${args.flags.has("dry-run") ? " (dry run)" : ""}`);
   console.log(`    flow_step   ${by("flow_step")}`);
 
-  console.log(`    block_usage ${by("block_usage")}`);
+  console.log(`    plugin_skill ${by("plugin_skill")}`);
   console.log(`    assets      ${assets}\n`);
   for (const s of found.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))) {
-    console.log(`    ${s.kind.padEnd(12)} ${s.name.padEnd(20)} ${s.version}${s.block ? `  (${s.block})` : ""}`);
+    console.log(`    ${s.kind.padEnd(12)} ${s.name.padEnd(20)} ${s.version}${s.flow ? `  (${s.flow})` : ""}`);
   }
   console.log("");
 
@@ -266,14 +247,14 @@ function main(argv: string[]): number {
   const stale = psqlRows<{ name: string; kind: string; owner: string | null;
                            evals: number; runs: number }>(
     psql,
-    `select s.name, s.kind, coalesce(s.flow, b.name) as owner,
+    `select s.name, s.kind, coalesce(s.flow, s.kind) as owner,
             (select count(*) from zz.eval e
                join zz.skill_version sv on sv.id = e.skill_version_id
               where sv.skill_id = s.id) as evals,
             (select count(*) from zz.run r
                join zz.skill_version sv on sv.id = r.skill_version_id
               where sv.skill_id = s.id) as runs
-       from zz.skill s left join zz.block b on b.id = s.block_id
+       from zz.skill s
       where s.name not in (${names})`,
   );
   if (stale.length) {

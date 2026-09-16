@@ -22,8 +22,10 @@ for (const sh of ["deploy/install-backup-cron.sh", "scripts/build-image.sh"]) {
 // The dist-running scripts must NOT have been swept up: they are compiled output of code
 // that was already TypeScript, and rewriting them would break every one of them.
 const dist = Object.entries(pkg.scripts ?? {}).filter(([, c]) => /dist\/.*\.js\b/.test(String(c)));
-if (dist.length !== 21) {
-  fail.push(`${dist.length} npm scripts run a dist/*.js path, expected 21 — the conversion ` +
+// 20, was 21. `refresh-block-tools` is gone: it measured what a THIRD PARTY's tools cost us,
+// and this platform has no third-party servers to measure.
+if (dist.length !== 20) {
+  fail.push(`${dist.length} npm scripts run a dist/*.js path, expected 20 — the conversion ` +
             `reached code that was already TypeScript`);
 }
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

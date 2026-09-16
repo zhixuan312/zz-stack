@@ -51,7 +51,8 @@ interface Layer {
   probes: ProbeEntry[];
 }
 
-export type Verdict = "ok" | "wrong" | "unknown";
+// Not exported: the one importer was `refresh-block-tools`, which is gone.
+type Verdict = "ok" | "wrong" | "unknown";
 
 /** One probe's outcome. `detail` is set for `wrong` and `unknown`; `mine` only for `unknown`
  *  (whether the doctor's own code broke, or the thing it asked about could not be reached);

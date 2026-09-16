@@ -78,7 +78,6 @@ if (/detail\s*:\s*\{[^}]*\bbytes\b/s.test(tel)) fail.push("detail still carries 
 const READERS = {
   "packages/tools/src/testing/tool-report.ts": ["duration_ms", "response_bytes"],
   "packages/tools/src/ops/watch-results.ts": ["duration_ms"],
-  "packages/tools/src/ops/refresh-block-tools.ts": ["response_bytes", "duration_ms"],
   "services/gateway/src/runs.ts": ["response_bytes"],
 };
 for (const [f, cols] of Object.entries(READERS)) {

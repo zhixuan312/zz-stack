@@ -161,7 +161,7 @@ export function mountCatalog(app: Express): void {
     // the flows route — see the note in /api/console/teams, which is where a team's own
     // installs are answered from a scope that authorises them.
     const db = platformDb();
-    const [ran, released, blocks] = await Promise.all([
+    const [ran, released] = await Promise.all([
       // EVERY SKILL THE STORE HAS SEEN, whatever kind it is. The flows route filtered
       // `kind = 'flow_step'`, which was right when the only subject was a flow's stages and
       // is wrong now: `zz` ships common skills (zz-platform) and a block ships block_usage
@@ -259,29 +259,6 @@ export function mountCatalog(app: Express): void {
                      where cr.plugin_version_id = pv.id
                        and jsonb_typeof(cr.result->'cases') = 'array'
                      order by cr.ran_at desc limit 1) r on true`),
-      // A REGISTERED BLOCK IS A PLUGIN TOO, and its servers come from its registration rather
-      // than from a manifest: the block IS the server it reaches. It declares no version and
-      // ships through nobody's marketplace, so it carries no digest and never will — the
-      // release columns are null for it by construction, not for want of a release.
-      //
-      // `origin = 'team'` rather than `origin <> 'stand_in'`. RuleMill and bookit are our own
-      // mocks from the zz-blocks image and there is nobody on the other end of a puppet to
-      // agree a change with; they stay in Overview and Activity, because those report what our
-      // flows DID and hiding them would make a flow's totals stop adding up. `platform` is
-      // excluded for a different reason — it is zz-core, which is the `zz` plugin's own server
-      // and already has a row above.
-      db.query(`select b.name as block, b.title, b.kind,
-                       coalesce(e.calls,0) as calls, coalesce(e.failed,0) as failed,
-                       e.last_seen
-                  from zz.block b
-                  left join (
-                    select block, count(*) as calls,
-                           count(*) filter (where ok = false) as failed,
-                           to_char(max(ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen
-                      from zz.event where kind = 'tool_call' and block is not null group by 1
-                  ) e on e.block = b.name
-                 where b.origin = 'team'
-                 order by b.name`),
     ]);
 
     const stats = new Map(ran.rows.map((r) => [r.name as string, r]));
@@ -371,42 +348,7 @@ export function mountCatalog(app: Express): void {
       };
     });
 
-    // ONE WALK OF /blocks for the whole response, not one per row: it reads a SKILL.md off
-    // disk for every skill it finds, and calling it inside the map would re-read the shelf
-    // once per registered block.
-    const carried = blockSkills();
-    const blockRows = blocks.rows.map((b) => {
-      const skills = (carried.get(b.block as string) ?? []).map((s) => skillRow(s, null, false));
-      return {
-        plugin: b.block as string,
-        owner: null,
-        origin: "third_party" as const,
-        agentName: null,
-        description: null,
-        // title and kind travel with the block, not in a map in the console — see migration
-        // 034. Empty where nobody has described it, and the console shows the id then.
-        title: (b.title as string) || null,
-        kind: (b.kind as string) || null,
-        version: null,
-        servers: [b.block as string],
-        // A registered block is somebody else's server, not a package of ours with a method.
-        flow: false,
-        stages: [] as string[],
-        entry: null,
-        documents: [] as DiskPlugin["documents"],
-        gates: 0,
-        skills,
-        calls: +b.calls,
-        failed: +b.failed,
-        lastRun: (b.last_seen as string | null) ?? null,
-        release: null,
-        eval: null,
-      };
-    });
-
-    // MOST RECENTLY USED FIRST. A plugin nobody has run has no date and sorts last, by name
-    // among its own kind, so the tail is stable rather than arbitrary.
-    const plugins = [...rows, ...blockRows].sort((a, b) => {
+    const plugins = [...rows].sort((a, b) => {
       const la = a.lastRun ?? "";
       const lb = b.lastRun ?? "";
       if (la !== lb) return lb.localeCompare(la);

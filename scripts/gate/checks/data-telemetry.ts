@@ -173,23 +173,35 @@ check("the platform records its own surface, the way it records everybody else's
   if (!/OWN_TOOLS\.set\(name, door\)/.test(src)) {
     bad.push("registerTool no longer records the name it is registering AND the door it is registering it on — the surface would be recorded from something other than what is served, or not at all");
   }
-  if (!/insert into zz\.block_version[\s\S]{0,200}where b\.name = 'platform'/.test(src)) {
-    bad.push("nothing writes a zz.block_version row for 'platform' — `zz-tool block-surface` has nothing to read");
+  // ATTACHED TO A VERSION SOMEBODY ELSE WROTE. register-plugins creates zz.plugin_version at
+  // release, from the lock, with the digest that vouches for the content. Recording a surface
+  // only ever attaches tools to a row that already exists — a version nobody released has no
+  // surface to record, and creating the row here would put a version in the registry with
+  // nothing standing behind it.
+  if (!/select pv\.id::text as id from zz\.plugin_version pv/.test(src)) {
+    bad.push("the surface is not attached to a released zz.plugin_version — either nothing is recorded, or this writes a version row that no release vouches for");
+  }
+  // PER PLUGIN, FROM THE DOOR. A door IS a plugin's declared server, so the door a tool
+  // registered on says whose tool it is. Filed under one blanket row instead, the ten
+  // evaluation tools — which arrive only with zz-plugin-eval — were recorded as the
+  // platform's own.
+  if (!/pluginForDoor\(door\)/.test(src)) {
+    bad.push("the surface is not filed per plugin — every tool this process serves lands under one registry row, and the evaluation door's tools stop being the evaluation plugin's");
   }
   // THE DOOR IS IN THE ROW, AND IT IS IN THE SAME STATEMENT AS THE NAME. Migration 052 added
-  // `zz.block_tool.door` for one reason: a surface recorded as names alone answered NO CHANGE
-  // when ten tools moved from `/core/mcp` to `/eval/mcp`, because not one name changed. A
-  // writer that goes back to `(block_version_id, name)` restores that wrong answer silently —
-  // every row still appears, the column just stays null, and the reader correctly reports it as
-  // not comparable rather than as a fault. So the write is what is checked here.
-  if (!/insert into zz\.block_tool \(block_version_id, name, door\)/.test(src)) {
+  // the door column for one reason: a surface recorded as names alone answered NO CHANGE when
+  // ten tools moved from `/core/mcp` to `/eval/mcp`, because not one name changed. A writer
+  // that goes back to (version, name) restores that wrong answer silently — every row still
+  // appears, the column just stays null, and the reader correctly reports it as not comparable
+  // rather than as a fault. So the write is what is checked here.
+  if (!/insert into zz\.plugin_tool \(plugin_version_id, name, door\)/.test(src)) {
     bad.push("the surface row no longer carries the door it was served on — a surface recorded as names alone reports NO CHANGE when a tool moves between doors, which is the wrong answer this platform's largest surface change already got");
   }
   if (!/OWN_TOOLS\.get\(name\)/.test(src)) {
-    bad.push("the door written into zz.block_tool does not come from OWN_TOOLS — it would be a second account of which door a tool is on, and the one in OWN_TOOLS is the one the registration itself created");
+    bad.push("the door written into zz.plugin_tool does not come from OWN_TOOLS — it would be a second account of which door a tool is on, and the one in OWN_TOOLS is the one the registration itself created");
   }
-  // Per version, and never rewritten: the row means "this is what that version served".
-  if (!/on conflict \(block_id, version\) do nothing/.test(src)) {
+  // Per version and per name, never rewritten: the row means "this is what that version served".
+  if (!/on conflict \(plugin_version_id, name\) do nothing/.test(src)) {
     bad.push("the surface row is not per-version-and-once — rewriting it makes the history agree with today by construction, which is the one thing a history must not do");
   }
   // Recorded at boot, AFTER a server has been built: the doors are stateless, so nothing has
@@ -222,29 +234,34 @@ check("the platform records its own surface, the way it records everybody else's
     }
   }
 
-  // ── AND THE COLUMN THE WRITE DEPENDS ON, WITH ITS NULLS LEFT ALONE ─────────────────────
+  // ── AND THE COLUMN THE WRITE DEPENDS ON, WITH NO ROW CLAIMING A DOOR NOBODY RECORDED ───
   //
   // A writer naming a column no migration adds fails INSIDE the catch that makes recording
   // deliberately non-fatal: the service starts, one line says it could not record its surface,
   // and nothing is red. `schemaColumns()` replays every add and drop in order, so a later
   // migration removing the column is caught by the same clause.
   //
-  // NO DEFAULT AND NO BACKFILL, asserted rather than trusted. Rows written before 052 carry a
-  // null door honestly — nothing knew the door when they were written. A default, or an
-  // `update … set door`, would make the first diff after this lands read beautifully and INVENT
-  // the moves it shows, because every `plugin_*` name recorded before the move would claim to
-  // have started on the core door. That is NO CHANGE with the sign flipped, committed for good.
-  const mig = "services/gateway/migrations/052_block_tool_door.sql";
+  // NOT NULL IS RIGHT HERE, and it was wrong on the table this replaces. `zz.block_tool` gained
+  // `door` by migration 052, on a table that already held rows written before anything knew the
+  // door — so a default or an `update … set door` there would have INVENTED the moves the first
+  // diff showed, every `plugin_*` name claiming to have started on the core door. That is NO
+  // CHANGE with the sign flipped, committed for good.
+  //
+  // `zz.plugin_tool` is a new table whose writer always knows the door, and 058 carries forward
+  // only rows that already recorded one (`where bt.door is not null`). So the honest constraint
+  // is NOT NULL: there is no row here whose door nobody knew, and a nullable column would let
+  // one back in.
+  const mig = "services/gateway/migrations/058_plugin_owns_its_surface.sql";
   const sql = (() => { try { return readFileSync(join(root, mig), "utf8"); } catch { return ""; } })();
-  if (!schemaColumns().includes("block_tool.door")) {
-    bad.push("no migration leaves zz.block_tool.door standing — the insert above names a column nothing creates, and it fails inside the catch that makes recording non-fatal, so the service starts and records nothing");
+  if (!schemaColumns().includes("plugin_tool.door")) {
+    bad.push("no migration leaves zz.plugin_tool.door standing — the insert above names a column nothing creates, and it fails inside the catch that makes recording non-fatal, so the service starts and records nothing");
   }
   if (!sql) {
-    bad.push(`${mig} could not be read, so nothing about how it treats existing rows was checked`);
-  } else if (/door text[^;]*not null/i.test(sql) || /door text[^;]*default/i.test(sql)) {
-    bad.push(`${mig} gives door a default or makes it NOT NULL — every row written before it would then claim a door nobody recorded, and whatever moved would read as having started on whichever door the default names`);
-  } else if (/update\s+zz\.block_tool[\s\S]*door/i.test(sql)) {
-    bad.push(`${mig} backfills door onto existing rows — a door reconstructed after the fact is a guess written as a fact, on rows the recorder deliberately never rewrites`);
+    bad.push(`${mig} could not be read, so nothing about which rows it carries forward was checked`);
+  } else if (!/door\s+text not null/i.test(sql)) {
+    bad.push(`${mig} leaves door nullable — a row whose door nobody recorded reads as a tool that moved from nowhere, which is the wrong answer this column exists to prevent`);
+  } else if (!/where bt\.door is not null/i.test(sql)) {
+    bad.push(`${mig} carries forward rows with no door — those are rows written before the door was recorded, and filing them under NOT NULL would make them claim one`);
   }
   return bad.length ? bad.join("; ") : null;
 });

@@ -127,7 +127,7 @@ export function registerSkillTools(server: McpServer): void {
    * somebody maintains by hand.
    *
    * NOTHING HERE IS RETYPED FROM ANYWHERE. The block-to-skill mapping is zz.skill joined to
-   * zz.block — the registry the indexer writes and the console reads. `when_to_use` comes out
+   * zz.skill — the registry register-skills writes and the console reads. `when_to_use` comes out
    * of each skill's own SKILL.md. A stage's position comes out of its package's flow.json.
    * That is the only reason this can be trusted at a hundred blocks.
    *

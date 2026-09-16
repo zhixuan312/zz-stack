@@ -33,6 +33,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.43.0] — 2026-09-16 · console 0.11.0
+
+The two panels under the overview tiles. One drew the wrong population; the other drew the
+right one unreadably.
+
+### Changed
+- **"Tool calls over time" replaces "Events per hour".** The old chart drew every EVENT, so
+  its largest feature was whichever archive had been imported that day and the work was
+  invisible underneath it. `metrics.toolTrend` carries tool calls split three ways that are
+  DISJOINT and sum to the total — `inside` a run, `outside` a run, `refused` — so the console
+  can stack them on one axis and the column height is a real number of calls.
+
+  **Every bucket in the window is emitted, including the empty ones.** Grouping the events
+  alone returns no row for a quiet hour: a 24-hour window came back with 13 rows, and a chart
+  that spaces 13 buckets evenly across a day states a shape the data does not have. An hour
+  with no tool calls is a zero.
+
+- **`refusals` is two axes over the population the Refusal rate tile counts.** It was a
+  top-12 of every failed event of any kind, so this panel's total and the tile's were two
+  different numbers wearing one word; both are `kind='tool_call'` now and the two agree.
+  `byTool` and `byMessage` answer different questions and neither derives the other: one tool
+  refusing for nine reasons is a surface problem, nine tools refusing with one identical
+  message is a single bug. `byMessage` carries how many distinct tools emit each message,
+  which is what makes the second case visible at all.
+
+  The console's table of tool · count · message is gone with it. It truncated the message
+  column at 36 characters — exactly where these refusals differ from one another — and ranked
+  by count, so one tool filled every row.
+
+### Upgrade notes
+- **Roll the two together.** Console 0.11.0 reads `toolTrend` and the reshaped `refusals`;
+  against a gateway below 0.43.0 the overview page throws rather than degrading. No
+  migration and no env key — both statements read columns `zz.event` already has.
+
 ## [0.42.0] — 2026-09-15 · console 0.10.3
 
 The first overview tile read 100% and could not read anything else. That is the entry; the

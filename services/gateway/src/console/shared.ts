@@ -207,27 +207,29 @@ export function grainForSpan(days: number): Grain {
  * person is actually in. Dates without a time are left alone: a day needs no zone.
  */
 
+/** What `stageOf` actually reads: four of the eight columns DocRow carries.
+ *
+ * SEPARATE FROM DocRow ON PURPOSE. The initiatives LIST route typed its rows as DocRow, so
+ * it selected every column DocRow declares — including `length(coalesce(body,'')) as bytes`
+ * and `title`, neither of which is read anywhere in the summary it builds. Postgres
+ * detoasts every document body to answer that: measured on this deployment's 832 rows,
+ * 195.8 ms with those columns and 1.7 ms without. A type that demands more than its reader
+ * needs is how a query ends up paying for columns nobody asked for, so this one demands
+ * exactly what it reads. DocRow is structurally assignable to it, so the DETAIL route —
+ * which genuinely shows a document's size — passes unchanged.
+ *
+ * `type` is here because the compiler said so: the no-manifest fallback in `stageOf`
+ * classifies untyped documents by it when the initiative names a flow the catalog cannot
+ * resolve. It is a short column and it is genuinely read; `bytes` and `title` were neither. */
+export interface StageDoc {
+  path: string; type: string; status: string | null; outcome: string | null;
+}
+
 /** How far an initiative got, from the documents that exist and their approvals.
  *
  * Derived, never stored — which is the point. The platform already records the
  * only facts that matter (a document exists; `document_approve()` stamped it), and a
  * `stage` column would be a second copy of that able to drift from it. */
-/** What `stageOf` actually reads, which is three columns of the eight DocRow carries.
- *
- * SEPARATE FROM DocRow ON PURPOSE. The list route typed its rows as DocRow, so it selected
- * every column DocRow declares — including `length(coalesce(body,'')) as bytes`, which is
- * never read anywhere in the response it builds. Postgres detoasts every document body to
- * compute it: measured on this deployment, 832 rows took 195.8 ms with that column and
- * 1.3 ms without. A type that demands more than its reader needs is how a query ends up
- * paying for columns nobody asked for, so this one demands exactly what it reads.
- * DocRow is structurally assignable to it, so the detail route — which genuinely shows a
- * document's size — passes unchanged. */
-export interface StageDoc {
-  // `type` is read only by the no-manifest fallback below, which classifies untyped
-  // documents when the initiative names a flow the catalog cannot resolve. It is cheap and
-  // it is genuinely read; `bytes` and `title` were neither.
-  path: string; type: string; status: string | null; outcome: string | null;
-}
 export interface DocRow {
   path: string; type: string; status: string | null; outcome: string | null;
   approved_by: string | null; updated_at: string; bytes: number; title: string | null;

@@ -87,6 +87,7 @@ import { DASH_IMAGE, DASH_REMOTE, DASH_SRC, HOST, IMAGE, REMOTE, asExecError, di
 import { args, dryRun, preflightMode, rollbackMode, version } from "./release/config.ts";
 import { consoleImage, resolveDashboard } from "./release/dashboard.ts";
 import { preflight } from "./release/preflight.ts";
+import { purgeProbes } from "./release/probe-purge.ts";
 import { rollback } from "./release/rollback.ts";
 import { verifyLive } from "./release/verify.ts";
 
@@ -126,6 +127,8 @@ function chainCheck() {
     const failing = out.split("\n").filter((l) => l.includes("FAILED:")).map((l) => l.trim());
     return { verdict: "wrong",
       detail: failing.length ? `chain-check: ${failing.join(" | ")}` : `chain-check exited nonzero: ${out.slice(-300)}` };
+  } finally {
+    purgeProbes();  // a chain check that FAILED still takes its initiative with it
   }
 }
 

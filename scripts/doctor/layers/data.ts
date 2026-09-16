@@ -142,3 +142,32 @@ probe("no document carries a status its flow does not gate", () => {
          `gate, so rows like these predate that and need their frontmatter corrected and the ` +
          `team reindexed.`;
 });
+
+// R11 · ATTRIBUTION IS LOOKED UP — AND THE GATE CAN ONLY SEE THAT IT IS.
+//
+// The gate asserts telemetry resolves the plugin from the door and never from the caller's
+// step trace. That is the mechanism, and a spec audit was right that it is not the property: a
+// rewrite can satisfy the grep and leave every row null. Measured before this landed, 194 of
+// 3,996 tool calls carried a plugin — 4.9% — while the code that produced them looked correct
+// on every reading.
+//
+// A door IS a plugin's declared server, so a call that arrived on one is attributable by
+// construction; the only honest null is a surface no manifest claims, which today is `admin`.
+// So this counts what is NOT attributed and excludes that one.
+probe("a tool call names the plugin whose door it arrived on", () => {
+  const row = psql(
+    "select count(*) || '|' || count(plugin) from zz.event " +
+    "where kind = 'tool_call' and split_part(subject,':',1) <> 'admin'").trim();
+  const [totalRaw, withPluginRaw] = row.split("|");
+  const total = Number(totalRaw);
+  if (!row || Number.isNaN(total)) throw new Error("could not count zz.event on the host");
+  if (!total) return null;                       // nothing has been called: nothing to attribute
+  const missing = total - Number(withPluginRaw);
+  if (!missing) return null;
+  const pct = Math.round((missing / total) * 1000) / 10;
+  return `${missing} of ${total} tool calls (${pct}%) name no plugin. Which plugin a call ` +
+         `belongs to is a fact about the DOOR it arrived on — pluginForDoor reads it from the ` +
+         `manifest that declares the server — so a null here is not a call that could not be ` +
+         `attributed, it is one that was not. Rows written before that landed keep their nulls; ` +
+         `a percentage that does not fall after a deploy means the new path is not running.`;
+});

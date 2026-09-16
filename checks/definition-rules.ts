@@ -20,9 +20,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { MANAGE_ALIAS } from "../packages/contracts/dist/index.js";
 import { root, sourceFiles } from "../scripts/gate/read.ts";
 
 const fail: string[] = [];
+// MANAGE_ALIAS is a table of names that CHANGED, so a tool that has always had one name is
+// invisible to it. `whoami` is the only one, and checks/manage-surface.ts names it explicitly
+// for the same reason.
+const manageNames = [...new Set([...Object.values(MANAGE_ALIAS), "whoami"])];
 const src = (rel: string): string => { try { return readFileSync(join(root, rel), "utf8"); } catch { return ""; } };
 const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) => !f.includes("/dist/"));
 
@@ -132,6 +137,88 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
   }
 }
 
+// R8 · DOMAIN PICKS THE DOOR; ROLE PICKS WHAT YOU SEE ON IT.
+//
+// The two cuts are different and they were confused: filing a bug was on /core and answering
+// one on /manage, because answering is an operator's act. Apply the test that settles it — a
+// superadmin with every plugin installed, so nothing is hidden — and the two answer differently
+// with nothing but the caller between them.
+//
+// THE TABLE IS FROZEN HERE, and it has to be. The test as explore.md states it is a question a
+// PERSON answers; nothing in either repository declares a tool's domain, so a check could only
+// ask a model, which R10 forbids for a question with a determinate answer. A frozen table is
+// the answer written down once, where a reviewer can disagree with a line of it.
+//
+// Both directions, so neither half can rot quietly: a tool with no domain is unclassified and a
+// domain naming a tool that no door serves is stale.
+const DOMAIN_DOOR: Record<string, string> = {
+  work: "core", knowledge: "core", defect: "core",
+  catalog: "manage", access: "manage",
+  evaluation: "eval",
+};
+const TOOL_DOMAIN: Record<string, string> = {
+  // Work — an initiative, its records, and reading the doctrine a step needs. Reading a skill
+  // is part of DOING the work; managing what is on the shelf is Catalog.
+  document_approve: "work", document_list: "work", document_patch: "work",
+  document_present: "work", document_read: "work", document_revise: "work",
+  document_write: "work", initiative_close: "work", initiative_open: "work",
+  initiative_status: "work", source_add: "work", source_list: "work",
+  skill_list: "work", skill_read: "work", session_whoami: "work",
+  // Knowledge — the journal, and rebuilding the index that stores it.
+  knowledge_add: "knowledge", knowledge_search: "knowledge", knowledge_supersede: "knowledge",
+  knowledge_reconcile: "knowledge", knowledge_reindex: "knowledge",
+  // Defect — a seventh domain, and the audit that found R8 unimplementable was right that it
+  // was missing. Reporting something broken is not Work (it is about the platform, not about
+  // the initiative) and not Access. Filing and answering are one subject; role decides which
+  // half you see.
+  bug_report: "defect", bug_list: "defect", bug_resolve: "defect", bug_delete: "defect",
+  // Catalog — what is on the shelf and what a team installed.
+  catalog_list: "catalog", install_list: "catalog", flow_install: "catalog",
+  flow_uninstall: "catalog", client_setup: "catalog",
+  // Access — who may do what, and the credential that says so.
+  person_add: "access", person_list: "access", person_deactivate: "access",
+  enrolment_issue: "access", team_create: "access", team_archive: "access",
+  team_list: "access", team_mine: "access", team_switch: "access",
+  member_add: "access", member_remove: "access",
+  pat_issue: "access", pat_list: "access", pat_revoke: "access", whoami: "access",
+  // Evaluation — the only subject in which a model's judgement is admissible.
+  plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
+  ruler_read: "evaluation", ruler_record: "evaluation", ruler_affirm: "evaluation",
+  round_judge: "evaluation", round_scores: "evaluation",
+  case_record: "evaluation", finding_record: "evaluation",
+};
+{
+  const serves = new Map<string, string>();   // tool -> the door that registers it
+  const core = src("services/zz-core/src/server.ts");
+  for (const f of ts(["services/zz-core/src/tools"])) {
+    for (const m of src(f).matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) serves.set(m[1], "core");
+  }
+  for (const f of ts(["services/zz-core/src/eval"])) {
+    for (const m of src(f).matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) serves.set(m[1], "eval");
+  }
+  void core;
+  for (const t of Object.values(JSON.parse(JSON.stringify(manageNames)) as string[])) serves.set(t, "manage");
+  for (const [tool, door] of serves) {
+    const domain = TOOL_DOMAIN[tool];
+    if (!domain) {
+      fail.push(`R8: ${tool} is served on /${door} and no domain claims it — a tool whose ` +
+                "subject nobody wrote down is a tool whose door nobody can argue with");
+      continue;
+    }
+    const want = DOMAIN_DOOR[domain];
+    if (want !== door) {
+      fail.push(`R8: ${tool} is served on /${door} and its domain (${domain}) names /${want}. ` +
+                "The subject decides the door; role decides only who sees it on that door.");
+    }
+  }
+  for (const tool of Object.keys(TOOL_DOMAIN)) {
+    if (!serves.has(tool)) {
+      fail.push(`R8: the domain table claims ${tool} and no door serves it — a stale entry ` +
+                "makes the table look complete while a real tool goes unclassified");
+    }
+  }
+}
+
 // ── R11 · attribution is looked up, never inferred ──────────────────────────────────────
 //
 // Which plugin a call belongs to is a fact about the DOOR it arrived on. It was inferred from
@@ -172,4 +259,4 @@ const ts = (dirs: string[]): string[] => sourceFiles(dirs, [".ts"]).filter((f) =
 }
 
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }
-console.log("definition rules: ok — R1, R3, R4, R5 (write half), R7, R11 and R12 hold in the source");
+console.log("definition rules: ok — R1, R3, R4, R5 (write half), R7, R8, R11 and R12 hold in the source");

@@ -53,14 +53,21 @@ async function census() {
     one("event", `select count(*) n from zz.event where initiative like '${LIKE}'`),
     one("run", `select count(*) n from zz.run r join zz.initiative i on i.id = r.initiative_id
                 where i.slug like '${LIKE}'`),
+    one("node", `select count(*) n from zz.doc where path like 'nodes/%' and path ilike '${LIKE}'`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
-    one("REAL doc", `select count(*) n from zz.doc where initiative not like '${LIKE}'`),
+    // INITIATIVE documents only. This counted every zz.doc row whose initiative is not a
+    // probe's — which includes the knowledge nodes, because a node's `initiative` is the one
+    // it was minted from. So deleting 58 probe NODES dropped this by 58 and the survivor
+    // assertion fired on a purge that had done exactly the right thing. One subject per count.
+    one("REAL doc", `select count(*) n from zz.doc
+                     where initiative not like '${LIKE}' and path not like 'nodes/%'`),
+    one("REAL node", `select count(*) n from zz.doc where path like 'nodes/%' and path not ilike '${LIKE}'`),
   ]));
 }
 
-/** Probe directories on disk, which are the SOURCE OF TRUTH — `zz.doc` is an index projected
- * from each file's frontmatter, so a row deleted without its file comes back on the next
- * reindex. Both halves or neither. */
+/** Probe initiative directories on disk, which are the SOURCE OF TRUTH — `zz.doc` is an index
+ * projected from each file's frontmatter, so a row deleted without its file comes back on the
+ * next reindex. Both halves or neither. */
 function probeDirs(): string[] {
   const teams = join(ARTIFACTS, "teams");
   if (!existsSync(teams)) return [];
@@ -72,10 +79,34 @@ function probeDirs(): string[] {
   });
 }
 
+/** The probe's KNOWLEDGE NODES, which do not live under an initiative and so survived the
+ * first version of this script entirely. chain-check calls `knowledge_add`, and a node lands
+ * in `<team>/_knowledge/nodes/` keyed by nothing the initiative purge can see: 58 of them were
+ * left behind, 5 on a real person's team.
+ *
+ * MATCHED ON THE PATH, NEVER THE TITLE. One real node on this deployment is called "A check
+ * not wired into the gate is not enforced — unless it cannot be", which mentions the chain
+ * check in its title and is somebody's actual finding. Matching titles would have deleted it.
+ * The 58 real probes are two generated stems, `chain-check-subject-probe.md` and
+ * `chain-check-subject-probe-superseding.md`. */
+function probeNodes(): string[] {
+  const teams = join(ARTIFACTS, "teams");
+  if (!existsSync(teams)) return [];
+  return readdirSync(teams).flatMap((team) => {
+    const dir = join(teams, team, "_knowledge", "nodes");
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((name) => name.includes(PROBE))
+      .map((name) => join(dir, name));
+  });
+}
+
 const before = await census();
 const dirs = probeDirs();
+const nodes = probeNodes();
 console.log("before:", before);
-console.log(`probe directories on disk: ${dirs.length}`);
+console.log(`probe initiative directories on disk: ${dirs.length}`);
+console.log(`probe knowledge nodes on disk:        ${nodes.length}`);
 
 if (!APPLY) {
   console.log("\nDRY RUN — nothing was deleted. Re-run with --apply.");
@@ -97,6 +128,8 @@ try {
   const d = await db.query(`delete from zz.doc where initiative like '${LIKE}'`);
   const e = await db.query(`delete from zz.event where initiative like '${LIKE}'`);
   const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
+  const k = await db.query(`delete from zz.doc where path like 'nodes/%' and path ilike '${LIKE}'`);
+  console.log(`  knowledge nodes: ${k.rowCount}`);
   await db.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
 } catch (err) {
@@ -105,7 +138,8 @@ try {
 }
 
 for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
-console.log(`removed ${dirs.length} directories`);
+for (const f of nodes) rmSync(f, { force: true });
+console.log(`removed ${dirs.length} directories and ${nodes.length} knowledge nodes`);
 
 const after = await census();
 console.log("after:", after);
@@ -113,10 +147,10 @@ console.log("after:", after);
 // THE ASSERTION IS ABOUT THE SURVIVORS, not about the victims. "I deleted 463 rows" is
 // satisfied by deleting the wrong 463; "every real initiative is still here" is not.
 const bad: string[] = [];
-for (const k of ["doc", "initiative", "event", "run"]) {
+for (const k of ["doc", "initiative", "event", "run", "node"]) {
   if (after[k] !== 0) bad.push(`${after[k]} ${k} rows still match ${PROBE}`);
 }
-for (const k of ["REAL initiative", "REAL doc"]) {
+for (const k of ["REAL initiative", "REAL doc", "REAL node"]) {
   if (after[k] !== before[k]) bad.push(`${k}: ${before[k]} before, ${after[k]} after — this purge took real work with it`);
 }
 await db.end();

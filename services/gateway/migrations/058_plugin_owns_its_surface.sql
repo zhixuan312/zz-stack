@@ -53,10 +53,15 @@ update zz.skill set kind = 'plugin_skill' where kind = 'block_usage';
 alter table zz.skill add constraint skill_belongs_correctly
   check ((kind = 'flow_step' and flow is not null) or (kind = 'plugin_skill' and flow is null));
 
--- `zz.event.block_version_id` references block_version and has never been written: 0 of 5,187
--- rows carry one. 057 removed the `block` text column beside it and left this, which would
--- refuse the drop below.
+-- TWO COLUMNS ON zz.event, and 057 removed neither. `block_version_id` references
+-- block_version and would refuse the drop below; `block_version` is the text beside it, which
+-- recorded what a third party's server said it was at the handshake. Both have 0 non-null rows
+-- of 5,192, nothing writes either since attribution became a fact about the door, and nothing
+-- reads them. A column nothing writes and nothing reads is the dormant schema this platform
+-- keeps removing — and the one that is only a text field would have survived every check,
+-- because no foreign key would have complained about it.
 alter table zz.event drop column if exists block_version_id;
+alter table zz.event drop column if exists block_version;
 
 drop table if exists zz.block_tool;
 drop table if exists zz.block_version;

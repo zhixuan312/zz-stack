@@ -16,34 +16,61 @@ export function mountInitiatives(app: Express): void {
    * From zz.doc — see the header. One query for every document, grouped in
    * memory, because the stage rule lives in `stageOf` and duplicating it in SQL
    * is how the API and the front end start disagreeing about step 4. */
-  app.get("/api/console/initiatives", handler("initiatives", async (_req, res, scope) => {
+  app.get("/api/console/initiatives", handler("initiatives", async (req, res, scope) => {
     const db = platformDb();
-    // DELETED, not guarded: `($1::text is null or team_slug = $1)` treated an absent
-    // `?team=` as "match every row" — a null used as a wildcard, which is how every team's
-    // initiatives were returned to a caller who simply forgot the query string. A team
-    // scope always names its own team_slug; only a platform scope may see every team's
-    // initiatives, which is what an unfiltered request actually returned before this.
-    //
-    // TWO COMPLETE STATEMENTS, not one assembled from `scope` at request time: `check:sql`
-    // PREPAREs every query in this file against a live schema before release — see
-    // packages/tools/src/testing/sql-check.ts for the 0.4.0 incident that check exists to
-    // catch — and it can only PREPARE a literal it can read whole. A predicate built from
-    // `scope.kind` is invisible to it, so BOTH branches below are spelled out in full.
-    const { rows } = scope.kind === "platform"
+    /* `?team=` IS A FILTER AGAIN — but never a nullable one.
+     *
+     * It was deleted outright because `($1::text is null or team_slug = $1)` made an absent
+     * parameter match every row: a caller who forgot the query string got every team's
+     * initiatives. Deleting it fixed that and broke the one caller that was passing it
+     * honestly — the team page asks for `/initiatives?team=xuan`, the parameter was no
+     * longer read, and a platform-scoped reader clicking into xuan got all 70 initiatives
+     * on the platform, 54 of them another team's. The count beside the panel came from the
+     * rows, so it agreed with itself and disagreed with the Teams table's 10.
+     *
+     * The wildcard was the bug, not the parameter. Absent means "every team I may see";
+     * present means that one team, and a team scope may only ever name its own — anything
+     * else is the same 404 a missing team gets, never a 403 that would confirm it exists.
+     *
+     * THREE COMPLETE STATEMENTS, not one assembled from `scope` at request time: `check:sql`
+     * PREPAREs every query in this file against a live schema before release — see
+     * packages/tools/src/testing/sql-check.ts for the 0.4.0 incident that check exists to
+     * catch — and it can only PREPARE a literal it can read whole. A predicate built from
+     * `scope.kind` is invisible to it, so all three branches below are spelled out in full.
+     * Two of them are the same text with a different bound value, and that repetition is
+     * the price of the check reading them. */
+
+    // A team scope may name its own slug and nothing else. Naming another team's is not a
+    // narrower request it is entitled to make, so it gets the not-found it would get for a
+    // team that does not exist.
+    const want = typeof req.query.team === "string" && req.query.team ? req.query.team : null;
+    if (scope.kind === "team" && want !== null && want !== scope.slug) {
+      res.status(404).json({ error: `no team ${want}` });
+      return;
+    }
+    const { rows } = scope.kind !== "platform"
       ? await db.query<DocRow & { team_slug: string; initiative: string; flow: string | null }>(
       `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
               length(coalesce(body,'')) as bytes, title
          from zz.doc
-        where initiative <> '_knowledge'
-        order by team_slug, initiative, path`)
-      : await db.query<DocRow & { team_slug: string; initiative: string; flow: string | null }>(
+        where initiative <> '_knowledge' and team_slug = $1
+        order by team_slug, initiative, path`, [scope.slug])
+      : want !== null
+      ? await db.query<DocRow & { team_slug: string; initiative: string; flow: string | null }>(
       `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
               length(coalesce(body,'')) as bytes, title
          from zz.doc
         where initiative <> '_knowledge' and team_slug = $1
-        order by team_slug, initiative, path`, [scope.slug]);
+        order by team_slug, initiative, path`, [want])
+      : await db.query<DocRow & { team_slug: string; initiative: string; flow: string | null }>(
+      `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
+              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              length(coalesce(body,'')) as bytes, title
+         from zz.doc
+        where initiative <> '_knowledge'
+        order by team_slug, initiative, path`);
     const byInit = new Map<string, typeof rows>();
     for (const r of rows) {
       // "/" as the separator, because a team slug cannot contain one (TEAM_SLUG is

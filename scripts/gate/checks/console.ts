@@ -13,6 +13,42 @@ import { join } from "node:path";
 import { consoleSource, root, sourceFiles, unbuilt, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
+check("the initiatives route reads the team filter its caller sends", () => {
+  // THE OPPOSITE FAILURE TO THE ONE BELOW, and the one that actually shipped.
+  //
+  // `?team=` was removed from /initiatives because `($1::text is null or team_slug = $1)`
+  // let an absent parameter match every row — the right fix for the wrong half. The console
+  // was still sending `/initiatives?team=xuan` from the team page, the parameter was no
+  // longer read, and a platform-scoped reader clicking into xuan got all 70 initiatives on
+  // the platform, 54 of them another team's. Nothing went red: the check below knows the
+  // wildcard SHAPE, and a parameter that is ignored has no shape at all. The count beside
+  // the panel was taken from the rows it was handed, so it agreed with itself and disagreed
+  // with the Teams table two clicks away — which is how it survived a look.
+  //
+  // NARROW ON PURPOSE, AND SAYING SO. The general rule — every query key the console sends
+  // is read by some route — needs the console's source, which is a different repository
+  // this gate cannot read. That rule is the right one and it is not written. This names the
+  // one route where it broke, so a future deletion of the parameter goes red here instead of
+  // in a screenshot.
+  const f = "services/gateway/src/console/initiatives.ts";
+  const src = withoutComments(readFileSync(join(root, f), "utf8"));
+  const bad: string[] = [];
+  if (!/req\.query\.team\b/.test(src)) {
+    bad.push(`${f} never reads req.query.team — the team page sends ?team= and would be ` +
+             "handed every team's initiatives again");
+  }
+  // Reading it is not enough: it has to reach a statement. The bug would have passed a test
+  // that only asked whether the string appeared.
+  if (!/,\s*\[want\]\s*\)/.test(src)) {
+    bad.push(`${f} reads a team filter but no query is bound to it — see the note there`);
+  }
+  // And a team scope must not be able to name another team's slug through it.
+  if (!/scope\.kind === "team" && want !== null && want !== scope\.slug/.test(src)) {
+    bad.push(`${f} does not refuse a team scope naming another team's slug via ?team=`);
+  }
+  return bad.length ? bad.join("; ") : undefined;
+});
+
 check("a console query cannot fall back to every team", () => {
   // THE BUG THIS EXISTS TO CATCH: `/api/console/initiatives` used to read
   // `where ($1::text is null or team_slug = $1)` — with no `?team=`, `$1` was null and the

@@ -10,6 +10,8 @@
  * deployment that sets either, the probe fails, and this probe is what a release rolls back
  * on: a good version undone by a name the script guessed.
  */
+import { readFileSync } from "node:fs";
+
 import { REMOTE, root, run, ssh } from "../../deployment.ts";
 import { layer, probe } from "../run.ts";
 
@@ -83,4 +85,60 @@ probe("every run names the skill version it ran", () => {
          `dedupe them — a NULL never matches its conflict target — so the timer appends another ` +
          `copy every pass. Delete them once (they are derived, and re-derive from zz.event), ` +
          `and check that the version is resolved by released_at rather than by step_version`;
+});
+
+// R13 · A PROBE DELETES WHAT IT CREATES, and the store is where you find out it did not.
+//
+// `chain-check` opens a fresh initiative on every run and closes it; closing is not deleting.
+// Three days of release runs left 58 probe initiatives, 463 documents, 1,882 events and 240 of
+// the platform's 350 runs in this store — 54 on the platform's own team and 4 on a real
+// person's. `release.ts` sweeps after itself now, and this is what says whether the sweep is
+// working, on the one deployment where it matters.
+//
+// IT IS NOT A GATE CHECK because the gate is offline and this is a fact about DATA. The source
+// can be perfect while the store fills up, which is exactly what happened.
+probe("no initiative in the store was left behind by a probe", () => {
+  const n = psql("select count(*) from zz.initiative where slug like '%chain-check-%'").trim();
+  if (n === "") throw new Error("could not count zz.initiative on the host");
+  if (n === "0") return null;
+  return `${n} initiative(s) named chain-check-* are still in the store. The live chain check ` +
+         `opens one per run and release.ts is supposed to purge them afterwards — a count above ` +
+         `zero means that sweep did not run, and every measurement taken over this store is ` +
+         `being taken over test traffic. scripts/ops/purge-probes.ts removes them.`;
+});
+
+// R5 · A STATUS IS A GATE VERDICT, so only a document its flow GATES may carry one.
+//
+// Whether a document is adjudicated is decided per flow and per document by that flow's
+// manifest. The manifests are in this checkout and the documents are on the deployment, so
+// this is the one place the two can be compared — and neither half can answer it alone.
+//
+// `handover.md` is the platform's own, appended gated to every flow that gates anything, so it
+// is expected to carry one wherever it appears.
+probe("no document carries a status its flow does not gate", () => {
+  const gated = new Map<string, boolean>();
+  for (const f of run("bash", ["-c", `ls ${root}/catalog/*/*/flow.json`]).split("\n").filter(Boolean)) {
+    const m = JSON.parse(readFileSync(f, "utf8")) as
+      { name?: string; documents?: { name: string; gate?: boolean }[] };
+    for (const d of m.documents ?? []) gated.set(`${m.name ?? ""}/${d.name}`, d.gate === true);
+  }
+  if (!gated.size) throw new Error("no flow manifest in this checkout declares a document");
+  const rows = psql(
+    "select flow, regexp_replace(path,'^.*/',''), status from zz.doc " +
+    "where status <> '' and path not like '\\_versions/%'").split("\n").filter(Boolean);
+  const bad: string[] = [];
+  for (const line of rows) {
+    const [flow, name, status] = line.split("|");
+    if (name === "handover.md") continue;
+    const declared = gated.get(`${flow}/${name}`);
+    if (declared === undefined) continue;          // a document no manifest here declares
+    if (!declared) bad.push(`${flow}/${name} (${status})`);
+  }
+  if (!bad.length) return null;
+  const shown = [...new Set(bad)].slice(0, 6).join(", ");
+  return `${bad.length} document(s) carry a status their flow does not gate: ${shown}` +
+         `${bad.length > 6 ? ", …" : ""}. A status records that a person agreed; these were ` +
+         `never put to anyone. stampEnvelope writes one only where the manifest declares a ` +
+         `gate, so rows like these predate that and need their frontmatter corrected and the ` +
+         `team reindexed.`;
 });

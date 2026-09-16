@@ -2,7 +2,7 @@
 name: "eval"
 description: "Run the zz-plugin-eval flow for your team."
 when_to_use: "The person typed /zz-plugin-eval:eval. This is a command, not an auto-matched skill."
-version: "0.43.0"
+version: "0.44.0"
 disable-model-invocation: true
 ---
 

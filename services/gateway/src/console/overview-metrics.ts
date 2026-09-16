@@ -52,6 +52,11 @@ interface OverviewMetrics {
     scoreable: number;
     /** Every active initiative in exactly one stage — the mark under the tile. */
     stages: Record<Stage, number>;
+    /** Gate documents that are WRITTEN and UNAPPROVED across the open initiatives — the
+     *  work that is finished and sitting on a human. See `progressOf`. */
+    waiting: number;
+    /** How long the oldest of those has waited, in days. Null when nothing is waiting. */
+    waitingOldestDays: number | null;
     /** Why this tile carries no delta. Stated by the API so the browser invents nothing. */
     noDeltaBecause: string;
   };
@@ -139,13 +144,15 @@ function quantile(xs: number[], q: number): number | null {
 
 /** Where one initiative has got to, from the documents that exist and their approvals. */
 function progressOf(
-  flow: string, docs: { path: string; status: string | null; outcome: string | null }[],
-): { completeness: number | null; stage: Stage } {
+  flow: string,
+  docs: { path: string; status: string | null; outcome: string | null; updatedAt?: string | null }[],
+): { completeness: number | null; stage: Stage; waiting: string[] } {
   const declared = flowShape(flow || null);
-  if (declared.size === 0) return { completeness: null, stage: "noflow" };
+  if (declared.size === 0) return { completeness: null, stage: "noflow", waiting: [] };
 
   const byPath = new Map(docs.map((d) => [d.path, d.status]));
   let score = 0, present = 0, approved = 0, gates = 0, gatesCleared = 0;
+  const waiting: string[] = [];
   for (const [name, shape] of declared) {
     const status = byPath.get(name);
     if (shape.gate) gates++;
@@ -156,6 +163,18 @@ function progressOf(
       if (shape.gate) gatesCleared++;
     } else {
       score += 0.5;
+      /* WAITING ON A PERSON: a gate that has been WRITTEN and not approved. Both halves of
+       * that are load-bearing.
+       *
+       * A gate nobody has drafted yet is waiting on the agent, not on a human, so `status
+       * === undefined` never reaches here — the loop has already skipped it. And only a
+       * GATE counts: measured on this deployment, 12 explore.md documents sit unapproved
+       * and always will, because explore.md declares no gate and no approver was ever
+       * required. Counting "documents with no approver" instead of "gates with no approver"
+       * reports 18 things blocked when 3 are, and puts the 15 that are not at the top of
+       * the list. Which documents gate is the FLOW's answer, read from its manifest, never
+       * a list of filenames kept here — a flow that renames spec.md keeps its gate. */
+      if (shape.gate) waiting.push(name);
     }
   }
   const completeness = (score / declared.size) * 100;
@@ -177,7 +196,7 @@ function progressOf(
     : present === 0 ? "notstarted"
       : allGates ? "gated"
         : approved > 0 ? "agreed" : "drafting";
-  return { completeness, stage };
+  return { completeness, stage, waiting };
 }
 
 /**
@@ -250,9 +269,11 @@ export async function readMetrics(
            from node n join peak p on p.src = n.src`,
         [since, IMPORT_NODES_PER_HOUR]),
       db.query<{ slug: string; team: string; flow: string;
-                 docs: { path: string; status: string | null; outcome: string | null }[] }>(
+                 docs: { path: string; status: string | null; outcome: string | null;
+                         updatedAt: string | null }[] }>(
         `select i.slug, t.slug as team, coalesce(i.flow,'') as flow,
-                coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status, 'outcome', d.outcome))
+                coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status,
+                                                           'outcome', d.outcome, 'updatedAt', d.updated_at))
                             from zz.doc d
                            where d.initiative = i.slug and d.team_slug = t.slug), '[]'::json) as docs
            from zz.initiative i join zz.team t on t.id = i.team_id
@@ -318,9 +339,11 @@ export async function readMetrics(
            from node n join peak p on p.src = n.src`,
         [since, IMPORT_NODES_PER_HOUR, scope.slug]),
       db.query<{ slug: string; team: string; flow: string;
-                 docs: { path: string; status: string | null; outcome: string | null }[] }>(
+                 docs: { path: string; status: string | null; outcome: string | null;
+                         updatedAt: string | null }[] }>(
         `select i.slug, t.slug as team, coalesce(i.flow,'') as flow,
-                coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status, 'outcome', d.outcome))
+                coalesce((select json_agg(json_build_object('path', d.path, 'status', d.status,
+                                                           'outcome', d.outcome, 'updatedAt', d.updated_at))
                             from zz.doc d
                            where d.initiative = i.slug and d.team_slug = t.slug), '[]'::json) as docs
            from zz.initiative i join zz.team t on t.id = i.team_id
@@ -360,11 +383,26 @@ export async function readMetrics(
    *
    * `stages` still counts all six — the bar shows where the active set IS, closed rows
    * included, which is a different question from how far the unfinished work has got. */
+  /* OPEN INITIATIVES ONLY, for the same reason the median is. An unapproved gate on a
+     closed initiative is not waiting on anybody — the work ended and an outcome was
+     recorded; nobody is going to go back and approve it. Counting it would make this
+     number climb forever and never fall, which is the failure the tile above it was
+     already fixed for. */
   const scores: number[] = [];
+  let waiting = 0;
+  let oldest: number | null = null;
   for (const row of inits.rows) {
-    const { completeness, stage } = progressOf(row.flow, row.docs ?? []);
+    const { completeness, stage, waiting: openGates } = progressOf(row.flow, row.docs ?? []);
     stages[stage]++;
     if (completeness !== null && stage !== "closed") scores.push(completeness);
+    if (stage === "closed") continue;
+    waiting += openGates.length;
+    for (const path of openGates) {
+      const at = (row.docs ?? []).find((d) => d.path === path)?.updatedAt;
+      if (!at) continue;
+      const days = (Date.now() - new Date(at).getTime()) / 86_400_000;
+      if (Number.isFinite(days) && (oldest === null || days > oldest)) oldest = days;
+    }
   }
 
   /* A RUN NOBODY MEASURED IS NOT A RUN THAT MOVED NOTHING, and `Number(null ?? 0)` is 0 —
@@ -387,6 +425,8 @@ export async function readMetrics(
       active: inits.rows.length,
       scoreable: scores.length,
       stages,
+      waiting,
+      waitingOldestDays: oldest === null ? null : Math.round(oldest * 10) / 10,
       // Reconstructing how complete an initiative was one window ago needs per-document
       // history this platform does not reliably record: `doc.approved_at` is truncated to
       // midnight and `doc.created_at` is rewritten when a document is revised. Comparing

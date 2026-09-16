@@ -157,7 +157,7 @@ check("the second distillation exists and is reachable", () => {
   // A lesson written for one team stays useful to one team until somebody generalises it,
   // and that is the only real advantage a shared knowledge base has over many separate
   // ones. It does not happen on its own: zz-handover records what a cycle taught THAT team,
-  // and some of it is a fact about a block, a flow, a provider or an interface that every
+  // and some of it is a fact about a plugin, a provider or an interface that every
   // team depends on.
   //
   // The tenant is deliberately not asked to sort their own experience into "ours" and
@@ -172,8 +172,13 @@ check("the second distillation exists and is reachable", () => {
   }
   const text = readFileSync(distil, "utf8");
   // It must name the closed subject vocabulary it writes against, and the evidence rule —
-  // an unsourced conclusion about a block is the thing nobody can check later.
-  for (const need of ["knowledge_add", "block:", "flow:", "evidence"]) {
+  // an unsourced conclusion about a plugin is the thing nobody can check later.
+  //
+  // `plugin:`, not `block:`. A plugin is the only installable thing on this platform, so it
+  // is what a knowledge node is about. SUBJECT_KINDS in zz-core is the authority and this
+  // list follows it — the skill must teach the vocabulary the tool enforces, or an agent
+  // writes a tag that is refused at the write.
+  for (const need of ["knowledge_add", "plugin:", "flow:", "evidence"]) {
     if (!text.includes(need)) bad.push(`zz-handover never mentions ${need}`);
   }
   const learn = readFileSync(join(root, "skills/zz-handover/SKILL.md"), "utf8");

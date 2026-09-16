@@ -30,7 +30,7 @@ export function registerKnowledgeTools(server: McpServer): void {
 /** A journal tag that names a registry entry, checked so the query stays answerable.
  *
  * "What have we learned about casebox" is worth asking only if every node about casebox is findable by
- * one key. Free tags drift the moment two people write them — `casebox`, `block:casebox`, `CaseBox`,
+ * one key. Free tags drift the moment two people write them — `casebox`, `plugin:casebox`, `CaseBox`,
  * `casebox` — and each variant silently removes nodes from the answer without
  * removing them from the store, which is the worst shape a knowledge base can fail in: the
  * search says nothing is known and the knowledge is right there.
@@ -48,7 +48,11 @@ export function registerKnowledgeTools(server: McpServer): void {
  * stated rather than hidden.
  *
  * Tags without a colon are ordinary free tags and are left alone. */
-const SUBJECT_KINDS = ["block", "flow", "provider", "interface", "platform"] as const;
+// `plugin`, not `block`. A plugin is the only installable thing on this platform — skills
+// plus the MCP servers those skills call — so the subject a knowledge node is about is a
+// plugin, never a "block". The concept was deleted from the platform; this is the tag
+// vocabulary catching up, and 58 existing nodes are migrated with it.
+const SUBJECT_KINDS = ["plugin", "flow", "provider", "interface", "platform"] as const;
 
 function subjectTagError(tags: string[] | undefined): string | null {
   for (const raw of tags ?? []) {
@@ -87,7 +91,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         "type: decision|design|behavior|process|knowledge|style. evidence: initiative folder(s) the " +
         "lesson comes from — a node without evidence is an opinion and is refused. " +
         "WHEN THE LESSON IS ABOUT SOMETHING THE PLATFORM PLUGS IN rather than about your own " +
-        "work, tag it with what it is about: `block:<name>`, `flow:sdlc-flow`, " +
+        "work, tag it with what it is about: `plugin:<name>`, `flow:sdlc-flow`, " +
         "`provider:forgejo`, `interface:claude-code`, `platform:guardrail`. That is what makes " +
         "'what have we learned about this block' a query instead of a search through " +
         "documents, and the kinds are checked so " +
@@ -107,7 +111,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         // standard already requires a usage skill to declare `verified_against:`, and no
         // node carried it — so "is this defect still true" had no mechanical answer, and a
         // finding recorded on one version routed work around itself across every version
-        // after it. Resolved automatically for a `block:<name>` tag; passed explicitly when
+        // after it. Resolved automatically for a `plugin:<name>` tag; passed explicitly when
         // the claim was checked against something else.
         verified_against: z.string().optional(),
       },
@@ -162,7 +166,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         if (!hasSubjectTag) {
           const carried = tags && tags.length ? tags.join(", ") : "no tags";
           return text(
-            "ERROR: `scope: \"platform\"` needs a registry-entry tag — `block:`, `flow:`, " +
+            "ERROR: `scope: \"platform\"` needs a registry-entry tag — `plugin:`, `flow:`, " +
             "`provider:`, `interface:` or `platform:` — because platform knowledge is by " +
             `definition about one of them. This node carries \`${carried}\`. Tag what it is ` +
             "about, or send `scope: \"team\"`."
@@ -473,7 +477,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         // Lowercased on the way in, because the stored side is: a filter is a value arriving
         // from outside and has to be brought to the one spelling, exactly as an address typed
         // as a tool argument is. Without this, tags are stored lowercase and a caller who
-        // filters `block:CaseBox` gets an empty result that reads as "nothing is known".
+        // filters `plugin:CaseBox` gets an empty result that reads as "nothing is known".
         if (tags?.length) push(`tags && ${add(tags.map((t) => t.trim().toLowerCase()))}::text[]`);
         // "Replaced" is recorded in two columns, and a filter for current state has to
         // read both. `status = 'superseded'` is the journal node's convention, set by
@@ -529,7 +533,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         // SUBJECT TAGS ARE REACHABLE FROM THE WORD, which is the whole reason they exist.
         //
         // `tokens` splits the query on everything that is not a letter or a digit, so "what
-        // have we learned about casebox" yields `casebox` — and a node tagged `block:casebox` was matched by
+        // have we learned about casebox" yields `casebox` — and a node tagged `plugin:casebox` was matched by
         // neither arm: not by `tags && tokens`, because the stored tag is one string with a
         // colon in it, and not by the lexical arm unless the body happened to spell it. The
         // platform validates the kind half, refuses a kind it does not have, and names that

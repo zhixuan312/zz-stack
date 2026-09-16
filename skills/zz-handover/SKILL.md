@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.6
+version: 2.7
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -28,7 +28,7 @@ anything, as the signal this cycle is actually done.
 - Every document the flow declared, in order, and their `_versions/` snapshots: what
   changed between an approval and the next one is where the disagreements are.
 - `activity.jsonl` — every call, timestamped, with its arguments.
-- `knowledge_reconcile(<initiative>)` — what this initiative's stages PREDICTED about each block
+- `knowledge_reconcile(<initiative>)` — what this initiative's stages PREDICTED about each plugin
   against what the gateway actually recorded, refusal text included.
 - The `_ledger.md` row: the close, its outcome, and its date — written by the platform, not
   by the agent, which is why it is the one to measure against.
@@ -58,7 +58,7 @@ the evaluation track later reads as this initiative's profile.
 - **Question load** — interview batches, questions asked, and how many the stakeholder
   answered with "your recommendation". Every recommendation-answered question is a candidate
   default that should not have been asked.
-- **Effort shape** — writes and patches per document; block calls and their refusals.
+- **Effort shape** — writes and patches per document; tool calls and their refusals.
 - **Rework signal** — patches to a document after its approval timestamp; acceptance rounds
   beyond one.
 - **Post-acceptance noise** — anything that happened in this initiative's folder or on its
@@ -70,7 +70,7 @@ the evaluation track later reads as this initiative's profile.
 This is the judgement the skill exists for, asked of every candidate in two parts:
 
 > **Is this worth another team reading, or is it true only of this one requirement?**
-> If it is worth reading elsewhere: **is it a fact about a registry entry — a block, a
+> If it is worth reading elsewhere: **is it a fact about a registry entry — a plugin, a
 > flow, a provider, an interface, the platform — or is it a fact about how THIS team
 > works, its stakeholder, its systems, its history?**
 
@@ -80,7 +80,7 @@ registry entry, whichever team they are on. The second is `scope: "team"` — it
 worth keeping, but it describes this team's own circumstances, not the platform's.
 
 **Promote to `platform`:**
-- A block behaved in a way its documentation does not describe — with the read-back that
+- A plugin behaved in a way its documentation does not describe — with the read-back that
   proves it, and what to do instead.
 - A refusal class that recurred, and the payload shape or ordering that resolved it.
 - A platform rule that was learned the hard way rather than read.
@@ -136,17 +136,17 @@ none of those things.
   the platform TEAM's own store — `zz-platform` is a team slug here, not the skill of
   that name — readable and citable by every team; `"team"` lands under your own
   team's store. Get this from the judgement above — do not guess it from habit.
-- **A `platform`-scoped node needs a registry-entry tag** — `block:`, `flow:`, `provider:`,
+- **A `platform`-scoped node needs a registry-entry tag** — `plugin:`, `flow:`, `provider:`,
   `interface:` or `platform:` — because platform knowledge is by definition about one of
   them. The store refuses a platform-scoped node without one.
 - **Evidence is not optional.** Name the initiative and the specific call, refusal or
   read-back. A node whose claim cannot be re-checked cannot be retired when the world moves,
   so it routes work around itself forever.
-- **Say how old it is.** A block defect is re-checkable; a platform rule usually is not.
+- **Say how old it is.** A plugin defect is re-checkable; a platform rule usually is not.
   State which kind it is, so the next reader knows whether to test it or trust it.
-- **Tag it with what it is about** — `block:<name>`, `flow:sdlc-flow`, `provider:forgejo`,
+- **Tag it with what it is about** — `plugin:<name>`, `flow:sdlc-flow`, `provider:forgejo`,
   `interface:claude-code`, `platform:guardrail`. The kinds are checked. This is what turns
-  "what have we learned about that block" into a query rather than a search.
+  "what have we learned about that plugin" into a query rather than a search.
 
 ## Writing `handover.md`
 

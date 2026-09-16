@@ -1,8 +1,8 @@
 ---
 name: zz-platform
-version: 3.37
-description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a block is checked and how it is chosen, credentials, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
-when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store or blocks outside a flow."
+version: 3.38
+description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
+when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
 
 # zz-platform
@@ -79,62 +79,44 @@ Ask it rather than reasoning about the folder. A model working out the state fro
 remembers writing is how a wrong fact reaches a document that outlives the conversation.
 
 
-## A block is checked when something needs it, never before
+## A plugin is reached when something needs it, never before
 
-**There is no pre-flight.** A flow does not know which blocks it needs until it has
-worked out what it is building, so a check at the start asks a person to connect
-things the work may never touch. With three blocks that is merely wrong. With a
-hundred it is a wall in front of the door.
+**There is no pre-flight.** A flow does not know which capability it needs until it has worked
+out what it is building, so a check at the start asks about things the work may never touch.
 
-Two different needs arise, usually at different moments, and only the second one
-involves connecting anything:
+Two different needs arise, usually at different moments:
 
-- **To CHOOSE a block you need to know what it is for.** That is a capability
-  question, not a connection one, and the answer is a capability sheet: what each
-  block is for, what it fits, and what it does not. The sheet belongs to the flow
-  that selects blocks, and this page deliberately names none: there is no
-  flow-agnostic sheet to name. What is flow-agnostic is the rule. Narrow to
-  one or two candidates, then read those blocks' own documentation to confirm —
-  `skill_list()` with no argument is the whole shelf, every block this platform
-  routes among it, each skill with when to use it; with an owner id it narrows to
-  that one block or plugin. That is the reading, and it is why you never have to
-  guess a name.
-  Never read every block's tool surface to decide: a verb list tells you a call
-  exists, not where the work belongs, and a hundred blocks is ten thousand tools.
-- **To USE a block you need to reach it, and you find that out by USING it.** Call
-  the tool the work needs. If it answers, you are connected and there was never a
+- **To CHOOSE a capability you need to know what it is for.** That is a question about purpose,
+  and the answer is a skill, not a tool list. `skill_list()` with no argument is the whole
+  shelf — every skill this platform routes among, each with when to use it; with an owner id
+  it narrows to one plugin. Narrow to one or two candidates, then read those skills to confirm.
+
+  Never read every plugin's tool surface to decide: a verb list tells you a call exists, not
+  where the work belongs, and a hundred plugins is ten thousand tools.
+
+- **To USE a capability you need its tools on your surface, and you find that out by USING
+  it.** Call the tool the work needs. If it answers, it was installed and there was never a
   question.
 
-  **A block you are not connected to has NO tools in your list at all. [convention]**
-  Not one stub tool, not an error tool — nothing. The door answers the front end with
-  a sign-in challenge rather than a session, so the block simply is not there.
+  **A plugin you do not have installed has NO tools in your list at all. [convention]** Not one
+  stub tool, not an error tool — nothing. So when a tool you expected is missing, that is the
+  signal, and it is a fact about what is installed rather than about what exists.
 
-  So when a tool you expected is missing, that is the signal, and the answer is one
-  sentence to the person: **open the MCP settings in this front end, find that block,
-  and press Connect.** It runs the block's own sign-in, they choose what to allow, and
-  the block's toolset appears on their next message. Nothing is stored by the platform
-  and there is no key for anyone to paste — never ask for one, and never ask them to
-  reconnect their ZZ access, which is a different credential and is not the problem.
+  The answer is one sentence to the person: **that capability is a plugin, and it is not
+  installed.** Installing is the **ZZ Access** agent's job — `flow_install` puts it on the
+  team's shelf. Never ask anyone to paste a credential to you; a credential in a transcript is
+  a leaked credential.
 
-  This replaced a stub tool called `credential_required` that a disconnected block used
-  to offer. Do not look for it; it is gone. It existed because a block that vanished
-  silently left an agent with nothing to say — but the cost was that the front end
-  showed such a block as CONNECTED, since it had answered, so people saw a healthy dot
-  on a block that refused every call. The panel now tells them the truth directly,
-  which is a better place for it than a tool description.
+**A plugin is skills plus the MCP servers those skills call.** They arrive together and are
+reached together, because a skill telling you to call a tool you do not have is not a
+capability. Some plugins are flows — they carry an ordered, gated sequence of documents. Most
+are not: they are supporting capability, reached when a skill says to reach for them. A flow
+is not a different KIND of thing; it is a plugin that declared documents.
 
-**Confirm reachability when your flow WRITES DOWN that it will use a block.
-[convention]** The moment the decision is recorded, not at the first call. By the
-first call you have planned work around it, and discovering there that the person
-cannot connect wastes the plan. Every flow has such a moment because every flow
-records its decisions; what the document is called is the flow's business, not this
-skill's. Nothing checks the timing: no write is refused because a block it names was
-never reached, and the platform has no way to know which of your calls was the
-confirming one. Getting this wrong costs a plan, not a refusal.
-
-**Check only what you chose.** A person who needs one block signs in to one block.
-Asking for the others is asking for authority nobody needs, which is the opposite of
-what delegated access is for.
+**Confirm reachability when your flow WRITES DOWN that it will use a plugin. [convention]**
+The moment the decision is recorded, not at the first call. By the first call you have planned
+work around it, and discovering there that it is not installed wastes the plan. Nothing checks
+the timing; getting this wrong costs a plan, not a refusal.
 
 ## Files are tools, and files are real
 
@@ -264,7 +246,7 @@ what delegated access is for.
   when gated, and on close `outcome` with `accepted_by` naming who accepted.
   The platform's telemetry, index and audits read only these.
 - **A close is an ACT: zz-core's `initiative_close(initiative, disposition)`** — never a
-  block's own close. You say the one thing you
+  plugin's own close. You say the one thing you
   know — the work is `finished` or `abandoned` — and the platform derives the rest.
   `finished` with somebody named in `accepted_by` is `accepted`; `finished` with
   nobody named is `delivered` and owes `no_signoff_reason`, one line on why nobody
@@ -303,13 +285,13 @@ what delegated access is for.
   after every flow. A node says which shelf it is for: `scope: "team"` for a
   lesson about how this team works, `scope: "platform"` for a fact about a
   registry entry — a
-  block, a flow, a provider, an interface — that holds for everybody.
+  plugin, a provider, an interface — that holds for everybody.
   Platform-scoped nodes are minted the moment `zz-handover` decides them;
   team-scoped ones wait for that approval. Knowledge is written because it
   is worth writing, not to fill a quota — zero nodes on either shelf is a
   correct, approvable outcome when nothing here generalised. What made this
   run expensive — the question that cost a round, how this stakeholder
-  decides, the block that behaved unlike its documentation — is worth more
+  decides, the plugin that behaved unlike its documentation — is worth more
   to the next initiative than the deliverable is, and it disappears when the
   conversation does.
 - **Closing needs every gate the flow declares, not just the last one.** A
@@ -331,7 +313,7 @@ what delegated access is for.
 ## Which team you are acting for, and how it changes
 
 Everything you do belongs to ONE team — documents, gates, the knowledge store, which
-blocks you may reach. That team is a column on the PERSON, read fresh on every call.
+plugins you may reach. That team is a column on the PERSON, read fresh on every call.
 It is not a property of this conversation, of the agent they opened, or of anything
 you can see from inside the chat.
 
@@ -339,7 +321,7 @@ you can see from inside the chat.
   name, from what you were told earlier in the conversation, or from which documents
   you happen to be able to read.
 - **To change it: `team_switch(team)`,** which is on the ACCESS door — the same place as
-  `block_connect` and a person's own keys. Not every agent carries that door.
+  installs and platform tokens. Not every agent carries that door.
 
 **If you do not have `team_switch`, say exactly that and name where it lives.** You are
 not carrying the access tools; the person opens the agent that does — ZZ Access — and
@@ -411,7 +393,7 @@ The knowledge store is the team's, not one agent's session:
   `document_read("_knowledge/nodes/0136-….md", scope: "platform")`. The snippet in a result is
   600 characters of a node that is usually much longer, so reading the whole
   thing is the normal move rather than an unusual one — and a node that says
-  a block refuses a particular payload shape is worth nothing in summary.
+  a plugin refuses a particular payload shape is worth nothing in summary.
 
   Until 2026-09-09 the result did not say, and the read had no `scope`, so
   every platform node came back from `document_read` as "does not exist". An agent
@@ -430,7 +412,7 @@ The knowledge store is the team's, not one agent's session:
   the store, not a skill you can load. No tenant may claim it. That shelf has
   the same store and the same `_knowledge/` yours has. What lives there is not about
   anybody's delivery — it is what we have learned about a **registry entry**:
-  a block, a flow, a provider, an interface. Your team's lessons stay yours;
+  a plugin, a provider, an interface. Your team's lessons stay yours;
   which of them generalise is a judgement made in your own initiative, at
   its handover, and the platform's job is only to record what was decided —
   `scope: "platform"` there, `scope: "team"` here.
@@ -511,11 +493,11 @@ reading later can see one caused the other.
 - A document changes only through the flow that owns it, and only in the
   order the manifest declares. That is what makes the record trustworthy.
 
-## Process layer vs building blocks
+## The platform's own tools, and every other plugin's
 
 - **THE PLATFORM'S TOOLS ARE THESE, AND NOTHING ELSE IS ONE.** Nearly all of
-  them are served by `zz-core`, across its two doors; one is served by the
-  gateway on `/manage/mcp`, and it is a platform tool exactly like the rest.
+  them are served by `zz-core`, across its two doors; two are served by the
+  gateway on `/manage/mcp`, and they are platform tools exactly like the rest.
   Whenever this skill or a flow's skill names a tool without saying where it
   lives, it means the one on this list — and the middle column is the door it
   is on, which decides whether YOU have it:
@@ -534,24 +516,29 @@ reading later can see one caused the other.
   | rebuilding a team's index | `/manage/mcp` | `knowledge_reindex` |
   | answering a bug report | `/manage/mcp` | `bug_list` `bug_resolve` |
 
+**A DOOR IS A PLUGIN'S DECLARED SERVER**, and the number of doors is not a design choice — it
+is the count of plugins that declare one. `zz-core` declares `/core/mcp`, `zz-plugin-eval`
+declares `/eval/mcp`, `zz-access` declares `/manage/mcp`. `sdlc` declares none, because it has
+no MCP tools of its own, and that is the normal case rather than a deficiency.
+
 **THE LAST TWO ROWS ARE PROBABLY NOT ON YOUR LIST, FOR TWO DIFFERENT REASONS.** `/core/mcp` is
-in the required baseline package, so every account on this platform carries every `/core/mcp`
-row. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that flow is not
-installed, those tools are not on your surface at all, and calling one answers "tool not
+in the required baseline plugin, so every account on this platform carries every `/core/mcp`
+row. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that plugin is
+not installed, those tools are not on your surface at all, and calling one answers "tool not
 found" rather than refusing you. `/manage/mcp` is a door everyone has and whose LIST IS CUT BY
 ROLE: `knowledge_reindex` is registered to superadmins only, so unless you are one it is not on
-your surface either, and it answers the same "tool not found". In every case they are still
-the platform's tools, which is why they are on this list and not mistaken for a building
-block's; what the door decides is who can reach them, not whose they are.
+your surface either, and it answers the same "tool not found". In every case they are still the
+platform's tools, which is why they are on this list; what the door decides is who can reach
+them, not whose they are.
 
-**`knowledge_reindex` is the one tool here the gateway serves rather than zz-core.** It rebuilds
-a team's search index from the files, which are the source of truth — the answer to "a search
+**`knowledge_reindex` is one of the two the gateway serves rather than zz-core.** It rebuilds a
+team's search index from the files, which are the source of truth — the answer to "a search
 returned a document whose file is gone", or to a store restored from a backup. It is an
-operator's tool and not a stage of anybody's flow, which is why it sits with the rest of
-platform administration; `zz-admin` is the skill that teaches it. You will not need it in the
-middle of delivery work: every tool that writes a file indexes it in the same call.
+operator's act and not a stage of anybody's flow; `zz-admin` is the skill that teaches it. You
+will not need it in the middle of delivery work: every tool that writes a file indexes it in
+the same call.
 
-The evaluation tools belong to the evaluation flow. They exist because an agent here has MCP
+The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
 Most only read; the four that write — `case_record`, `ruler_record`, `ruler_affirm` and
 `finding_record` — record a fact or a decision and never a score.
@@ -562,50 +549,42 @@ the store, and the model is pinned by deployment configuration and named on ever
 what makes one round comparable with the next — a judge that varied with the conversation would
 make every number incomparable with every other number.
 
-  A tool NOT on that list belongs to a building block, whatever it is called. The
-  test is which server it comes from, never what the verb sounds like: zz-core's
-  `document_approve` records a gate on a document, while bookit's `approve_slot`
-  approves somebody's appointment. Same verb, different platform, and only one of
-  them is a gate.
-- **Every tool in this skill and in a flow's skills is THE PLATFORM'S tool of that
-  name** — zz-core's, but for `knowledge_reindex`, which is the gateway's. Read `document_approve(path)` as *zz-core's `document_approve`*, `document_write` as
-  *zz-core's `document_write`*, and so on for every one of them. Say it to yourself that
-  way before you call it, because that is the whole question — not what the verb
-  sounds like, but which server it comes from.
-- **Find it by server, not by verb.** Clients qualify tool names differently and
-  none of those spellings is worth learning: whatever yours does, the tool you
-  want is the one whose server is `zz-core`. If two tools share a verb, the one
-  from a block is never the one a skill meant.
-- They are how the work is recorded. They are never a solution and never
+- **A tool NOT on that list belongs to another plugin, whatever it is called.** The test is
+  which server it comes from, never what the verb sounds like: zz-core's `document_approve`
+  records a gate on a document, while a scheduling plugin's `approve_slot` approves somebody's
+  appointment. Same verb, different subject, and only one of them is a gate.
+- **Every tool in this skill and in a flow's skills is THE PLATFORM'S tool of that name** —
+  zz-core's, but for the two the gateway serves. Read `document_approve(path)` as *zz-core's
+  `document_approve`*, and so on for every one of them. Say it to yourself that way before you
+  call it, because that is the whole question — not what the verb sounds like, but which server
+  it comes from.
+- **Find it by server, not by verb.** Clients qualify tool names differently and none of those
+  spellings is worth learning: whatever yours does, the tool you want is the one whose server
+  is `zz-core`. If two tools share a verb, the one from another plugin is never the one a skill
+  meant.
+- The platform's tools are how the work is recorded. They are never a solution and never
   selected as one.
-- The BUILDING BLOCKS are every other connected server. Discover them at
-  runtime; profile from their tool surface, docs tools and usage skills —
-  never from memory. Writes to real platforms are real: follow their
+- **Every other capability is another plugin**, and a plugin is installed rather than
+  discovered — if its tools are on your surface, it is installed. Profile one from its skills
+  and its tool schemas, never from memory. Writes to real systems are real: follow their own
   safe-test practices, and leave no test residue.
-- **A block tool's NAME is not its signature, and guessing the arguments is the
-  commonest way a run wastes turns.** Measured across three evaluation rounds of
-  one scenario, a call made with missing or invented arguments was the single
-  most frequent refusal, present in every round: `Missing required argument`,
-  `Invalid arguments`, `could not be parsed as JSON`. Some clients hand you tool
-  names first and their schemas only when you ask — so a name you can see is not
-  a shape you know. Before the FIRST call to any block tool, have its schema in
-  front of you, from the client's own tool description or the block's
-  `read_api_spec`. One read costs less than one refusal, and a refused call
-  teaches the block's team nothing while costing you the turn.
-- **If a block refuses twice with the same message, stop calling it and say so.**
-  Vary one thing and try once more; if the message does not change, that is a
-  finding about the block, not a puzzle to solve by permutation. Record what you
-  sent and what came back, and carry on with what you CAN settle — a third
-  identical refusal has never once been the call that worked.
-- **Access is not your job.** Personal keys for the blocks, platform
-  tokens and client setup all belong to the **ZZ Access** agent — one
-  place, so a person always knows where to go. A person signing in to a
-  block AS THEMSELVES (`block_connect`) is better than a stored key and is
-  what to suggest first: the block then records them rather than the
-  platform, and there is no secret for anyone to hold. If a block call fails
-  for a missing key, or someone asks how to connect Claude Code, Codex or
-  Hermes, name that agent and hold your position. Never ask anyone to paste a key
-  to you: you cannot store it, and a key in a transcript is a leaked key.
+- **A tool's NAME is not its signature, and guessing the arguments is the commonest way a run
+  wastes turns.** Measured across three evaluation rounds of one scenario, a call made with
+  missing or invented arguments was the single most frequent refusal, present in every round:
+  `Missing required argument`, `Invalid arguments`, `could not be parsed as JSON`. Some clients
+  hand you tool names first and their schemas only when you ask — so a name you can see is not
+  a shape you know. Before the FIRST call to any tool you have not used, have its schema in
+  front of you. One read costs less than one refusal, and a refused call teaches that plugin's
+  team nothing while costing you the turn.
+- **If a tool refuses twice with the same message, stop calling it and say so.** Vary one thing
+  and try once more; if the message does not change, that is a finding about that plugin, not a
+  puzzle to solve by permutation. Record what you sent and what came back, and carry on with
+  what you CAN settle — a third identical refusal has never once been the call that worked.
+- **Access is not your job.** Platform tokens, installs and client setup all belong to the **ZZ
+  Access** agent — one place, so a person always knows where to go. If someone asks how to
+  install a plugin, or how to connect Claude Code, Codex or Hermes, name that agent and hold
+  your position. Never ask anyone to paste a credential to you: you cannot store it, and a
+  credential in a transcript is a leaked credential.
 
 ## What people write from the web is work
 
@@ -646,9 +625,9 @@ ever loaded.)*
 keeps stalling, an interface that drops something, one of the platform's own rules
 that turned out to be written so people cannot satisfy it.
 
-Tag those with what they are about: `block:<name>`, `flow:sdlc-flow`,
+Tag those with what they are about: `plugin:<name>`, `flow:sdlc-flow`,
 `provider:forgejo`, `interface:claude-code`, `platform:guardrail`. Then "what have we
-learned about that block" is `knowledge_search(tags=["block:<name>"])` — **a query, not a search
+learned about that plugin" is `knowledge_search(tags=["plugin:<name>"])` — **a query, not a search
 through documents**, which across a quarter is the difference between asking and
 not asking.
 

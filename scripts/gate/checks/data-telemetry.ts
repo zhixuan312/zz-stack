@@ -232,6 +232,14 @@ check("the platform records its own surface, the way it records everybody else's
     if (!new RegExp(`\\b${factory}\\(`).test(built)) {
       bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
     }
+    // AND IT BUILDS THE WHOLE SURFACE. A builder that cuts its tool list by the caller's role
+    // registers the MEMBER surface at boot, where there is no caller — so a release that merely
+    // gated a tool would be recorded as having deleted it. Matching `${factory}(` alone accepts
+    // `${factory}(false)`, which is that bug spelled out; the flag has to be true where the
+    // builder takes one.
+    if (new RegExp(`\\b${factory}\\(\\s*false\\s*\\)`).test(built)) {
+      bad.push(`boot builds ${factory} with its full-surface flag OFF — the surface recorded is the one a member sees, and a tool that was merely gated reads as deleted`);
+    }
   }
 
   // ── AND THE COLUMN THE WRITE DEPENDS ON, WITH NO ROW CLAIMING A DOOR NOBODY RECORDED ───

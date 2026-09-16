@@ -8,7 +8,7 @@
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { teamless } from "./shared.js";
+import { periodCutoff, teamless } from "./shared.js";
 
 /** A SQL aggregate that saw nothing measurable, kept as null instead of becoming 0.
  *  `avg`/`sum` skip nulls and return null when every input was null, and `+null` is 0 — so
@@ -24,7 +24,7 @@ export function mountSkills(app: Express): void {
    * view was reviewed. The eval half may legitimately be absent — ops-build
    * produces side effects, not a document a judge can read — and an absent
    * rubric is reported as absent rather than as a zero. */
-  app.get("/api/console/skills", teamless("skills", async (_req, res) => {
+  app.get("/api/console/skills", teamless("skills", async (req, res) => {
     // NO TEAM DIMENSION: this is every skill the platform has run, aggregated by skill and
     // version across every team that ran it. A skill is a platform-wide capability, not a
     // team's own data, so a team scope and a platform scope see the identical response.
@@ -35,6 +35,11 @@ export function mountSkills(app: Express): void {
     // again. A column that can only show what was measured before the change, on a page that
     // reads as current, is worse than an absent one — so it is absent. The plugin's scores are
     // on the plugin.
+    // WINDOWED, like every other view. This route had no period at all and the Runs page
+    // hid the picker to match, so "every skill, side by side" silently meant "since the
+    // platform was installed" — a comparison nobody asked for beside tiles that all mean
+    // the last 24 hours. Null is still all time; the picker simply has an all-time option.
+    const since = periodCutoff(req);
     const [runs, stepEvents] = await Promise.all([
       db.query(
         // `retired` travels with the row. This view is "every skill the platform has RUN",
@@ -42,28 +47,66 @@ export function mountSkills(app: Express): void {
         // dropping it would silently re-attribute its history. What it must not do is read
         // as current: casebox-stg-usage and zz-learn both appear here and neither is served any
         // more, and nothing on the row said so.
+        /* A DURATION IS THE SPAN BETWEEN A RUN'S FIRST AND LAST CALL, so a run that made one
+         * call has no span to report. `zz.run.started_at, ended_at` are `min(e.ts), max(e.ts)`
+         * over the run's events (runs.ts) and one event yields one timestamp — such a run is
+         * stamped `ended_at = started_at` by construction, not because anything failed to be
+         * measured. On this deployment that is 148 of 336 runs, and the set is EXACTLY the
+         * runs with `calls = 1`: checked both directions, zero rows disagree.
+         *
+         * Folding those structural zeroes in is not a rounding error. sdlc-plan has 40 runs,
+         * 6 of them with more than one call; its median over all 40 is 0s and its median over
+         * those 6 is 5423s. The view was reporting 0 for a skill whose typical measurable run
+         * takes ninety minutes. So every duration below is taken `filter (where ended_at >
+         * started_at)`, and `timed_runs` travels beside them so the console can say what the
+         * median is a median OF rather than implying it covers the run count in the next
+         * column. All four go null when a skill has no timed run — unknown, not instant,
+         * the same rule the bytes aggregates follow.
+         *
+         * ONE DECIMAL, not zero. `round(...,0)` turned every sub-second median into a 0 that
+         * is indistinguishable from the structural kind above: sdlc-explore has 38 timed runs
+         * and a genuine median under a second, and it deserves to say so.
+         *
+         * `teams` comes off the initiative, which is why it is a LEFT join twice over: 28 runs
+         * carry no initiative_id at all (a block usage skill's whole life, see runs.ts) and
+         * those runs still belong in every count on this row. array_remove drops the null the
+         * teamless ones contribute rather than dropping the runs. Neither join can fan out —
+         * a run has at most one initiative and an initiative exactly one team. */
         `select s.name, sv.version, s.kind, s.flow, s.retired,
+                array_remove(array_agg(distinct t.slug), null)       as teams,
                 count(*)                                            as runs,
+                count(*) filter (where r.ended_at > r.started_at)   as timed_runs,
                 coalesce(sum(r.calls),0)                            as calls,
                 round(avg(r.calls)::numeric,1)                      as calls_avg,
                 coalesce(max(r.calls),0)                            as calls_max,
                 coalesce(sum(r.refusals),0)                         as refusals,
                 coalesce(sum(r.turns),0)                            as turns,
-                round(avg(extract(epoch from (r.ended_at-r.started_at)))::numeric,0) as dur_avg,
+                round(avg(extract(epoch from (r.ended_at-r.started_at)))
+                      filter (where r.ended_at > r.started_at)::numeric,1) as dur_avg,
                 round(percentile_cont(0.5) within group
-                      (order by extract(epoch from (r.ended_at-r.started_at)))::numeric,0) as dur_med,
-                round(max(extract(epoch from (r.ended_at-r.started_at)))::numeric,0) as dur_max,
+                      (order by extract(epoch from (r.ended_at-r.started_at)))
+                      filter (where r.ended_at > r.started_at)::numeric,1) as dur_med,
+                round(max(extract(epoch from (r.ended_at-r.started_at)))
+                      filter (where r.ended_at > r.started_at)::numeric,1) as dur_max,
+                round(sum(extract(epoch from (r.ended_at-r.started_at)))
+                      filter (where r.ended_at > r.started_at)::numeric,1) as dur_total,
                 round(avg(r.bytes_total)/1024.0,1)                  as kb_avg,
                 round((sum(r.bytes_total)/1048576.0)::numeric,1)    as mb_total
            from zz.run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
-          group by 1,2,3,4,5`),
+           left join zz.initiative i on i.id = r.initiative_id
+           left join zz.team t on t.id = i.team_id
+          where ($1::timestamptz is null or r.started_at >= $1)
+          group by 1,2,3,4,5`, [since]),
       db.query(
+        // SAME WINDOW as the runs above, or `logged` would report all-time call counts
+        // beside a windowed run count on one row.
         `select step, count(*) as calls, count(*) filter (where ok = false) as failed,
                 count(distinct subject) as tools
            from zz.event where kind = 'tool_call' and step is not null and step <> ''
-          group by 1`),
+             and ($1::timestamptz is null or ts >= $1)
+          group by 1`, [since]),
     ]);
     const evBy = new Map(stepEvents.rows.map((e) => [e.step as string, e]));
     res.json({ skills: runs.rows.map((r) => {
@@ -74,7 +117,11 @@ export function mountSkills(app: Express): void {
         // else, so the view kept listing casebox-stg-usage and zz-learn exactly as it lists a
         // skill that is still served — which is the state the column was added to end.
         retired: !!r.retired,
+        // Which teams' initiatives drove this skill. Empty when every run of it was teamless.
+        teams: (r.teams as string[] | null) ?? [],
         runs: +r.runs, calls: +r.calls, callsAvg: +r.calls_avg, callsMax: +r.calls_max,
+        // How many of those runs a duration can be computed for — see the query.
+        timedRuns: +r.timed_runs,
         refusals: +r.refusals,
         // Reported as null, never 0. zz.run.turns is zero on every row while the
         // event log holds turn events with no run id, so a 0 here would read as
@@ -86,6 +133,7 @@ export function mountSkills(app: Express): void {
         // from zz.run.bytes_total, one layer up. Tested against null rather than against 0,
         // because unlike `turns` a real zero is meaningful here: measured, and empty.
         durationAvg: num(r.dur_avg), durationMedian: num(r.dur_med), durationMax: num(r.dur_max),
+        durationTotal: num(r.dur_total),
         kbPerRun: num(r.kb_avg), mbTotal: num(r.mb_total),
         logged: ev ? { calls: +ev.calls, failed: +ev.failed, tools: +ev.tools } : null,
       };

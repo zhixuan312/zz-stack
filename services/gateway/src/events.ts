@@ -103,8 +103,6 @@ export function logEvent(e: {
   flow?: string;
   step?: string;
   stepVersion?: string;
-  block?: string;
-  blockVersion?: string;
   ok?: boolean;
   refusal?: string;
 
@@ -174,14 +172,14 @@ export function logEvent(e: {
   void platformDb()
     .query(
       `insert into event (actor, team_slug, team_id, kind, subject, detail,
-                          initiative, flow, step, step_version, block, block_version, ok, refusal,
+                          initiative, flow, step, step_version, ok, refusal,
                           plugin, plugin_version, tool_key,
                           duration_ms, request_bytes, response_bytes, batched)
-       values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-               $14,$15,$16,$17,$18,$19,$20)`,
+       values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,
+               $12,$13,$14,$15,$16,$17,$18)`,
       [actor, e.teamSlug ?? null, e.kind, e.subject ?? "", JSON.stringify(e.detail ?? {}),
        e.initiative ?? null, e.flow ?? null, e.step ?? null, e.stepVersion ?? null,
-       e.block ?? null, e.blockVersion ?? null, e.ok ?? null, e.refusal ?? null,
+       e.ok ?? null, e.refusal ?? null,
        e.plugin ?? null, e.pluginVersion ?? null, e.toolKey ?? null,
        e.durationMs ?? null, e.requestBytes ?? null, e.responseBytes ?? null, e.batched ?? false],
     )

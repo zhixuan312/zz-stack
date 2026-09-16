@@ -233,97 +233,25 @@ export async function flowFor(teamSlug: string | null): Promise<{ flow: string; 
   }
 }
 
-/** WHICH PLUGIN OWNS THE SKILL A CALLER IS FOLLOWING — the attribution key itself (AC-1.5,
- * AC-1.6), and deliberately not derived from `flowFor` above or from `zz.flow_install`.
+
+/* ── a door's own version, from its own handshake ───────────────────────────── */
+
+/** Every MCP server states its name and version at `initialize` — a protocol field it already
+ * has to send, so a version costs no new contract and no new tool.
  *
- * The join is the one `plugin-profile.ts` already prefers for exactly this question —
- * `zz.plugin_version_skill` joined to `zz.plugin_version` and `zz.plugin` — except that join
- * starts from a `zz.run` row, and a run is reconciled from the event log on a timer
- * (`runs.ts`), not written at the moment a call happens. There is no run yet for the call this
- * function is being asked about, so the entry point here is the skill itself: the caller's
- * current step, resolved to a skill name, resolved to the version of it that was RELEASED at
- * the time of the call — same rule `runs.ts`'s `VERSION_AT_EVENT` uses, and for the same
- * reason: `skill_version` on a served skill is stamped only when the whole skill text was
- * served, so it is sparse, and a time-based lookup is right both for a declared version and
- * for the far more common case of none.
+ * KEYED BY THE DOOR, which is the change. This used to be keyed by BLOCK, and a "block" was
+ * defined as any surface that was NOT one of ours — so the one case it could never record was
+ * the platform's own. `/p/<block>/mcp` has since been deleted and there are no other surfaces,
+ * which left the whole mechanism recording nothing at all while our own doors, which announce
+ * their version on every handshake, went unrecorded.
  *
- * Takes the ALREADY ALIAS-RESOLVED step name — `resolveStep` is the caller's job, once, on the
- * value it already has, not this function's, so a single step-name resolution rule keeps
- * living in one place (Task I-2's resolver).
- *
- * `plugin` IS DETERMINISTIC — a skill belongs to one plugin — `plugin_version` IS NOT, AND
- * THAT IS A GAP IN THE SCHEMA, NOT SOMETHING GUESSED AT HERE. `zz.plugin_version_skill` is
- * many-to-many: an untouched skill can ship unchanged in several plugin releases, so more than
- * one `plugin_version` row can match the one `skill_version_id` this resolves to, and
- * `zz.plugin_version` carries no timestamp to order candidates by the way `zz.skill_version`
- * does — `released_at` lives one table over. Ordered by `version` text as the best available
- * tiebreak, which is right for the common `x.y.z` shape and not a real ordering in general;
- * fixing it needs a column this migration does not add. */
-const pluginCache = new Map<string, { plugin: string; version: string; at: number } | { at: number }>();
-const PLUGIN_TTL_MS = 60_000;
+ * Observed on the handshake and remembered per door, then stamped on the calls, because the
+ * handshake arrives on a different request from the calls it describes. */
+const doorVersions = new Map<string, string>();
 
-export async function pluginFor(step: string | undefined): Promise<{ plugin: string; plugin_version: string } | undefined> {
-  if (!step || !platformDbReady()) return undefined;
-  const now = Date.now();
-  const hit = pluginCache.get(step);
-  if (hit && now - hit.at < PLUGIN_TTL_MS) {
-    return "plugin" in hit ? { plugin: hit.plugin, plugin_version: hit.version } : undefined;
-  }
-  try {
-    const { rows } = await platformDb().query<{ plugin: string; version: string }>(
-      `select p.name as plugin, pv.version as version
-         from zz.skill s
-         join lateral (
-                select v.id from zz.skill_version v
-                 where v.skill_id = s.id and v.released_at <= now()
-                 order by v.released_at desc limit 1
-              ) sv on true
-         join zz.plugin_version_skill pvs on pvs.skill_version_id = sv.id
-         join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-         join zz.plugin p on p.id = pv.plugin_id
-        where s.name = $1
-        order by pv.version desc
-        limit 1`, [step]);
-    const row = rows[0];
-    if (!row) { pluginCache.set(step, { at: now }); return undefined; }
-    pluginCache.set(step, { plugin: row.plugin, version: row.version, at: now });
-    return { plugin: row.plugin, plugin_version: row.version };
-  } catch {
-    // Unresolvable is a null on the row, never a guess — see the check's own comment on this.
-    // A lookup failure must not cost the row either, for the same reason flowFor's does not.
-    return undefined;
-  }
-}
-
-/** The surfaces that are the platform's own. Anything else is a building block, and the
- * surface name IS the block — that is how `/p/<block>/mcp` is routed. */
-// `eval` IS OURS. Every door this platform serves itself belongs in here, and the cost of
-// forgetting one is not a mislabelled row: `blockOf` below answers "this call went to a
-// building block called eval", so the evaluation door's own traffic would be recorded as a
-// third party's, against a block nobody granted and no registry has ever heard of.
-const PLATFORM_SURFACES = new Set(["core", "eval", "manage", "admin"]);
-
-export const blockOf = (surface: string): string | undefined =>
-  surface && !PLATFORM_SURFACES.has(surface) ? surface : undefined;
-
-
-/* ── the block's own version, from its own handshake ────────────────────────── */
-
-/** Every MCP server states its name and version at `initialize`. That is the block's own
- * account of what it is, given in a protocol field it already has to send — so a block
- * version costs no new contract, no new tool and nothing for a block team to adopt.
- *
- * Observed on the handshake and remembered per block, then stamped on every call to it, since
- * the handshake and the calls are separate requests. What the three connected blocks answer
- * today: rulemill `3.4.7`, bookit `3.4.7`, casebox `<a build timestamp>` — the last one a
- * build timestamp rather than a version, which is a real answer and a poor one, and now
- * visible as such rather than absent.
- */
-const blockVersions = new Map<string, string>();
-
-export function blockHandshake(block: string, servedBody: string): void {
+export function doorHandshake(door: string, servedBody: string): void {
   const m = /"serverInfo"\s*:\s*\{[^}]*?"version"\s*:\s*"([^"]{1,80})"/.exec(servedBody);
-  if (m) blockVersions.set(block, m[1]);
+  if (m) doorVersions.set(door, m[1]);
 }
 
-export const blockVersion = (block: string): string | undefined => blockVersions.get(block);
+export const doorVersion = (door: string): string | undefined => doorVersions.get(door);

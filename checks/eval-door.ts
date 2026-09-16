@@ -57,6 +57,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+// BEFORE ANY DYNAMIC IMPORT IN THIS FILE. @zz/catalog reads ZZ_CATALOG_DIR ONCE, at module
+// load, and defaults to `/catalog` — a path that exists in the container and not in a
+// checkout. Half the dynamic imports below pull it in transitively, so setting this beside
+// the call that needs it sets it long after the value was fixed, and `pluginForDoor` then
+// reports that no door has a plugin because it is reading an empty directory.
+process.env.ZZ_CATALOG_DIR ??= join(process.cwd(), "catalog");
+
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
  *  than assume it. `unknown?.message` narrows to `{}`, which has no properties at all. */
 function errMessage(err: unknown): string {
@@ -448,7 +455,7 @@ if (!/app\.use\(Object\.keys\(DOORS\),/.test(gwCode)) {
 let doorSurfaceOfEval = "(never asked)";
 try {
   const { doorSurface } = await import("../services/gateway/dist/tool-telemetry.js");
-  const { blockOf } = await import("../services/gateway/dist/step-trace.js");
+  const { pluginForDoor } = await import("../packages/catalog/dist/index.js");
   const surface = doorSurface("/eval/mcp");
   doorSurfaceOfEval = surface;
   if (surface === "core") {
@@ -468,16 +475,25 @@ try {
                 "answers the same thing to every door");
     }
   }
-  if (blockOf(surface) !== undefined) {
-    fail.push(`blockOf(${JSON.stringify(surface)}) answers that the evaluation door is a ` +
-              "BUILDING BLOCK — its surface name belongs in step-trace's PLATFORM_SURFACES, " +
-              "or every call through it is filed as a third party's");
+  // AND WHOSE CALLS THEY ARE. A door is a plugin's declared server, so this door's traffic
+  // belongs to the plugin whose manifest declares `/eval/mcp` — and to no other. This replaces
+  // a pair of `blockOf` clauses that asked whether the evaluation door was mistaken for a
+  // THIRD PARTY's server, a concept the platform no longer has; the question underneath was
+  // always "are this door's calls filed as somebody else's", and this answers it directly.
+  if (pluginForDoor(surface) !== "zz-plugin-eval") {
+    fail.push(`pluginForDoor(${JSON.stringify(surface)}) is ` +
+              `${JSON.stringify(pluginForDoor(surface))} and not "zz-plugin-eval" — every call ` +
+              "through this door is attributed to the wrong plugin, or to none");
   }
-  // The same control on the other function: one that answered `undefined` to everything would
-  // satisfy the clause above without recognising anything.
-  if (blockOf("casebox") !== "casebox") {
-    fail.push("blockOf no longer recognises a building block by its surface name — the clause " +
-              "above then passes on a function that answers `undefined` to everything");
+  // The control: a function answering "zz-plugin-eval" to everything would satisfy that.
+  if (pluginForDoor("core") !== "zz-core") {
+    fail.push("pluginForDoor no longer names the core door's plugin — the clause above then " +
+              "passes on a function that answers the same thing to every door");
+  }
+  // And it must not invent one. `admin` was a door and is not one now; no manifest claims it.
+  if (pluginForDoor("admin") !== null) {
+    fail.push("pluginForDoor names a plugin for a surface no manifest declares — attribution " +
+              "has to come back null rather than guess");
   }
 } catch (err) {
   fail.push(`the gateway's telemetry modules could not be imported, so nothing about how this ` +

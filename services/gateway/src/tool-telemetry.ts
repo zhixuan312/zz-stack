@@ -45,7 +45,7 @@ import { StringDecoder } from "node:string_decoder";
 
 import type { NextFunction, Request, Response } from "express";
 
-import { catalogManifest } from "@zz/catalog";
+import { catalogManifest, pluginForDoor } from "@zz/catalog";
 import { refusalClass } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 // The alias resolver, from @zz/contracts, where the maps it reads also live. It briefly lived
@@ -54,11 +54,11 @@ import { lastJson } from "@zz/mcp-client";
 // which is how a second implementation starts. Maps and resolvers now share one door.
 // `tool_key` must fold onto the exact same series a reader building one from historical
 // `subject` values would, so it cannot be resolved by anything but this.
-import { resolveStep, resolveToolKey } from "@zz/contracts";
+import { resolveToolKey } from "@zz/contracts";
 
 import { logEvent } from "./events.js";
-import { blockHandshake, blockOf, blockVersion, callerKey, currentStep, flowFor, initiativeSeen,
-         pluginFor, stepLoaded } from "./step-trace.js";
+import { callerKey, currentStep, doorHandshake, doorVersion, flowFor, initiativeSeen,
+         stepLoaded } from "./step-trace.js";
 
 /** The most we will hold of ONE answer. Answers are classified as they stream, so nothing
  * accumulates past this.
@@ -303,8 +303,8 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     // it is remembered per block and stamped on those.
     if (!wanted.length) {
       const handshake = (Array.isArray(body) ? body : [body]).some((m) => m?.method === "initialize");
-      const forBlock = handshake ? blockOf(surface(req)) : undefined;
-      if (forBlock) {
+      const forDoor = handshake ? surface(req) : undefined;
+      if (forDoor) {
         let seen = "";
         const w = res.write.bind(res);
         const e = res.end.bind(res);
@@ -318,7 +318,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         } as Response["write"];
         res.end = function (this: Response, ...a: Parameters<Response["end"]>) {
           if (typeof a[0] !== "function") sip(a[0]);
-          if (seen) blockHandshake(forBlock, seen);
+          if (seen) doorHandshake(forDoor, seen);
           return e(...a);
         } as Response["end"];
       }
@@ -490,7 +490,6 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         if (typeof named === "string" && named) { initiativeSeen(caller, named); break; }
       }
       const step = currentStep(caller);
-      const block = blockOf(where);
       const flow = await flowFor(req.zzIdentity?.activeTeam ?? null);
 
       for (const call of wanted) {
@@ -523,18 +522,23 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
               .find((d) => d.name === docName)?.stage
           : undefined;
         const stepName = owedBy ?? step?.step;
-        // WHICH PLUGIN — from `currentStep()`'s own trace, per the contract's Inputs clause,
-        // and DELIBERATELY NOT from `stepName` above. `stepName` can be `owedBy`, the
-        // manifest's declared owner of a document being written, which is a statement about
-        // which STAGE owes a document, not about which skill the caller actually loaded — and
-        // routing plugin attribution through it would still be one hop from `zz.flow_install`
-        // (owedBy comes from `catalogManifest(flow.flow, ...)`), which AC-1.6 rules out.
-        // Resolved through SKILL_ALIAS first, so a renamed skill still matches the plugin that
-        // owns it today, then through the same zz.plugin_version_skill join plugin-profile.ts
-        // already prefers (see pluginFor's own comment for why it cannot start from a zz.run
-        // row the way that one does). A caller with no step loaded, or one naming no known
-        // skill, comes back undefined and is written as null — never guessed at.
-        const plugin = await pluginFor(step?.step ? resolveStep(step.step) : undefined);
+        // WHICH PLUGIN — A FACT ABOUT THE DOOR, not a guess about the caller.
+        //
+        // A door IS a plugin's declared server, so the plugin a tool call belongs to is fixed
+        // by where the call arrived and is the same for everyone. This was inferred from the
+        // caller's most recently read skill instead, and the result was not close: measured on
+        // this deployment, 3,928 tool calls arrived on `core` and 192 carried any attribution
+        // at all — of which 150 said `sdlc`, a plugin that declares NO server and therefore
+        // cannot serve a tool call. 150 of 150 wrong, and 96% unattributed.
+        //
+        // The skill a caller last loaded is a real fact and this is not it. It answers "what
+        // were they reading", which drifts the moment an agent consults anything mid-flow;
+        // the question telemetry needs answered is "whose tool is this", and the manifest has
+        // said so all along.
+        //
+        // A surface no manifest claims — `admin`, which is no longer a door — comes back null
+        // and is written as null. Never guessed at.
+        const plugin = pluginForDoor(where);
         // THE ALIAS-RESOLVED TOOL NAME, Task I-2's resolver, so `tool_key` already reads as
         // one series across a rename rather than needing every future reader to resolve
         // `subject` itself.
@@ -580,11 +584,12 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           // WHICH PLUGIN, AND WHICH RELEASE OF IT — the answer this task adds. Never `flow`
           // (a team's last install, not a skill's owner) and never `x-zz-client` in `detail`
           // below (which program made the call, not which plugin's skill it was following).
-          plugin: plugin?.plugin,
-          pluginVersion: plugin?.plugin_version,
+          plugin: plugin ?? undefined,
+          // THE DOOR'S OWN ACCOUNT OF ITS VERSION, from the `initialize` handshake it already
+          // sends. Absent until that door has been handshaken in this process, which is
+          // honest: a version nobody stated is not one to invent.
+          pluginVersion: doorVersion(where),
           toolKey,
-          block,
-          blockVersion: block ? blockVersion(block) : undefined,
           ok: outcome.ok,
           // The platform's own sentence saying which rule was broken — the one thing a skill
           // can actually be edited from.

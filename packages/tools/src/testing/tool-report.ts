@@ -84,8 +84,6 @@ interface CallRow {
    * the snapshot would otherwise stay stuck under the now-superseded name. A no-op when it
    * is already current. */
   tool_key: string | null;
-  block: string | null;
-  block_version: string | null;
   ok: boolean | null;
   refusal: string | null;
   /** What the call cost. Null means not measured, never a guessed zero — a request that
@@ -152,7 +150,7 @@ function rows(psql: string, since: string, surface: string | null, actor: string
     // download — so a reader of that column has to say which kinds it means, and a scope hidden
     // in a joined array is a scope nothing can check.
     "select ts, subject, team_slug, initiative, flow, step, step_version, plugin, plugin_version," +
-    " tool_key, block, block_version," +
+    " tool_key," +
     " ok, refusal, duration_ms, request_bytes, response_bytes, batched, detail" +
     " from zz.event where kind = 'tool_call'" +
     ` and ${where.join(" and ")} order by id`;

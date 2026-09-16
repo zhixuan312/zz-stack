@@ -233,6 +233,37 @@ export function isFlow(manifest: CatalogManifest): manifest is CatalogManifest &
   return (manifest.documents?.length ?? 0) > 0;
 }
 
+/** WHICH PLUGIN SERVES A DOOR, from the only place that states it.
+ *
+ * A door IS a plugin's declared server — its `servers[].path` — so which plugin a call belongs
+ * to is a fact about the DOOR the call arrived on, the same for every caller, and knowable
+ * before the call is answered. It does not depend on who called, what they had loaded, or when.
+ *
+ * Attribution used to be inferred from the caller's most recently read skill, which is a guess
+ * about a person standing in for a fact about a tool. Measured on this deployment before the
+ * change: `/eval` was 290/290 attributed and 290/290 WRONG — every evaluation call credited to
+ * whichever skill that caller happened to read last — and three of five plugins had no events
+ * at all. Everything built on telemetry inherited it.
+ *
+ * NOT `DOORS[].name` in the gateway, which is the other thing in this repository that looks
+ * like this answer. That map's own docblock calls its `name` editorial — "access (behind the
+ * ZZ Access agent)" is how a person finds a door in a client, not an identifier anything
+ * resolves. The manifest is where a plugin declares its server, so the manifest is what says
+ * whose server it is.
+ *
+ * Takes the surface as the telemetry spells it (`core`, `eval`, `manage`) or a full path.
+ * Unknown comes back null and is written as null: never guessed at. */
+export function pluginForDoor(surface: string): string | null {
+  if (!surface) return null;
+  const path = surface.startsWith("/") ? surface : `/${surface}/mcp`;
+  for (const entry of catalogEntries()) {
+    for (const server of entry.manifest.servers ?? []) {
+      if (server.path === path) return entry.flow;
+    }
+  }
+  return null;
+}
+
 /** Flows a team can install. NOT every catalog entry: platform capabilities live here too,
  * so that their description and skills have one home, but installing one would create a
  * flow_install row for something the shelf already ships to everyone — and then package it

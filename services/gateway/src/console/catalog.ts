@@ -100,7 +100,6 @@ function diskPlugins(): DiskPlugin[] {
       // Deduped, because three of the five DO declare it.
       servers: [...new Set([
         "zz-core",
-        ...(e.manifest.tools ?? []),
         ...(e.manifest.servers ?? []).map((sv) => sv.name),
       ])],
       documents: docs.map((d) => ({

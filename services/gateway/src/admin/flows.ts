@@ -95,7 +95,6 @@ async function flowsFor(target: string): Promise<InstalledFlow[]> {
                  m: CatalogManifest | null): InstalledFlow => ({
     flow, version, entry: m?.entry || flow, agentName,
     whenToUse: whenToUseFor(flow, m?.entry || flow),
-    blocks: m?.tools ?? [],
     servers: m?.servers ?? [],
   });
 
@@ -224,8 +223,7 @@ export function registerShelf(server: McpServer): void {
         description: (m?.description ?? "").slice(0, 160),
         install: auto ? "automatic — every team has it" : "opt-in",
         you: has ? (auto ? "installed (platform)" : "installed") : "not installed",
-        blocks: m?.tools ?? [],
-      };
+          };
     });
     return text(JSON.stringify({ team: slug ?? null, catalog: lines }, null, 2));
   });
@@ -272,8 +270,6 @@ export async function installFlow(
   // gave that product a copy of platform truth to drift from. The front end now reads what a
   // team runs the same way every other client does — over MCP, as the caller.
   const report: string[] = [`registry recorded — '${flow}' is now on this team's shelf.`];
-  const blocks = manifest.tools ?? [];
-  if (blocks.length) report.push(`manifest declares blocks [${blocks.join(", ")}] — tool_grant each one (superadmin) if not already granted`);
   auditAdmin(id, "install_flow", `${team}:${flow}`, { version: version ?? "", agent: agentName, report, ...extraDetail }, team);
   // Say where this install actually shows up. There is one client, and it reads the shelf
   // from GitHub rather than fetching a package — so the sentence that used to name the

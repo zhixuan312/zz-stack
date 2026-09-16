@@ -90,12 +90,10 @@ function skillsDirOf(plugin: string): string {
  * plugin that is entirely fine, the one thing this platform treats as most expensive.
  *
  * `tools` is folded in beside `servers` because client-package.ts concatenates both into what
- * a person installs: a block named there arrives as a server too. */
+ * a person installs. */
 function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined):
   { name: string; path: string; baseline?: true }[] {
-  const declared = (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
-  const blocks = (entry?.manifest.tools ?? []).map((b: string) => ({ name: b, path: `/p/${b}/mcp` }));
-  const all = [...declared, ...blocks];
+  const all = (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
   // Marked, so a reader can tell what this plugin ASKED for from what every plugin gets.
   if (!all.some((sv) => sv.name === "zz-core")) {
     all.unshift({ name: "zz-core", path: "/core/mcp", baseline: true } as never);

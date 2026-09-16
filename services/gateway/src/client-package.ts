@@ -79,7 +79,6 @@ export interface InstalledFlow {
   agentName: string | null;
   /** One line from the entry skill: when this flow is the right one. */
   whenToUse: string;
-  blocks: string[];
   /** Platform surfaces this flow's METHOD needs, beyond the baseline. A flow whose skills
    * instruct an admin tool has to be able to reach one; without this the package shipped the
    * instruction and not the tool. */
@@ -253,7 +252,6 @@ export interface ClientPackage {
   /** Anything true that the person should know, including what we cannot do. */
   notes: string[];
   flows: InstalledFlow[];
-  blocks: string[];
 }
 
 /* ── the package ─────────────────────────────────────────────────── */
@@ -300,7 +298,6 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       "rendering — two plugins of one name collide on install.",
     );
   }
-  const blocks = [...new Set(flows.flatMap((f) => f.blocks))].sort();
   const files: PackageFile[] = [];
   const notes: string[] = [];
 
@@ -364,12 +361,8 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       return {
         name: pluginName(f.flow),
         description: cardDescription(f.flow, `${f.agentName || f.flow} — ${f.whenToUse}`.slice(0, 180)),
-        // A flow's blocks arrive with the flow, or not at all — and so does any platform
-        // surface its method needs. Both are the same statement: this is what my skills call.
-        servers: [
-          ...f.blocks.map((b) => ({ name: b, url: `${base}/p/${b}/mcp` })),
-          ...f.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
-        ],
+        // A flow's servers arrive with the flow, or not at all: this is what my skills call.
+        servers: f.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
         files: [
           ...(entryCmd ? [{
             path: `commands/${entryCmd}.md`,
@@ -438,7 +431,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
 
   const optional = plugins.filter((pl) => !pl.required).map((pl) => pl.name);
   return {
-    home: "~/.zz", files, flows, blocks, notes,
+    home: "~/.zz", files, flows, notes,
     install: [
       // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's
       // umask — 644 on most machines — and the chmod lands after it already exists, so the

@@ -10,7 +10,6 @@
   "commands": {
     "eval": "zz-plugin-eval"
   },
-  "tools": [],
   "servers": [
     {
       "name": "zz-plugin-eval",

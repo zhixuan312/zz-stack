@@ -163,16 +163,6 @@ export function describePackage(pkg: ClientPackage, target: string): string {
     `the flow you keep exactly the assistant you had.`,
   );
 
-  if (pkg.blocks.length) {
-    lines.push(
-      ``,
-      `## Building blocks`,
-      `${pkg.blocks.join(", ")} — each call carries a key, and the audit always records`,
-      `YOU as the caller. It has to be YOUR key: there is no shared team key to cover you.`,
-      `Sign in to the block as yourself, or store your own once with the ZZ Access agent and`,
-      `it works from every client.`,
-    );
-  }
 
   if (pkg.notes.length) {
     lines.push(``, `## Notes`, ...pkg.notes.map((n) => `- ${n}`));

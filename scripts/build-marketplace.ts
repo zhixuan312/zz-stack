@@ -89,7 +89,6 @@ const flows = installableFlows()
       entry,
       agentName: null,
       whenToUse: whenToUse(flow, entry),
-      blocks: m.tools ?? [],
       servers: m.servers ?? [],
     };
   })

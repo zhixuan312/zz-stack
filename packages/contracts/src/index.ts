@@ -387,8 +387,6 @@ export const CatalogManifest = z.object({
    * second question is the one that decides whether a catalog stays coherent, and nothing in
    * the manifest asked it. */
   purpose: z.string().min(1).optional(),
-  /** BUILDING BLOCKS — gateway platform ids, never skill names. */
-  tools: z.array(z.string()).optional(),
   install: z.enum(["auto", "opt-in"]).optional(),
   /** THE COMMANDS A PERSON CAN TYPE: the name they type, mapped to the skill that carries
    * the method. `{ "flow": "sdlc-flow" }` ships `/sdlc:flow`, and `{ "deck": "zz-deck" }` ships

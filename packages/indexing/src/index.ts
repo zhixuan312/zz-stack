@@ -163,8 +163,15 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // Hashing what we are about to WRITE makes skipping correct by construction: a row is
     // skipped exactly when re-deriving it would produce what is already stored, whether the
     // file moved, the logic moved, or neither.
+    // A SNAPSHOT INHERITS THE TYPE OF WHAT IT SNAPSHOTS. The fallback is the filename with
+    // `.md` off, and a frozen approval copy is `<name>.v<N>.md` — so `_versions/notes.v1.md`
+    // was indexed as type `notes.v1`, a type nothing else has and no filter names. `snapshotOf`
+    // already holds the document it is a copy of; the version belongs in the path, which
+    // carries it, and not in a second field that reads as a kind.
+    const fallbackType = (snapshotOf ?? parts[parts.length - 1].replace(/\.md$/, ""))
+      .replace(/\.md$/, "");
     const values = [teamSlug, parts[0], parts.slice(1).join("/"),
-      env.flow ?? "", env.type ?? parts[parts.length - 1].replace(/\.md$/, ""),
+      env.flow ?? "", env.type ?? fallbackType,
       env.status ?? "", env.outcome ?? null, env.approved_by ?? null,
       isoDate(env.approved_at),
       // WHO CLOSED IT. The platform validates and stamps this already — a close is the most

@@ -364,6 +364,9 @@ check("a column nothing reads is not proof a column nothing needs", runsCheck("t
 check("an insert names as many values as it names columns",
       runsCheck("insert-arity.ts"));
 
+check("the definition this platform is built on holds in its source",
+      runsCheck("definition-rules.ts"));
+
 check("the record's own columns exist, and a gap is nullable", runsCheck("migration-050.ts"));
 
 check("every tool call says which plugin it was made for", runsCheck("attribution.ts"));

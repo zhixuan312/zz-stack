@@ -197,16 +197,24 @@ export function mountSkills(app: Express): void {
    * across every run forever, and a "gap" that can never close is not a gap — it is a feature
    * nobody built, reported as a defect. If the platform decides a run has an outcome again,
    * this comes back with whatever writes it. */
-  app.get("/api/console/runs", teamless("runs", async (_req, res) => {
+  app.get("/api/console/runs", teamless("runs", async (req, res) => {
     // NO TEAM DIMENSION: `zz.run` carries no team column and this reports platform-wide
     // volume totals, the same census category as /overview.
+    //
+    // WINDOWED WITH /skills, and it has to be: these four totals sit directly above the
+    // per-skill table on one page. While this answered all time and that one took a period,
+    // the page could read "336 runs" in a tile and "26 runs" in the panel's own header an
+    // inch below it — two true numbers about different spans, with nothing saying so.
     const db = platformDb();
+    const since = periodCutoff(req);
     const [totals] = await Promise.all([
       db.query(`select count(*) as runs, coalesce(sum(calls),0) as calls,
                        coalesce(sum(refusals),0) as refusals, coalesce(sum(turns),0) as turns,
                        round((sum(bytes_total)/1048576.0)::numeric,1) as mb,
-                       (select count(*) from zz.event where kind='turn') as turn_events
-                  from zz.run`),
+                       (select count(*) from zz.event
+                         where kind='turn' and ($1::timestamptz is null or ts >= $1)) as turn_events
+                  from zz.run
+                 where ($1::timestamptz is null or started_at >= $1)`, [since]),
     ]);
     const t = totals.rows[0];
     res.json({

@@ -9,7 +9,6 @@
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
-import { PLATFORM_VERSION } from "../client-package.js";
 import { isSuper } from "../identity.js";
 import { readMetrics } from "./overview-metrics.js";
 import { ZZ_TZ, grainForSpan, handler, mayReadConsole, periodCutoff } from "./shared.js";
@@ -26,11 +25,6 @@ export function mountOverview(app: Express): void {
     const id = req.zzIdentity;
     if (!id) { res.status(401).json({ error: "authentication required" }); return; }
     res.json({
-      /* WHICH PLATFORM ANSWERED. Every page already calls `/me`, so this is the one place
-       * the console can learn what it is talking to without a second request — and "which
-       * build am I looking at" is a question a console should never make somebody guess at,
-       * least of all on a day the answer changed four times. */
-      platformVersion: PLATFORM_VERSION,
       email: id.email, name: id.displayName, role: id.platformRole,
       mayRead: mayReadConsole(id), superadmin: isSuper(id), via: id.via,
       // `id.teams` already carries `{ slug, role }` — mapping it down to slugs threw the

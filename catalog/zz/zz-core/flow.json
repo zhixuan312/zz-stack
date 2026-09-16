@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-core",
   "description": "ZZ platform baseline — identity, your team's documents and knowledge, the gates, and where each piece of work stands. Required by everything else.",
-  "purpose": "To own the record every flow writes into — identity, documents, gates, knowledge and telemetry — and the method for using it. A capability belongs here when every flow needs it and no flow owns it; anything one flow owns belongs in that flow.",
+  "purpose": "To own the record every flow writes into — identity, documents, gates, knowledge, telemetry, and what anybody reports broken — and the method for using it. A capability belongs here when every flow needs it and no flow owns it; anything one flow owns belongs in that flow. Filing a defect and answering one are the same subject and live together here; which half you are offered is your role's answer, not the door's.",
   "shelved": true,
   "evals": "../../../evals",
   "commands": {

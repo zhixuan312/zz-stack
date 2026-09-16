@@ -190,7 +190,7 @@ check("zz-platform's roster of platform tools is the tools zz-core serves", () =
   // bug_delete, and until it was named here the roster's bug_list and bug_resolve read as names
   // no door serves.
   const MANAGE_FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
-                        "services/gateway/src/admin/flows.ts", "services/gateway/src/admin/bugs.ts"];
+                        "services/gateway/src/admin/flows.ts", "services/zz-core/src/tools/bugs.ts"];
   const manageNames = new Set<string>();
   for (const rel of MANAGE_FILES) {
     if (!existsSync(join(root, rel))) {

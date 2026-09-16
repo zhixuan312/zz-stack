@@ -20,7 +20,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { tableRow } from "../document-rules.js";
-import { journalLog, knowledgeEvent, type KbRow } from "../indexing.js";
+import { journalLog, platformEvent, type KbRow } from "../indexing.js";
 import { KNOWLEDGE_TEAM, PLAIN_TOKEN, knowledgeRoot, sanitize, tagRefusal, titleSlug, userRoot, yamlValue } from "../paths.js";
 import { commitStore, logActivity, setEnvelopeField } from "../persist.js";
 import { db, subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
@@ -138,14 +138,12 @@ function subjectTagError(tags: string[] | undefined): string | null {
       // belong to. Resolved once, before `scope` is checked against it, so the team-scoped
       // refusal below and the evidence-root list further down share one lookup.
       const { active: team, all: evidenceTeams } = await teamsFor(who.email);
-      // userRoot() falls back to a personal directory OUTSIDE teams/ when teamFor() is falsy
-      // (server.ts:2374) — a team-scoped node from such a caller would report success and
-      // land where team-gated search can never reach it. knowledge_search already refuses
-      // this caller in these terms; this closes the same silent-loss path here. It used to
-      // say "and knowledge_reindex" too, which stopped being true at Task I-38: that tool is
-      // on /manage now and takes the team as an argument, so it has no caller's team to find
-      // missing. `scope: "platform"` is untouched: the platform shelf is not
-      // team-resolved, so a teamless caller still writes there.
+      // userRoot() falls back to a personal directory OUTSIDE teams/ when teamFor() is falsy —
+      // a team-scoped node from such a caller would report success and land where team-gated
+      // search can never reach it. knowledge_search already refuses this caller in these terms;
+      // this closes the same silent-loss path. It does not cover knowledge_reindex, which takes
+      // the team as an argument. `scope: "platform"` is untouched: that shelf is not
+      // team-resolved, so a teamless caller writes there regardless.
       if (scope === "team" && !team) {
         return text("ERROR: you are not in a team — the knowledge base is team-scoped");
       }
@@ -282,8 +280,8 @@ function subjectTagError(tags: string[] | undefined): string | null {
       void indexDoc(root, `_knowledge/nodes/${file}`, doc);
       commitStore(root, who.email, "journal", id);
       const shelfName = scope === "platform" ? KNOWLEDGE_TEAM : team;
-      knowledgeEvent({
-        actor: who.email, action: "add", subject: id, team: shelfName,
+      platformEvent({
+        actor: who.email, kind: "knowledge.add", subject: id, team: shelfName,
         detail: { title, type, scope, file },
       });
       const shelf = shelfName ? `${shelfName}'s shelf` : "your personal shelf";
@@ -413,8 +411,8 @@ function subjectTagError(tags: string[] | undefined): string | null {
       // caller's team: `findId` searches both shelves, so a platform node superseded by
       // somebody with a team of their own belongs to the platform shelf and filing the
       // entry under their team would put it on a log nobody looking for it would read.
-      knowledgeEvent({
-        actor: who.email, action: "supersede", subject: old_id,
+      platformEvent({
+        actor: who.email, kind: "knowledge.supersede", subject: old_id,
         team: root === knowledgeRoot() ? KNOWLEDGE_TEAM : team,
         detail: { supersededBy: new_id, file: oldFile },
       });
@@ -668,8 +666,8 @@ function subjectTagError(tags: string[] | undefined): string | null {
       // which is bounded by a candidate cap and says more about the query than about what
       // reached a reader; `results` is what was actually put in front of the caller. Both
       // numbers are kept so the difference stays visible.
-      knowledgeEvent({
-        actor: who.email, action: "search", subject: (query ?? "").slice(0, 200),
+      platformEvent({
+        actor: who.email, kind: "knowledge.search", subject: (query ?? "").slice(0, 200),
         team,
         detail: {
           returned: results.map((r) => {
@@ -695,4 +693,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
       }));
     },
   );
+  // ── rebuilding a team's knowledge index ────────────────────────────────────────────────
+  //
+
 }

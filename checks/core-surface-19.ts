@@ -96,10 +96,13 @@ const walk = (d: string, out: string[] = []) => {
 // evaluation door imports and this scan does not read — so the list and the directory agree
 // again, and each says the same true thing.
 const EXPECTED = [
-  // `bug_report` ALONE. Filing is something anybody in any flow does and no flow owns, which is
-  // this door's own rule. Reading every report on the deployment and deciding what came of one
-  // are operator acts and live on /manage behind superadmin, beside knowledge_reindex.
-  "bug_report",
+  // ALL FOUR BUG TOOLS, AND knowledge_reindex. Filing was here and answering was on /manage,
+  // because answering for a whole deployment is an operator's act — which is ROLE deciding a
+  // door. Apply the superadmin test, every plugin installed and nothing to hide, and
+  // `bug_report` and `bug_list` answer the same door with nothing but the caller between them.
+  // A bug is one subject and it lives where it is filed; the three operator ones are
+  // registered here behind `if (sup)`, so role still decides who SEES them.
+  "bug_report", "bug_list", "bug_resolve", "bug_delete", "knowledge_reindex",
   "document_approve", "document_list", "document_patch", "document_present", "document_read",
   "document_revise", "document_write", "initiative_close", "initiative_open",
   "initiative_status", "knowledge_add",
@@ -232,11 +235,18 @@ if (/JSON\.stringify\(\[\.\.\.names\]\.sort\(\)\)/.test(skills)) {
 //
 // STRIPPED, for the same reason section 3 is: a comment saying what a tool takes must never
 // be able to satisfy the clause asserting that it takes it.
-const DOOR = "services/gateway/src/access-door.ts";
+// THE MODULE THAT SERVES knowledge_reindex, which is on /core again. It went to /manage
+// because on /core it was TEAM-SCOPED by construction — it rebuilt the caller's own team and
+// could not reach anyone else's, so a restore across the deployment meant asking one person per
+// team. That was a real defect and the `team` argument is what fixed it; the door move came
+// with it on the reasoning "this is an operator's act", which is ROLE deciding a door. The
+// subject is the knowledge index and zz-core owns it: it holds the store and rebuilds it at
+// boot. Role still decides who sees the tool — it is registered behind `if (sup)`.
+const DOOR = "services/zz-core/src/tools/knowledge-index.ts";
 const door = stripComments(read(DOOR) ?? "").join("\n");
 const gate = /^[ \t]*(.*?)server\.registerTool\(\s*\n?\s*"knowledge_reindex"/m.exec(door);
 if (!gate) {
-  fail.push(`${DOOR} does not register knowledge_reindex — it left /core at Task I-38 and ` +
+  fail.push(`${DOOR} does not register knowledge_reindex — it is the module that serves it and ` +
             "/manage is where it went, so neither door serves it and every caller gets " +
             "\"tool not found\"");
 } else {
@@ -274,7 +284,9 @@ if (!gate) {
      "from it \u2014 the indexer reads a missing teams/ directory as \"the volume is not mounted, " +
      "touch nothing\" and answers in the same shape it uses for a team that had nothing to do, " +
      "so a gateway that can see no files at all reports \"nothing had changed\""],
-    [/from team where slug = \$1/,
+    // SCHEMA-QUALIFIED, because zz-core names its schema on every query and the gateway did
+    // not. Same lookup, same reason to make it.
+    [/from zz\.team where slug = \$1/,
      "knowledge_reindex does not look the team up before rebuilding it — reindexTeam DELETES " +
      "the rows of a team with no store directory, and a typo has no directory either"],
     [/\$\{slug\}/,

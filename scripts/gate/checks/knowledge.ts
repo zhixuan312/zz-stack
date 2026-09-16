@@ -372,7 +372,7 @@ check("every act on the knowledge base leaves a record naming who did it", () =>
     const at = src.indexOf(`registerTool(\n    "${name}"`);
     if (at < 0) { bad.push(`${name} is no longer registered where this can read it`); continue; }
     const body = src.slice(at, src.indexOf("\n  );", at));
-    if (!/knowledgeEvent\(/.test(body)) {
+    if (!/platformEvent\(/.test(body)) {
       bad.push(`${name} leaves no record naming the caller — it acts on the knowledge base and ` +
                "the journal cannot say who, when, or on what");
     }

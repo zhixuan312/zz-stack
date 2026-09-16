@@ -147,11 +147,24 @@ const coreSrc = read("services/zz-core/src/server.ts");
 try {
   const { coreServer } = await import("../services/zz-core/dist/orientation.js");
   const server = coreServer("0.0.0-orientation-check");
-  const mods = [...(coreSrc ?? "").matchAll(/import \{ (register\w+) \} from "(\.\/tools\/[\w-]+)\.js"/g)];
+  // EVERY NAME IN THE IMPORT, not the first. This matched `import { one } from "./tools/x.js"`
+  // and nothing else, so the day a tool module exported a second registrar — bugs.ts, when the
+  // operator bug tools joined bug_report on this door — the whole module stopped being built
+  // and the door under test silently lost four tools. The check then reported the door's own
+  // instructions as describing something it does not serve, which is true of the server this
+  // check built and false of the one that runs.
+  const mods = [...(coreSrc ?? "").matchAll(/import \{ ([^}]+) \} from "(\.\/tools\/[\w-]+)\.js"/g)];
   if (!mods.length) blind.push("no tool modules found imported by services/zz-core/src/server.ts");
-  for (const [, fn, rel] of mods) {
+  for (const [, names, rel] of mods) {
     const mod = await import(`../services/zz-core/dist/${rel.replace(/^\.\//, "")}.js`);
-    mod[fn](server);
+    for (const raw of names.split(",")) {
+      const fn = raw.trim();
+      if (!/^register\w+$/.test(fn)) continue;      // a type import is not a registrar
+      // `true` where a registrar takes a role: the door under test is the WHOLE surface, and a
+      // paragraph is checked against everything the door can serve rather than against what one
+      // caller happens to see.
+      (mod[fn] as (s: unknown, sup?: boolean) => void)(server, true);
+    }
   }
   coreClient = await connectTo(server);
 } catch (err) {

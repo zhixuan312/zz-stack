@@ -30,7 +30,7 @@ check("a tool that changes something records that it did", () => {
   // The key itself is never recorded, and that is not what this asks for: THAT a credential
   // changed is provenance, its value is not.
   const MUTATES = /\b(writeFileSync|appendFileSync|withCredentials\(|insert into|update zz\.|delete from)/i;
-  const RECORDS = /\b(logActivity\(|auditAdmin\(|logEvent\(|commitStore\()/;
+  const RECORDS = /\b(logActivity\(|auditAdmin\(|logEvent\(|platformEvent\(|commitStore\()/;
   const bad: string[] = [];
   // Every file that registers a tool, found by asking which ones do. Naming the three that
   // register them today is a list that is correct until somebody adds a fourth door, and the
@@ -229,7 +229,7 @@ check("the platform records its own surface, the way it records everybody else's
     bad.push("boot never awaits recordOwnSurface — nothing records the surface at all");
   }
   for (const factory of factories) {
-    if (!new RegExp(`\\b${factory}\\(\\)`).test(built)) {
+    if (!new RegExp(`\\b${factory}\\(`).test(built)) {
       bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
     }
   }

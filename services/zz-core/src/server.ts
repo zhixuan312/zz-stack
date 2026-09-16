@@ -17,9 +17,9 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { pluginForDoor } from "@zz/catalog";
-import { addressResolver, peerAddress } from "@zz/contracts";
+import { addressResolver, parseCaller, peerAddress } from "@zz/contracts";
 import { reindexAllTeams } from "@zz/indexing";
-import { serveMcp, serviceVersion } from "@zz/mcp-http";
+import { requestHeaders, serveMcp, serviceVersion } from "@zz/mcp-http";
 import express from "express";
 
 import { OWN_TOOLS, recordingDoor } from "./door.js";
@@ -28,9 +28,10 @@ import { buildEvalServer } from "./eval-door.js";
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
 import { registerArtifactTools } from "./tools/artifacts.js";
-import { registerBugTools } from "./tools/bugs.js";
+import { registerBugAdminTools, registerBugTools } from "./tools/bugs.js";
 import { registerInitiativeActTools } from "./tools/initiative-acts.js";
 import { registerInitiativeStatusTools } from "./tools/initiative-status.js";
+import { registerKnowledgeIndexTools } from "./tools/knowledge-index.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
 import { registerSkillTools } from "./tools/skills.js";
 /** WE ARE A BLOCK TOO, and until now the only one that could not be measured.
@@ -109,7 +110,15 @@ async function recordOwnSurface(): Promise<void> {
   }
 }
 
-function buildServer(): McpServer {
+/** `everything` is BOOT recording our own surface, and it is not a convenience.
+ *
+ * The doors are stateless, so this builder runs once per request and reads the caller's role
+ * from the request the way /manage does. At boot there is no request: the role reads as absent,
+ * every role-gated tool goes unregistered, and the surface we record is the one a MEMBER sees.
+ * A release that merely gated a tool would then be reported as having deleted it, which is
+ * worse than no measurement because it reads as a finding. What a version SERVES is its whole
+ * surface. */
+function buildServer(everything = false): McpServer {
   // WHAT THIS DOOR SAYS ABOUT ITSELF, from orientation.ts — the `instructions` a client is
   // handed at `initialize`, before it has called anything. It is constructed there rather
   // than inline here so that a check can build the same server and read the handshake back
@@ -125,12 +134,24 @@ function buildServer(): McpServer {
   // tools are NOT among them any more: they are the zz-plugin-eval flow's own instrument and
   // they are served by eval-door.ts, on the door that flow declares. This door is what every
   // account on the platform carries, so what is registered here is what everybody gets.
+  // WHO IS CALLING, resolved before the first tool is registered — the same thing
+  // buildAccessServer does, for the same reason. The gateway forwards `x-zz-user-role` on
+  // every proxied request and `parseCaller` reads it; `admin` is what identity.ts sets for a
+  // superadmin.
+  //
+  // ROLE PICKS WHICH TOOLS YOU SEE, and the DOOR is picked by subject. Answering a bug report
+  // used to live on /manage while filing one lived here, which is role deciding a door — apply
+  // the superadmin test and `bug_report` and `bug_list` answer differently with nothing but the
+  // caller between them. A bug is one subject and it belongs where it is filed.
+  const sup = everything || parseCaller(requestHeaders()).role === "admin";
   registerSkillTools(server);
   // The version is handed in rather than read inside: the tool records which platform somebody
   // was talking to, and the one place that knows is the line above that built the server.
   registerBugTools(server, serviceVersion(import.meta.url));
+  registerBugAdminTools(server, sup);
   registerArtifactTools(server);
   registerKnowledgeTools(server);
+  registerKnowledgeIndexTools(server, sup);
   registerInitiativeStatusTools(server);
   registerInitiativeActTools(server);
   return server;
@@ -217,6 +238,6 @@ app.listen(8000, "0.0.0.0", () => {
   // the core door would have recorded a platform that serves ten fewer tools than it does —
   // `zz-tool block-surface platform` would then report ten tools DELETED in the release that
   // merely moved them, which is worse than no measurement because it reads as a finding.
-  void (async () => { buildServer(); buildEvalServer(); await recordOwnSurface(); })()
+  void (async () => { buildServer(true); buildEvalServer(); await recordOwnSurface(); })()
     .catch((err: unknown) => console.error("surface record failed:", err));
 });

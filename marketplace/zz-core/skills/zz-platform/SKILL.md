@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.38
+version: 3.39
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -508,35 +508,36 @@ reading later can see one caused the other.
   | initiatives | `/core/mcp` | `initiative_open` `initiative_close` |
   | gates | `/core/mcp` | `document_approve` |
   | sources | `/core/mcp` | `source_add` `source_list` |
-  | knowledge | `/core/mcp` | `knowledge_search` `knowledge_add` `knowledge_supersede` |
+  | knowledge | `/core/mcp` | `knowledge_search` `knowledge_add` `knowledge_supersede` `knowledge_reindex` |
   | skills | `/core/mcp` | `skill_list` `skill_read` |
-  | bugs | `/core/mcp` | `bug_report` |
+  | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `case_record` `finding_record` |
-  | rebuilding a team's index | `/manage/mcp` | `knowledge_reindex` |
-  | answering a bug report | `/manage/mcp` | `bug_list` `bug_resolve` |
+
+**THE DOOR IS DECIDED BY THE SUBJECT, AND YOUR ROLE DECIDES WHAT YOU SEE ON IT.** Those are
+two different cuts and they used to be confused: filing a bug was on `/core` and answering one
+was on `/manage`, because answering is an operator's act. That is role deciding a door. A bug is
+one subject and it lives where it is filed; `bug_list`, `bug_resolve`, `bug_delete` and
+`knowledge_reindex` are registered on `/core` for a superadmin and are simply not in your list
+otherwise — which is a fact about your role, not about the platform.
 
 **A DOOR IS A PLUGIN'S DECLARED SERVER**, and the number of doors is not a design choice — it
 is the count of plugins that declare one. `zz-core` declares `/core/mcp`, `zz-plugin-eval`
 declares `/eval/mcp`, `zz-access` declares `/manage/mcp`. `sdlc` declares none, because it has
 no MCP tools of its own, and that is the normal case rather than a deficiency.
 
-**THE LAST TWO ROWS ARE PROBABLY NOT ON YOUR LIST, FOR TWO DIFFERENT REASONS.** `/core/mcp` is
-in the required baseline plugin, so every account on this platform carries every `/core/mcp`
-row. `/eval/mcp` arrives only with `zz-plugin-eval`, which declares it — so if that plugin is
-not installed, those tools are not on your surface at all, and calling one answers "tool not
-found" rather than refusing you. `/manage/mcp` is a door everyone has and whose LIST IS CUT BY
-ROLE: `knowledge_reindex` is registered to superadmins only, so unless you are one it is not on
-your surface either, and it answers the same "tool not found". In every case they are still the
-platform's tools, which is why they are on this list; what the door decides is who can reach
-them, not whose they are.
+**SOME OF THESE ARE PROBABLY NOT ON YOUR LIST, FOR TWO DIFFERENT REASONS.** `/eval/mcp` arrives
+only with `zz-plugin-eval`, which declares it — so if that plugin is not installed, those tools
+are not on your surface at all, and calling one answers "tool not found" rather than refusing
+you. `bug_list`, `bug_resolve`, `bug_delete` and `knowledge_reindex` are on a door everyone has
+but are registered to superadmins only, so unless you are one they answer the same "tool not
+found". In every case they are still the platform's tools; what varies is who can reach them.
 
-**`knowledge_reindex` is one of the two the gateway serves rather than zz-core.** It rebuilds a
-team's search index from the files, which are the source of truth — the answer to "a search
-returned a document whose file is gone", or to a store restored from a backup. It is an
-operator's act and not a stage of anybody's flow; `zz-admin` is the skill that teaches it. You
-will not need it in the middle of delivery work: every tool that writes a file indexes it in
-the same call.
+**`knowledge_reindex` rebuilds a team's search index from the files**, which are the source of
+truth — the answer to "a search returned a document whose file is gone", or to a store restored
+from a backup. It is an operator's act and not a stage of anybody's flow; `zz-admin` is the
+skill that teaches it. You will not need it in the middle of delivery work: every tool that
+writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
@@ -554,7 +555,7 @@ make every number incomparable with every other number.
   records a gate on a document, while a scheduling plugin's `approve_slot` approves somebody's
   appointment. Same verb, different subject, and only one of them is a gate.
 - **Every tool in this skill and in a flow's skills is THE PLATFORM'S tool of that name** —
-  zz-core's, but for the two the gateway serves. Read `document_approve(path)` as *zz-core's
+  zz-core's, but for the `/manage` ones the gateway serves. Read `document_approve(path)` as *zz-core's
   `document_approve`*, and so on for every one of them. Say it to yourself that way before you
   call it, because that is the whole question — not what the verb sounds like, but which server
   it comes from.

@@ -8,7 +8,7 @@
  * two copies of an indexer agree only until the day one of them is edited. Every caller in
  * this service imports them from the package; there is no second definition to drift from.
  *
- * What stayed is what is zz-core's alone. `knowledgeEvent` writes `zz.event`, which the
+ * What stayed is what is zz-core's alone. `platformEvent` writes `zz.event`, which the
  * gateway's console reads and zz-core's knowledge tools are the only writers of;
  * `journalLog` and `sourceDocument` are shapes two of those tools produce. None of it is
  * indexing, and none of it is anything the gateway has a use for.
@@ -56,11 +56,16 @@ import { db } from "./platform-db.js";
  *
  * FIRE AND FORGET, catching everything: a journal entry that failed to write must never be
  * the reason a node the person already minted reports failure. */
-export function knowledgeEvent(e: {
-  actor: string; action: "add" | "supersede" | "search";
+export function platformEvent(e: {
+  actor: string;
+  /** The FULL kind, `<noun>.<verb>`, because this writes rows for more than one noun now.
+   *  It took an action and prefixed `knowledge.` itself, which meant a second noun needed a
+   *  second function — and a second function writing the same table is the parallel
+   *  implementation this platform keeps removing. */
+  kind: string;
   /** What the row is ABOUT, which is the `subject` column it lands in: the node id for an add
-   *  or a supersede, and the query itself for a search. Named for the column rather than for
-   *  one of the three actions — it was `node`, which a search has no single one of. */
+   *  or a supersede, the query itself for a search, the bug id for a resolve. Named for the
+   *  column rather than for one of the actions — it was `node`, which a search has none of. */
   subject: string;
   team: string | null; detail: Record<string, unknown>;
 }): void {
@@ -69,7 +74,7 @@ export function knowledgeEvent(e: {
   void p.query(
     `insert into zz.event (actor, team_slug, team_id, kind, subject, detail)
      values (lower($1), $2, (select id from zz.team where slug = $2), $3, $4, $5)`,
-    [e.actor, e.team, `knowledge.${e.action}`, e.subject, JSON.stringify(e.detail)],
+    [e.actor, e.team, e.kind, e.subject, JSON.stringify(e.detail)],
   ).catch(() => undefined);
 }
 /** Append a row to the journal's human-readable log. It is markdown, so it

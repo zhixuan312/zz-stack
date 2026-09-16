@@ -65,13 +65,19 @@ import { MANAGE_ALIAS } from "../packages/contracts/dist/index.js";
 
 const fail: string[] = [];
 // A LIST THAT GOES SHORT THE MOMENT A DOOR MODULE IS ADDED, and it did: the bug tools moved
-// into admin/bugs.ts when bug_delete joined them, and this check reported a superadmin was no
-// longer offered bug_list or bug_resolve — a door that had not changed at all. The list is kept
-// rather than derived because a walk of services/gateway/src would also sweep up /core and the
-// console, which are different doors; so the rule is that a new /manage module is added HERE in
-// the same commit that creates it, and the count below is what catches forgetting.
+// into a module of their own when bug_delete joined them, and this check reported a superadmin
+// was no longer offered bug_list or bug_resolve — a door that had not changed at all. The list
+// is kept rather than derived because a walk of services/gateway/src would also sweep up /core
+// and the console, which are different doors; so the rule is that a new /manage module is added
+// HERE in the same commit that creates it, and the count below is what catches forgetting.
+//
+// THE BUG MODULE IS GONE FROM THIS LIST, not repointed at where it moved to. All four bug tools
+// are on /core now: the split had filing on one door and answering on another, which is ROLE
+// deciding a door rather than subject. Pointing this list at zz-core's module instead would
+// make the check read four /core tools as /manage's and assert a surface this door does not
+// have — which it did, for exactly one run, before this comment.
 const FILES = ["services/gateway/src/access-door.ts", "services/gateway/src/admin.ts",
-               "services/gateway/src/admin/flows.ts", "services/gateway/src/admin/bugs.ts"];
+               "services/gateway/src/admin/flows.ts"];
 
 /** Source with comments removed. Not for the description scan — a description is a string
  *  literal and survives this — but for every question of the form "is this name still HERE",
@@ -121,13 +127,13 @@ const MEMBER = ["team_mine", "team_switch", "client_setup",
                 "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list", "install_list",
                 "catalog_list"];
 const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
-// `bug_list` and `bug_resolve` are superadmin and not lead, deliberately. A report is not
-// team-scoped — the platform is one deployment and a defect one team hits is one every team
-// has — so the list is everybody's reports, and handing it to a team's own admin would show
-// them every other team's. That is a wider reading of "admin" than a team admin was given.
+// THE BUG TOOLS AND knowledge_reindex ARE NOT HERE ANY MORE, and that is the change rather
+// than an omission. They were superadmin-only on this door because answering for a whole
+// deployment is an operator's act — but the door a tool sits on is decided by its SUBJECT, and
+// role decides only who sees it. Filing a bug on /core while answering one lived here was the
+// clearest case of the two cuts being confused. All four are on /core now, still superadmin.
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
-               "team_create", "team_archive", "knowledge_reindex",
-               "bug_list", "bug_resolve", "bug_delete"];
+               "team_create", "team_archive"];
 
 // The tiers and the frozen table have to describe the same door. Without this, a name could be
 // dropped from a tier and from the rename table together and every count below would agree.
@@ -138,12 +144,11 @@ const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivat
 // `bug_resolve` were born on this door and have never been renamed, so there is no alias entry
 // to derive them from — a tool that has always had one name is invisible to a table of old
 // names, and a rename map is the wrong place to register a new tool.
-// NAMED RATHER THAN DERIVED, and each for the same reason: MANAGE_ALIAS is a table of names
-// that CHANGED, so a tool that never had an old name cannot come out of it. `bug_list` and
-// `bug_resolve` arrived from /core keeping their names; `bug_delete` was new at 0.38.1 and has
-// never been called anything else.
-const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami", "knowledge_reindex",
-                          "bug_list", "bug_resolve", "bug_delete"]);
+// `whoami` NAMED RATHER THAN DERIVED: MANAGE_ALIAS is a table of names that CHANGED, so a tool
+// that never had an old name cannot come out of it. The four that used to be named beside it —
+// knowledge_reindex and the three bug tools — are on /core now, so this door does not claim
+// them and neither does a tier below.
+const expected = new Set([...Object.values(MANAGE_ALIAS), "whoami"]);
 const tiered = new Set([...MEMBER, ...LEAD, ...SUPER]);
 for (const n of expected) {
   if (!tiered.has(n)) fail.push(`${n} is a current /manage name and no tier above claims it`);
@@ -181,7 +186,11 @@ for (const [who, got, want] of tierSets) {
 // ONE PLACE, because the first version of this spelled the number in the condition and again
 // in the sentence, and a mutation that changed the condition alone printed "/manage registers
 // 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
-const DOOR_SIZE = 24;
+// 20, was 24. Four tools left for /core in the same change: bug_list, bug_resolve, bug_delete
+// and knowledge_reindex. They were here because answering for a deployment is an operator's
+// act — which is role deciding a door. The subject decides the door; role decides who sees it,
+// and all four are still superadmin-only, now on /core.
+const DOOR_SIZE = 20;
 if (registered.size !== DOOR_SIZE) {
   fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
             `(34 until the third-party-server layer went, which took ten with it: ` +

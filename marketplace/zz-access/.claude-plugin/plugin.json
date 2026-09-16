@@ -1,7 +1,7 @@
 {
   "name": "zz-access",
   "description": "Access, yours and everybody's: your platform token, your keys for the building blocks, and the setup for whichever client you work in — plus, if your role carries them, the people, teams, flow installs and block grants behind them. One door; the tools you are offered are the ones your role can execute.",
-  "version": "0.43.0+29c5132a",
+  "version": "0.43.0+8dfdac28",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

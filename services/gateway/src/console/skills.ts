@@ -156,7 +156,11 @@ export function mountSkills(app: Express): void {
     const name = req.params.name;
     const [mix, top] = await Promise.all([
       db.query(
-        `select coalesce(block,'platform') as surface, count(*) as calls,
+        // THE DOOR, FROM `subject`, WHICH IS ALWAYS PRESENT. This read `block`, a column nothing
+        // has written since attribution became a fact about the door — so every row fell into one
+        // `platform` bucket and the split reported a composition of one. `subject` is
+        // `<door>:<tool>` on every tool_call.
+        `select split_part(subject,':',1) as surface, count(*) as calls,
                 count(*) filter (where ok = false) as failed, count(distinct subject) as tools
            from zz.event where kind = 'tool_call' and step = $1
           group by 1 order by count(*) desc`, [name]),

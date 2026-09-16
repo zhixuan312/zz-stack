@@ -432,32 +432,20 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         "its commitments down — the fit ledger keyed by acceptance criterion, the criteria " +
         "themselves and who verifies each — and the gateway already records what every tool " +
         "call did. Neither exists for this; reconciling only joins them. " +
-        "Ask by `initiative` to review one, or by `block` to ask what this team has predicted " +
-        "about a block across everything it has run. Those are the two questions, and there " +
-        "is no third.",
+        "Ask by `initiative`. THE RIGHT-HAND SIDE IS GONE and this says so rather than " +
+        "implying it: what a claim was about used to be `zz.decision.blocks`, joined to " +
+        "`zz.event.block` — and 0 of 541 claims ever carried one, so the \"what happened\" half " +
+        "has been empty for its whole life. Both columns are dropped. This returns the claims " +
+        "a stage recorded; nothing joins them to telemetry until something records which " +
+        "plugin a claim is about.",
       inputSchema: {
-        initiative: z.string().optional().describe("Reconcile this one initiative."),
-        block: z.string().optional().describe("Ask what was predicted about this block, everywhere."),
+        initiative: z.string().min(1).describe("Reconcile this one initiative."),
       },
     },
-    async ({ initiative, block }) => {
+    async ({ initiative }) => {
       const p = db();
       if (!p) return text("ERROR: no platform database — reconciliation reads zz.decision and zz.event");
-      if (!initiative && !block) {
-        return text("ERROR: ask by `initiative` (review this one) or by `block` (what have we predicted about it). Those are the two questions.");
-      }
-      // ASKING BOTH QUESTIONS AT ONCE ANSWERS NEITHER.
-      //
-      // The precedence below is a ternary, not a `??` — once `initiative` is truthy, `block`
-      // is never referenced again. Supplying both used to silently reconcile the initiative
-      // and drop the block question with no trace. Refused instead, beside the
-      // neither-supplied guard above.
-      if (initiative && block) {
-        return text(
-          "ERROR: `initiative` and `block` are two different questions — one asks what this " +
-          "initiative predicted, the other what this block was called for. You supplied both " +
-          "(`" + initiative + "` / `" + block + "`). Ask one.");
-      }
+
       const who = parseCaller(requestHeaders());
       const team = await teamFor(who.email);
       if (!team) return text("ERROR: no team — reconciliation is scoped to the team that made the predictions");
@@ -474,92 +462,34 @@ export function registerInitiativeStatusTools(server: McpServer): void {
         initiative: string; path: string; role: string; key: string;
         verdict: string; qualifier: string; detail: string; checker: string; blocks: string[];
       }>(
-        `select initiative, path, role, key, verdict, qualifier, detail, checker, blocks
+        `select initiative, path, role, key, verdict, qualifier, detail, checker
            from zz.decision d where ${where}
           order by initiative, path, key`,
-        [team, initiative ?? block]);
+        [team, initiative]);
       if (!claims.length) {
-        return text(initiative
-          ? `No claims recorded for ${initiative}. A stage records them by writing its fit ledger or its acceptance criteria; nothing to reconcile until one has.`
-          : `Nothing has been predicted about '${block}' by ${team}.`);
+        return text(`No claims recorded for ${initiative}. A stage records them by writing its fit ledger or its acceptance criteria; nothing to reconcile until one has.`);
       }
 
-      // The right half: what the blocks those claims name actually did. `subject` is
-      // `<block>:<tool>`, so splitting on the colon is the whole join. Refusals are counted
-      // by the platform's own refusal text, which is the only mechanical account of WHY
-      // something did not work — a status code would be blind to it, since a refusing MCP
-      // tool answers 200 with `ERROR:` in its text.
-      //
-      // split_part, not LIKE. A block name comes from a document's `server:` line, which is
-      // free text an author wrote, and `_` is a LIKE wildcard matching any single character —
-      // so a block called `my_block` would have counted calls belonging to `myXblock` too.
-      // An exact comparison on the part before the colon has no metacharacters to escape.
-      // SCOPED TO THIS INITIATIVE'S OWN LIFETIME when one was named. Without a bound, the
-      // right half was every call the team had ever made — so a fresh initiative's
-      // predictions were read against every previous initiative's calls, and the more work a
-      // team did the more wrong this got.
-      //
-      // The remedy that was in place instead was to DELETE the events between runs, which
-      // made the join correct by destroying the only central evidence the improvement loop
-      // has. Ten evaluation rounds ran under it and the database ended holding one of them.
-      // Scoping the join is the same correctness for none of the loss.
-      //
-      // Asking by BLOCK is deliberately unscoped: "what have we predicted about casebox" is a
-      // question about a block across all of a team's work, and bounding it to one
-      // initiative would answer a different one.
-      let since: string | null = null;
-      if (initiative) {
-        const { rows: w } = await p.query<{ started: string | null }>(
-          `select min(created_at)::text as started from zz.doc
-            where team_slug = $1 and initiative = $2`, [team, initiative]);
-        since = w[0]?.started ?? null;
-      }
-      // `block`, which is where the block's name lives since zz.event got real columns. It was
-      // `surface` before that, and this query kept asking for the old name for a day and a half —
-      // answering `column "surface" does not exist` to every caller, 63 times in the first minute
-      // and silently thereafter, because nothing calls reconcile on a schedule and a migration
-      // that compiles is a migration that looks finished.
-      //
-      // The names on both sides of this join have to be the SAME name. zz.event carries the bare
-      // `casebox`; zz.decision.blocks carried casebox spelled six ways until it was normalised at index
-      // time, so this join matched about a third of the rows it should
-      // have and reported the rest as predictions about nothing.
-      const named = [...new Set(claims.flatMap((c) => c.blocks ?? []))].filter(Boolean);
-      const actual = new Map<string, { calls: number; refused: number; top: string | null }>();
-      for (const b of named) {
-        const { rows } = await p.query<{ calls: string; refused: string; top: string | null }>(
-          `select count(*)::text as calls,
-                  count(*) filter (where ok is false)::text as refused,
-                  (select refusal from zz.event
-                    where kind = 'tool_call' and team_slug = $1 and block = $2 and refusal is not null
-                      and ($3::timestamptz is null or ts >= $3::timestamptz)
-                    group by refusal order by count(*) desc limit 1) as top
-             from zz.event
-            where kind = 'tool_call' and team_slug = $1 and block = $2
-              and ($3::timestamptz is null or ts >= $3::timestamptz)`,
-          [team, b, since]);
-        const r = rows[0];
-        actual.set(b, { calls: Number(r?.calls ?? 0), refused: Number(r?.refused ?? 0), top: r?.top ?? null });
-      }
-
+      // THE RIGHT HALF IS GONE, and it never worked. It joined `zz.decision.blocks` — which
+      // plugin a claim was about — to `zz.event.block`, and 0 of 541 claims on this deployment
+      // ever carried one, so it reported "predictions about nothing" for every row it had. Both
+      // columns are dropped by migration 057. Nothing records which plugin a claim concerns, so
+      // there is nothing to join to; saying so is better than a join that returns zeroes and
+      // reads as evidence that nothing went wrong.
       const out = claims.map((c) => ({
         initiative: c.initiative,
         key: c.key,
         predicted: { verdict: c.verdict, qualifier: c.qualifier || null, by: c.detail || null,
-                     verified_by: c.checker || null, blocks: c.blocks ?? [] },
-        happened: (c.blocks ?? []).map((b) => ({ block: b, ...(actual.get(b) ?? { calls: 0, refused: 0, top: null }) })),
+                     verified_by: c.checker || null },
       }));
-      const unmet = out.filter((o) => o.happened.some((h) => h.refused > 0));
       return text(JSON.stringify({
         team,
-        scope: initiative ? { initiative } : { block },
-        // The window is printed, because a scoped count that does not say what it was scoped
-        // to is indistinguishable from an unscoped one that happened to be small.
-        counting_calls_since: since ?? "(every call this team has made — asking by block is not bounded to one initiative)",
+        scope: { initiative },
         claims: out.length,
-        claims_whose_blocks_refused: unmet.length,
-        note: "A refusal count is not a verdict — it is where to look. The prediction is on the left in the flow's own words; what the blocks did is on the right.",
-        reconciliation: out,
+        note: "What a stage PREDICTED, in the flow's own words. There is no right-hand side: " +
+              "nothing records which plugin a claim is about, so nothing joins these to what " +
+              "actually happened. A claim listed here has not been checked against anything.",
+        claims_recorded: out,
       }, null, 2));
     },
   );

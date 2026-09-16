@@ -338,7 +338,7 @@ export function mountOverview(app: Express): void {
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
-              e.subject, e.initiative, e.step, e.block, e.ok, e.refusal
+              e.subject, e.initiative, e.step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
         where ($1::text is null or e.kind = $1)
@@ -347,7 +347,7 @@ export function mountOverview(app: Express): void {
       [kind, failedOnly, limit])
       : await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
-              e.subject, e.initiative, e.step, e.block, e.ok, e.refusal
+              e.subject, e.initiative, e.step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
         where ($1::text is null or e.kind = $1)
@@ -386,7 +386,7 @@ export function mountOverview(app: Express): void {
               (select count(*) from zz.pat pt
                 where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
               (select to_char(max(pt.last_used_at) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
-                where pt.principal_id = p.id)                                  as last_used,
+                where pt.principal_id = p.id)                                  as last_used
          from zz.principal p
          left join zz.team t on t.id = p.active_team_id
         order by p.role, p.created_at`)
@@ -400,7 +400,7 @@ export function mountOverview(app: Express): void {
               (select count(*) from zz.pat pt
                 where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
               (select to_char(max(pt.last_used_at) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
-                where pt.principal_id = p.id)                                  as last_used,
+                where pt.principal_id = p.id)                                  as last_used
          from zz.principal p
          left join zz.team t on t.id = p.active_team_id
         where exists (select 1 from zz.membership m2 join zz.team tm2 on tm2.id = m2.team_id

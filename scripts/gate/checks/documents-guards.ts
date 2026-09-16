@@ -238,9 +238,15 @@ check("every exclusive input pair refuses both-supplied, distinctly", () => {
   // future refusal that wrapped its pair across two lines would be reported as missing when
   // it is merely formatted differently. That is the safe direction — loud, not silent — but
   // the fix is to keep the pair on one line, not to widen the bound back out.
+  //
+  // knowledge_reconcile IS NO LONGER A PAIR. It asked by `initiative` or by `block`, and the
+  // second question is gone with the columns it read: what a claim was ABOUT lived in
+  // `zz.decision.blocks`, joined to `zz.event.block`, and 0 of 541 claims ever carried one.
+  // Migration 057 drops both. The tool now takes one required `initiative` and there is no
+  // exclusive pair to refuse — a row kept here would assert a guard against an argument the
+  // tool does not accept.
   const PAIRS = [
     { tool: "initiative_close", a: "accepted_by", b: "no_signoff_reason", neither: "needs `no_signoff_reason`" },
-    { tool: "knowledge_reconcile", a: "initiative", b: "block", neither: "ask by" },
   ];
   const src = zzCoreSource();
   const bad: string[] = [];

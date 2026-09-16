@@ -171,7 +171,7 @@ export function mountInitiatives(app: Express): void {
                 length(coalesce(body,'')) as bytes
            from zz.doc where team_slug = $1 and initiative = $2 order by path`, [team, slug]),
       db.query(
-        `select path, role, key, verdict, qualifier, detail, checker, blocks
+        `select path, role, key, verdict, qualifier, detail, checker
            from zz.decision where team_slug = $1 and initiative = $2
           order by path, key`, [team, slug]),
     ]);
@@ -245,7 +245,7 @@ export function mountInitiatives(app: Express): void {
            from zz.doc where team_slug = $1 and initiative = $2 and path = $3`,
         [team, initiative, path]),
       db.query(
-        `select key, role, verdict, qualifier, detail, checker, blocks
+        `select key, role, verdict, qualifier, detail, checker
            from zz.decision
           where team_slug = $1 and initiative = $2 and path = $3
           order by key`, [team, initiative, path]),

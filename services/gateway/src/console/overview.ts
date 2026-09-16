@@ -358,7 +358,7 @@ export function mountOverview(app: Express): void {
     res.json({ events: rows, limit });
   }));
 
-  /** People, their teams, their tokens' state, and their block connections.
+  /** People, their teams, and their tokens' state.
    *
    * Never the tokens. `zz.pat` stores a hash and this returns whether one is
    * live and when it was last used — which is what an administrator asks — and
@@ -366,7 +366,7 @@ export function mountOverview(app: Express): void {
   app.get("/api/console/people", handler("people", async (_req, res, scope) => {
     const db = platformDb();
     // EVERY PERSON ON THE PLATFORM — their team memberships, their token state, their
-    // block connections — is exactly the directory-wide view a team scope must not see
+    // — is exactly the directory-wide view a team scope must not see
     // whole: two colleagues in one department have no standing to read another
     // department's roster just because both signed in through the same the identity provider gateway.
     // A team scope narrows this to people who are members of the caller's own team;
@@ -387,11 +387,6 @@ export function mountOverview(app: Express): void {
                 where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
               (select to_char(max(pt.last_used_at) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
                 where pt.principal_id = p.id)                                  as last_used,
-              (select coalesce(json_agg(json_build_object(
-                        'block', bt.block, 'scope', bt.scope,
-                        'expires', to_char(bt.expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
-                      order by bt.block), '[]'::json)
-                 from zz.block_token bt where bt.principal_id = p.id)          as connections
          from zz.principal p
          left join zz.team t on t.id = p.active_team_id
         order by p.role, p.created_at`)
@@ -406,11 +401,6 @@ export function mountOverview(app: Express): void {
                 where pt.principal_id = p.id and pt.revoked_at is null)        as tokens,
               (select to_char(max(pt.last_used_at) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.pat pt
                 where pt.principal_id = p.id)                                  as last_used,
-              (select coalesce(json_agg(json_build_object(
-                        'block', bt.block, 'scope', bt.scope,
-                        'expires', to_char(bt.expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))
-                      order by bt.block), '[]'::json)
-                 from zz.block_token bt where bt.principal_id = p.id)          as connections
          from zz.principal p
          left join zz.team t on t.id = p.active_team_id
         where exists (select 1 from zz.membership m2 join zz.team tm2 on tm2.id = m2.team_id

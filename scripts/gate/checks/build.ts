@@ -92,8 +92,6 @@ check("nothing in testing/ computes — it drives, and the computing lives in pa
   // The real line is COMPUTATION versus ORCHESTRATION. A file that touches no deployment and
   // no database is not driving anything: it is a program, it belongs where programs are
   // compiled and tested, and in testing/ nothing imports it and no test reaches it.
-  //
-  // oauth-delegation.ts stands: it drives a live deployment end to end.
   const dir = join(root, "testing");
   const bad: string[] = [];
   for (const f of readdirSync(dir)) {

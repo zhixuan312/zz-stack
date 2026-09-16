@@ -2,6 +2,13 @@
 --
 -- "Block" meant two unrelated things, and only one of them is being removed here.
 --
+-- WHY IT IS APPLIED NOW. This sat in migrations-next because the code still WROTE these
+-- columns: events.ts stamped `block` and `block_version` on every row, document_write took a
+-- `blocks` argument, and the indexer projected both into zz.doc and zz.decision. All of that
+-- is gone — attribution is a fact about the door, the selection machinery no flow declared is
+-- deleted, and a manifest no longer names building blocks. Nothing writes these and nothing
+-- reads them.
+--
 --   REMOVED — A THIRD PARTY'S SERVER. `zz.tool_grant` said a team may reach one,
 --   `zz.block_token` held a person's own key for it, `zz.block_oauth_state` its delegated
 --   sign-in, and `zz.event.block` / `zz.doc.blocks` / `zz.decision.blocks` /
@@ -37,3 +44,6 @@ drop index if exists zz.decision_blocks;
 alter table zz.event    drop column if exists block;
 alter table zz.doc      drop column if exists blocks;
 alter table zz.decision drop column if exists blocks;
+-- Written from zz.event.block/block_version, both of which this file also removes, and
+-- read by nothing: 0 of 541 decision rows ever carried one.
+alter table zz.decision drop column if exists block_versions;

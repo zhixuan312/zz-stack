@@ -139,13 +139,8 @@ docs/       written for somebody who does not work on this every day.
             about design.
 testing/    the shell around the engines: eval-step.sh (every requirement in
             the corpus through ONE step, each in its own initiative, keeping
-            what it produced), oauth-delegation.ts (the delegated-access
-            loop end to end against a live deployment, starting from a REVOKED
-            grant — without that baseline "the block names a person" would
-            prove nothing), block-oracle.sh (which blocks a requirement needs,
-            decided from the brief alone and blind to what was chosen),
-            reset-store.sh (archives a corpus's initiatives so the next version
-            answers instead of resuming the last one). The
+            what it produced), reset-store.sh (archives a corpus's initiatives
+            so the next version answers instead of resuming the last one). The
             engines themselves
             are TypeScript, in
             packages/tools/src/testing/:

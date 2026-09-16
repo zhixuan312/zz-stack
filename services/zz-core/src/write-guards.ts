@@ -388,6 +388,23 @@ export function stampEnvelope(chain: Chain, relPath: string, content: string): s
   // is not in, and `type` comes from a role the manifest never gave it — stamping those
   // would be the platform inventing facts about a document it does not govern.
   const governed = chain.docs.has(parts[1]);
+  // GATED, NOT MERELY GOVERNED. `status` records a gate verdict, so it exists only where the
+  // manifest declares a gate — per flow, per document, and never derived from the file's name,
+  // its role or its type. The same document may be gated in one flow and not in another, and
+  // that flow's manifest is right both times.
+  //
+  // This condition was `governed`, which is one predicate too wide: every document the manifest
+  // DECLARED got `status: draft`, including the ones it declares without a gate. Measured on
+  // this deployment: 17 live documents — explore.md, spec-audit.md, plan-audit.md — carried a
+  // verdict no manifest ever asked for, and an ungated document could not be rewritten by
+  // document_write at all, because ownershipCheck compared the fresh envelope's absent status
+  // against the phantom one on disk and read the difference as an attempt to remove a
+  // platform-owned field.
+  //
+  // The function's own comment below already states the rule for a document the manifest does
+  // not declare: status belongs to "the gate lifecycle a non-chain document is not in". A
+  // declared-but-ungated document is not in that lifecycle either.
+  const gated = chain.documents.some((d) => d.name === parts[1] && d.gate);
   const role = governed ? chain.roles[parts[1]] : undefined;
   let out = content;
   if (role) {
@@ -419,7 +436,7 @@ export function stampEnvelope(chain: Chain, relPath: string, content: string): s
   // A new chain document IS a draft — that is what "new" means here — so the platform says
   // so, and `document_approve()` is the only thing that moves it afterwards. Add-only: document_approve()'s
   // own write already carries `status: approved` and must not be stamped back down.
-  if (governed && present.status === undefined) add.push("status: draft");
+  if (gated && present.status === undefined) add.push("status: draft");
 
   // `version` too, and for the same reason as `status`: the platform is the only thing that
   // knows it. It starts at 1 and moves only through document_revise, which is an act — so a

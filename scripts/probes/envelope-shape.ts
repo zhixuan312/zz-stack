@@ -84,10 +84,22 @@ try {
   process.exit(0);
 }
 
+// THE MANIFEST'S OWN SHAPE, including `documents` with each entry's gate. This fixture used
+// to carry only `docs` and `roles`, which is what a Chain looked like before the manifest's
+// document list reached it — and a stamp that reads `gate` cannot be tested by a chain that
+// has none.
+//
+// Two declared documents, differing ONLY in `gate`, and deliberately sharing a role: the rule
+// is that the MANIFEST decides adjudication, per flow and per document, so neither the role
+// nor the filename may be what the stamp keys on.
 const chain = {
   name: "ops-flow",
-  docs: new Set(["spec.md"]),
-  roles: { "spec.md": "agreement" },
+  documents: [
+    { name: "spec.md", role: "agreement", gate: true },
+    { name: "spec-audit.md", role: "agreement" },
+  ],
+  docs: new Set(["spec.md", "spec-audit.md"]),
+  roles: { "spec.md": "agreement", "spec-audit.md": "agreement" },
 };
 const env = (doc: string) => parseEnvelope(doc);
 
@@ -98,6 +110,37 @@ const env = (doc: string) => parseEnvelope(doc);
   for (const [k, want] of [["flow", "ops-flow"], ["type", "agreement"],
                            ["status", "draft"], ["version", "1"], ["updated_at", TODAY]]) {
     if (e[k] !== want) bad.push(`a declared document got ${k}=${JSON.stringify(e[k])}, wanted ${JSON.stringify(want)}`);
+  }
+}
+
+// A document the manifest DECLARES WITHOUT A GATE. It gets the flow, the role, the version
+// and the date — but NO status, because a status records a gate verdict and this document's
+// manifest never asked anyone for one. An ungated document and a source are information:
+// provenance and a version, and no verdict.
+//
+// This is the path the stamp used to get wrong. It conditioned `status` on "the manifest
+// declares this document", which is one predicate too wide — a manifest declares gated and
+// ungated documents alike. Measured on the deployment before the fix: 17 live documents
+// (explore.md, spec-audit.md, plan-audit.md) carried a verdict no manifest asked for, and an
+// ungated document could not be rewritten by document_write at all, because ownershipCheck
+// read the fresh envelope's absent status against the phantom one on disk as an attempt to
+// remove a platform-owned field.
+//
+// `version` is the control, and it is what stops this being satisfied by stamping nothing:
+// version is provenance rather than a verdict, so an ungated document still carries it.
+{
+  const out = stamp(chain, "i/spec-audit.md", "# Audit\n\nbody\n");
+  const e = env(out);
+  if (e.status !== undefined) {
+    bad.push(`a declared but UNGATED document was stamped status=${JSON.stringify(e.status)} — ` +
+             "a status records a gate verdict, and this document's manifest declares no gate");
+  }
+  for (const [k, want] of [["flow", "ops-flow"], ["type", "agreement"],
+                           ["version", "1"], ["updated_at", TODAY]]) {
+    if (e[k] !== want) {
+      bad.push(`a declared but ungated document got ${k}=${JSON.stringify(e[k])}, wanted ${JSON.stringify(want)} — ` +
+               "an ungated document still carries its provenance and its version");
+    }
   }
 }
 

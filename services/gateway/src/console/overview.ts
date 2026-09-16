@@ -94,7 +94,7 @@ export function mountOverview(app: Express): void {
     // de-duplication key inside an aggregate, not a predicate. The team branch counts
     // `distinct initiative` instead — inside one team the slug is already fixed, so the
     // tuple would be the same key written twice.
-    const [counts, totals, trend, kinds, refusals] = scope.kind === "platform"
+    const [counts, totals, toolTrend, kinds, byTool, byMessage] = scope.kind === "platform"
       ? await Promise.all([
       // One statement, and deliberately NOT joined to zz.event: an initiative is
       // counted by (team_slug, initiative) over zz.doc, and mixing that into a
@@ -125,17 +125,40 @@ export function mountOverview(app: Express): void {
            from zz.event
           where ($1::timestamptz is null or ts >= $1)`,
         [since]),
-      db.query<{ bucket: string; events: string; failures: string }>(
-        // AN INSTANT, not a pre-formatted local string — the rule this file states above
-        // and which an HOUR bucket is the first thing here to actually depend on. A bare
-        // `15:00` rendered from the database's own timezone is 23:00 to the reader in
-        // Singapore this platform is deployed for: eight hours wrong, on every bucket,
-        // with nothing on screen saying which zone it is. The browser formats it.
-        `select to_char(date_trunc($2::text, ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
-                count(*) as events,
-                count(*) filter (where ok = false) as failures
-           from zz.event
-          where ($1::timestamptz is null or ts >= $1)
+      db.query<{ bucket: string; inside: string; outside: string; refused: string }>(
+        /* TOOL CALLS, SPLIT THREE WAYS THAT ARE DISJOINT AND SUM TO THE TOTAL — so the
+         * chart can stack them and the stack height is the real number of calls.
+         *
+         * This used to be every EVENT with a failure line over it, which put bulk imports
+         * and admin acts in the same series as somebody working and made the chart's
+         * biggest feature an archive load. Tool calls are the thing an operator acts on.
+         *
+         * `ok is not false`, not `ok = true`: a tool call whose `ok` was never written
+         * recorded no refusal, and calling it refused would invent one. It is placed by
+         * its run instead, like any other call that did not fail.
+         *
+         * AN INSTANT, not a pre-formatted local string — the rule this file states above
+         * and which an HOUR bucket is the first thing here to actually depend on. A bare
+         * `15:00` rendered from the database's own timezone is 23:00 to the reader in
+         * Singapore this platform is deployed for: eight hours wrong, on every bucket,
+         * with nothing on screen saying which zone it is. The browser formats it. */
+        /* EVERY BUCKET IN THE WINDOW, INCLUDING THE EMPTY ONES. Grouping the events alone
+         * emits no row for a quiet hour, and a chart that draws thirteen unevenly spaced
+         * buckets at even intervals states a shape the data does not have. Measured here:
+         * a 24-hour window returned 13 rows, and eleven hours of silence would have been
+         * drawn as no time at all. An hour with no tool calls is a real zero. */
+        `with bounds as (
+           select coalesce($1::timestamptz, min(ts)) as lo, max(ts) as hi
+             from zz.event where kind='tool_call'),
+         slot as (
+           select generate_series(date_trunc($2::text, lo), date_trunc($2::text, hi),
+                                  ('1 ' || $2)::interval) as b from bounds)
+         select to_char(slot.b at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+                count(*) filter (where e.id is not null and e.ok is not false and e.run_id is not null) as inside,
+                count(*) filter (where e.id is not null and e.ok is not false and e.run_id is null)     as outside,
+                count(*) filter (where e.ok = false)                                                   as refused
+           from slot left join zz.event e
+             on date_trunc($2::text, e.ts) = slot.b and e.kind='tool_call'
           group by 1 order by 1`,
         [since, grain]),
       db.query<{ kind: string; n: string; failed: string }>(
@@ -144,13 +167,30 @@ export function mountOverview(app: Express): void {
           where ($1::timestamptz is null or ts >= $1)
           group by 1 order by count(*) desc`,
         [since]),
-      db.query<{ block: string; tool: string; n: string; refusal: string }>(
-        `select coalesce(block,'(platform)') as block, subject as tool,
-                count(*) as n, min(refusal) as refusal
+      /* REFUSALS, ON TWO AXES, OVER THE SAME POPULATION THE REFUSAL RATE TILE COUNTS.
+       *
+       * `kind='tool_call'`, which the old statement did not say — it took every failed
+       * event of any kind, so this panel's total and the tile's total were two different
+       * numbers wearing one word. If the panel says 191 and the tile says 191 they have
+       * to be the same 191.
+       *
+       * WHICH TOOL and WHICH MESSAGE are different questions and neither answers the
+       * other: one tool refusing for nine reasons is a surface problem, and nine tools
+       * refusing with one message is a single bug. The panel offers both. */
+      db.query<{ tool: string; n: string }>(
+        `select subject as tool, count(*) as n
            from zz.event
-          where ok = false and subject is not null
+          where kind='tool_call' and ok = false and subject <> ''
             and ($1::timestamptz is null or ts >= $1)
-          group by 1,2 order by count(*) desc limit 12`,
+          group by 1 order by count(*) desc limit 12`,
+        [since]),
+      db.query<{ message: string; tool: string; tools: string; n: string }>(
+        `select refusal as message, min(subject) as tool,
+                count(distinct subject) as tools, count(*) as n
+           from zz.event
+          where kind='tool_call' and ok = false and refusal is not null
+            and ($1::timestamptz is null or ts >= $1)
+          group by 1 order by count(*) desc limit 12`,
         [since]),
     ])
       : await Promise.all([
@@ -185,13 +225,22 @@ export function mountOverview(app: Express): void {
           where t.slug = $1
             and ($2::timestamptz is null or e.ts >= $2)`,
         [scope.slug, since]),
-      db.query<{ bucket: string; events: string; failures: string }>(
-        `select to_char(date_trunc($3::text, e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
-                count(*) as events,
-                count(*) filter (where e.ok = false) as failures
-           from zz.event e join zz.team t on t.id = e.team_id
-          where t.slug = $1
-            and ($2::timestamptz is null or e.ts >= $2)
+      db.query<{ bucket: string; inside: string; outside: string; refused: string }>(
+        `with bounds as (
+           select coalesce($2::timestamptz, min(e.ts)) as lo, max(e.ts) as hi
+             from zz.event e join zz.team t on t.id = e.team_id
+            where e.kind='tool_call' and t.slug = $1),
+         slot as (
+           select generate_series(date_trunc($3::text, lo), date_trunc($3::text, hi),
+                                  ('1 ' || $3)::interval) as b from bounds)
+         select to_char(slot.b at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+                count(*) filter (where e.id is not null and e.ok is not false and e.run_id is not null) as inside,
+                count(*) filter (where e.id is not null and e.ok is not false and e.run_id is null)     as outside,
+                count(*) filter (where e.ok = false)                                                   as refused
+           from slot
+           left join zz.team t on t.slug = $1
+           left join zz.event e
+             on date_trunc($3::text, e.ts) = slot.b and e.kind='tool_call' and e.team_id = t.id
           group by 1 order by 1`,
         [scope.slug, since, grain]),
       db.query<{ kind: string; n: string; failed: string }>(
@@ -201,13 +250,20 @@ export function mountOverview(app: Express): void {
             and ($2::timestamptz is null or e.ts >= $2)
           group by 1 order by count(*) desc`,
         [scope.slug, since]),
-      db.query<{ block: string; tool: string; n: string; refusal: string }>(
-        `select coalesce(e.block,'(platform)') as block, e.subject as tool,
-                count(*) as n, min(e.refusal) as refusal
+      db.query<{ tool: string; n: string }>(
+        `select e.subject as tool, count(*) as n
            from zz.event e join zz.team t on t.id = e.team_id
-          where t.slug = $1 and e.ok = false and e.subject is not null
+          where e.kind='tool_call' and t.slug = $1 and e.ok = false and e.subject <> ''
             and ($2::timestamptz is null or e.ts >= $2)
-          group by 1,2 order by count(*) desc limit 12`,
+          group by 1 order by count(*) desc limit 12`,
+        [scope.slug, since]),
+      db.query<{ message: string; tool: string; tools: string; n: string }>(
+        `select e.refusal as message, min(e.subject) as tool,
+                count(distinct e.subject) as tools, count(*) as n
+           from zz.event e join zz.team t on t.id = e.team_id
+          where e.kind='tool_call' and t.slug = $1 and e.ok = false and e.refusal is not null
+            and ($2::timestamptz is null or e.ts >= $2)
+          group by 1 order by count(*) desc limit 12`,
         [scope.slug, since]),
     ]);
     const c = counts.rows[0], t = totals.rows[0];
@@ -223,9 +279,21 @@ export function mountOverview(app: Express): void {
         unattributedEvents: +t.unattributed,
       },
       grain,
-      trend: trend.rows.map((r) => ({ bucket: r.bucket, events: +r.events, failures: +r.failures })),
+      toolTrend: toolTrend.rows.map((r) => ({
+        bucket: r.bucket, inside: +r.inside, outside: +r.outside, refused: +r.refused,
+      })),
       eventKinds: kinds.rows.map((r) => ({ kind: r.kind, n: +r.n, failed: +r.failed })),
-      refusals: refusals.rows.map((r) => ({ block: r.block, tool: r.tool, n: +r.n, refusal: r.refusal })),
+      refusals: {
+        /* THE TOTAL IS SUMMED FROM THE TREND, not counted a third time. It is the same
+         * predicate as the trend's `refused` over the same window, so a separate
+         * statement could only ever agree with it or reveal a bug in one of them —
+         * and the panel's total has to equal the tile's. */
+        total: toolTrend.rows.reduce((n, r) => n + +r.refused, 0),
+        byTool: byTool.rows.map((r) => ({ tool: r.tool, n: +r.n })),
+        byMessage: byMessage.rows.map((r) => ({
+          message: r.message, tool: r.tool, tools: +r.tools, n: +r.n,
+        })),
+      },
     });
   }));
 

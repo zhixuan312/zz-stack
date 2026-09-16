@@ -434,19 +434,28 @@ export function registerPluginJudgeTools(server: McpServer): void {
             // today, and a report that does not say so is claiming more than it measured.
             const ownFlow = entryOf(plugin)?.flow ?? "";
             const judging = new Set(items.map((i) => i.docId).filter(Boolean));
-            const candidates = ownFlow ? (await p.query<{ id: string; team_slug: string; initiative: string; path: string }>(`
-              select d.id::text as id, d.team_slug, d.initiative, d.path
+            const candidates = ownFlow ? (await p.query<{ id: string; team_slug: string; initiative: string; path: string; is_node: boolean }>(`
+              select d.id::text as id, d.team_slug, d.initiative, d.path, false as is_node
                 from zz.doc d
                 join zz.team t on t.slug = d.team_slug
                 left join zz.initiative i on i.team_id = t.id and i.slug = d.initiative
                where d.path not like '\\_versions/%'
                  and coalesce(d.flow, '') <> $1 and coalesce(i.flow, '') <> $1
-               order by (d.initiative = '_knowledge'), d.created_at desc limit 50`, [ownFlow])).rows : [];
+               union all
+              -- THE LAST-RESORT CONTROL, FROM ITS OWN TABLE NOW. Nodes left zz.doc when
+              -- knowledge became its own subject, and dropping them from this pool would
+              -- leave sdlc with NO control: every non-node initiative on this deployment has
+              -- run sdlc-flow, so a node is what sdlc's control actually is today. is_node
+              -- carries the ordering that used to be d.initiative = the knowledge shelf.
+              select n.id::text as id, n.team_slug, '_knowledge' as initiative, n.path, true as is_node
+                from zz.knowledge_node n
+                join zz.team t on t.slug = n.team_slug
+               order by is_node, id limit 50`, [ownFlow])).rows : [];
             const doc = candidates.find((c) => !judging.has(c.id));
             if (doc) {
               const body = bodyOf(doc.team_slug, doc.initiative, doc.path);
               if (body?.trim()) {
-                controlSource = doc.initiative === "_knowledge"
+                controlSource = doc.is_node
                   ? `${doc.initiative}/${doc.path} (a knowledge node — a different kind of ` +
                     "artifact from the ones judged, so a low control score here shows the judge " +
                     "is reading and does not show it is calibrated)"

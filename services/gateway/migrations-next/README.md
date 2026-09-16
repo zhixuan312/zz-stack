@@ -99,20 +99,3 @@ models, and the block half is the older one. Folding them is a data move (926 ro
 `plugin_tool` to land in, and `zz.skill.block_id` plus every skill still carrying
 `kind = 'block_usage'` repoints as it goes), so it gets its own migration and its own
 end-to-end test rather than riding behind seven drops.
-
-## 059_knowledge_is_its_own_subject.sql
-
-Moves the 853 knowledge nodes out of `zz.doc` into `zz.knowledge_node`, and renames their
-`status` to `lifecycle` — because `approved` means a person agreed and `adopted` means this is
-the best we currently know, and one column cannot answer both. Six columns do not come with
-them: a node has never had a flow, an outcome, an approver, an approval time, a closing actor
-or a supported document, 0 of 853 for each.
-
-Proven against a copy of production inside a transaction that rolled back: 853 moved, 0 nodes
-left in `zz.doc`, 378 rows remaining there, every node's evidence carried, both lifecycles and
-all six kinds preserved.
-
-It waits on three readers: `indexDoc` still writes a node into `zz.doc`, `knowledge_search`
-reads it there, and the console's knowledge routes join it. Applying it first would empty the
-index without emptying the store — a search would answer "nothing is known" about 853 nodes
-that are on disk, which is the silent failure this directory exists to prevent.

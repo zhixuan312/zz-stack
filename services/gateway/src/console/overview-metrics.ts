@@ -254,7 +254,7 @@ export async function readMetrics(
         // same stock as it stood one window ago — not what was minted inside the window.
         `with node as (
            select coalesce(evidence[1],'') as src, created_at
-             from zz.doc where initiative = '_knowledge'),
+             from zz.knowledge_node),
          peak as (
            select src, max(c) as ph from (
              select src, date_trunc('hour', created_at) as h, count(*) as c
@@ -324,7 +324,7 @@ export async function readMetrics(
       db.query<{ from_work: string; imported: string; prev_from_work: string; prev_imported: string }>(
         `with node as (
            select coalesce(evidence[1],'') as src, created_at
-             from zz.doc where initiative = '_knowledge' and team_slug = $3),
+             from zz.knowledge_node where team_slug = $3),
          peak as (
            select src, max(c) as ph from (
              select src, date_trunc('hour', created_at) as h, count(*) as c

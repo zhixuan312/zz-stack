@@ -105,6 +105,48 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     //
     // Derived from the path, not from frontmatter: the snapshot is a byte copy of what was
     // approved, so it can never say this about itself.
+    // A KNOWLEDGE NODE IS NOT A DOCUMENT, and it goes to its own table.
+    //
+    // A node is adopted until something better replaces it; nobody approves one. Sharing
+    // `zz.doc.status` with a gate verdict meant every query about gates had to remember to
+    // exclude 853 rows and every query about knowledge to include only them — a predicate
+    // every caller must remember is one some caller will forget.
+    //
+    // Recognised by BOTH halves, which agree on every row in the store: the initiative is
+    // `_knowledge` and the path is under `nodes/`. Returning early is what keeps the two
+    // subjects from ever sharing a row again.
+    if (parts[0] === "_knowledge" && parts[1] === "nodes") {
+      const kind = env.type ?? "knowledge";
+      const lifecycle = env.status === "superseded" ? "superseded" : "adopted";
+      const supersededBy = (env.supersededBy ?? "").replace(/^["']|["']$/g, "").trim();
+      const nodeHash = createHash("sha256")
+        .update(JSON.stringify([kind, lifecycle, supersededBy, title, body,
+                                list(env.tags), list(env.evidence)])).digest("hex").slice(0, 32);
+      if (skipIfHash) {
+        const cur = await p.query<{ content_hash: string }>(
+          "select content_hash from zz.knowledge_node where team_slug=$1 and path=$2",
+          [teamSlug, parts.slice(1).join("/")]);
+        if (cur.rows[0]?.content_hash === nodeHash) return false;
+      }
+      await p.query(
+        `insert into zz.knowledge_node
+           (team_slug, path, kind, lifecycle, superseded_by,
+            title, body, tags, evidence, content_hash, updated_at, body_tsv)
+         values ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::text[],$10, now(),
+                 setweight(to_tsvector('english', $6::text), 'A') ||
+                 setweight(to_tsvector('english', array_to_string($8::text[], ' ')), 'B') ||
+                 setweight(to_tsvector('english', $7::text), 'C'))
+         on conflict (team_slug, path) do update set
+           kind=excluded.kind, lifecycle=excluded.lifecycle,
+           superseded_by=excluded.superseded_by, title=excluded.title, body=excluded.body,
+           tags=excluded.tags, evidence=excluded.evidence, content_hash=excluded.content_hash,
+           updated_at=excluded.updated_at, body_tsv=excluded.body_tsv`,
+        [teamSlug, parts.slice(1).join("/"), kind, lifecycle,
+         supersededBy && supersededBy !== "null" ? supersededBy : null,
+         title, body, list(env.tags), list(env.evidence), nodeHash]);
+      return true;
+    }
+
     const snapshotOf = /^_versions\/(.+)\.v\d+\.md$/.exec(parts.slice(1).join("/"))?.[1];
     const superseded = snapshotOf
       ? `${snapshotOf}.md`

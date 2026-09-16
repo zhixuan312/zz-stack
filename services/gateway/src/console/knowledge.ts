@@ -27,7 +27,7 @@ export function mountKnowledge(app: Express): void {
     // whole.
     const { rows } = scope.kind === "platform"
       ? await db.query(
-      `select team_slug as team, path, type, status, title, tags,
+      `select team_slug as team, path, kind as type, lifecycle as status, title, tags,
               -- WHERE THE LESSON CAME FROM. evidence holds the initiative that
               -- produced the node, and it is the only linkage the store actually
               -- records between a node and the work behind it. Nothing displayed it,
@@ -39,18 +39,16 @@ export function mountKnowledge(app: Express): void {
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
               length(coalesce(body,'')) as bytes,
               left(regexp_replace(coalesce(body,''), '\\s+', ' ', 'g'), 220) as excerpt
-         from zz.doc
-        where initiative = '_knowledge' and path like 'nodes/%'
+         from zz.knowledge_node
         order by team_slug, path`)
       : await db.query(
-      `select team_slug as team, path, type, status, title, tags,
+      `select team_slug as team, path, kind as type, lifecycle as status, title, tags,
               evidence, superseded_by,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated,
               length(coalesce(body,'')) as bytes,
               left(regexp_replace(coalesce(body,''), '\\s+', ' ', 'g'), 220) as excerpt
-         from zz.doc
-        where initiative = '_knowledge' and path like 'nodes/%'
-          and team_slug = $1
+         from zz.knowledge_node
+        where team_slug = $1
         order by team_slug, path`, [scope.slug]);
     res.json({ nodes: rows.map((r) => ({
       ...r, bytes: +r.bytes,
@@ -83,22 +81,22 @@ export function mountKnowledge(app: Express): void {
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               e.actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as superseded_by,
-              d.title as node_title, d.status as node_status
+              d.title as node_title, d.lifecycle as node_status
          from zz.event e
          left join zz.team t on t.id = e.team_id
-         left join zz.doc d on d.team_slug = e.team_slug and d.initiative = '_knowledge'
-                           and d.path like '%/' || e.subject || '-%'
+         left join zz.knowledge_node d on d.team_slug = e.team_slug
+                           and d.path like '%' || e.subject || '-%'
         where e.kind in ('knowledge.add','knowledge.supersede')
         order by e.ts desc limit 500`)
       : await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts,
               e.actor, t.slug as team, e.kind, e.subject as node,
               e.detail->>'title' as recorded_title, e.detail->>'supersededBy' as superseded_by,
-              d.title as node_title, d.status as node_status
+              d.title as node_title, d.lifecycle as node_status
          from zz.event e
          join zz.team t on t.id = e.team_id
-         left join zz.doc d on d.team_slug = e.team_slug and d.initiative = '_knowledge'
-                           and d.path like '%/' || e.subject || '-%'
+         left join zz.knowledge_node d on d.team_slug = e.team_slug
+                           and d.path like '%' || e.subject || '-%'
         where e.kind in ('knowledge.add','knowledge.supersede')
           and t.slug = $1
         order by e.ts desc limit 500`,
@@ -117,10 +115,10 @@ export function mountKnowledge(app: Express): void {
       return;
     }
     const { rows } = await db.query(
-      `select team_slug as team, path, type, status, title, tags, body,
+      `select team_slug as team, path, kind as type, lifecycle as status, title, tags, body,
               evidence, superseded_by,
               to_char(updated_at,'YYYY-MM-DD') as updated
-         from zz.doc where team_slug = $1 and initiative = '_knowledge' and path = $2`,
+         from zz.knowledge_node where team_slug = $1 and path = $2`,
       [req.params.team, path]);
     if (!rows.length) { res.status(404).json({ error: `no node ${path}` }); return; }
     res.json(rows[0]);

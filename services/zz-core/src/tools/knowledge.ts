@@ -498,7 +498,33 @@ function subjectTagError(tags: string[] | undefined): string | null {
       // hand. The lessons were visible and unreachable, which is worse than absent — it looks
       // like the knowledge base is working.
       const COLS = `initiative, path, flow, type, status, outcome, approved_by, approved_at,
-                    updated_at, title, tags, evidence, superseded_by, team_slug`;
+                    updated_at, title, tags, evidence, superseded_by, team_slug, subject`;
+      /* TWO SUBJECTS, UNIONED HERE AND NOWHERE ELSE — which is the point of the split.
+       *
+       * This search deliberately spans a team's documents AND the platform's journal, so it
+       * reads two tables. They are separate because their lifecycles are: a document is
+       * `approved` when a person agreed, a node is `adopted` until something better replaces
+       * it. Each side maps its own vocabulary into the shared shape HERE, once, explicitly —
+       * rather than the two sharing one `status` column and every caller downstream having to
+       * remember which meaning it carries.
+       *
+       * `subject` travels with the row so a reader can tell them apart without inferring it
+       * from the path, which is how the old shape was read and why it kept being got wrong.
+       *
+       * A node has no flow, outcome or approval — 0 of 853 ever did — so those are constants
+       * on that side rather than columns it was made to carry. */
+      const SOURCE = `(
+        select initiative, path, flow, type, status, outcome, approved_by, approved_at,
+               updated_at, title, tags, evidence, superseded_by, team_slug, body, body_tsv,
+               'document' as subject
+          from zz.doc
+        union all
+        select '_knowledge' as initiative, path, '' as flow, kind as type, lifecycle as status,
+               null as outcome, null as approved_by, null::date as approved_at,
+               updated_at, title, tags, evidence, superseded_by, team_slug, body, body_tsv,
+               'node' as subject
+          from zz.knowledge_node
+      ) k`;
       let rank = "0::float4", head = "left(body, 400)";
       if (query) {
         const q = put(query);
@@ -516,7 +542,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
       }
       const CANDIDATE_CAP = 200;
       const sql = `select ${COLS}, ${rank} as rank, ${head} as snippet
-                   from zz.doc where ${cond.join(" and ")}
+                   from ${SOURCE} where ${cond.join(" and ")}
                    order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
                    limit ${CANDIDATE_CAP}`;
       const pooled = (await p.query(sql, args)).rows as KbRow[];
@@ -550,7 +576,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         applyFilters((c) => tCond.push(c), tPut);
         tagged = (await p.query(
           `select ${COLS}, 0::float4 as rank, left(body, 400) as snippet
-           from zz.doc where ${tCond.join(" and ")}
+           from ${SOURCE} where ${tCond.join(" and ")}
            order by cardinality(array(select unnest(tags) intersect select unnest($2::text[]))) desc,
                     updated_at desc
            limit 50`, tArgs)).rows as KbRow[];
@@ -574,7 +600,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         applyFilters((c) => nCond.push(c), nPut);
         neighbours = ((await p.query(
           `select ${COLS}, 0::float4 as rank, left(body, 400) as snippet
-           from zz.doc where ${nCond.join(" and ")} order by updated_at desc limit 50`, nArgs,
+           from ${SOURCE} where ${nCond.join(" and ")} order by updated_at desc limit 50`, nArgs,
         )).rows as KbRow[]).filter((r) => !seen.has(`${r.initiative}/${r.path}`));
       }
 

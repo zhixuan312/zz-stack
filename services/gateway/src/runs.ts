@@ -106,7 +106,11 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   await db.query(`
     update zz.initiative i set flow = d.flow
       from (select distinct on (team_slug, initiative) team_slug, initiative, flow
-              from zz.doc where flow is not null and flow <> '' and initiative <> '_knowledge'
+              -- No exclusion of the knowledge shelf any more: a node is its own subject
+              -- in its own table, so zz.doc holds documents and sources and nothing else. A
+              -- predicate that can no longer exclude anything reads as a rule still being
+              -- enforced, which is worse than absent.
+              from zz.doc where flow is not null and flow <> ''
              order by team_slug, initiative, created_at) d
       join zz.team t on t.slug = d.team_slug
      where i.team_id = t.id and i.slug = d.initiative and i.flow <> d.flow`);

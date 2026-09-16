@@ -1,13 +1,5 @@
 -- A knowledge node is not a document, and `adopted` is not a gate verdict.
 --
--- NOT APPLIED YET, and this directory is why. The statement is correct and proven — run
--- against a copy of production inside a transaction that rolled back, it moves 853 rows,
--- leaves 0 nodes in zz.doc, carries every node's evidence, and keeps both lifecycles and all
--- six kinds. What has not moved is the CODE: indexDoc still writes a node into zz.doc,
--- knowledge_search still reads it there, and the console's knowledge routes still join it.
--- Applying this before they move would empty the knowledge index without emptying the store,
--- and a search would answer "nothing is known" about 853 nodes that are right there on disk.
---
 -- zz.doc held three subjects: 376 initiative documents and sources, and 853 knowledge nodes.
 -- They shared a `status` column in which `approved` means A PERSON AGREED and `adopted` means
 -- THIS IS THE BEST WE CURRENTLY KNOW. Those are different questions with different lifecycles
@@ -39,8 +31,6 @@ create table if not exists zz.knowledge_node (
   -- to exclude a thousand rows nobody was ever asked to approve.
   lifecycle     text not null default 'adopted' check (lifecycle in ('adopted', 'superseded')),
   superseded_by text,
-  -- The initiative that minted it. Provenance, not ownership: the node outlives the work.
-  initiative    text not null default '',
   title         text not null default '',
   body          text not null default '',
   body_tsv      tsvector,
@@ -58,11 +48,11 @@ create index if not exists knowledge_node_tags on zz.knowledge_node using gin (t
 create index if not exists knowledge_node_team on zz.knowledge_node (team_slug, lifecycle);
 
 insert into zz.knowledge_node
-  (team_slug, path, kind, lifecycle, superseded_by, initiative,
+  (team_slug, path, kind, lifecycle, superseded_by,
    title, body, body_tsv, tags, evidence, content_hash, created_at, updated_at)
 select d.team_slug, d.path, d.type,
        case when d.status = 'superseded' then 'superseded' else 'adopted' end,
-       d.superseded_by, d.initiative, d.title, d.body, d.body_tsv, d.tags, d.evidence,
+       d.superseded_by, d.title, d.body, d.body_tsv, d.tags, d.evidence,
        d.content_hash, d.created_at, d.updated_at
   from zz.doc d
  where d.initiative = '_knowledge'

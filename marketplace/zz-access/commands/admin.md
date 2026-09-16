@@ -1,6 +1,6 @@
 ---
 name: "admin"
-description: "Running the platform itself: who exists, which teams they are in, which flows and building blocks each team may reach, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front ..."
+description: "Running the platform itself: who exists, which teams they are in, which flows each team may reach, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
 when_to_use: "The person typed /zz-access:admin."
 disable-model-invocation: true
 ---
@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Everything in this skill acts on **somebody else**. That is the whole difference from
 `zz-access`, which only ever touches the person in front of you: a token here is issued
-*for* a principal, a team is created *for* people who are not in the room, and a block
+*for* a principal, a team is created *for* people who are not in the room, and a flow
 grant decides what a team you may not belong to can reach.
 
 Same tools list, same door — the platform does not sort administration into its own URL,
@@ -42,7 +42,6 @@ which is almost always the answer to "why was that a 403".
 | a team | `team_create` `team_archive` `team_list` |
 | who is in a team | `member_add` `member_remove` |
 | what a team runs | `flow_install` `flow_uninstall` `install_list` |
-| which building blocks a team may reach | `tool_grant` `tool_revoke` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
 | a team's knowledge index, when it disagrees with the files | `knowledge_reindex` |
 | what people have reported as broken | `bug_list` `bug_resolve` `bug_delete` |
@@ -122,11 +121,9 @@ truer version of it, because it holds only what you can actually run.
 
 ## What is beside this, and what is not here at all
 
-**A person's OWN token, their own block keys, or their client setup is `zz-access`** — read
-that skill rather than reaching for these tools. Those tools resolve the caller and act on
-the caller, so they cannot act for somebody else even when you want them to. The two that
-can, `credential_admin_set` and `credential_admin_delete`, are described there too and are in
-your list if your role carries them.
+**A person's OWN token or their client setup is `zz-access`** — read that skill rather than
+reaching for these tools. Those tools resolve the caller and act on the caller, so they
+cannot act for somebody else even when you want them to.
 
 **Running or creating a flow is a delivery agent's job**, not this one's. Name the agent
 that does it.
@@ -153,12 +150,6 @@ that does it.
 - **Never print a token or a key**, whole or partial. A token is shown once, by the tool that
   mints it, to the person it belongs to. The same holds for an enrolment link, which is a
   live credential for as long as it is unused.
-
-- **Deactivating somebody stops them authenticating; it does not touch the building-block
-  keys stored under their address.** Those stay live at a third party for a person who has
-  left. `credential_admin_delete(user_email, platform)` is what removes them, it is beside
-  `person_deactivate` in your list, and leaving somebody's departure half-done is the reason
-  it is named here rather than left to be remembered.
 
 ## Adding a person is two acts, not one
 

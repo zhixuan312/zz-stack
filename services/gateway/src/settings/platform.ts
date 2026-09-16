@@ -1,5 +1,5 @@
 /**
- * Platform administration: people, enrolments, teams and blocks, across every tenant.
+ * Platform administration: people, enrolments and teams, across every tenant.
  *
  * Superadmin only, and that is the whole distinction from the team routes beside it. These
  * are the writes that create a tenant, retire a person, or change what every team can reach,
@@ -11,7 +11,7 @@ import { redact } from "../redact.js";
 import { TEAM_SLUG } from "../identity.js";
 import { platformDbReady } from "../db.js";
 import { archiveTeam, createTeam } from "../admin/teams.js";
-import { addPerson, deactivatePerson, grantTool, issueEnrolmentLink, listPeople, revokeTool } from "../admin/people.js";
+import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "../admin/people.js";
 
 export function mountPlatformSettings(app: Express): void {
   // --------------------------------------------------------- /platform/* (Task I-15, AC-5)
@@ -155,50 +155,6 @@ export function mountPlatformSettings(app: Express): void {
     })().catch((err: unknown) => {
       console.error("settings/platform/teams (archive) failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not archive team" });
-    });
-  });
-
-  /** Grant a team access to a building block — always `superOnly` (inside `grantTool`),
-   *  never `teamAuthority`: see this section's header and `grantTool`'s own comment
-   *  (admin.ts) for why block access is a platform decision no team-tier route may reach. */
-  app.post("/api/console/settings/platform/blocks", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const team = typeof body.team === "string" ? body.team.trim() : "";
-      const block = typeof body.block === "string" ? body.block.trim() : "";
-      if (!team) { res.status(400).json({ error: "team is required" }); return; }
-      if (!block) { res.status(400).json({ error: "block is required" }); return; }
-      const r = await grantTool(id, team, block, { via: "web" });
-      if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
-      res.json(redact({ ok: true, result: r.message }));
-    })().catch((err: unknown) => {
-      console.error("settings/platform/blocks (grant) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not grant block access" });
-    });
-  });
-
-  /** Revoke a team's block access. `confirm` must repeat the block id exactly —
-   *  `revokeTool`'s own rule (admin.ts), surfaced here rather than duplicated. */
-  app.delete("/api/console/settings/platform/blocks", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const team = typeof body.team === "string" ? body.team.trim() : "";
-      const block = typeof body.block === "string" ? body.block.trim() : "";
-      const confirm = typeof body.confirm === "string" ? body.confirm : "";
-      if (!team) { res.status(400).json({ error: "team is required" }); return; }
-      if (!block) { res.status(400).json({ error: "block is required" }); return; }
-      const r = await revokeTool(id, team, block, confirm, { via: "web" });
-      if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
-      res.json(redact({ ok: true, result: r.message }));
-    })().catch((err: unknown) => {
-      console.error("settings/platform/blocks (revoke) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not revoke block access" });
     });
   });
 }

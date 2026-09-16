@@ -17,20 +17,17 @@ import express from "express";
 import { z } from "zod";
 
 import { buildAccessServer } from "./access-door.js";
-import { mountBlockOauth } from "./block-oauth.js";
-import { PLATFORMS } from "./blocks.js";
 import { mountConsoleAsk } from "./console-ask.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
-import { deleteMyCredentialFor, issueMyAccessTokenFor, myAccessTokensFor, myCredentialsFor, revokeMyAccessTokenFor, setMyCredentialFor } from "./credentials.js";
+import { issueMyAccessTokenFor, myAccessTokensFor, revokeMyAccessTokenFor } from "./credentials.js";
 import { initPlatformDb } from "./db.js";
 import { mountDiscussion } from "./discussion.js";
 import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
 import { mountMcpOauth } from "./mcp-oauth.js";
 import { mountPasskey, sweepSessions } from "./passkey.js";
-import { CORE_URL, EVAL_URL, mcpRefusal, passThrough } from "./relay.js";
-import { proxy } from "./relay.js";
+import { CORE_URL, EVAL_URL, passThrough } from "./relay.js";
 import { reconcileRuns } from "./runs.js";
 import { mountSettings } from "./settings.js";
 import { doorSurface, toolCallTelemetry } from "./tool-telemetry.js";
@@ -150,9 +147,6 @@ const DOORS: Record<string, { name: string; who: string; what: string; auth: str
   "/eval/mcp": { name: "zz-plugin-eval", who: "teams that installed the zz-plugin-eval flow",
     what: "Evaluating a plugin: what its real runs did, what a recorded ablation says installing it is worth, and the ruler both are scored against. Separate from /core/mcp because it is one flow's instrument rather than everybody's process layer — it is on the door you get by installing that flow, and on no other.",
     auth: "Bearer <your token>" },
-  "/p/:block/mcp": { name: "building blocks", who: "teams granted that block",
-    what: "A third-party platform, called with YOUR OWN key. Store the key first via /manage.",
-    auth: "Bearer <your token>" },
 };
 
 /** Every MCP path this app has actually mounted, in the order it mounted them.
@@ -191,15 +185,7 @@ const mountedDoors = (): string[] => {
  * would otherwise be served and never announced; prose for a door nothing mounts would
  * otherwise be announced and 404 the person who believed it.
  *
- * The express parameter is rewritten the way a person types it — `/p/:block/mcp` is
- * `/p/<block>/mcp` to anyone who is not express — and that is the only difference between
- * what is mounted and what is printed.
- *
- * THE PARAMETER IS NAMED `block` BECAUSE THAT IS THE PLATFORM'S WORD. It was `:platform`,
- * and since the printed path is derived from the parameter, `/` announced `/p/<platform>/mcp`
- * while `zz.block_tool`, `blocks/<block>/`, the CLI and this very entry's own name — "building
- * blocks" — all said block. One concept, two words, and the one a stranger read first was the
- * one no other surface used. */
+ */
 const doorIndex = (): { path: string; name: string; who: string; what: string; auth: string }[] => {
   const mounted = mountedDoors();
   if (mounted.length === 0) {
@@ -256,7 +242,6 @@ app.get("/", (req, res) => {
   ].join("\n"));
 });
 
-mountBlockOauth(app, (block) => PLATFORMS[block]?.url);
 mountMcpOauth(app);
 
 /* The envelope and the manifest, as JSON Schema, unauthenticated.
@@ -334,7 +319,6 @@ mountDiscussion(app);
 // CALLER rather than assumed, and the gate's "every console write route records the door it
 // came through" check for what reads that literal text back out of the route body.
 mountSettings(app, {
-  myCredentialsFor, setMyCredentialFor, deleteMyCredentialFor,
   myAccessTokensFor, issueMyAccessTokenFor, revokeMyAccessTokenFor,
 });
 
@@ -369,15 +353,6 @@ app.all("/eval/mcp", passThrough(EVAL_URL, "eval proxy",
   "The ZZ evaluation door is not reachable right now. The platform's other doors are " +
   "unaffected, nothing about your access has changed and nothing needs reconnecting — retry " +
   "the call."));
-
-app.all("/p/:block/mcp", (req, res) => {
-  void proxy(req, res).catch((err: unknown) => {
-    console.error("proxy failed:", err);
-    mcpRefusal(req, res, `Block '${req.params.block}' did not answer. Its own service is ` +
-      "unreachable or timed out; your credential for it is unaffected and needs no reconnecting. " +
-      "Retry, and if it keeps failing report the block as down rather than asking anyone to sign in again.");
-  });
-});
 
 
 initPlatformDb()

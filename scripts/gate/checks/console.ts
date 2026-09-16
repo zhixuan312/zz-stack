@@ -198,7 +198,7 @@ check("every console write route records the door it came through", () => {
   // a call to one of the shared `my_*` functions server.ts hands this file (see settings.ts's
   // own `SettingsDeps`). And those calls do not run `logEvent` themselves — the shared
   // function does, in server.ts or block-oauth.ts, not in the route body this check reads —
-  // so `via: "web"` shows up as an ARGUMENT to `setMyCredentialFor(...)` and its siblings,
+  // so `via: "web"` shows up as an ARGUMENT to `issueMyAccessTokenFor(...)` and its siblings,
   // never inside a literal `logEvent(...)` written in settings.ts. WRITE_CALLS names exactly
   // those functions, and the marker scan below opens either kind of call — `logEvent(` or one
   // of WRITE_CALLS — so a route wrapping a shared function is held to the same rule as one
@@ -206,19 +206,17 @@ check("every console write route records the door it came through", () => {
   // call (`res.json({ via: "web" })` would not satisfy this — WRITE_CALLS is a closed list,
   // not "any call").
   const WRITE_CALLS = [
-    "setMyCredentialFor", "deleteMyCredentialFor",
     "issueMyAccessTokenFor", "revokeMyAccessTokenFor",
-    "disconnectBlock",
     // Task I-14: team settings — member_add/member_remove/flow_install/flow_uninstall's own
     // guarded bodies (admin.ts), shared with settings.ts's /team/* routes the same way the
     // my_* functions above are. The team-wide credential tools were listed here too until the
     // shared credential tier was deleted; the tools went with it.
     "addMember", "removeMember", "installFlow", "uninstallFlow",
-    // Task I-15: platform settings — person_add/person_deactivate/team_create/team_archive/
-    // tool_grant/tool_revoke's own guarded bodies (admin.ts), shared with settings.ts's
+    // Task I-15: platform settings — person_add/person_deactivate/team_create/team_archive's
+    // own guarded bodies (admin.ts), shared with settings.ts's
     // /platform/* routes the same way the team-tier functions above are. `listPeople` is not
     // here — it is a read, and this check exists for writes that need a door recorded.
-    "addPerson", "deactivatePerson", "createTeam", "archiveTeam", "grantTool", "revokeTool",
+    "addPerson", "deactivatePerson", "createTeam", "archiveTeam",
   ];
   const FILES = [
     { path: "services/gateway/src/console-write.ts", isWrite: (body: string) => /\bcore\.call\(/.test(body), markerCalls: [] },

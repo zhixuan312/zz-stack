@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, gatewaySource, root, sourceFiles, zzCoreSource, zzCoreTools } from "../read.ts";
+import { between, firstOf, gatewaySource, root, sourceFiles, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
 import { catalogRoot, claimsOurs, flows, platformSkills, platformSurface, skillsOf } from "../facts.ts";
 
@@ -583,53 +583,4 @@ check("no tool teaches a date format the platform does not use", () => {
     }
   }
   return bad.length ? bad.join("; ") : null;
-});
-
-check("a tool a block's own skill tells an agent to call is a tool the agent has", () => {
-  // FOUND BY A RUN THAT DID EVERYTHING RIGHT. the block's usage skill names
-  // `create_rule_now` as the route to take when `create_rule` is refused
-  // by the interface. It was not on the block's allowlist in blocks.ts, so no agent has ever been
-  // able to call it — and round 4 of the 09-09 smoke said so in as many words: "route 2
-  // absent from this session's surface". The skill said take it; the platform had never
-  // handed it over. Four rounds parked the same leg UNVERIFIED for want of one list entry.
-  //
-  // A skill and an allowlist drifting apart is silent in both directions: the skill reads
-  // fine, the allowlist reads fine, and only an agent standing between them finds out.
-  const coreTools = new Set(zzCoreTools().map((t) => t.name));
-  const blocksSrc = readFileSync(join(root, "services/gateway/src/blocks.ts"), "utf8");
-  const bad: string[] = [];
-  const blocksDir = join(root, "blocks");
-  if (!existsSync(blocksDir)) return null;
-  for (const slug of readdirSync(blocksDir)) {
-    const skillsDir = join(blocksDir, slug, "skills");
-    if (!existsSync(skillsDir)) continue;
-    // The block's own slice of the allowlist: from `slug:` to the end of its `tools:` array.
-    const at = blocksSrc.indexOf(`${slug}:`);
-    if (at < 0) continue;
-    const toolsAt = blocksSrc.indexOf("tools: [", at);
-    if (toolsAt < 0) continue;
-    const allow = blocksSrc.slice(toolsAt, blocksSrc.indexOf("]", toolsAt));
-    for (const skill of readdirSync(skillsDir)) {
-      const f = join(skillsDir, skill, "SKILL.md");
-      if (!existsSync(f)) continue;
-      const text = readFileSync(f, "utf8");
-      // CONSERVATIVE: a backticked identifier in CALL form, `name(`. That is how a skill
-      // writes "call this", and it does not match prose, headings or field names.
-      for (const m of text.matchAll(/`([a-z][a-z0-9_]{6,})\(/g)) {
-        const name = m[1];
-        // The platform's own tools are served by zz-core, not by the block, and are never on
-        // a block's allowlist. DERIVED from zz-core's registrations rather than written out:
-        // this was a nineteen-name array that had to be retyped at every rename, and the two
-        // renames this fortnight each left it naming tools that no longer existed while a newly
-        // named one read as a block tool the block had failed to allowlist. zz-core ONLY, not
-        // every door — a block skill naming a /manage tool is not reaching for something the
-        // block serves either, and widening this to the gateway would wave that through.
-        if (coreTools.has(name)) continue;
-        if (!allow.includes(`"${name}"`)) {
-          bad.push(`${slug}/${skill} tells an agent to call \`${name}()\` and it is not on ${slug}'s tools list in blocks.ts — the skill says take it, the platform never hands it over`);
-        }
-      }
-    }
-  }
-  return bad.length ? [...new Set(bad)].join("; ") : null;
 });

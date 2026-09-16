@@ -5,11 +5,10 @@
  * A variable nothing reads is a knob that does nothing, and an operator who sets it gets no
  * error — they get the old behaviour and a belief they have changed something.
  */
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { envNamesIn, firstOf, gateOwnSource, root, sourceFiles, trackedFiles, unbuilt } from "../read.ts";
+import { envNamesIn, firstOf, gateOwnSource, root, sourceFiles, trackedFiles } from "../read.ts";
 import { check } from "../run.ts";
 
 check("the documented defaults are the actual defaults", () => {
@@ -351,84 +350,6 @@ check("every switch a tool reads is one an operator can find", () => {
     if (missing.length) bad.push(`${rel}: ${missing.join(", ")}`);
   }
   return bad.length ? `flags no usage block mentions — ${bad.join("; ")}` : null;
-});
-
-check("a configuration the operator wrote fails with a sentence", () => {
-  // @zz/catalog settled this for a manifest, in manifestAt: "an operator who pointed
-  // --manifest at the wrong file got a wall of JSON instead of a sentence". The same shape
-  // was still open on the two things an operator supplies to the GATEWAY, and both are worse
-  // places for it.
-  //
-  // PLATFORMS is parsed at module load, so a mistyped one took the container down with a
-  // SyntaxError or a ZodError — read while the platform is not starting. credentials.json is
-  // parsed on every credential operation and on every block call, so a truncated one dumped
-  // through an MCP tool answer while nobody's key was being injected.
-  //
-  // Refusing is right in both cases and stays. What changed is that the refusal says which
-  // field, and what to do.
-  const bad: string[] = [];
-  const sites = [
-    ["services/gateway/src/blocks.ts", "PlatformMap", "the block registry"],
-    ["services/gateway/src/credentials.ts", "CredentialStore", "the credential store"],
-  ];
-  for (const [rel, schema, what] of sites) {
-    const src = readFileSync(join(root, rel), "utf8");
-    const code = src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-    if (new RegExp(`${schema}\\.parse\\(`).test(code)) {
-      bad.push(`${rel} validates ${what} with ${schema}.parse, which throws a ZodError dump — ` +
-               "safeParse and name the field, as @zz/catalog's manifestAt does");
-    }
-    if (!new RegExp(`${schema}\\.safeParse\\(`).test(code)) {
-      bad.push(`${rel} no longer validates ${what} against ${schema} at all`);
-    }
-    // And the JSON parse beside it, which throws its own kind of dump.
-    if (/JSON\.parse\([^)]*\)(?!\s*;?\s*\}?\s*catch)/.test(code) && !/catch/.test(code)) {
-      bad.push(`${rel} parses JSON with nothing to catch a truncated file`);
-    }
-  }
-  // AND THE SENTENCE ITSELF IS ONE SENTENCE. safeParse only avoids the dump; what an operator
-  // reads is the line built from the issues, and that line was written out three times
-  // byte-for-byte — the block registry, the credential store, and a flow manifest, in two
-  // packages. @zz/catalog's comment is where the reasoning lives: "the schema is strict, so
-  // the commonest failure is one mistyped key ... the line says which field, at which path."
-  // A copy that stopped naming the path would leave one operator reading `Required` with
-  // nothing saying of what, while the other two went on being helpful.
-  const HOME = join("packages", "contracts", "src", "index.ts");
-  for (const rel of sourceFiles(["services", "packages"], [".ts"])) {
-    if (rel === HOME) continue;
-    const lines = readFileSync(join(root, rel), "utf8").split("\n");
-    lines.forEach((ln, i) => {
-      if (/^\s*(\/\/|\*|\/\*)/.test(ln)) return;
-      // The issue map, wherever the `.issues` and the `.map` fall across the wrap.
-      if (!/\bi\.path\.join\(/.test(ln)) return;
-      bad.push(`${rel}:${i + 1} builds the schema sentence by hand — whyNot() in @zz/contracts ` +
-               "is that sentence, and it is the whole of what an operator gets back");
-    });
-  }
-  // RUN it, because what is being held is the SHAPE of the sentence: the path, the fallback
-  // for an error at the root, and one line however many issues there are.
-  const nothingToRun = unbuilt();
-  if (nothingToRun) return nothingToRun;
-  const probe = `
-    import { whyNot } from ${JSON.stringify(join(root, "packages/contracts/dist/index.js"))};
-    const bad = [];
-    const said = whyNot({ issues: [{ path: ["documents", 0, "name"], message: "Required" }] });
-    if (said !== "documents.0.name: Required") bad.push("a nested field must be named by its whole path: " + said);
-    const root_ = whyNot({ issues: [{ path: [], message: "Expected object" }] });
-    if (root_ !== "(root): Expected object") bad.push("an error with no path must still say where it is: " + root_);
-    const two = whyNot({ issues: [{ path: ["a"], message: "x" }, { path: ["b"], message: "y" }] });
-    if (two !== "a: x; b: y") bad.push("every issue must appear, on one line: " + two);
-    if (whyNot({ issues: [] }) !== "") bad.push("no issues must say nothing, not '(root)'");
-    process.stdout.write(bad.join("; "));
-  `;
-  try {
-    const out = execFileSync("node", ["--input-type=module", "-e", probe], { encoding: "utf8" });
-    if (out.trim()) bad.push(out.trim());
-  } catch (err) {
-    const stderr = err && typeof err === "object" ? (err as Record<string, unknown>).stderr : undefined;
-    bad.push(`the schema sentence could not be run: ${String(stderr ?? err).slice(-200)}`);
-  }
-  return bad.length ? bad.join("; ") : null;
 });
 
 check("an environment variable's default is one value, wherever it is spelled", () => {

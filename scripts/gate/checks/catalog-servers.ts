@@ -58,11 +58,13 @@ check("every server a manifest declares is a door the gateway mounts", () => {
   // told me so when this first imported it. server.ts is read the same way, two lines up.
   const aliasSrc = readFileSync(join(root, "packages/contracts/src/alias.ts"), "utf8");
   const fixed = /export const FIXED_DOORS = Object\.freeze\(\[([^\]]*)\]\)/.exec(aliasSrc)?.[1];
-  const blockDoor = /export const BLOCK_DOOR = "([^"]+)"/.exec(aliasSrc)?.[1];
-  if (!fixed || !blockDoor) {
-    return "packages/contracts/src/alias.ts no longer declares FIXED_DOORS and BLOCK_DOOR where this can read them — the client's door set is unchecked";
+  if (!fixed) {
+    return "packages/contracts/src/alias.ts no longer declares FIXED_DOORS where this can read it — the client's door set is unchecked";
   }
-  const clientDoors = [...[...fixed.matchAll(/"([^"]+)"/g)].map((m) => m[1]), blockDoor];
+  // EVERY DOOR IS FIXED NOW. There used to be one more, `/p/<block>/mcp`, appended here from
+  // BLOCK_DOOR — a per-third-party-server door the gateway proxied. Nothing registers a block
+  // any more, so the door set is the fixed set and nothing is concatenated onto it.
+  const clientDoors = [...fixed.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 
   const printed = doors.map((d) => d.replace(/:([A-Za-z_]\w*)/g, "<$1>"));
   const onlyGateway = printed.filter((d) => !clientDoors.includes(d));

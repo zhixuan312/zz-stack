@@ -187,7 +187,9 @@ function cap(s: string): string {
  * without the words, and that belongs in the tool's own result, not in a guess made here.
  */
 const IDENTIFIER_ARGS = new Set([
-  "team", "initiative", "flow", "platform", "block", "path", "name", "type",
+  "team", "initiative", "flow", "path", "name", "type",
+  // `platform` and `block` LEFT WITH THE CONCEPT. Both named a third party's server — the
+  // argument every credential and grant tool took — and nothing declares either now.
   // `harness` left with render_harness_config, then `client` and `clients` left with Codex
   // and Hermes: client_setup takes no client any more, because there is one, and
   // flow_install no longer asks a team to choose between them.

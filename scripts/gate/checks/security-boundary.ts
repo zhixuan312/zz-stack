@@ -30,33 +30,6 @@ function execStderr(err: unknown): string {
   return e.stderr !== undefined ? String(e.stderr) : String(err);
 }
 
-check("a block dying mid-stream cannot take the gateway with it", () => {
-  // `.pipe()` does not forward errors, and Node's default for an unhandled `error` event is
-  // `throw` — from a socket callback, where nothing catches it. A block closing its socket
-  // mid-response is routine; it exited the whole proxy twice in one afternoon, and each exit
-  // dropped every user's session rather than the one request that failed.
-  //
-  // Reproduced and fixed: the relay now ends the truncated response and stays up. This
-  // guards the shape, because the next raw pipe would fail exactly the same way and only
-  // under a flaky upstream — the condition least likely to show up in a test.
-  // COMMENTS STRIPPED, because this check hunts a shape that its own explanation describes.
-  // Reading server.ts alone hid that: tool-telemetry.ts carries a paragraph saying "the
-  // proxied ones go through Readable.fromWeb().pipe(res)", which is true, is prose, and was
-  // reported as an unguarded pipe the moment this started asking the whole service.
-  const src = withoutComments(gatewaySource());
-  const bad = [];
-  const raw = src.match(/Readable\.fromWeb\([^)]*\)\s*\.pipe\(/g);
-  if (raw) bad.push(`${raw.length} unguarded pipe(s) — relay through relayBody instead`);
-  if (!/function relayBody\(/.test(src)) bad.push("relayBody is gone");
-  else {
-    const fn = src.slice(src.indexOf("function relayBody("));
-    const body = fn.slice(0, fn.indexOf("\n}\n") + 2);
-    if (!/src\.on\("error"/.test(body)) bad.push("relayBody no longer handles a stream error");
-    if (!/res\.on\("close"/.test(body)) bad.push("relayBody leaks the upstream when a caller hangs up");
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
 check("a value crossing into a shell is quoted for a shell", () => {
   // testing/smoke-env.sh built `export LC_PASSWORD=...` from Python's %r and then eval'd it.
   // repr is not a shell quoter and does not claim to be: it switches to DOUBLE quotes as soon
@@ -517,89 +490,6 @@ check("an MCP door is stateless, and never answers with an HTTP error status", (
       if (s === 401 && /WWW-Authenticate/i.test(gw.slice(from, to))) return;
       bad.push(`an MCP door answers HTTP ${s}: the client reads that as a dead transport and the message never reaches the agent — use mcpRefusal`);
     });
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
-check("a block nobody has connected refuses, rather than answering with a stub", () => {
-  // THE GREEN DOT THAT LIED, and the reason this whole piece of work happened.
-  //
-  // A block door with no credential used to serve a stub MCP session: `initialize` answered
-  // 200, `tools/list` offered one tool called `credential_required` carrying the onboarding
-  // guidance. For an AGENT that was better than the block silently vanishing. For a PERSON it
-  // was a disaster — LibreChat marks a server `connected` when `initialize` returns 200, that
-  // being the entire test, so a block nobody had signed in to showed the same green dot as one
-  // in daily use. Six green dots and then a block that refuses every call; and the agent,
-  // unable to tell "not connected" from "platform broken", reliably chose the second and told
-  // people to reconnect credentials that were fine.
-  //
-  // The door now answers 401 with a WWW-Authenticate challenge, which the client reads as a
-  // handshake rather than a failure: the dot stops being green and Connect runs the BLOCK's
-  // own OAuth. Three things have to hold together or it half-works in a way nobody notices.
-  const bad = [];
-  const gw = gatewaySource();
-  const at = gw.indexOf("if (conf.header && !key && !delegated)");
-  if (at < 0) return "the not-connected branch is gone from the block proxy — this check reads nothing";
-  const branch = gw.slice(at, at + 3000);
-  if (!/res\.status\(401\)/.test(branch)) {
-    bad.push("a block with no credential does not answer 401 — whatever it answers, the front end will call it connected if the status is 2xx");
-  }
-  if (!/WWW-Authenticate/i.test(branch)) {
-    bad.push("the 401 carries no WWW-Authenticate challenge — a bare 401 is a transport error to this client, not a sign-in prompt, and it trips the circuit breaker instead of offering a Connect button");
-  }
-  // Comments stripped first: this branch EXPLAINS the stub it replaced, at length and on
-  // purpose, and a check that cannot tell an explanation from an instruction is a check that
-  // gets switched off. What is forbidden is serving one, not describing why we stopped.
-  const branchCode = branch.split("\n").map((ln) => ln.replace(/\/\/.*$/, "")).join("\n");
-  if (/credential_required/.test(branchCode)) {
-    bad.push("the credential_required stub is back in the not-connected branch — that is the 200 that made every dot green");
-  }
-  // AND NO SKILL MAY STILL TEACH IT AS A LIVE TOOL.
-  //
-  // A skill may still NAME it — one does, to say plainly that it is gone and to stop the next
-  // agent hunting for it, which is worth more than silence. So the rule is not "never mention
-  // it": it is that any file mentioning it must also say, in that file, that it no longer
-  // exists. A mention without that is a skill teaching a call that now answers `Unknown tool`.
-  const GONE = /it is gone|no longer exists|has been removed|used to offer|replaced a stub/i;
-  for (const rel of sourceFiles(["skills", "catalog", "blocks"], [".md"])) {
-    const text = readFileSync(join(root, rel), "utf8");
-    if (!/credential_required/.test(text)) continue;
-    if (!GONE.test(text)) {
-      bad.push(`${rel} names credential_required without saying it is gone — a disconnected block now offers no tools at all, so an agent following that hunts for a tool nothing serves`);
-    }
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
-check("an MCP door answers MCP, whatever the block's edge did", () => {
-  // A block is a third party behind somebody else's CDN, and that edge answers with HTML when
-  // it has a bad moment. Relaying it verbatim hands an MCP client `<html>…` where it expects
-  // JSON or SSE — which it reports as a TRANSPORT error, not as "the block returned 502". On
-  // production 2026-09-09 three of those opened LibreChat's per-user circuit breaker, every
-  // later attempt was blocked, each blocked attempt counted as another failure, and the
-  // person's agent told them their OAuth sign-in had not landed. It had, four minutes
-  // earlier, and was valid for another twelve hours.
-  //
-  // The cost is not the blip. It is a diagnosis that sends somebody to redo the one thing
-  // that was working.
-  const src = gatewaySource();
-  // ANCHORED ON THE LABEL'S LITERAL HALF, NOT ON THE VARIABLE INSIDE IT. This matched the whole
-  // expression including the interpolated name, so renaming that local — `platform` to `block`,
-  // when the express parameter took the platform's own word — reported the HTML guard as gone.
-  // Dropping the label entirely is the other way to be wrong: relayBody has two call sites and
-  // `indexOf` then finds the generic one, whose guard is somewhere else, so the check fails for
-  // a proxy that is correct. The literal "block " is what separates the two and it is not a
-  // variable, so it survives a rename.
-  const at = src.indexOf("relayBody(upstream.body, res, `block ");
-  if (at < 0) return "the block proxy no longer relays through relayBody — re-check this rule against whatever replaced it";
-  // Read BACKWARD from the relay: the guard has to sit before it, or the HTML is already gone.
-  const before = src.slice(Math.max(0, at - 2600), at);
-  const bad = [];
-  if (!/content-type/i.test(before) || !/event-stream/.test(before)) {
-    bad.push("the block proxy relays an upstream body without checking it is JSON or an SSE stream — an HTML error page reaches the MCP client as a transport failure");
-  }
-  if (!/jsonrpc/.test(before)) {
-    bad.push("a non-MCP upstream answer is not turned into a JSON-RPC error, so the caller gets something it cannot parse instead of something it can read");
   }
   return bad.length ? bad.join("; ") : null;
 });

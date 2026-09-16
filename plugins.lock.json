@@ -21,11 +21,11 @@
   },
   "zz-access": {
     "version": "2.3.0",
-    "digest": "3dd0e105",
+    "digest": "4999a9f6",
     "cases_digest": "a0ba2ff9",
     "skills": {
-      "zz-access": "29467f7264e8",
-      "zz-admin": "6f5c6daaebe1",
+      "zz-access": "dcd6830d426c",
+      "zz-admin": "60504bbb12bd",
       "zz-doctor": "b3960436e687",
       "zz-migrate": "2ccb1e0161d2",
       "zz-update": "a5d73e2d40eb"

@@ -45,8 +45,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { mintPat } from "@zz/contracts";
 import type { Express, Request, Response } from "express";
 
-import { beginAuthorization } from "./block-oauth.js";
-import { PLATFORMS } from "./blocks.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
 import { browserSession, requestBase, sha256 } from "./identity.js";
@@ -146,19 +144,6 @@ function doorOf(resource: string): string | null {
   if (/^\/(core|manage)\/mcp$/.test(path)) return path;
   if (/^\/p\/[a-z0-9-]+\/mcp$/.test(path)) return path;
   return null;
-}
-
-/** Whether a browser on somebody's laptop could actually open this.
- *
- * A hostname with no dot in it is a compose service name — `rulemill`, `bookit`, `cred-proxy`
- * — which resolves inside the Docker network and nowhere else. Redirecting a person there
- * produces a dead tab and no error anybody sees. `localhost` is the same shape from the
- * other direction: it resolves, to the wrong machine. */
-function browserReachable(url: string): boolean {
-  try {
-    const h = new URL(url).hostname;
-    return h.includes(".") && h !== "localhost" && !h.endsWith(".localhost");
-  } catch { return false; }
 }
 
 /** A one-line HTML page for the handful of things a BROWSER can be told here.
@@ -371,27 +356,22 @@ export function mountMcpOauth(app: Express): void {
 
       // A BLOCK DOOR NEEDS TWO CREDENTIALS, AND CONNECT IS ONE GESTURE.
       //
-      // The platform token this flow mints gets the caller THROUGH the gateway. It does not
-      // get them into CaseBox — only CaseBox can issue that, after its own consent
-      // screen, and the machinery for it already exists and is used by ZZ Access today.
-      //
-      // Issuing the platform token here and stopping would put the person back where this
-      // whole change started: a green dot on a door that refuses them. So when the resource
-      // is a block they have not connected, they go to the BLOCK's consent screen first, and
-      // its callback finishes this authorization afterwards. One click, one consent screen,
-      // at the only party with something to ask them.
-      const block = /^\/p\/([a-z0-9-]+)\/mcp$/.exec(door)?.[1] ?? "";
-      const conf = block ? PLATFORMS[block] : undefined;
-
+      /* A DOOR ON THIS GATEWAY IS THE ONLY RESOURCE NOW. This used to branch: when the
+         resource was a third party's server the caller had not connected, the flow sent them
+         to THAT server's consent screen first and let its callback finish the authorization,
+         so the platform token could not be minted before the other party had said yes. There
+         is no other party any more — a plugin declares the servers its own skills call, and
+         the gateway proxies to none of them — so the token is minted here, once, for the
+         caller this request already identified. */
       const code = b64(randomBytes(32));
       await platformDb().query(
         `insert into zz.mcp_oauth_authz (id, client_id, principal_id, redirect_uri, code_challenge, state, resource)
          values ($1,$2,$3,$4,$5,$6,$7)`,
-        // NO PRINCIPAL YET for a block: it is named by the block's callback once the block has
-        // consented, and /oauth/token refuses a row without one. That is what makes the
-        // block's consent a PRECONDITION of the platform token rather than something that
-        // happens beside it. Filled in below when there is no block to consult.
-        [code, clientId, conf?.header ? null : principalId, redirectUri, challenge, state, door]);
+        // THE PRINCIPAL IS KNOWN HERE, always. It used to be left null when the resource was
+        // a third party's server, so that server's callback had to name it before
+        // /oauth/token would mint anything — the mechanism that made its consent a
+        // precondition. With no third party left, there is nobody else to wait for.
+        [code, clientId, principalId, redirectUri, challenge, state, door]);
       await platformDb().query("delete from zz.mcp_oauth_authz where created_at < now() - interval '10 minutes'");
 
       // CONNECT ON A BLOCK ALWAYS RUNS THAT BLOCK'S SIGN-IN, even when we already hold a
@@ -410,34 +390,6 @@ export function mountMcpOauth(app: Express): void {
       // and correct when something did. The callback replaces the stored token
       // (ON CONFLICT DO UPDATE), so re-connecting rotates rather than duplicating, and
       // abandoning the flow leaves the previous connection untouched.
-      if (conf?.header) {
-        const started = await beginAuthorization(me.email, block, conf.url, code);
-        // A REDIRECT IS FOLLOWED BY A BROWSER, so the address has to be one a browser can
-        // reach. A block on the compose network publishes `http://rulemill:8000/authorize` —
-        // a perfectly good authorization endpoint that resolves only inside Docker, so
-        // sending someone there is sending them nowhere, with no error we would ever see.
-        //
-        // A hostname with no dot is a compose service name; this repository already holds
-        // that rule elsewhere, in the gate check of the same name. The stand-in blocks are
-        // exactly this case, and they are reached with a stored key rather than a sign-in,
-        // so falling through is the right answer rather than a failure.
-        if ("url" in started && browserReachable(started.url)) { res.redirect(started.url); return; }
-        if ("url" in started) {
-          console.log(`oauth: '${block}' publishes an authorization endpoint a browser cannot ` +
-                      `reach (${new URL(started.url).host}) — issuing the platform token alone`);
-        } else {
-        // The block publishes no authorization server, or this gateway holds no client for
-        // it. A real answer rather than a fault, and it has a route: this person's own stored
-        // key. Name them on the authorization and let them through — the platform token is
-        // still theirs to have, and the door itself will refuse the call if they have no key,
-        // with a sentence saying so.
-          console.log(`oauth: '${block}' cannot be signed in to (${started.error}) — issuing ` +
-                      "the platform token alone; a stored key is what will open it");
-        }
-        await platformDb().query(
-          "update zz.mcp_oauth_authz set principal_id = $1 where id = $2", [principalId, code]);
-      }
-
       // A loopback client gets its code without a screen: the code can only reach a program on
       // the person's own machine, and a screen that only ever has one honest answer teaches
       // people to click through screens. A hosted client got here through Allow above.

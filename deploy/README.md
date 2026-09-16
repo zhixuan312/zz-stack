@@ -93,35 +93,6 @@ better value than we already know.
 | `POSTGRES_PASSWORD` | the platform database's own password |
 | `CONSOLE_PUBLIC_URL` | only if you run the console — see below |
 
-### Delegated access, if you want it (optional)
-
-Out of the box every call to a building block carries ONE API key held for the whole
-deployment: the block records the platform, not the person. A block that runs an authorization
-server can instead let each person sign in as themselves, and the platform then attaches their
-token to their own calls. Set nothing here and the shared key keeps working exactly as before
-— the gateway falls back to it rather than failing.
-
-| | |
-|---|---|
-| `<BLOCK>_OAUTH_CLIENT_ID` / `_SECRET` | issued by the block's team, one pair per block. Ask for every redirect URI to be registered **at the same time** — `${GATEWAY_PUBLIC_URL}/oauth/<block>/callback`, matched byte for byte at their end — because a second request is a second wait |
-| `<BLOCK>_OAUTH_SCOPE` | what to ask that block for. Leave unset to ask for whatever the block's own protected-resource document advertises, which is right for most. Set it where the block's server needs a scope its resource does not list — `offline_access` is the usual one, and without it no refresh token is issued, so people re-consent every time the token expires |
-
-**Adding one is three edits, and each name is written out literally in all three** — this
-repository checks documented-against-read by finding the literal name in the source, and
-compose's `environment:` is an explicit list, so a name it does not carry never reaches the
-container: `deploy/.env`, `deploy/docker-compose.yml`, and the two client maps at the top of
-`services/gateway/src/block-oauth.ts`. Both are EMPTY today, because this
-deployment ships no block; until a pair is added, `block_connect` refuses by name and the
-block keeps using a stored key through cred-proxy.
-
-**The block's `authorize`, `token`, `.well-known/` and `userinfo` paths must be reachable from
-a person's browser.** They are the only parts that need to be: the block's `/mcp` stays
-private, behind this gateway, so that every call is authorised and recorded.
-
-**This deployment ships no blocks.** `services/gateway/src/blocks.ts` has an empty built-in
-registry; `PLATFORMS` in the environment is the whole surface, and a deployment that sets
-nothing has no blocks and every `/p/<block>/mcp` answering 404. That is the intended default.
-
 ### The admin console, if you want it (optional)
 
 A browser app showing every team's work in one place. It is **not in this bundle** and not in
@@ -156,7 +127,6 @@ Later ones come from the console, or from `enrolment_issue` on `/manage/mcp`.
 |---|---|
 | `/core/mcp` | everyone — the platform's own tools |
 | `/manage/mcp` | everyone; **the tool list is your role**, so a tool you cannot execute is a tool you are not offered |
-| `/p/<block>/mcp` | teams granted that block |
 
 There is no package route. A person's client package is the public shelf in this
 repository, which their client clones from GitHub; `/pkg/<client>.tgz` went with Codex and
@@ -188,8 +158,6 @@ at all, which is the point of the split.
   approved spec to a caller who supplied nothing but an email header.
 - The catalog and the platform skills ship INSIDE the image, so a released version describes
   the method as well as the code. They are live-editable only under the build override above.
-- Adding a real block is a `PLATFORMS` entry plus a `tool_grant` per team — not a database
-  edit. See **Building blocks** below.
 - **Air-gapped install:** `docker save ghcr.io/zhixuan312/zz-stack:<version> | gzip >
   zz-images.tgz`, ship it, `docker load` on the server, then use the bundle as above.
 
@@ -198,23 +166,6 @@ at all, which is the point of the split.
 Every command below runs from `deploy/`, which is what the release bundle unpacks to and where
 `docker compose` finds its file. `zz-tool` runs the platform's own tools inside the image
 already on the host — no toolchain to install, and no docker socket mounted.
-
-**Building blocks** — registering one is three edits and none of them touches a database by
-hand. Probe the endpoint first, the moment another team hands over a URL and a credential:
-
-```bash
-./zz-tool probe-block https://host/mcp --header "X-API-Key: <key>"
-```
-
-Then, once it answers with the tools they described:
-
-| | Where | What it decides |
-|---|---|---|
-| 1 | `PLATFORMS` in `deploy/.env` | its url and its credential header |
-| 2 | `tool_grant <team> <block>` (superadmin) | which teams may reach it |
-| 3 | the flow's `flow.json` `tools` | which agents receive it, applied by `flow_install` |
-
-Each caller authenticates with their OWN key — see **Credentials** below; nothing is shared.
 
 **Credentials** — people store their own key by asking the **ZZ Access** agent. For onboarding
 several at once:

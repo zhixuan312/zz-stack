@@ -11,15 +11,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { mask } from "@zz/contracts";
 import { ARTIFACTS_DIR, reindexAllTeams, reindexTeam, type TeamReindex } from "@zz/indexing";
 import { serviceVersion, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { registerAdminTools } from "./admin.js";
-import { beginAuthorization, disconnectBlock } from "./block-oauth.js";
-import { PLATFORMS } from "./blocks.js";
-import { caller, deleteMyCredentialFor, implausibleKey, myCredentialsFor, operatorOnly, setMyCredentialFor, withCredentials } from "./credentials.js";
+import { caller } from "./credentials.js";
 import { platformDb, platformDbReady } from "./db.js";
 import { logEvent } from "./events.js";
 import { callerIdentity, isSuper } from "./identity.js";
@@ -104,85 +101,8 @@ export async function buildAccessServer(): Promise<McpServer> {
   // is a question about that, not about administering anybody.
   registerShelf(server);
 
-  server.registerTool(
-    "block_connect",
-    {
-      description:
-        "WHEN somebody wants to use a building block as themselves rather than through a " +
-        "shared key. RETURNS a single-use consent link: they sign in at the block, choose " +
-        "what to grant, and come back — afterwards their calls to that block carry their own " +
-        "access, with no key to create, copy or keep. REFUSES a block this platform does not " +
-        "know, and a block with no sign-in configured, naming it either way; for those, a " +
-        "key stored with credential_set is the only route.",
-      inputSchema: { block: z.string().describe("which building block, e.g. bookit") },
-    },
-    async ({ block }) => {
-      if (!id) return text("ERROR: no user identity on this request");
-      const url = PLATFORMS[block]?.url;
-      if (!url) {
-        return text(`ERROR: no such block '${block}'. Known: ${Object.keys(PLATFORMS).join(", ")}`);
-      }
-      const got = await beginAuthorization(id.email, block, url);
-      if ("error" in got) return text(`ERROR: ${got.error}`);
-      return text([
-        `Open this to connect your ${block} access:`, "", got.url, "",
-        "You will sign in there and choose what to allow. The link is single-use and expires",
-        "in ten minutes. Nothing is stored against your account until you approve it.",
-      ].join("\n"));
-    },
-  );
 
-  server.registerTool(
-    "block_disconnect",
-    {
-      // THE OTHER HALF, and it had no agent-facing door until now.
-      //
-      // The front end's Revoke button clears the FRONT END's token — it has no way to reach
-      // the delegated token this platform holds for the block, which lives in the platform
-      // database. So without this, "revoke" cleared a cache: the block's grant stayed exactly
-      // as live as before, and the platform could still act as that person at the block.
-      //
-      // Pressing Connect again re-runs the block's own sign-in whichever way this goes (see
-      // mcp-oauth.ts), so this is not needed to RECONNECT. It is needed to actually stop
-      // being connected.
-      description:
-        "WHEN someone says they want to revoke a block, or before re-connecting as a " +
-        "different account: deletes YOUR OWN delegated access, so the platform can no longer " +
-        "act as you there. RETURNS whether there was a connection to remove — the front " +
-        "end's own Revoke button does NOT do this, it only clears the front end's copy. " +
-        "REFUSES a block this platform does not know, and it never touches anybody else's " +
-        "connection or a stored key. Reconnect any time with block_connect.",
-      inputSchema: { block: z.string().describe("which building block, e.g. casebox") },
-    },
-    async ({ block }) => {
-      if (!id) return text("ERROR: no user identity on this request");
-      if (!PLATFORMS[block]) {
-        return text(`ERROR: no such block '${block}'. Known: ${Object.keys(PLATFORMS).join(", ")}`);
-      }
-      if (!platformDbReady()) return text("ERROR: platform database unavailable");
-      const removed = await disconnectBlock(id.email, block);
-      return text(removed
-        ? `Disconnected from ${block}. The platform no longer holds any access to it as you, ` +
-          "and calls to that block will refuse until you connect again — from the MCP " +
-          "settings in the front end, or with block_connect."
-        : `You had no connection to ${block} to remove. If calls to it are working, they are ` +
-          "using a stored key rather than your own sign-in.");
-    },
-  );
 
-  server.registerTool(
-    "platform_list",
-    {
-      description:
-        "WHEN you need to know what to name in credential_set or block_connect. RETURNS " +
-        "every building-block platform this gateway knows, id to display name. Takes no " +
-        "arguments and REFUSES nothing — it reads the gateway's own configuration and says " +
-        "nothing about which of them your team has been granted.",
-      inputSchema: {},
-    },
-    async () =>
-      text(JSON.stringify(Object.fromEntries(Object.entries(PLATFORMS).map(([id, p]) => [id, p.name])))),
-  );
 
   server.registerTool(
     "team_mine",
@@ -276,74 +196,8 @@ export async function buildAccessServer(): Promise<McpServer> {
     },
   );
 
-  server.registerTool(
-    "credential_set",
-    {
-      description:
-        "WHEN a building block needs a key and it should be YOURS rather than a shared one — " +
-        "the route for blocks that cannot do block_connect. RETURNS the key masked, and says " +
-        "so when it REPLACED one you already had, because that one is then gone. REFUSES a " +
-        "platform this gateway does not know (see platform_list) and a key too short or too " +
-        "plain to be real; it never reads back a stored key and never touches anybody " +
-        "else's.",
-      inputSchema: { platform: z.string(), api_key: z.string() },
-    },
-    async ({ platform, api_key }) => {
-      const email = caller().email;
-      if (!email) return text("ERROR: no user identity on this request");
-      const result = await setMyCredentialFor(email, platform, api_key);
-      if (!result.ok) return text(`ERROR: ${result.error}`);
-      return text(
-        `Stored your ${result.platformName} key (${result.masked}). Your ${platform} calls now authenticate as you.` +
-        (result.replacedMasked ? ` This REPLACED the key you had stored (${result.replacedMasked}) — that one is gone.` : ""),
-      );
-    },
-  );
 
-  server.registerTool(
-    "credential_list",
-    {
-      description:
-        "WHEN you need to know whether a block will authenticate as you before calling it. " +
-        "RETURNS which platforms you have stored a personal key for, every key masked. " +
-        "REFUSES to show a key's value — masked is all there is, here or anywhere — and it " +
-        "answers only about you, never about another person's keys.",
-      inputSchema: {},
-    },
-    async () => {
-      const email = caller().email;
-      if (!email) return text("ERROR: no user identity on this request");
-      const mine = myCredentialsFor(email);
-      const masked = Object.fromEntries(Object.entries(mine).map(([p, k]) => [p, mask(k)]));
-      return text(
-        JSON.stringify(
-          Object.keys(masked).length
-            ? masked
-            : { status: "no credentials stored yet — use credential_set" },
-        ),
-      );
-    },
-  );
 
-  server.registerTool(
-    "credential_delete",
-    {
-      description:
-        "WHEN a key of yours has leaked, or you no longer want this platform authenticating " +
-        "as you. RETURNS whether there was a key to remove. REFUSES a request it cannot " +
-        "identify, and it reaches only your own keys: removing somebody else's is " +
-        "credential_admin_delete, which needs an operator.",
-      inputSchema: { platform: z.string() },
-    },
-    async ({ platform }) => {
-      const email = caller().email;
-      // Every other tool here refuses an unidentified caller; this one did not, and would
-      // have gone on to look up the empty-string user.
-      if (!email) return text("ERROR: no user identity on this request");
-      const had = await deleteMyCredentialFor(email, platform);
-      return text(had ? `deleted your ${platform} credential` : `you had no ${platform} credential stored`);
-    },
-  );
 
   server.registerTool(
     "client_setup",
@@ -378,89 +232,7 @@ export async function buildAccessServer(): Promise<McpServer> {
     },
   );
 
-  if (sup) server.registerTool(
-    "credential_admin_set",
-    {
-      description:
-        "WHEN onboarding somebody, or a batch of people, who cannot store their own key yet. " +
-        "RETURNS the key masked, and says loudly when it REPLACED that person's working key, " +
-        "because on a batch run that line scrolls past. REFUSES anyone but an operator, an " +
-        "unknown platform, a key too short or too plain to be real, and — the one that bit — " +
-        "an address that is not an active principal, since a key filed under an address " +
-        "nobody has can never be injected for anyone.",
-      inputSchema: { user_email: z.string(), platform: z.string(), api_key: z.string() },
-    },
-    async ({ user_email, platform, api_key }) => {
-      const denied = operatorOnly();
-      if (denied) return text(denied);
-      if (!PLATFORMS[platform]) return text(`ERROR: unknown platform '${platform}'`);
-      const addr = user_email.trim().toLowerCase();
-      if (!addr) return text("ERROR: user_email is required");
-      // The store is keyed by email and injection looks the caller's own address up in it,
-      // so a key filed under an address that is not a principal can never be reached by
-      // anyone. A typo in an onboarding batch therefore stored a key nobody has, and both
-      // this tool and the batch script reported success.
-      if (platformDbReady()) {
-        const known = await platformDb().query(
-          "select 1 from principal where email = $1 and status = 'active'", [addr]);
-        if (!known.rowCount) {
-          return text(`ERROR: '${addr}' is not an active platform member — person_add first. ` +
-                      "A key stored under an address nobody has cannot be injected for anyone.");
-        }
-      }
-      // The ONBOARDING BATCH path — the one most likely to run several at once, and the
-      // one where a lost write means a colleague quietly has no key.
-      const key = api_key.trim();
-      const weak = implausibleKey(key);
-      if (weak) return text(weak);
-      const replaced = await withCredentials((data) => {
-        const had = data[addr]?.[platform];
-        (data[addr] ??= {})[platform] = key;
-        return had ? mask(had) : null;
-      });
-      logEvent({ actor: caller().email, kind: "credential.admin_set",
-                 subject: `${addr}:${platform}`, detail: { replaced: !!replaced } });
-      // Whether it replaced one, for the same reason credential_set says it — and more
-      // sharply here, because this is the batch path and the key being overwritten is
-      // somebody else's working credential, on a run of many where one line scrolls past.
-      return text(`stored ${platform} key for ${addr} (${mask(key)})` +
-                  (replaced ? ` — REPLACED their previous key (${replaced}), which is gone` : ""));
-    },
-  );
 
-  if (sup) server.registerTool(
-    "credential_admin_delete",
-    {
-      description:
-        "WHEN someone leaves, or a key has leaked and must stop working now. RETURNS whether " +
-        "that person had a key to remove; if they did, their calls to that block stop " +
-        "authenticating immediately. REFUSES anyone but an operator. Deactivating a " +
-        "principal does NOT do this — it stops them authenticating while the platform goes " +
-        "on injecting the key on their behalf.",
-      inputSchema: { user_email: z.string(), platform: z.string() },
-    },
-    // The other half of credential_admin_set, which had none. An operator could put a key
-    // into the store on someone's behalf and nothing could ever take it out again: only the
-    // person themselves could, through credential_delete, which is no use once they have
-    // left — and deactivating a principal stops them authenticating without touching the key
-    // the platform goes on injecting on their behalf.
-    async ({ user_email, platform }) => {
-      const denied = operatorOnly();
-      if (denied) return text(denied);
-      const addr = user_email.trim().toLowerCase();
-      if (!addr) return text("ERROR: user_email is required");
-      const had = await withCredentials((data) => {
-        if (!data[addr]?.[platform]) return false;
-        delete data[addr][platform];
-        if (Object.keys(data[addr]).length === 0) delete data[addr];
-        return true;
-      });
-      if (had) logEvent({ actor: caller().email, kind: "credential.admin_delete", subject: `${addr}:${platform}` });
-      return text(had
-        ? `removed ${addr}'s ${platform} key — their ${platform} calls stop authenticating immediately`
-        : `${addr} had no ${platform} key stored`);
-    },
-  );
 
   // ── the bugs people report ─────────────────────────────────────────────────────────────
   //

@@ -12,7 +12,13 @@ const size = (name: string, map: Record<string, string>, want: number) => {
 // its history resolves. Renames and entries are different quantities and the plan's
 // AC-1.3a conflated them.
 size("TOOL_ALIAS", TOOL_ALIAS, 17);
-size("MANAGE_ALIAS", MANAGE_ALIAS, 29);
+// 19, was 29. The ten that left are the third-party-server tools — `grant_tool`,
+// `revoke_tool`, `connect_block`, `disconnect_block`, `list_platforms`, and the five
+// credential ones. A rename map resolves a tool's HISTORY, so an entry normally outlives the
+// rename; these outlive nothing, because the tool they resolve TO no longer exists on any
+// door. An alias pointing at a name that 404s is worse than an absent one: it turns "no such
+// tool" into a tool the client accepts and the gateway refuses.
+size("MANAGE_ALIAS", MANAGE_ALIAS, 19);
 size("EVAL_ALIAS", EVAL_ALIAS, 7);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 

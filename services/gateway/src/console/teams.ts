@@ -15,7 +15,7 @@ export function mountTeams(app: Express): void {
   app.get("/api/console/teams", handler("teams", async (_req, res, scope) => {
     const db = platformDb();
     // A ROSTER OF EVERY TEAM is per-team data by definition: each row is one department's
-    // name, headcount, installed flows and granted blocks, none of which is another
+    // name, headcount and installed flows, none of which is another
     // department's business. Until now anyone who could sign in through the identity provider saw every
     // row regardless of which team they were in — the same "console shows everything" gap
     // AC-1 closes elsewhere. A team scope narrows the outer query to the caller's own row;
@@ -34,9 +34,7 @@ export function mountTeams(app: Express): void {
               (select count(*) from zz.doc d where d.team_slug = t.slug)             as documents,
 
               (select coalesce(array_agg(f.flow || ' ' || f.version), '{}')
-                 from zz.flow_install f where f.team_id = t.id)                      as flows,
-              (select coalesce(array_agg(g.block order by g.block), '{}')
-                 from zz.tool_grant g where g.team_id = t.id)                        as blocks
+                 from zz.flow_install f where f.team_id = t.id)                      as flows
          from zz.team t order by t.status, t.slug`)
       : db.query(
       `select t.id, t.slug, t.name, t.status, to_char(t.created_at,'YYYY-MM-DD') as created,
@@ -46,9 +44,7 @@ export function mountTeams(app: Express): void {
               (select count(*) from zz.doc d where d.team_slug = t.slug)             as documents,
 
               (select coalesce(array_agg(f.flow || ' ' || f.version), '{}')
-                 from zz.flow_install f where f.team_id = t.id)                      as flows,
-              (select coalesce(array_agg(g.block order by g.block), '{}')
-                 from zz.tool_grant g where g.team_id = t.id)                        as blocks
+                 from zz.flow_install f where f.team_id = t.id)                      as flows
          from zz.team t where t.slug = $1 order by t.status, t.slug`, [scope.slug]);
     // Two more queries beyond the team roster, for the reason above: the per-team
     // document counts key on zz.doc.team_slug, and the event counts key on
@@ -94,17 +90,17 @@ export function mountTeams(app: Express): void {
         // platform. Null for a team with no documents at all — there is nothing
         // to have instrumented, so "not instrumented" would be a false alarm.
         instrumented: documents === 0 ? null : workEvents > 0,
-        flows: r.flows, blocks: r.blocks,
+        flows: r.flows,
       };
     }) });
   }));
 
-  /** One team: its people, what it has installed, and who has connected what.
+  /** One team: its people and what it has installed.
    *
-   * The block connections are the answer to "is this team actually able to
-   * work" — a grant is the team's permission, a token is a person having used
-   * it, and the two are routinely mistaken for each other. Scopes are shown;
-   * the tokens themselves never leave the database. */
+   * ITS GRANTS AND CONNECTIONS WENT WITH THE CONCEPT. They answered "may this team reach a
+   * third party's server, and has anyone signed in to one" — a question the platform no
+   * longer has, because a plugin declares the servers its own skills call. Both tables were
+   * empty on every deployment; see migrations-next/057. */
   app.get("/api/console/teams/:slug", handler("the team", async (req, res, scope) => {
     const db = platformDb();
     const slug = req.params.slug;
@@ -120,7 +116,7 @@ export function mountTeams(app: Express): void {
          from zz.team where slug = $1`, [slug]);
     if (!team.rows.length) { res.status(404).json({ error: `no team ${slug}` }); return; }
     const id = team.rows[0].id as string;
-    const [members, flows, grants, tokens] = await Promise.all([
+    const [members, flows] = await Promise.all([
       db.query(`select p.email, p.display_name as name, m.role,
                        to_char(m.created_at,'YYYY-MM-DD') as joined
                   from zz.membership m join zz.principal p on p.id = m.principal_id
@@ -128,19 +124,11 @@ export function mountTeams(app: Express): void {
       db.query(`select flow, version, agent_name as agent,
                        to_char(created_at,'YYYY-MM-DD') as installed
                   from zz.flow_install where team_id = $1 order by flow`, [id]),
-      db.query(`select block, to_char(created_at,'YYYY-MM-DD') as granted
-                  from zz.tool_grant where team_id = $1 order by block`, [id]),
-      db.query(`select p.email, b.block, b.scope,
-                       to_char(b.expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires
-                  from zz.block_token b
-                  join zz.principal p on p.id = b.principal_id
-                  join zz.membership m on m.principal_id = p.id and m.team_id = $1
-                 order by p.email, b.block`, [id]),
     ]);
     res.json({
       team: { slug: team.rows[0].slug, name: team.rows[0].name,
               status: team.rows[0].status, created: team.rows[0].created },
-      members: members.rows, flows: flows.rows, grants: grants.rows, connections: tokens.rows,
+      members: members.rows, flows: flows.rows,
     });
   }));
 }

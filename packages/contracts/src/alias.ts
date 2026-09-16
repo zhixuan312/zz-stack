@@ -68,17 +68,7 @@ export const MANAGE_ALIAS: Record<string, string> = Object.freeze({
   install_flow: "flow_install",
   uninstall_flow: "flow_uninstall",
   list_installs: "install_list",
-  grant_tool: "tool_grant",
-  revoke_tool: "tool_revoke",
   issue_enrolment: "enrolment_issue",
-  connect_block: "block_connect",
-  disconnect_block: "block_disconnect",
-  list_platforms: "platform_list",
-  set_my_credential: "credential_set",
-  my_credentials: "credential_list",
-  delete_my_credential: "credential_delete",
-  admin_set_credential: "credential_admin_set",
-  admin_delete_credential: "credential_admin_delete",
   my_client_setup: "client_setup",
   list_catalog: "catalog_list",
 });
@@ -159,15 +149,9 @@ export function resolveStep(step: string): string {
  * clear refusal into a connection error somewhere further down. */
 export const FIXED_DOORS = Object.freeze(["/core/mcp", "/manage/mcp", "/eval/mcp"]);
 
-/** The block door, spelled the way a person types it rather than the way express mounts it.
- *
- * `/p/<block>/mcp` in prose, `/p/:block/mcp` in the router. The word is `block` on every
- * surface this platform has — `zz.block_tool`, `blocks/<block>/`, "building blocks" in the
- * door index itself — and it reads `<platform>` nowhere any more. */
-export const BLOCK_DOOR = "/p/<block>/mcp";
 
 /** Every door, for a usage line or an error message. */
-export const DOORS_PRINTED: readonly string[] = Object.freeze([...FIXED_DOORS, BLOCK_DOOR]);
+export const DOORS_PRINTED: readonly string[] = Object.freeze([...FIXED_DOORS]);
 
 /** Whether a string is a door this gateway mounts, with a real block name in the block door's
  *  slot. The block half is matched on shape — one path segment, the same character class the

@@ -20,7 +20,7 @@
  * cycle this codebase avoids everywhere else (console-write.ts depends on console.ts, never
  * the reverse). Dependency injection gets the same code reuse without that cycle. The one
  * thing this file DOES import from server.ts is `import type { ... }` for the two result
- * shapes below (`SetCredentialOutcome`, `IssueTokenOutcome`) — a type-only import, erased
+ * shapes below (`IssueTokenOutcome`) — a type-only import, erased
  * entirely by `tsc` before anything runs, so it creates no runtime edge and no cycle; it is
  * there only so this file's own signatures do not restate those shapes a second time.
  *
@@ -53,7 +53,7 @@
  */
 import type { Express } from "express";
 
-import type { IssueTokenOutcome, SetCredentialOutcome } from "./credentials.js";
+import type { IssueTokenOutcome } from "./credentials.js";
 import { type Identity } from "./identity.js";
 import { mountMySettings } from "./settings/me.js";
 import { mountTeamSettings } from "./settings/team.js";
@@ -67,11 +67,6 @@ import { mountPlatformSettings } from "./settings/platform.js";
  * `{ via: "web" }`.
  */
 export interface SettingsDeps {
-  myCredentialsFor: (email: string) => Record<string, string>;
-  setMyCredentialFor: (
-    email: string, platform: string, apiKey: string, extraDetail?: Record<string, unknown>,
-  ) => Promise<SetCredentialOutcome>;
-  deleteMyCredentialFor: (email: string, platform: string, extraDetail?: Record<string, unknown>) => Promise<boolean>;
   myAccessTokensFor: (email: string) => Promise<Array<{
     id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
   }>>;

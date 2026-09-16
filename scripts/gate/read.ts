@@ -383,18 +383,3 @@ const ENV_READ = /process\.env\.([A-Z][A-Z_0-9]*)|envRequired\(\s*"([A-Z][A-Z_0-
 export function envNamesIn(text: string): string[] {
   return [...text.matchAll(ENV_READ)].map((m) => m[1] ?? m[2]);
 }
-
-/** Split an argument list on top-level commas — `load(), email, platform` is three, not two
- *  and a fragment. */
-export const splitTopLevel = (text: string): string[] => {
-  const out: string[] = [];
-  let depth = 0, cur = "";
-  for (const ch of text) {
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    if (ch === ")" || ch === "]" || ch === "}") depth--;
-    if (ch === "," && depth === 0) { out.push(cur.trim()); cur = ""; continue; }
-    cur += ch;
-  }
-  if (cur.trim()) out.push(cur.trim());
-  return out;
-};

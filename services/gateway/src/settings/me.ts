@@ -1,6 +1,6 @@
 /**
  * A person's own settings: their keys, their access tokens, which team they act for, the
- * blocks they have connected, and the client package that installs the platform for them.
+ * and the client package that installs the platform for them.
  *
  * EVERY ROUTE HERE ACTS ON THE CALLER and takes no subject argument, which is what makes the
  * authorisation trivial and the surface safe: there is nothing here that can reach anybody
@@ -14,63 +14,9 @@ import { redact } from "../redact.js";
 import { TEAM_SLUG } from "../identity.js";
 import { logEvent } from "../events.js";
 import { platformDb, platformDbReady } from "../db.js";
-import { PLATFORMS } from "../blocks.js";
-import { beginAuthorization, disconnectBlock, myBlockConnectionsFor } from "../block-oauth.js";
 import { renderClientSetup } from "../admin/flows.js";
 
 export function mountMySettings(app: Express, deps: SettingsDeps): void {
-  app.get("/api/console/settings/me/credentials", (req: Request, res: Response) => {
-    try {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      // `myCredentialsFor` reads /data/credentials.json synchronously and THROWS on a
-      // truncated or malformed store (see server.ts's own `load()`) — every sibling route
-      // in this file is async and lands in a `.catch`; this one is not, so it needs its own
-      // try/catch or that throw becomes Express's default HTML error page instead of the
-      // JSON error shape every other route here promises.
-      const mine = deps.myCredentialsFor(id.email);
-      const rows = Object.entries(mine).map(([platform, api_key]) => ({ platform, api_key }));
-      res.json(redact(rows));
-    } catch (err) {
-      console.error("settings/me/credentials (list) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not list credentials" });
-    }
-  });
-
-  /** Store the caller's own key for a platform. */
-  app.post("/api/console/settings/me/credentials", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      const { platform, api_key } = (req.body ?? {}) as Record<string, unknown>;
-      if (typeof platform !== "string" || !platform) { res.status(400).json({ error: "platform is required" }); return; }
-      if (typeof api_key !== "string" || !api_key) { res.status(400).json({ error: "api_key is required" }); return; }
-      const result = await deps.setMyCredentialFor(id.email, platform, api_key, { via: "web" });
-      if (!result.ok) { res.status(400).json({ error: result.error }); return; }
-      // Never `result.masked` — that four-character fragment is exactly what an agent gets
-      // back and a browser must not. `replaced` alone is enough for the page to say "this
-      // overwrote your previous key" without showing either the old one or the new one.
-      res.json(redact({ platform, stored: true, replaced: result.replacedMasked !== null }));
-    })().catch((err: unknown) => {
-      console.error("settings/me/credentials (set) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not store credential" });
-    });
-  });
-
-  /** Remove the caller's own key for a platform. */
-  app.delete("/api/console/settings/me/credentials/:platform", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      const platform = req.params.platform;
-      const had = await deps.deleteMyCredentialFor(id.email, platform, { via: "web" });
-      res.json(redact({ ok: true, deleted: had }));
-    })().catch((err: unknown) => {
-      console.error("settings/me/credentials (delete) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not delete credential" });
-    });
-  });
-
   /** The caller's own access tokens — masked at the query level (only a hash is ever
    *  stored), redacted here on top of that the same as every other row in this file. */
   app.get("/api/console/settings/me/tokens", (req: Request, res: Response) => {
@@ -219,59 +165,5 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
     const result = myTeamsSummary(id);
     if (!result.ok) { res.status(400).json({ error: result.error }); return; }
     res.json(redact({ actingFor: result.actingFor, teams: result.teams, note: result.note ?? null }));
-  });
-
-  /** The caller's own block connections — which blocks they have signed into, with what
-   *  scope and when the access expires. */
-  app.get("/api/console/settings/me/blocks", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      res.json(redact(await myBlockConnectionsFor(id.email)));
-    })().catch((err: unknown) => {
-      console.error("settings/me/blocks (list) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not list block connections" });
-    });
-  });
-
-  /** Start signing in to a building block AS the caller — the browser counterpart of
-   *  `block_connect` (server.ts). Not logged with `via: "web"`: `block_connect` itself logs
-   *  nothing either, because nothing has actually happened to the caller's access yet — the
-   *  block only records them once they finish the flow at its own consent screen, and that
-   *  happens at `block-oauth.ts`'s public `/oauth/:block/callback`, outside this console
-   *  entirely. */
-  app.post("/api/console/settings/me/blocks/:block/connect", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      const block = req.params.block;
-      const url = PLATFORMS[block]?.url;
-      if (!url) {
-        res.status(400).json({ error: `no such block '${block}'. Known: ${Object.keys(PLATFORMS).join(", ")}` });
-        return;
-      }
-      const got = await beginAuthorization(id.email, block, url);
-      if ("error" in got) { res.status(400).json({ error: got.error }); return; }
-      res.json(redact({ url: got.url }));
-    })().catch((err: unknown) => {
-      console.error("settings/me/blocks (connect) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not start authorization" });
-    });
-  });
-
-  /** Disconnect the caller's own connection to one block. */
-  app.delete("/api/console/settings/me/blocks/:block", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const block = req.params.block;
-      const disconnected = await disconnectBlock(id.email, block, { via: "web" });
-      res.json(redact({ ok: true, disconnected }));
-    })().catch((err: unknown) => {
-      console.error("settings/me/blocks (disconnect) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not disconnect" });
-    });
   });
 }

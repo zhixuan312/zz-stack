@@ -5,11 +5,10 @@
  * grants that widen or narrow what their team's agents can call. Same outcome shape as the
  * team writes beside them, for the same reason.
  */
-import { PLATFORMS, blockIds } from "../blocks.js";
 import { platformDb } from "../db.js";
 import { auditAdmin, type Identity } from "../identity.js";
 import { issueEnrolment } from "../passkey.js";
-import { principalId, superOnly, teamId } from "./authority.js";
+import { principalId, superOnly } from "./authority.js";
 
 // -------------------------------------------------------------- shared platform-write logic
 //
@@ -117,61 +116,4 @@ export async function issueEnrolmentLink(
     `Enrolment link for ${email}, good until ${link.expiresAt.toISOString()} and usable once. ` +
     "Send it to them and have them open it on the device whose passkey they want to use. " +
     "Shown once — only its hash is kept." };
-}
-/** Grant a team access to a building block. Block access is a platform decision — never
- *  reachable from `teamAuthority`, only `superOnly` (AC-5). */
-export async function grantTool(
-  id: Identity | null, team: string, block: string,
-  extraDetail: Record<string, unknown> = {},
-): Promise<PlatformWriteOutcome> {
-  if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required (block access is a platform decision)" };
-  // A grant for a block that does not exist is not a harmless no-op — it is the switch
-  // that turns enforcement on. The proxy's rule is "a team with ANY grant gets only its
-  // granted blocks", so a team whose first and only grant is a typo loses every real
-  // block at once, and the 403 it gets back names the block it asked for rather than the
-  // grant that is wrong. Nothing else in the platform validates this string.
-  if (!PLATFORMS[block]) {
-    return { ok: false, status: 400, error:
-      `no block '${block}' — this gateway routes [${blockIds().join(", ")}]. ` +
-      "Granting an unknown block would switch on enforcement for this team and deny the real ones." };
-  }
-  const db = platformDb();
-  const tid = await teamId(db, team);
-  if (!tid) {
-    return { ok: false, status: 400,
-      error: `no active team '${team}' — team_create on the same slug restores an archived one` };
-  }
-  const actorId = await principalId(db, id.email);
-  await db.query(
-    `insert into tool_grant (team_id, block, granted_by) values ($1,$2,$3)
-     on conflict do nothing`,
-    [tid, block, actorId],
-  );
-  auditAdmin(id, "grant_tool", `${team}:${block}`, { ...extraDetail }, team);
-  return { ok: true, message: `${team} may use block '${block}'` };
-}
-/** Revoke a team's block access. `confirm` must repeat the block id exactly. Block access is
- *  a platform decision — never reachable from `teamAuthority`, only `superOnly` (AC-5). */
-export async function revokeTool(
-  id: Identity | null, team: string, block: string, confirm: string,
-  extraDetail: Record<string, unknown> = {},
-): Promise<PlatformWriteOutcome> {
-  if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
-  if (confirm !== block) return { ok: false, status: 400, error: `confirm must repeat the block id exactly ('${block}')` };
-  // Same reason as flow_uninstall above, and it bites harder here: revoking a block the
-  // team never had reported success, so an operator taking away the WRONG block id walked
-  // away believing access was gone while the real grant stood.
-  const gone = await platformDb().query(
-    `delete from tool_grant using team t
-     where tool_grant.team_id = t.id and t.slug = $1 and tool_grant.block = $2`,
-    [team, block],
-  );
-  if (!gone.rowCount) {
-    return { ok: false, status: 400, error:
-      `${team} has no grant for '${block}' — nothing was revoked. ` +
-      "install_list shows their grants; revoking a block they never had would " +
-      "have left the one you meant in place." };
-  }
-  auditAdmin(id, "revoke_tool", `${team}:${block}`, { ...extraDetail }, team);
-  return { ok: true, message: `${team} may no longer use '${block}' (takes effect immediately)` };
 }

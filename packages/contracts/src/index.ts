@@ -15,79 +15,8 @@ export { actingTeam, addressResolver, mintPat, parseCaller, PAT_TOKEN,
 // through this one door rather than a deep import — the same reason identity.ts is re-exported
 // above instead of letting callers reach it directly.
 export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
-         FIXED_DOORS, BLOCK_DOOR, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
+         FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
          resolveTool, resolveToolKey, resolveStep } from "./alias.js";
-
-/** A building-block platform reachable through the credential gateway. */
-const PlatformConfig = z.object({
-  url: z.string().url(),
-  /** The header that carries the caller's personal key. OMIT IT for a block that needs no
-   * credential — a mock, or one reached over a private network. Requiring a header of every
-   * block is why RuleMill and bookit could not be registered at all: they are reachable
-   * without a key, so there was no honest value to put here, so they were left out of
-   * PLATFORMS, so /p/<block>/mcp answered 404 for them while the browser (which bypasses
-   * this proxy) worked fine. */
-  header: z.string().min(1).optional(),
-  name: z.string().min(1),
-  /** Which of this block's tools an agent should be given, when it should not be given all
-   * of them. Omit for every tool.
-   *
-   * This is a CONTEXT budget, not an authorisation boundary — authorisation is decided per
-   * call by the gateway against the caller's own credential. A block may publish a couple of hundred
-   * tools; attaching all of them can cost most of a context window before a single message,
-   * resent every turn. The list lived in the old front end's
-   * bootstrap script, which made it a property of a browser rather than of the block. */
-  tools: z.array(z.string().min(1)).optional(),
-});
-type PlatformConfig = z.infer<typeof PlatformConfig>;
-
-export const PlatformMap = z.record(PlatformConfig);
-export type PlatformMap = z.infer<typeof PlatformMap>;
-
-/** The credential store: person -> platform -> api key.
- *
- * ONE LEVEL. A key belongs to the person who stored it and to nobody else. There used to be a
- * second subject shape, `team:<slug>`, holding a key the whole team spent — see
- * `personalCredential` below for why it is gone. The map is still nested rather than flattened
- * because it is a file holding live keys, and a reshape that failed to parse would take every
- * stored key out of service at once. */
-export const CredentialStore = z.record(z.record(z.string()));
-export type CredentialStore = z.infer<typeof CredentialStore>;
-
-/** Whose key answers for this call: the person's own, or nobody's.
- *
- * THERE IS NO SHARED KEY. There used to be: a person's own key, else their team's. The team
- * level existed so a new joiner could work on their first day instead of waiting on a key
- * request, which is a real problem and was the wrong solution to it.
- *
- * What it actually bought was a block call that the block itself could not attribute. CaseBox
- * the block's audit log recorded the platform, not the person, for anyone who had never signed
- * in — and "who did this?" is exactly the question that gets asked once something has already
- * gone wrong. It also made the connection state unanswerable from the inside: a person with no
- * credential of their own looked connected, because somebody else's key was carrying them.
- *
- * The day-one problem is solved instead by the person signing in to the block as themselves,
- * which takes one click and leaves the block holding a token that names them.
- *
- * Removing this changed nothing live: at the time it went, the production store held three
- * subjects and all three were people. */
-export function personalCredential(
-  store: CredentialStore, email: string, platform: string,
-): { key: string } | null {
-  // A SUBJECT WITHOUT AN `@` IS NOT A PERSON. Stores written before shared keys were removed
-  // still hold `team:<slug>` rows, and this is a plain map lookup — so without this line the
-  // one string that would resurrect a shared key is the exact string it used to be filed
-  // under. Nobody's address is `team:acme`, so this costs nothing and closes the door rather
-  // than trusting that nothing will ever pass one. The two namespaces were always told apart
-  // this way; it is only the direction of the test that has changed.
-  if (!email.includes("@")) return null;
-  const mine = store[email.toLowerCase()]?.[platform];
-  return mine ? { key: mine } : null;
-}
-
-/** Mask a secret for display. */
-export const mask = (key: string): string =>
-  key.length > 10 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "…";
 
 /**
  * The frontmatter block at the head of a document: `[0]` is the whole block including both

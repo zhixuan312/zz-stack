@@ -227,8 +227,6 @@ check("the shelf is on the door everyone has, and installing is not", () => {
     ["flow_install", "lead", "installing changes what a whole team runs"],
     ["member_add", "lead", "team membership is a team admin's act"],
     ["person_add", "sup", "creating a principal is a platform act"],
-    ["tool_grant", "sup", "block access is a platform decision"],
-    ["credential_admin_set", "sup", "storing a key for somebody else is an operator's act"],
   ]) {
     const got = tierOf(name);
     if (got === null) bad.push(`${name} is not registered anywhere`);

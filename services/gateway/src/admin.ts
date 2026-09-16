@@ -24,7 +24,7 @@ import { z } from "zod";
 
 import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
 import { autoFlows, canonicalJson, installFlow, uninstallFlow } from "./admin/flows.js";
-import { addPerson, deactivatePerson, grantTool, issueEnrolmentLink, listPeople, revokeTool } from "./admin/people.js";
+import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
 import { platformDb } from "./db.js";
 import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, sha256, type Identity, TEAM_SLUG } from "./identity.js";
@@ -401,33 +401,6 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     return text(r.ok ? r.message : `ERROR: ${r.error}`);
   });
 
-  if (sup) server.registerTool("tool_grant", {
-    description:
-      "WHEN a team has been refused a building block, or a flow it just installed declares " +
-      "blocks nobody granted yet. RETURNS the grant. The rule to know before calling: once a " +
-      "team has ANY grants the gateway enforces them on /p/<block>, so the first grant a " +
-      "team is given is also the moment every other block starts being refused. REFUSES " +
-      "anyone but a superadmin, and an unknown block id.",
-    inputSchema: { team: z.string(), block: z.string() },
-  }, async ({ team, block }) => {
-    const id = await caller();
-    const r = await grantTool(id, team, block);
-    return text(r.ok ? r.message : `ERROR: ${r.error}`);
-  });
-
-  if (sup) server.registerTool("tool_revoke", {
-    description:
-      "WHEN a team should no longer reach a building block. RETURNS confirmation, and says " +
-      "plainly when the team never had that grant rather than reporting a revocation that " +
-      "did not happen — install_list shows what they actually have. REFUSES anyone but a " +
-      "superadmin, and refuses unless confirm repeats the block id.",
-    inputSchema: { team: z.string(), block: z.string(), confirm: z.string() },
-  }, async ({ team, block, confirm }) => {
-    const id = await caller();
-    const r = await revokeTool(id, team, block, confirm);
-    return text(r.ok ? r.message : `ERROR: ${r.error}`);
-  });
-
   server.registerTool("install_list", {
     description:
       "WHEN you need to know what a team actually runs and what it has been trusted with — " +
@@ -458,11 +431,6 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
          from flow_install f join team t on t.id = f.team_id
          left join principal p on p.id = f.installed_by
        where $1 or t.slug = any($2) order by t.slug, f.flow`, [all, mine]);
-    const grants = await db.query(
-      `select t.slug as team, g.block, p.email as granted_by, g.created_at
-         from tool_grant g join team t on t.id = g.team_id
-         left join principal p on p.id = g.granted_by
-       where $1 or t.slug = any($2) order by t.slug, g.block`, [all, mine]);
     // An install PINS the manifest it was made from, deliberately — that is what a version
     // means. But a manifest can change without its version moving, and then the pin and the
     // catalog differ silently, at the same version number, with nothing anywhere saying so.
@@ -514,7 +482,6 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     return text(JSON.stringify({
       scope: all ? "platform" : mine,
       flows: rows,
-      grants: grants.rows,
       ...(rows.some((r) => r.pinned_manifest_differs_from_catalog)
         ? { note: "A flow marked pinned_manifest_differs_from_catalog is running an older manifest than the catalog ships. Re-run flow_install for that team to take the current one." }
         : {}),

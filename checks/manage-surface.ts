@@ -117,8 +117,7 @@ for (const f of FILES) {
 // access-door.ts, and the three in admin/bugs.ts, which the door registers as one call. The numbers are not asserted against themselves — counting a list this file
 // also wrote proves nothing. What carries the weight is the set equality below, against the gates
 // parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
-const MEMBER = ["block_connect", "block_disconnect", "platform_list", "team_mine", "team_switch",
-                "credential_set", "credential_list", "credential_delete", "client_setup",
+const MEMBER = ["team_mine", "team_switch", "client_setup",
                 "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list", "install_list",
                 "catalog_list"];
 const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
@@ -127,8 +126,7 @@ const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
 // has — so the list is everybody's reports, and handing it to a team's own admin would show
 // them every other team's. That is a wider reading of "admin" than a team admin was given.
 const SUPER = ["person_list", "person_add", "enrolment_issue", "person_deactivate",
-               "team_create", "team_archive", "tool_grant", "tool_revoke",
-               "credential_admin_set", "credential_admin_delete", "knowledge_reindex",
+               "team_create", "team_archive", "knowledge_reindex",
                "bug_list", "bug_resolve", "bug_delete"];
 
 // The tiers and the frozen table have to describe the same door. Without this, a name could be
@@ -183,11 +181,12 @@ for (const [who, got, want] of tierSets) {
 // ONE PLACE, because the first version of this spelled the number in the condition and again
 // in the sentence, and a mutation that changed the condition alone printed "/manage registers
 // 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
-const DOOR_SIZE = 34;
+const DOOR_SIZE = 24;
 if (registered.size !== DOOR_SIZE) {
   fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
-            `(33 before this initiative, minus the 3 duplicates, plus knowledge_reindex ` +
-            `arriving from /core at Task I-38, plus bug_delete at 0.38.1). ` +
+            `(34 until the third-party-server layer went, which took ten with it: ` +
+            `tool_grant, tool_revoke, block_connect, block_disconnect, platform_list and ` +
+            `the five credential tools). ` +
             `Registered: ${[...registered.keys()].sort().join(", ")}`);
 }
 

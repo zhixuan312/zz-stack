@@ -23,7 +23,7 @@ import { tableRow } from "../document-rules.js";
 import { journalLog, knowledgeEvent, type KbRow } from "../indexing.js";
 import { KNOWLEDGE_TEAM, PLAIN_TOKEN, knowledgeRoot, sanitize, tagRefusal, titleSlug, userRoot, yamlValue } from "../paths.js";
 import { commitStore, logActivity, setEnvelopeField } from "../persist.js";
-import { blockVersionFor, db, teamFor, teamsFor } from "../platform-db.js";
+import { db, subjectVersionFor, teamFor, teamsFor } from "../platform-db.js";
 import { isoToday } from "../write-guards.js";
 
 export function registerKnowledgeTools(server: McpServer): void {
@@ -267,7 +267,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         // Resolved from the registry when the node is about a block and the caller did not
         // say. A claim about a block with no version behind it cannot be retired when the
         // block moves, so it is followed forever.
-        `verified_against: ${yamlValue(verified_against ?? (await blockVersionFor(tags, team)) ?? "")}`,
+        `verified_against: ${yamlValue(verified_against ?? (await subjectVersionFor(tags, team)) ?? "")}`,
         "supersededBy: null", "---", "", body, "",
       ].filter((l) => l !== null).join("\n");
       writeFileSync(join(ndir, file), doc);   // fills the placeholder claimed above

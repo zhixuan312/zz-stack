@@ -150,17 +150,18 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
 /** The version behind a subject tag, and why the three kinds it can name are not answered
  *  the same way.
  *
- *  `block:<name>` — the standard says the version is the one in `serverInfo` at the MCP
- *  handshake, and the platform records it on every call, so the newest row in
- *  zz.block_version IS what the block last told us it was.
+ *  `plugin:<name>` — the newest row in zz.plugin_version, which is what that plugin last
+ *  released. ORDERED BY THE VERSION ITSELF, semver-wise, because zz.plugin_version carries no
+ *  timestamp: a lexicographic sort would put 0.9.0 above 0.43.0 and quietly answer with an
+ *  older release than the one in force.
  *
  *  `flow:<name>` — resolved from zz.flow_install, scoped to the caller's team: an install is
  *  team-scoped by its own primary key (team_id, flow), so the same flow name can carry a
  *  different version per team and there is no team-less answer to give.
  *
- *  `provider:` and `interface:` — there is NO backing table for either kind. zz.block_version
- *  tracks blocks and zz.flow_install tracks flows; nothing records a version for a provider
- *  or an interface. Their "unresolved" is therefore PERMANENT rather than a lookup that is
+ *  `provider:` and `interface:` — there is NO backing table for either kind.
+ *  zz.plugin_version tracks plugins and zz.flow_install tracks flows; nothing records a
+ *  version for a provider or an interface. Their "unresolved" is therefore PERMANENT rather than a lookup that is
  *  merely failing today — there is no query that could ever make it resolve, unlike the other
  *  two kinds' "unresolved", which means only that this particular lookup did not find a row.
  *
@@ -168,25 +169,27 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
  *  the field is then written empty rather than guessed. Never null once a subject tag IS
  *  present: an infra hiccup at write time must not be indistinguishable from "no subject
  *  involved", or it would permanently produce a claim that can never be retired. */
-export async function blockVersionFor(tags: string[] | undefined, team: string | null): Promise<string | null> {
+export async function subjectVersionFor(tags: string[] | undefined, team: string | null): Promise<string | null> {
   const all = tags ?? [];
-  const blockTag = all.find((t) => t.startsWith("block:"));
+  const pluginTag = all.find((t) => t.startsWith("plugin:"));
   const flowTag = all.find((t) => t.startsWith("flow:"));
   const otherTag = all.find((t) => t.startsWith("provider:") || t.startsWith("interface:"));
-  if (blockTag) {
+  if (pluginTag) {
     try {
       const p = db();
-      // `unresolved`, NOT null. A `block:` tag is present, so the subject exists and only the
+      // `unresolved`, NOT null. A `plugin:` tag is present, so the subject exists and only the
       // lookup failed — which is precisely the distinction the docstring above promises and
       // this branch was quietly breaking. Returning null here wrote the field empty, and empty
-      // is this function's word for "no subject involved": a node about a block, filed on a
+      // is this function's word for "no subject involved": a node about a plugin, filed on a
       // deployment with no database, became indistinguishable from a node about nothing.
       // Found in review, in the same initiative that added the `flow:` branch two lines below
       // with this case already handled correctly.
       if (!p) return "unresolved";
       const r = await p.query<{ version: string }>(
-        `select bv.version from zz.block_version bv join zz.block b on b.id = bv.block_id
-          where b.name = $1 order by bv.first_seen_at desc limit 1`, [blockTag.slice(6)]);
+        `select pv.version from zz.plugin_version pv join zz.plugin p on p.id = pv.plugin_id
+          where p.name = $1
+          order by string_to_array(regexp_replace(pv.version, '[^0-9.].*$', ''), '.')::int[] desc
+          limit 1`, [pluginTag.slice(7)]);
       return r.rows[0]?.version ?? "unresolved";
     } catch {
       return "unresolved";

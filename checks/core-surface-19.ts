@@ -186,9 +186,11 @@ if (!body) fail.push("skills.ts registers no skill_list at all");
 
 const CLAUSES: [RegExp, string][] = [
   [/owner:\s*z\.string\(\)\.optional\(\)/, "skill_list does not take an optional `owner`"],
-  [/zz\.block/, "skill_list does not ask the registry which blocks this platform routes — " +
-                "that is the half it took over from block_skills"],
-  [/kind\s*=\s*'block_usage'/, "skill_list does not ask for a block's usage skills by kind"],
+  // WHAT THIS USED TO ASSERT, and why it is gone. skill_list took over block_skills' job of
+  // listing "which blocks this platform routes", from a zz.block query filtered to
+  // `origin <> 'platform'`. That registry holds exactly one row and its origin IS 'platform',
+  // so the query returned nothing on every call — it was answering a question about a concept
+  // this platform no longer has, and answering it emptily.
   // THE READ, not the word. `/when_to_use/` also matched the sentence said when a SKILL.md
   // declares neither field, so dropping the read and keeping the apology left this green.
   [/front\("when_to_use"\)/, "skill_list does not report each skill's when_to_use"],
@@ -198,8 +200,8 @@ const CLAUSES: [RegExp, string][] = [
                        "report a skill's position in its flow"],
   [/SKILL\.md/, "skill_list does not read the skills' own files"],
   [/files:/, "skill_list does not report the supporting files beside a skill"],
-  [/is not a plugin or building block/,
-   "skill_list does not refuse an owner id that matches no plugin or block"],
+  [/is not a plugin you can reach/,
+   "skill_list does not refuse an owner id that matches no plugin"],
 ];
 for (const [re, why] of CLAUSES) if (!re.test(body)) fail.push(why);
 

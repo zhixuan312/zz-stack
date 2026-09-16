@@ -19,7 +19,7 @@ import { z } from "zod";
 
 import { safeName, safeRelPath, userRoot } from "../paths.js";
 import { logActivity } from "../persist.js";
-import { db, teamsFor } from "../platform-db.js";
+import { teamsFor } from "../platform-db.js";
 import { allSkillRoots } from "../skill-roots.js";
 import { isoToday } from "../write-guards.js";
 
@@ -244,14 +244,6 @@ export function registerSkillTools(server: McpServer): void {
         if (files.length) out.push(`  files: ${files.join(", ")}`);
         return out;
       };
-      /** Resolve a name the way skill_read resolves it: first root wins. */
-      const dirOf = (name: string): string | null => {
-        for (const root of roots) {
-          const dir = join(root, name);
-          if (existsSync(join(dir, "SKILL.md"))) return dir;
-        }
-        return null;
-      };
 
       const groups: { id: string; label: string; lines: string[] }[] = [];
       const groupFor = (id: string, label: string): { id: string; label: string; lines: string[] } => {
@@ -284,51 +276,12 @@ export function registerSkillTools(server: McpServer): void {
         }
       }
 
-      // ── The blocks, from the registry rather than from the mount ──────────────────────
-      //
-      // ASKED OF zz.block, not of /blocks. A block with no usage skill has no directory here,
-      // and it is precisely the block an agent most needs to be told exists — "ships none" is
-      // an answer and silence is not. The mount is where the TEXT comes from; the registry is
-      // what says which blocks there are.
-      //
-      // CAUGHT, not merely null-checked, and the difference is a whole class of deployment.
-      // `db()` returns null when no database is CONFIGURED, which is local dev; on a host where
-      // one is configured and down it returns a pool and the query THROWS — the same case
-      // skill-roots.ts wraps for its own query, and the reason allSkillRoots reports `degraded`
-      // at all. `skill_list` never touched the database before this merge, so it answered "the
-      // platform database is unreachable" during an outage. Reaching a query here without a
-      // catch would turn that named refusal into an MCP error, which is the failure mode
-      // relay.ts's own header describes: the client reads a dead call rather than a sentence.
-      const p = db();
-      let blocksUnavailable = !p;
-      if (p) {
-        try {
-          const { rows } = await p.query<{ block: string; title: string; skill: string | null }>(
-            `select b.name as block, b.title, s.name as skill
-               from zz.block b
-               left join zz.skill s on s.block_id = b.id and s.kind = 'block_usage' and not s.retired
-              where b.origin <> 'platform'
-              order by b.name, s.name`,
-          );
-          for (const r of rows) {
-            const g = groupFor(r.block, `${r.block}${r.title ? ` (${r.title})` : ""} — a building block`);
-            if (r.skill) g.lines.push(...describe(r.skill, dirOf(r.skill)));
-          }
-        } catch {
-          blocksUnavailable = true;   // said out loud below, never rendered as "no blocks"
-        }
-      }
-
       // ── The answer ────────────────────────────────────────────────────────────────────
       if (owner !== undefined && !groups.some((g) => g.id === owner)) {
         return text(
-          `ERROR: '${owner}' is not a plugin or building block you can reach. The owners that ` +
+          `ERROR: '${owner}' is not a plugin you can reach. The owners that ` +
           `are: ${groups.map((g) => g.id).join(", ") || "none — nothing is installed for you"}. ` +
-          "Call this with no argument for all of them." +
-          (blocksUnavailable
-            ? " The platform database is unreachable, so no building block is in that list — " +
-              "this is not a statement about the blocks."
-            : ""));
+          "Call this with no argument for all of them.");
       }
       const shown = owner === undefined ? groups : groups.filter((g) => g.id === owner);
       const lines: string[] = [];
@@ -357,14 +310,13 @@ export function registerSkillTools(server: McpServer): void {
         "for a name it does not own, which looks like the skill being missing when it is not.");
 
       // A SHORT LIST FOR A REASON, said out loud. Without the platform database there is no
-      // way to know which flows this team installed or which blocks exist, so this is the
-      // platform's own skills and nothing else — which looks exactly like a team that has
-      // installed nothing.
-      if (degraded || blocksUnavailable) {
+      // way to know which flows this team installed, so this is the platform's own skills and
+      // nothing else — which looks exactly like a team that has installed nothing.
+      if (degraded) {
         return text(
           "ERROR: the platform database is unreachable, so which flows your team has installed " +
-          "and which building blocks this platform routes cannot be read. What follows is what " +
-          "is on disk for everybody, not your team's shelf.\n\n" + lines.join("\n"));
+          "cannot be read. What follows is what is on disk for everybody, not your team's " +
+          "shelf.\n\n" + lines.join("\n"));
       }
       return text(lines.join("\n"));
     },

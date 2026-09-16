@@ -86,7 +86,7 @@ function diskPlugins(): DiskPlugin[] {
       owner: e.owner,
       agentName: e.manifest.agentName ?? null,
       description: e.manifest.description ?? null,
-      version: e.manifest.version ?? null,
+      version: PLATFORM_VERSION,
       // BOTH DECLARATIONS, because both become servers in the installed package.
       // client-package.ts maps `tools` to /p/<block>/mcp and `servers` to their own paths and
       // concatenates them; a console showing one of the two would be showing a plugin that

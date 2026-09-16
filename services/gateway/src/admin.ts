@@ -22,6 +22,7 @@ import { type CatalogManifest, mintPat } from "@zz/contracts";
 import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { PLATFORM_VERSION } from "./client-package.js";
 import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
 import { autoFlows, canonicalJson, installFlow, uninstallFlow } from "./admin/flows.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
@@ -474,7 +475,7 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
         if (!chosen.has(a.flow)) {
           // No installer and no date: nobody installed an automatic flow, and inventing
           // either would make a fact out of the absence of one.
-          rows.push({ team: t, flow: a.flow, version: a.manifest.version ?? "", install: "automatic" });
+          rows.push({ team: t, flow: a.flow, version: PLATFORM_VERSION, install: "automatic" });
         }
       }
     }

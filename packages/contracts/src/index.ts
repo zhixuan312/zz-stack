@@ -375,7 +375,11 @@ export const CatalogManifest = z.object({
    * obligation: stages without documents is a legal non-flow package. */
   documents: z.array(FlowDoc).optional(),
   entry: z.string().optional(),
-  version: z.string().optional(),
+  /* NO `version`. Every plugin in this repository is released together, at the platform's own
+   * number, and client-package stamps that into the plugin.json a person installs. A manifest
+   * declaring its own produced two answers to "which version is installed": flow.json said
+   * zz-access 2.3.0 while the shipped package said 0.43.0, and the registry recorded the
+   * former — so evaluation, which compares versions, was reading a number nobody ran. */
   description: z.string().optional(),
   /** WHY THIS PACKAGE EXISTS, in the author's own words — the one sentence that says what
    * problem it is here to solve.

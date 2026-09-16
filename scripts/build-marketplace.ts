@@ -57,7 +57,7 @@ process.env.ZZ_EVALS_DIR ??= join(root, "evals");
 const load = (p: string) => import(pathToFileURL(join(root, p)).href);
 const { catalogManifest, installableFlows } =
   (await load("packages/catalog/dist/index.js")) as typeof import("../packages/catalog/dist/index.js");
-const { buildClientPackage } =
+const { buildClientPackage, PLATFORM_VERSION } =
   (await load("services/gateway/dist/client-package.js")) as typeof import("../services/gateway/dist/client-package.js");
 const { whenToUse } =
   (await load("services/gateway/dist/package/skills.js")) as typeof import("../services/gateway/dist/package/skills.js");
@@ -85,7 +85,7 @@ const flows = installableFlows()
     const entry = m.entry || flow;
     return {
       flow,
-      version: m.version ?? "",
+      version: PLATFORM_VERSION,
       entry,
       agentName: null,
       whenToUse: whenToUse(flow, entry),

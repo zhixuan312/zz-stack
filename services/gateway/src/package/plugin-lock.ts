@@ -22,6 +22,8 @@ import { join } from "node:path";
 
 import { catalogEntries } from "@zz/catalog";
 
+import { PLATFORM_VERSION } from "../client-package.js";
+
 import type { PackageFile } from "../client-package.js";
 import { digestOfPlugin } from "./describe.js";
 import { BASELINE, pluginName } from "./skills.js";
@@ -168,11 +170,18 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
   for (const e of catalogEntries()) {
     if (e.flow === BASELINE) continue;
     const name = pluginName(e.flow);
-    const version = e.manifest.version;
-    if (!version) {
-      throw new Error(`${e.owner}/${e.flow}/flow.json declares no version — a plugin whose ` +
-                      "number nobody set is a number nothing can vouch for");
-    }
+    // ONE RELEASE VERSION FOR EVERY PLUGIN, and it is the platform's own.
+    //
+    // A manifest used to declare its own, and the two answers disagreed in the open: flow.json
+    // said zz-access 2.3.0, zz-plugin-eval 0.4.0 and sdlc 0.3.0 while every one of them SHIPPED
+    // as 0.43.0, because client-package stamps PLATFORM_VERSION into the plugin.json a person
+    // actually installs. The registry recorded the manifest's number, so "which version is
+    // installed" had two answers — and evaluation, which compares versions, read the one
+    // nobody was running.
+    //
+    // zz-core never had a manifest version at all and was fine, which is the tell: these
+    // plugins are released together, out of one repository, at one number.
+    const version = PLATFORM_VERSION;
     // THE SUITE IS WHERE THE MANIFEST SAYS, not where this line used to guess. `cases_digest`
     // below is what lets a score name the suite it was taken against — "a Δ measured against
     // four cases and a Δ measured against one are not the same measurement" — so the one thing

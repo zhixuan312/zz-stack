@@ -13,7 +13,7 @@ import { CatalogManifest } from "@zz/contracts";
 import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { buildClientPackage, type ClientPackage, type InstalledFlow } from "../client-package.js";
+import { buildClientPackage, PLATFORM_VERSION, type ClientPackage, type InstalledFlow } from "../client-package.js";
 import { platformDb } from "../db.js";
 import { auditAdmin, isSuper, type Identity } from "../identity.js";
 import { callerIdentity as caller } from "../identity.js";
@@ -105,7 +105,7 @@ async function flowsFor(target: string): Promise<InstalledFlow[]> {
   const have = new Set(installed.map((f) => f.flow));
   // Platform flows are not a choice: a team that never installed them still has them.
   const auto = autoFlows().filter((a) => !have.has(a.flow))
-    .map((a) => shape(a.flow, a.manifest.version ?? "", null, a.manifest));
+    .map((a) => shape(a.flow, PLATFORM_VERSION, null, a.manifest));
   return [...installed, ...auto].sort((a, b) => a.flow.localeCompare(b.flow));
 }
 /** No default, deliberately.
@@ -219,7 +219,7 @@ export function registerShelf(server: McpServer): void {
       const has = auto || installed.has(flow);
       return {
         flow,
-        version: m?.version ?? "",
+        version: PLATFORM_VERSION,
         description: (m?.description ?? "").slice(0, 160),
         install: auto ? "automatic — every team has it" : "opt-in",
         you: has ? (auto ? "installed (platform)" : "installed") : "not installed",
@@ -263,7 +263,7 @@ export async function installFlow(
      on conflict (team_id, flow) do update
        set version = excluded.version, manifest = excluded.manifest,
            agent_name = excluded.agent_name`,
-    [tid, flow, version ?? manifest.version ?? "", actorId, JSON.stringify(manifest), agentName],
+    [tid, flow, version ?? PLATFORM_VERSION, actorId, JSON.stringify(manifest), agentName],
   );
   // The registry IS the install. A preset used to be projected into the front end's own
   // tables here, which made installing a flow a write into a product we do not control and

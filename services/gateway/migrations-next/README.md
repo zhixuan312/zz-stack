@@ -65,3 +65,37 @@ serves the callback. There is no `.staged` file anywhere in the tree.
 Kept as one paragraph rather than deleted, because a directory whose whole purpose is "do not
 forget these" is the worst place to describe finished work as pending — the next person to read
 it goes looking for a file that is not there, and trusts the rest of the page less for it.
+
+## 057_drop_third_party_blocks.sql
+
+Removes the third-party-server layer: `zz.tool_grant`, `zz.block_token`,
+`zz.block_oauth_state`, `zz.decision_block`, and the `zz.event.block` /
+`zz.doc.blocks` / `zz.decision.blocks` columns. Measured against production before it was
+written, all time, platform-wide: **every one of them is empty** — 0 grants, 0 tokens,
+0 oauth states, 0 decision_block rows, 0 events naming a block, 0 documents and 0 decisions
+with a non-empty blocks array. Nothing is lost.
+
+Tested end to end against a restored copy of the live database: it applies clean, the four
+tables and three columns are gone, and 7,009 events, 1,744 documents, 541 decisions and the
+926 `zz.block_tool` rows all survive untouched.
+
+**Everything that must land with it** — all of it, or the gateway answers errors:
+
+- `services/gateway/src/blocks.ts` and the `PLATFORMS` registry it parses
+- `services/gateway/src/block-oauth.ts` and the `/p/<block>/mcp` proxy route
+- the `/manage` door's `block_connect`, `block_disconnect`, `tool_grant`, `tool_revoke`,
+  `credential_set`, `credential_list`, `credential_delete`, `platform_list` tools
+- `packages/contracts`' `PlatformMap`
+- the console's "Blocks granted" and "Block connections" panels and the Teams table's
+  Blocks column
+- the `zz-access` and `zz-admin` skills' building-block sections, and the marketplace
+  rebuilt from them
+
+**It does NOT touch `zz.block` / `zz.block_version` / `zz.block_tool`.** Those are a
+different subject wearing the same word: the platform's own tool surface per release, one
+row named `platform` titled `zz-core`, 32 versions, 926 tools. `zz.plugin` already holds
+that same subject as `zz-core` with 15 versions — the platform is registered twice, in two
+models, and the block half is the older one. Folding them is a data move (926 rows need a
+`plugin_tool` to land in, and `zz.skill.block_id` plus every skill still carrying
+`kind = 'block_usage'` repoints as it goes), so it gets its own migration and its own
+end-to-end test rather than riding behind seven drops.

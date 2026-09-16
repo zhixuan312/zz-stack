@@ -228,19 +228,6 @@ export const Envelope = z.object({
    * writes itself, and zz-core's reserved-name set (derived from these keys) did not defend
    * it: a flow could declare its own `contributed_by` and collide with the real one. */
   contributed_by: z.string().optional(),
-  /** THE BUILDING BLOCKS AN INITIATIVE CHOSE, written by the selection stage.
-   *
-   * Declared here because the PLATFORM reads it: a flow stage may declare
-   * `blocks: "selected"`, and the gateway resolves that, per block call, to the names on this
-   * line. Before it existed the only record of the choice was the selection document's prose
-   * — and prose is exactly what a machine must not read here, because a selection argues its
-   * case: the live one on this deployment names casebox in its heading and then names bookit
-   * and RuleMill in the paragraphs REJECTING them, so a parser reading the body would authorise
-   * the two blocks the document turned down.
-   *
-   * Comma-separated block ids, and few of them. A selection naming half the shelf is a
-   * decision that was not made, and the write guard holds it to five. */
-  blocks: z.string().optional(),
   /** Why a document was revised, in one line, written by document_revise.
    *
    * No CODE reads it, and that is the design rather than an oversight: evolve-report counts
@@ -345,16 +332,6 @@ export type FlowDoc = z.infer<typeof FlowDoc>;
  * before it. `blocks: []` is the flow saying, on the record, that this stage calls nothing. */
 export const FlowStage = z.object({
   name: z.string().min(1),
-  /** The blocks by name, or the literal `"selected"` — the ones the initiative's own
-   * selection document chose.
-   *
-   * A named list is the honest declaration for a stage whose reach does not depend on the
-   * work: ops-select may read every block the flow carries, because choosing between them is
-   * what it does. It is the wrong declaration for the three stages AFTER selection. Naming
-   * all three blocks there would say a build may call whatever it likes, when the whole point
-   * of the selection document is that a person approved a shorter list — so `"selected"`
-   * resolves, per call, to the blocks that document actually names. */
-  blocks: z.union([z.array(z.string().min(1)), z.literal("selected")]).optional(),
   /** WHAT THIS STAGE LEAVES BEHIND, in one of three shapes: the name of a document it
    * writes (`"spec.md"`), the literal `"record"` for a stage whose result is stored by the
    * platform rather than written as a document, or the literal `"nothing"` for a stage that

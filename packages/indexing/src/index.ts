@@ -141,47 +141,8 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     const role = (env.type ?? "").trim();
     const claims = /^(selection|agreement|plan)$/.test(role) && !snapshotOf
       ? decisionRows(body) : [];
-    // THE BLOCK'S NAME, NORMALISED — because `server:` is free text an author wrote, and they
-    // wrote it seventeen different ways for three blocks: `casebox`, `ops_casebox`, `mcp_casebox`, `mcp-casebox`,
-    // `mcp__plugin_ops_casebox`, `mcp__plugin_ops_casebox__*`, and `RuleMill"`, `"bookit`, plus `+` and `MCP`
-    // which are not blocks at all.
-    //
-    // That is not cosmetic. `blocks` is GIN-indexed so that "what have we predicted about casebox"
-    // is one query, and `knowledge_reconcile` joins it against the block name the gateway records — which
-    // is always the bare `casebox`. With six spellings in the column the join matched the sixth of
-    // rows that happened to agree, and reported the rest as predictions about nothing.
-    //
-    // A client prefix is not part of a block's identity: `mcp__plugin_ops_casebox__list_records` is the
-    // casebox block seen through one client's naming, and a record that keeps the client's spelling
-    // is a record that changes when somebody swaps clients.
-    const blocks = [...new Set((env.server ?? "")
-      .split(/[\s/,]+/)
-      .map((raw) => raw.trim().toLowerCase().replace(/^["'`]+|["'`*]+$/g, ""))
-      // Peel the layers a client wraps a server name in, longest first so `mcp__plugin_ops_`
-      // goes before `mcp_`.
-      .map((t) => t.replace(/^mcp__plugin_[a-z0-9]+_/, "")
-                   .replace(/^mcp__/, "").replace(/^mcp[_-]/, "")
-                   .replace(/^plugin[_-]/, "").replace(/^ops[_-]/, "")
-                   .replace(/__.*$/, "").replace(/[^a-z0-9-]/g, ""))
-      // What is left has to look like a name. `+` reduces to nothing; `mcp` and `plugin` are
-      // wrappers rather than blocks and are named explicitly.
-      //
-      // The length bound is TWO, not three. A block id may be two characters — one on this
-      // deployment was — and `> 2` silently deleted it while leaving the longer names looking
-      // correct, so the column reported predictions about nothing for the most-used block.
-      // Found by running the rule over every spelling the store actually holds instead of over
-      // the ones I had in mind.
-      //
-      // No id in the registry is that short TODAY, which is exactly why this comment says a
-      // block id MAY be: a bound justified by a fact that later stops being true is a bound the
-      // next reader deletes. The rule is about what an id is allowed to be, not about what the
-      // current ones happen to be.
-      .filter((t) => t.length >= 2 && t !== "mcp" && t !== "plugin"))];
     const hash = createHash("sha256")
-      // env.blocks is hashed as well as written. Without it a re-selection that changed only
-      // the chosen blocks — same prose, same everything else — would hash identically and be
-      // skipped, leaving the row saying what the previous selection chose.
-      .update(JSON.stringify([values, role, blocks, claims, env.blocks ?? ""])).digest("hex").slice(0, 32);
+      .update(JSON.stringify([values, role, claims])).digest("hex").slice(0, 32);
     if (skipIfHash) {
       const cur = await p.query<{ content_hash: string }>(
         "select content_hash from zz.doc where team_slug=$1 and initiative=$2 and path=$3",
@@ -196,7 +157,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // and re-inserts a document's claims on every reindex, so each rebuild put the
     // column back to null. The id is right here; it only had to be carried.
     const inserted = await p.query<{ id: string }>(
-      `insert into zz.doc (team_slug, initiative, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, blocks, body_tsv)
+      `insert into zz.doc (team_slug, initiative, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, body_tsv)
        -- WHEN THE DOCUMENT CHANGED, not when the indexer last ran.
        --
        -- This was now(). A reindex touches every file it re-derives, so one rebuild
@@ -225,7 +186,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
          body=excluded.body, title=excluded.title, tags=excluded.tags,
          evidence=excluded.evidence, superseded_by=excluded.superseded_by,
          content_hash=excluded.content_hash, supports=excluded.supports,
-         blocks=excluded.blocks, body_tsv=excluded.body_tsv
+         body_tsv=excluded.body_tsv
        returning id`,
       // $17 — the envelope's own date, or null so the insert falls back to now().
       // Parsed here rather than in SQL so an unparseable value degrades to "index
@@ -256,16 +217,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
        // $18 — which document this source was attached to. Every source carries it
        // and nothing indexed it, so the chain from "what we learned" to "what we
        // changed" could be read by opening files and by no query at all.
-       env.supports ?? null,
-       // $19 — THE CHOSEN BLOCKS, on the row rather than only in the file. The gateway
-       // resolves a stage's `blocks: "selected"` through this column: it cannot read the
-       // team's file store, and `body` here has had its envelope stripped, so the field was
-       // written and then invisible to the one component that exists to read it.
-       //
-       // Appended rather than added to `values`, because every placeholder in the values
-       // clause after $15 is positional against THAT array — slipping one in the middle
-       // silently re-points content_hash, updated_at and supports at each other's data.
-       list(env.blocks)],
+       env.supports ?? null],
     );
     const docId = inserted.rows[0]?.id ?? null;
       // The claims this document makes, replaced wholesale rather than merged: a revision
@@ -286,28 +238,12 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     await p.query(
       "delete from zz.decision where team_slug=$1 and initiative=$2 and path=$3",
       [teamSlug, initiative, docPath]);
-    // WHAT EACH BLOCK SAID IT WAS, at the moment the claim was made — read from the calls the
-    // platform has already recorded rather than asked for again. Empty when a block has never
-    // been called, which is itself worth seeing: a prediction about a block nobody has reached.
-    const blockVers: Record<string, string> = {};
-    if (blocks.length) {
-      const { rows: bv } = await p.query<{ block: string; block_version: string }>(
-        `select distinct on (block) block, block_version from zz.event
-          where block = any($1::text[]) and block_version is not null
-          order by block, ts desc`, [blocks]);
-      for (const r of bv) blockVers[r.block] = r.block_version;
-    }
     for (const c of claims) {
       await p.query(
-        `insert into zz.decision (team_slug, initiative, path, role, key, verdict, qualifier, detail, checker, blocks, block_versions, updated_at, doc_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::text[],$11, now(), $12)`,
+        `insert into zz.decision (team_slug, initiative, path, role, key, verdict, qualifier, detail, checker, updated_at, doc_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), $10)`,
         [teamSlug, initiative, docPath, role, c.key, c.verdict,
-         c.qualifier, c.detail, c.checker, blocks,
-         // AGAINST WHICH VERSION OF EACH BLOCK. "casebox handles this natively" was true against a
-         // particular casebox; when the block moves the claim may be silently stale. Without it,
-         // reconcile compares a prediction made against one version with calls made against
-         // another and reports a discrepancy that is nobody's defect.
-         JSON.stringify(blockVers), docId]);
+         c.qualifier, c.detail, c.checker, docId]);
     }
     return true;
   } catch (err) {

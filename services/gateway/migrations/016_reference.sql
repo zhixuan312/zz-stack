@@ -3,8 +3,8 @@
 -- Until now a skill existed as two text columns on zz.event (`step`, `step_version`) and a block
 -- as two more (`block`, `block_version`). That is not a schema, it is a spelling convention, and
 -- it failed exactly the way spelling conventions fail: `zz.decision.blocks` accumulated
--- SEVENTEEN distinct spellings for three blocks -- `casebox`, `ops_casebox`, `mcp_casebox`, `mcp-casebox`,
--- `mcp__plugin_ops_casebox`, `mcp__plugin_ops_casebox__*`, plus `+` and `MCP` which are not blocks at all.
+-- SEVENTEEN distinct spellings for three subjects -- the bare name, the name with each client's
+-- own wrapper prefix, the name with a tool suffix, and two entries that were punctuation.
 -- Reconcile joined on about a third of the rows it should have and reported the rest as
 -- predictions about nothing, silently, for a day and a half.
 --

@@ -33,9 +33,7 @@ export interface Chain {
    * initiative_status reports. It used to answer that from a hardcoded copy of one flow's
    * document list, so every flow was described in the shape of that one. */
   documents: FlowDoc[];
-  /** The flow's stages, each with the building blocks it may call. Read by vocabularyCheck:
-   * a stage that declares no block may not NAME one either, and the document a stage writes
-   * is how the manifest connects the two. Empty for a chain derived from documents alone. */
+  /** The flow's stages. Empty for a chain derived from documents alone. */
   stages: FlowStage[];
   docs: Set<string>;
   requires: Record<string, string>;
@@ -285,7 +283,7 @@ export function isoToday(): string {
 export function envelopeFor(
   chain: Chain, relPath: string, body: string,
   opts: { flow?: string; stakeholder?: string; tags?: string[]; title?: string;
-          blocks?: string[]; fields?: Record<string, unknown> },
+          fields?: Record<string, unknown> },
 ): string {
   const parts = relPath.replace(/^\/+/, "").split("/");
   // THROUGH renderEnvelope, whose own docblock calls itself "the one place an envelope is
@@ -328,13 +326,6 @@ export function envelopeFor(
   if (opts.stakeholder?.trim()) env.stakeholder = opts.stakeholder;
   const tags = (opts.tags ?? []).map((t) => t.trim()).filter(Boolean);
   if (tags.length) env.tags = tags.join(", ");
-  // THE BLOCKS THIS INITIATIVE CHOSE. An argument rather than one of the flow's own `fields`
-  // because the PLATFORM reads it: a stage declaring `blocks: "selected"` resolves through
-  // this line on every block call. Declaring it in the Envelope schema is what makes the
-  // published schema mention a field the platform writes — and it also makes the name
-  // reserved, which is why `fields` cannot carry it and this exists.
-  const blocks = (opts.blocks ?? []).map((b) => b.trim()).filter(Boolean);
-  if (blocks.length) env.blocks = blocks.join(", ");
   // A flow's OWN fields — sm's `building_block` and `instance`; sdlc's pointers to the
   // documents a stage answers to. Which extra facts a document carries is the flow's
   // business, exactly as its section headings are. What matters is that they arrive as an

@@ -90,7 +90,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       doc = putEnvelopeField(doc, "approved_by", signer);
       doc = putEnvelopeField(doc, "approved_at", isoToday());
       const fixed = normalizeSections(chain, relPath, doc);
-      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
+      const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_approve");
       if (bad) return text(bad);
       // READ BEFORE THE WRITE, because persistDocument logs and this asks about the log.
       const fetched = shownSinceLastChange(root, relPath);
@@ -308,7 +308,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       doc = putEnvelopeField(doc, "closed_by", who.email);
       if (acceptor) doc = putEnvelopeField(doc, "accepted_by", acceptor);
       if (!acceptor && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
-      const bad = await documentGuards(chain, root, relPath, doc, team, "initiative_close");
+      const bad = documentGuards(chain, root, relPath, doc, team, "initiative_close");
       if (bad) return text(bad);
       persistDocument(chain, root, relPath, target, doc, `close ${outcome}`);
       logActivity(root, relPath,
@@ -353,10 +353,6 @@ export function registerInitiativeActTools(server: McpServer): void {
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index."),
-        blocks: z.array(z.string()).optional().describe(
-          "On a SELECTION document: the building blocks chosen, replacing the previous set. " +
-          "Leave it out to keep what the document already names — a revision that says " +
-          "nothing about the blocks has not changed them."),
         fields: z.record(z.string()).optional()
           .describe("This FLOW's own frontmatter fields. Not envelope names."),
         note: z.string().optional().describe("One line on what changed and why."),
@@ -369,7 +365,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       },
     },
     async ({ path: relPath, content, source_content, source_title, sources, note,
-             self_edit, stakeholder, tags, title, blocks, fields }) => {
+             self_edit, stakeholder, tags, title, fields }) => {
       const refusedFm = frontmatterRefusal(content, "document_revise") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
       if (refusedFm) return text(refusedFm);
@@ -584,15 +580,9 @@ export function registerInitiativeActTools(server: McpServer): void {
       const role = chain.documents.find((d) => d.name === parts[1])?.role;
       if (role) env.type = role;
       if (linked.size) env.sources = [...linked].join(", ");
-      // Carried forward from the previous envelope unless this revision names a new set. A
-      // re-selection is exactly the case this exists for, and it is also the case where
-      // silently keeping the old set would leave the later stages calling blocks the revised
-      // document no longer chooses.
-      const chosen = (blocks ?? []).map((b) => b.trim()).filter(Boolean);
-      if (chosen.length) env.blocks = chosen.join(", ");
       if (note) env.revision_note = note.replace(/\n/g, " ").slice(0, 200);
       const doc = renderEnvelope(env,
-        ["flow", "type", "title", "stakeholder", "tags", "blocks", "version", "updated_at", "status", "sources", "revision_note"]) +
+        ["flow", "type", "title", "stakeholder", "tags", "version", "updated_at", "status", "sources", "revision_note"]) +
         "\n" + body.replace(/^\n+/, "");
       // A revision is a write, and this was the one write path that checked nothing.
       //
@@ -611,7 +601,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // fields: status back to draft, the stale approval cleared. Without saying so it would
       // be refused by the guard that exists to stop a model writing those by hand, which is
       // the correct guard refusing the one caller that is allowed to.
-      const bad = await documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
+      const bad = documentGuards(chain, root, relPath, fixed.content, team, "document_revise");
       if (bad) return text(bad);
 
       // The revision is allowed, so the source that explains it is written now — before

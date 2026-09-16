@@ -4,8 +4,7 @@
  * `documentGuards` is the one entry point: every write path calls it and none of them
  * decides for itself. The checks under it are separate functions because each answers a
  * different question — is this initiative closed, does its flow declare this document, is
- * the gate above it recorded, is this name already taken, does the caller own it, are the
- * blocks it selected ones the flow carries, is the vocabulary it used the platform's.
+ * the gate above it recorded, is this name already taken, does the caller own it.
  *
  * EVERY ONE OF THEM RETURNS A SENTENCE, never a boolean. A guard that answers false leaves
  * the caller to guess which rule they broke, and an agent that has to guess writes the same
@@ -14,10 +13,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { documentBody, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
+import { OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
 import { frontmatterStatus } from "./chain.js";
-import { db } from "./platform-db.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
 /** Closing an initiative (writing `outcome:` into the manifest's closing
@@ -268,153 +266,6 @@ function ownershipCheck(root: string, relPath: string, content: string,
   }
   return null;
 }
-/** A SELECTION NAMES ITS BLOCKS, MACHINE-READABLY, AND THERE ARE FEW OF THEM.
- *
- * Two rules on one document, because they are the same rule seen from two sides: a selection
- * is a decision, and a decision that cannot be counted or read back is not one.
- *
- * `blocks:` in the frontmatter. The selection document argues its case at length — the live
- * one on this deployment names casebox in its heading and then names bookit and RuleMill in the
- * paragraphs REJECTING them — so nothing downstream can learn the answer by reading the
- * prose. A stage declaring `blocks: "selected"` resolves through this field, so without it
- * the flow's own authority declaration has nothing to resolve to.
- *
- * FIVE. The limit is a convention and it is stated so it can be argued with: past that,
- * every extra block is another seam, another credential, another team to ask, and this store
- * already records two initiatives that failed at a seam and nowhere else. A build that
- * genuinely needs more says so in the document and the person approving it sees the number.
- */
-const MAX_SELECTED_BLOCKS = 5;
-async function selectionCheck(chain: Chain, relPath: string, content: string): Promise<string | null> {
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2) return null;
-  if (chain.documents.find((d) => d.name === parts[1])?.role !== "selection") return null;
-  const named = (parseEnvelope(content).blocks ?? "")
-    .replace(/^\[|\]$/g, "").split(",").map((b) => b.trim().replace(/^["']|["']$/g, ""))
-    .filter(Boolean);
-  if (!named.length) {
-    return (
-      `ERROR: ${parts[1]} does not say which building blocks were chosen. Pass them as ` +
-      "document_write's own `blocks` argument — `blocks: [\"casebox\"]` — and ONLY the ones being " +
-      "built on, never the ones considered and rejected. It is an argument rather than one " +
-      "of the flow's `fields` because the platform reads it: the stages after this one may " +
-      "call these blocks and nothing else. The prose is for the reasoning; this is the " +
-      "decision. skill_list() names the blocks you can reach."
-    );
-  }
-  const known = await blockVocabulary();
-  const names = new Set(known);
-  const unknown = named.filter((b) => !names.has(b));
-  if (unknown.length && known.length) {
-    return (
-      `ERROR: ${parts[1]} selects ${unknown.map((u) => `\`${u}\``).join(", ")}, which ` +
-      "this platform does not route. `blocks` takes block ids as the gateway knows them — " +
-      "the short name, not the product's title. skill_list() names the ones there are."
-    );
-  }
-  if (named.length > MAX_SELECTED_BLOCKS) {
-    return (
-      `ERROR: ${parts[1]} selects ${named.length} building blocks and the limit is ` +
-      `${MAX_SELECTED_BLOCKS}. Every additional block is another seam between systems, and ` +
-      "the seam is where this platform's builds actually fail. Choose the smallest set that " +
-      "meets the acceptance criteria, and say in the fit ledger what the ones you dropped " +
-      "would have done."
-    );
-  }
-  return null;
-}
-/** THE REGISTERED BLOCKS, name and title, cached.
- *
- * From zz.block, so there is no list to keep — the same registry the console reads and the
- * same one that would generate a shelf index. A hardcoded set here would go stale the day a
- * block is added, and it would go stale QUIETLY, which for a guard means it stops guarding
- * and nothing says so. */
-let vocabulary: { words: string[]; at: number } = { words: [], at: 0 };
-const VOCAB_TTL_MS = 300_000;
-async function blockVocabulary(): Promise<string[]> {
-  const now = Date.now();
-  if (vocabulary.at && now - vocabulary.at < VOCAB_TTL_MS) return vocabulary.words;
-  const p = db();
-  if (!p) return vocabulary.words;
-  try {
-    const { rows } = await p.query<{ name: string; title: string }>(
-      // NOT the platform's own block. `zz` is this platform, every flow uses it, and no
-      // document is naming a technology by mentioning the place its own documents live.
-      "select name, title from zz.block where origin <> 'platform'",
-    );
-    const words = new Set<string>();
-    for (const r of rows) {
-      if (r.name) words.add(r.name);
-      // Titles of four characters or more. A person writing a spec does not write `casebox`, they
-      // write "CaseBox" or "BookIt" — the product's name is how the technology
-      // actually gets into a business document. Short titles are skipped because a two- or
-      // three-letter word is a word, and refusing a spec for containing one would be a
-      // guardrail people learn to write around.
-      if (r.title && r.title.trim().length >= 4) words.add(r.title.trim());
-    }
-    vocabulary = { words: [...words], at: now };
-  } catch {
-    // Unreachable registry: keep whatever was last known rather than emptying the vocabulary.
-    // An empty list silently disables the guard, and a guard that switches off during an
-    // outage is one nobody can rely on having been applied.
-  }
-  return vocabulary.words;
-}
-/** A stage that may call no building block may not NAME one either.
- *
- * The rule is ops-intent's and ops-spec's, and both skills state it at length: "No technology
- * anywhere. No product names, no tool names." It stayed prose, and prose does not hold — the
- * same lesson attributionCheck records above, where a rule stated in every stage skill was
- * broken twice in consecutive smoke runs.
- *
- * Removing the TOOLS from a stage does not cover this. An agent at ops-spec has read the
- * intent and is writing a document; it can put a product name into spec.md without calling
- * anything at all. So the same declaration drives both: the manifest says which blocks a
- * stage may call, the gateway enforces the calling, and this enforces the naming.
- *
- * DERIVED, never a list of document names. Nothing here says "intent.md" or "spec.md" —
- * `stage` on the manifest's document says which stage writes it, and the stage says what it
- * may reach. selection.md, plan.md and the build are exempt automatically, because their
- * stages declare blocks: that is where technology belongs and the flow already said so.
- *
- * Measured before it shipped: of 136 intent and spec documents in the store, 2 named a
- * registered block. This is a backstop against drift, not a change of behaviour. */
-async function vocabularyCheck(chain: Chain, relPath: string, content: string): Promise<string | null> {
-  const parts = relPath.replace(/^\/+/, "").split("/");
-  if (parts.length !== 2) return null;
-  const stageName = chain.documents.find((d) => d.name === parts[1])?.stage;
-  if (!stageName) return null;
-  const declared = chain.stages.find((st) => st.name === stageName)?.blocks;
-  // ONLY a stage that declares an empty list. `undefined` is a flow that has said nothing,
-  // and "selected" is a stage that reaches blocks by definition.
-  if (!Array.isArray(declared) || declared.length) return null;
-  const words = await blockVocabulary();
-  if (!words.length) return null;
-  const body = documentBody(content);
-  const found = words.filter((w) =>
-    new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(body));
-  if (!found.length) return null;
-  return (
-    `ERROR: ${parts[1]} names ${found.map((f) => `\`${f}\``).join(", ")}, and ${stageName} ` +
-    "declares no building block. This stage writes what must be true, in the stakeholder's " +
-    "own words, and no block has been chosen yet — naming one here decides the solution " +
-    "before anybody agreed to it, and the document is read by somebody with no technical " +
-    "background. Say what the system must DO. The block's name belongs in the selection " +
-    "document, which is where the choice is made and recorded.\n\n" +
-    "IF THE STAKEHOLDER SAID IT THEMSELVES, keep it without putting it here — their words " +
-    "verbatim as a source, and `their current system` in the document. The quote stays " +
-    "attributed and durable, the document stays one they can read, and somebody naming what " +
-    "they have today is not the same as the work choosing what it will be built on.\n\n" +
-    // THE WHOLE CALL, because the last refusal walked straight into the next one. A live run
-    // followed this advice and passed `<initiative>/intent.md` to `supports`, which takes a
-    // BARE document name — so the agent was refused twice for one mistake, and the second
-    // refusal was caused by the first one's instruction being half a sentence short.
-    `    source_add(initiative: "${parts[0]}", title: "<what they said, in a few words>",\n` +
-    "               content: \"<their words, verbatim>\", supports: \"" + parts[1] + "\")\n\n" +
-    "`supports` is the DOCUMENT NAME on its own — `" + parts[1] + "`, never " +
-    `\`${parts[0]}/${parts[1]}\`. The initiative is already its own argument.`
-  );
-}
 /** Everything that must be true BEFORE a mutation is allowed, in one place.
  *
  * The symmetric half of persistDocument, and it exists for the same reason that one does.
@@ -432,8 +283,8 @@ async function vocabularyCheck(chain: Chain, relPath: string, content: string): 
  *
  * `initiativeNameTaken` is not here: it is about creating a name, not about the content of a
  * write, and only one path creates. */
-export async function documentGuards(chain: Chain, root: string, relPath: string, content: string,
-                              team: string | null, via: string | null = null): Promise<string | null> {
+export function documentGuards(chain: Chain, root: string, relPath: string, content: string,
+                        team: string | null, via: string | null = null): string | null {
   return ownershipCheck(root, relPath, content, via)
     ?? approvedDocumentGuard(chain, root, relPath, via)
     ?? gateCheck(chain, root, relPath)
@@ -441,12 +292,5 @@ export async function documentGuards(chain: Chain, root: string, relPath: string
     ?? statusCheck(chain, relPath, content)
     ?? outcomeCheck(chain, relPath, content)
     ?? attributionCheck(chain, relPath, content, team)
-    ?? sectionCheck(chain, relPath, content)
-    // AWAITED, both of them. An async function returns a Promise, and a Promise is never
-    // null — so `?? selectionCheck(...)` ended the `??` chain at the first async guard and
-    // everything after it was dead code. The outer await then resolved that Promise to null
-    // for any document that was not a selection, so every write passed and nothing failed:
-    // the two guards below this line were deployed, exercised, and silently absent.
-    ?? await selectionCheck(chain, relPath, content)
-    ?? await vocabularyCheck(chain, relPath, content);
+    ?? sectionCheck(chain, relPath, content);
 }

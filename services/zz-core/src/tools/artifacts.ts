@@ -51,16 +51,11 @@ export function registerArtifactTools(server: McpServer): void {
         stakeholder: z.string().optional().describe("Who asked for this, where the document records one."),
         tags: z.array(z.string()).optional().describe("Index tags for this document."),
         title: z.string().optional().describe("Document title for the index. Defaults to the first heading."),
-        blocks: z.array(z.string()).optional().describe(
-          "On a SELECTION document: the building blocks this initiative will be built on, by " +
-          "block id (['casebox']), and only the ones chosen — never the ones considered and " +
-          "rejected. The platform reads it: the stages after selection may call these and " +
-          "nothing else. Five at most."),
         fields: z.record(z.string()).optional()
           .describe("This FLOW's own frontmatter fields, e.g. {building_block: 'casebox'}. Not envelope names."),
       },
     },
-    async ({ path, content, stakeholder, tags, title, blocks, fields }) => {
+    async ({ path, content, stakeholder, tags, title, fields }) => {
       const blocked = writeGuard(path);
       if (blocked) return text(blocked);
       const refused = frontmatterRefusal(content, "document_write") ?? fieldRefusal(fields)
@@ -91,9 +86,9 @@ export function registerArtifactTools(server: McpServer): void {
       // from the record written there — which is also what covers the window this argument
       // used to cover, an initiative whose first document is not yet on disk.
       const chain = await chainFor(root, path, team, content);
-      content = envelopeFor(chain, path, content, { stakeholder, tags, title, blocks, fields });
+      content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields });
       const fixed = normalizeSections(chain, path, content);
-      const gate = await documentGuards(chain, root, path, fixed.content, team);
+      const gate = documentGuards(chain, root, path, fixed.content, team);
       if (gate) return text(gate);
       const written = persistDocument(chain, root, path, target, fixed.content, "write");
       logActivity(root, path,
@@ -327,7 +322,7 @@ export function registerArtifactTools(server: McpServer): void {
       // declare a flow?" — a question about an initiative being created, asked on a path that
       // has never created one. initiative_open asks it now, once, and an initiative that
       // exists is one that was already asked.
-      const bad = await documentGuards(chain, root, path, fixed.content, team);
+      const bad = documentGuards(chain, root, path, fixed.content, team);
       if (bad) return text(bad);
       persistDocument(chain, root, path, target, fixed.content, "patch");
       logActivity(root, path,

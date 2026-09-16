@@ -125,7 +125,7 @@ async function main(argv: string[]): Promise<number> {
   const file = optional(args, "file", "the path to the skill being reflected on");
 
   const rows = readRows(psql, since);
-  const { steps, blocks } = score(rows);
+  const { steps } = score(rows);
   if (!steps.length) {
     console.log(`\n  No attributed calls in the last ${since}. There is nothing to reflect on —`);
     console.log("  run the flow first. A proposal with no evidence behind it is a guess.\n");
@@ -133,7 +133,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   // The step with the most refusals THE FLOW COULD HAVE AVOIDED. Not the busiest step, and not
-  // the one with the most refusals overall — a step that met a broken block all day is not the
+  // the one with the most refusals overall — a step that met a broken tool all day is not the
   // step to edit.
   const wanted = optional(args, "skill", "which step to reflect on, instead of the worst");
   const target = wanted ? steps.find((s) => s.step === wanted) : steps.find((s) => s.ours > 0);
@@ -147,9 +147,7 @@ async function main(argv: string[]): Promise<number> {
   const text = readFileSync(file, "utf8");
   const prompt = [
     "THE EVIDENCE", "", evidenceFor(target), "",
-    "WHAT THE BLOCKS DID, for context — these are not the skill's fault and it cannot fix them:",
-    ...blocks.map((b) => `  ${b.block} @ ${b.version}: ${b.theirs} of ${b.calls} calls refused`),
-    "", "THE SKILL AS IT STANDS", "", text,
+    "THE SKILL AS IT STANDS", "", text,
   ].join("\n");
 
   const p = await ask(prompt);

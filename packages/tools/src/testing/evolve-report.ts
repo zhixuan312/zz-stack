@@ -25,10 +25,7 @@
  * service the platform owes its users, not homework it sets them — and letting the thing
  * under evaluation run its own evaluation is the fastest way to make one meaningless.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-import { parseEnvelope, refusalClass, resolveStep, resolveTool } from "@zz/contracts";
+import { refusalClass, resolveStep, resolveTool } from "@zz/contracts";
 
 import { parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
@@ -47,8 +44,6 @@ interface CallRow {
   step: string | null;
   step_version: string | null;
   step_sha: string | null;
-  block: string | null;
-  block_version: string | null;
   /** null on rows written before outcomes were recorded — an era, not a missing value. */
   ok: boolean | null;
   refusal: string | null;
@@ -57,39 +52,11 @@ interface CallRow {
 
 function calls(psql: string, since: string): CallRow[] {
   return psqlRows<CallRow>(psql,
-    "select ts, caller, surface, tool, step, step_version, step_sha, block, block_version," +
+    "select ts, caller, surface, tool, step, step_version, step_sha," +
     " ok, refusal, ids from zz.event" +
     " where kind = 'tool_call' and ts > now() - (:'since')::interval order by id", { since });
 }
 
-/** block -> the version our skill for it was verified against, read from the skills.
- *
- * From the files, never a list typed here: a second copy of which block a skill is pinned to
- * is a copy that goes stale on the first edit, and the whole point of this section is to catch
- * a number that moved. */
-const VERIFIED_AGAINST: Record<string, string> = (() => {
-  const out: Record<string, string> = {};
-  const walk = (dir: string): void => {
-    let entries: string[];
-    try { entries = readdirSync(dir); } catch { return; }
-    for (const e of entries) {
-      if (e === "node_modules" || e === ".git" || e === "dist") continue;
-      const full = join(dir, e);
-      try {
-        if (statSync(full).isDirectory()) { walk(full); continue; }
-      } catch { continue; }
-      if (e !== "SKILL.md") continue;
-      const env = parseEnvelope(readFileSync(full, "utf8"));
-      if (env.block && env.verified_against) {
-        out[env.block] = env.verified_against.replace(/^["']|["']$/g, "");
-      }
-    }
-  };
-  walk("skills");
-  walk("blocks");
-  walk("catalog");
-  return out;
-})();
 
 interface Step {
   skill: string;
@@ -134,8 +101,6 @@ function main(): number {
   // heuristic one without saying so is the failure this report was built to end.
   let derivedFromRow = 0;
   let derivedByTrace = 0;
-  /** What each block said it was, from its own handshake, as recorded on the calls to it. */
-  const blockVersions = new Map<string, string>();
   /** step -> version -> {calls, refusals}. A step measured across two versions of itself is
    * the only shape in which "the change worked" is a statement about evidence. */
   const versions = new Map<string, Map<string, { calls: number; refusals: number }>>();
@@ -156,7 +121,6 @@ function main(): number {
     // the gateway now applies once, kept here only so old evidence stays readable — and it is
     // marked, because a number that mixes an exact attribution with a heuristic one and says
     // neither is the kind of measurement this whole report exists to replace.
-    if (e.block && e.block_version) blockVersions.set(e.block, e.block_version);
     // Resolved through SKILL_ALIAS (FR-37a) so a step renamed mid-window is one series, not
     // two — a step is matched against a known skill name on both sides below.
     const stamped = e.step ? resolveStep(e.step) : "";
@@ -270,26 +234,6 @@ function main(): number {
     console.log(`\n  Every step has been seen under ONE version only, so nothing here can say`);
     console.log(`  whether a change helped. Change a skill, run the flow again, and this table`);
     console.log(`  becomes the comparison.`);
-  }
-
-  // THE GROUND MOVING UNDER US. A usage skill is written on top of a block nobody here
-  // controls, and when that block changes every trap the skill records may have stopped being
-  // true — silently, because nothing on our side moved. The block states its own version at
-  // the MCP handshake and the platform stamps it on every call, so this is a query rather than
-  // something anyone has to remember to check.
-  //
-  // What it CANNOT do is say the skill is now wrong. A version that moved is a reason to
-  // re-verify, never a finding on its own — and reporting it as a defect would train the
-  // reader to skip the line.
-  if (blockVersions.size) {
-    console.log(`\n  ── BLOCK VERSIONS SEEN, against what our skills were verified on ────`);
-    for (const [b, seen] of [...blockVersions].sort()) {
-      const pinned = VERIFIED_AGAINST[b];
-      const state = !pinned ? "no skill of ours is pinned to this block"
-        : pinned === seen ? `matches ${pinned} — the claims were checked against this`
-        : `WAS VERIFIED AGAINST ${pinned} — re-verify what our skill says about it`;
-      console.log(`  ${b.padEnd(14)} reports ${String(seen).padEnd(28)} ${state}`);
-    }
   }
 
   // HOW THE ATTRIBUTION WAS MADE. An exact answer and a heuristic one reported as one number

@@ -1,5 +1,5 @@
 /**
- * step-score — what "better" MEANS for a step and for a block, as numbers
+ * step-score — what "better" MEANS for a step, as numbers
  *
  *   zz-tool step-score [--since '7 days'] [--json] [--psql '<command>']
  *
@@ -9,17 +9,17 @@
  * which is how variance gets written up as improvement. Idle turns went 32% then 0% then 31%
  * across three rounds of one configuration, and the 0% was reported as a rule working.
  *
- * Blocks already had a definition: the building-block contract, R1..R14, scored by
- * `conformance`. Steps had none. This is the missing half.
+ * A plugin already had a definition — the conformance contract, scored by `conformance`.
+ * Steps had none. This is the missing half.
  *
  * WHAT IS SCORED, AND WHAT DELIBERATELY IS NOT.
  *
  *   OURS, per step     the refusals a better skill would have avoided — a call made with
  *                      arguments the caller could have read first. The only class the flow can
  *                      fix, so the only one a step is scored on.
- *   THEIRS, per block  bare statuses, web pages where a result belongs, tools that are not
- *                      there. Reported against the block, never charged to the step that met
- *                      them: a step is not worse for calling a block having a bad day.
+ *   THEIRS             bare statuses, web pages where a result belongs, tools that are not
+ *                      there. Never charged to the step that met them: a step is not worse
+ *                      for calling a tool having a bad day.
  *   NEITHER            platform guardrails. A refusal that says which rule was broken is the
  *                      platform WORKING, and scoring it as a defect is how somebody ends up
  *                      weakening a guard that does its job.
@@ -31,17 +31,14 @@
  * for something the first never was, and reading the gap as a regression blames a change for
  * work it was never doing.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-import { parseEnvelope, resolveStep } from "@zz/contracts";
+import { resolveStep } from "@zz/contracts";
 
 import { parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 
-/** A refusal the FLOW could have avoided: the shape of a call, not the health of a block. */
+/** A refusal the FLOW could have avoided: the shape of a call, not the health of a tool. */
 const OURS = /Missing required argument|Invalid arguments|Input validation error|could not be parsed as JSON|validation error/i;
-/** A refusal that belongs to the block: it answered with a status, a web page, or not at all. */
+/** A refusal that belongs to the tool: it answered with a status, a web page, or not at all. */
 const THEIRS = /status code \d{3}|Error POSTing to endpoint|Unexpected content type|<html|No such tool available/i;
 /** The platform saying which rule was broken. Working as intended; never scored as a defect. */
 const GUARDRAIL = /^ERROR[: ]/;
@@ -59,8 +56,6 @@ export const owner = (refusal: string): Owner => {
 interface Row {
   step: string | null;
   step_version: string | null;
-  block: string | null;
-  block_version: string | null;
   ok: boolean | null;
   refusal: string | null;
   run: string | null;
@@ -118,21 +113,6 @@ export interface StepScore {
   says: { text: string; n: number; seenIn: number }[];
 }
 
-interface BlockScore {
-  block: string;
-  version: string;
-  calls: number;
-  theirs: number;
-  rate: number;
-  /** How the work that used this block ended. "Is our MCP usage effective" is not answered by
-   * a refusal count alone: a block that never refuses and never gets the job done is worse than
-   * one that refuses loudly and does. */
-  accepted: number;
-  delivered: number;
-  abandoned: number;
-  open: number;
-  says: { text: string; n: number; seenIn: number }[];
-}
 
 const median = (xs: number[]): number | null => {
   if (!xs.length) return null;
@@ -150,7 +130,7 @@ const top = (m: Map<string, { n: number; where: Set<string> }>): { text: string;
     .sort((a, b) => b.seenIn - a.seenIn || b.n - a.n)
     .slice(0, 5);
 
-export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]; blocks: BlockScore[] } {
+export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[] } {
   // One outcome per initiative. A store holds several documents per initiative and only the
   // closing one carries the outcome, so the rest are null and must not overwrite it.
   const endedAs = new Map<string, string>();
@@ -169,10 +149,6 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
   const perStep = new Map<string, {
     calls: number; ours: number; theirs: number; guardrail: number;
     runs: Set<string>; initiatives: Set<string>;
-    says: Map<string, { n: number; where: Set<string> }>;
-  }>();
-  const perBlock = new Map<string, {
-    calls: number; theirs: number; initiatives: Set<string>;
     says: Map<string, { n: number; where: Set<string> }>;
   }>();
 
@@ -205,24 +181,6 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
         }
       }
       perStep.set(k, s);
-    }
-    if (r.block) {
-      const k = `${r.block} ${r.block_version ?? ""}`;
-      const b = perBlock.get(k) ?? {
-        calls: 0, theirs: 0, initiatives: new Set<string>(),
-        says: new Map<string, { n: number; where: Set<string> }>(),
-      };
-      b.calls += 1;
-      if (r.initiative) b.initiatives.add(r.initiative);
-      if (r.refusal && owner(r.refusal) === "theirs") {
-        b.theirs += 1;
-        const key = r.refusal.replace(/\s+/g, " ").trim().slice(0, 180);
-        const seen = b.says.get(key) ?? { n: 0, where: new Set<string>() };
-        seen.n += 1;
-        if (r.initiative) seen.where.add(r.initiative);
-        b.says.set(key, seen);
-      }
-      perBlock.set(k, b);
     }
   }
 
@@ -260,22 +218,7 @@ export function score(rows: Row[], endings: Ending[] = []): { steps: StepScore[]
     })
     .sort((a, b) => b.ours - a.ours || b.calls - a.calls);
 
-  const blocks: BlockScore[] = [...perBlock]
-    .map(([k, b]) => {
-      const [block, version] = k.split(" ");
-      return {
-        block,
-        version: version || "(none)",
-        calls: b.calls,
-        theirs: b.theirs,
-        rate: b.calls ? b.theirs / b.calls : 0,
-        ...tally(b.initiatives),
-        says: top(b.says),
-      };
-    })
-    .sort((a, b) => b.theirs - a.theirs);
-
-  return { steps, blocks };
+  return { steps };
 }
 
 /** How each initiative ended, from the platform's own record. Read separately from the calls
@@ -295,47 +238,12 @@ function readEndings(psql: string, since: string): Ending[] {
 
 export function readRows(psql: string, since: string): Row[] {
   return psqlRows<Row>(psql,
-    "select step, step_version, block, block_version, ok, refusal, initiative," +
+    "select step, step_version, ok, refusal, initiative," +
     " detail->>'run' as run" +
     " from zz.event where kind = 'tool_call'" +
     " and ts > now() - (:'since')::interval order by id", { since });
 }
 
-/** Every skill that declares itself pinned to a block, read from the skills themselves.
- *
- * From the files rather than a list typed here: a second copy of which skill is pinned to what
- * goes stale on the first edit, and catching a number that moved is the entire point. */
-function pinnedSkills(): { name: string; block: string; verified: string }[] {
-  const out: { name: string; block: string; verified: string }[] = [];
-  const walk = (dir: string): void => {
-    let entries: string[];
-    try { entries = readdirSync(dir); } catch { return; }
-    for (const e of entries) {
-      if (e === "node_modules" || e === ".git" || e === "dist") continue;
-      const full = join(dir, e);
-      try {
-        if (statSync(full).isDirectory()) { walk(full); continue; }
-      } catch { continue; }
-      if (e !== "SKILL.md") continue;
-      const env = parseEnvelope(readFileSync(full, "utf8"));
-      if (env.block && env.verified_against) {
-        out.push({
-          // The DIRECTORY is the skill's name. `name:` in the frontmatter is a skill field and
-          // not a document envelope one, and reading it here made the platform look like it
-          // depends on an envelope field the published schema does not declare — which is the
-          // shape of a real defect and would have been a false one.
-          name: full.split("/").slice(-2)[0],
-          block: env.block,
-          verified: env.verified_against.replace(/^["']|["']$/g, ""),
-        });
-      }
-    }
-  };
-  walk("skills");
-  walk("blocks");
-  walk("catalog");
-  return out;
-}
 
 function main(argv: string[]): number {
   const { flags } = parseArgs(argv, ["json"]);
@@ -358,7 +266,7 @@ function main(argv: string[]): number {
   console.log("  For a STEP: the refusals a better skill would have avoided - a call made with");
   console.log("  arguments the caller could have read first. The only class the flow can fix, so");
   console.log("  the only one a step is scored on.");
-  console.log("  For a BLOCK: bare statuses, web pages where a result belongs, tools that are not");
+  console.log("  THEIRS: bare statuses, web pages where a result belongs, tools that are not");
   console.log("  there. Never charged to the step that met them.");
   console.log("  Platform guardrails are scored against nobody: a refusal that says which rule was");
   console.log("  broken is the platform working.");
@@ -405,56 +313,6 @@ function main(argv: string[]): number {
     console.log("  No refusal in this window was one the flow could have avoided.");
   }
 
-  console.log("");
-  console.log("== BLOCKS");
-  console.log("");
-  console.log(`  ${pad("block", 12)}${pad("version", 26)}${pad("calls", 7)}${pad("theirs", 8)}${pad("rate", 8)}ended`);
-  for (const b of out.blocks) {
-    const ended = `${b.accepted}a ${b.delivered}d ${b.open}open`;
-    console.log(`  ${pad(b.block, 12)}${pad(b.version, 26)}${pad(b.calls, 7)}${pad(b.theirs, 8)}${pad(pct(b.rate), 8)}${ended}`);
-  }
-  console.log("");
-  console.log("  IS OUR MCP USAGE EFFECTIVE is the same two halves. A block that never refuses and");
-  console.log("  never gets the job done is worse than one that refuses loudly and does.");
-
-  const badBlock = out.blocks.find((b) => b.theirs > 0);
-  if (badBlock) {
-    console.log("");
-    console.log(`  ${badBlock.block} @ ${badBlock.version} - evidence to hand its team:`);
-    for (const s of badBlock.says) {
-      console.log(`    ${String(s.n).padStart(3)}x across ${s.seenIn} initiative(s)  ${s.text}`);
-    }
-  }
-
-  // WHAT WE BUILT ON TOP OF A BLOCK, AND WHETHER IT STILL APPLIES. A usage skill or a script
-  // written against a block is only true against the version it was checked on. When the block
-  // moves, every trap it records goes back into question — and the answer is not always "update
-  // it": a trap the block has FIXED should be deleted, because a warning about something that
-  // no longer happens costs a reader attention for nothing and slowly turns a usage skill into
-  // folklore.
-  //
-  // This is the queue, not the verdict. Whether a trap still reproduces is answered by the
-  // evidence after the move, which is why the sentences above carry the initiative count.
-  const pinned = pinnedSkills();
-  if (pinned.length) {
-    console.log("");
-    console.log("== WHAT IS PINNED TO A BLOCK");
-    console.log("");
-    for (const k of pinned) {
-      const live = out.blocks.filter((b) => b.block === k.block).map((b) => b.version);
-      const now = live.length ? live.join(", ") : "(not called in this window)";
-      const moved = live.length > 0 && !live.includes(k.verified);
-      console.log(`  ${pad(k.name, 20)}${pad(k.block, 10)}verified against ${k.verified}`);
-      console.log(`  ${pad("", 20)}${pad("", 10)}block now reports ${now}${moved ? "  <-- RE-VERIFY" : ""}`);
-      if (moved) {
-        console.log(`  ${pad("", 30)}every trap this skill records was checked against a version`);
-        console.log(`  ${pad("", 30)}the block has left behind. Re-check each one against the`);
-        console.log(`  ${pad("", 30)}evidence above, update what still bites, and DELETE what`);
-        console.log(`  ${pad("", 30)}does not - a warning about something that no longer happens`);
-        console.log(`  ${pad("", 30)}is folklore, and it costs a reader attention for nothing.`);
-      }
-    }
-  }
 
   const unknown = out.steps.filter((s) => s.verdict === "unknown").length;
   if (unknown) {

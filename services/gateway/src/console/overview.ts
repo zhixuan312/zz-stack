@@ -9,9 +9,10 @@
 import type { Express } from "express";
 
 import { platformDb } from "../db.js";
+import { PLATFORM_VERSION } from "../client-package.js";
 import { isSuper } from "../identity.js";
 import { readMetrics } from "./overview-metrics.js";
-import { grainForSpan, handler, mayReadConsole, periodCutoff } from "./shared.js";
+import { ZZ_TZ, grainForSpan, handler, mayReadConsole, periodCutoff } from "./shared.js";
 
 export function mountOverview(app: Express): void {
   /** Who is looking, and whether the console will answer them at all.
@@ -25,6 +26,11 @@ export function mountOverview(app: Express): void {
     const id = req.zzIdentity;
     if (!id) { res.status(401).json({ error: "authentication required" }); return; }
     res.json({
+      /* WHICH PLATFORM ANSWERED. Every page already calls `/me`, so this is the one place
+       * the console can learn what it is talking to without a second request — and "which
+       * build am I looking at" is a question a console should never make somebody guess at,
+       * least of all on a day the answer changed four times. */
+      platformVersion: PLATFORM_VERSION,
       email: id.email, name: id.displayName, role: id.platformRole,
       mayRead: mayReadConsole(id), superadmin: isSuper(id), via: id.via,
       // `id.teams` already carries `{ slug, role }` — mapping it down to slugs threw the
@@ -147,20 +153,26 @@ export function mountOverview(app: Express): void {
          * buckets at even intervals states a shape the data does not have. Measured here:
          * a 24-hour window returned 13 rows, and eleven hours of silence would have been
          * drawn as no time at all. An hour with no tool calls is a real zero. */
+        /* CUT ON THE DEPLOYMENT'S CALENDAR, not on UTC's — see `ZZ_TZ`. `slot.b` is a local
+         * wall-clock timestamp, so it is turned back into an INSTANT before it is written
+         * out: the browser still receives an instant and still formats it, which is the
+         * rule this file states above. Only the boundary moved. */
         `with bounds as (
            select coalesce($1::timestamptz, min(ts)) as lo, max(ts) as hi
              from zz.event where kind='tool_call'),
          slot as (
-           select generate_series(date_trunc($2::text, lo), date_trunc($2::text, hi),
+           select generate_series(date_trunc($2::text, lo at time zone $3::text),
+                                  date_trunc($2::text, hi at time zone $3::text),
                                   ('1 ' || $2)::interval) as b from bounds)
-         select to_char(slot.b at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+         select to_char((slot.b at time zone $3::text) at time zone 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
                 count(*) filter (where e.id is not null and e.ok is not false and e.run_id is not null) as inside,
                 count(*) filter (where e.id is not null and e.ok is not false and e.run_id is null)     as outside,
                 count(*) filter (where e.ok = false)                                                   as refused
            from slot left join zz.event e
-             on date_trunc($2::text, e.ts) = slot.b and e.kind='tool_call'
+             on date_trunc($2::text, e.ts at time zone $3::text) = slot.b and e.kind='tool_call'
           group by 1 order by 1`,
-        [since, grain]),
+        [since, grain, ZZ_TZ]),
       db.query<{ kind: string; n: string; failed: string }>(
         `select kind, count(*) as n, count(*) filter (where ok = false) as failed
            from zz.event
@@ -231,18 +243,21 @@ export function mountOverview(app: Express): void {
              from zz.event e join zz.team t on t.id = e.team_id
             where e.kind='tool_call' and t.slug = $1),
          slot as (
-           select generate_series(date_trunc($3::text, lo), date_trunc($3::text, hi),
+           select generate_series(date_trunc($3::text, lo at time zone $4::text),
+                                  date_trunc($3::text, hi at time zone $4::text),
                                   ('1 ' || $3)::interval) as b from bounds)
-         select to_char(slot.b at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+         select to_char((slot.b at time zone $4::text) at time zone 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
                 count(*) filter (where e.id is not null and e.ok is not false and e.run_id is not null) as inside,
                 count(*) filter (where e.id is not null and e.ok is not false and e.run_id is null)     as outside,
                 count(*) filter (where e.ok = false)                                                   as refused
            from slot
            left join zz.team t on t.slug = $1
            left join zz.event e
-             on date_trunc($3::text, e.ts) = slot.b and e.kind='tool_call' and e.team_id = t.id
+             on date_trunc($3::text, e.ts at time zone $4::text) = slot.b
+            and e.kind='tool_call' and e.team_id = t.id
           group by 1 order by 1`,
-        [scope.slug, since, grain]),
+        [scope.slug, since, grain, ZZ_TZ]),
       db.query<{ kind: string; n: string; failed: string }>(
         `select e.kind, count(*) as n, count(*) filter (where e.ok = false) as failed
            from zz.event e join zz.team t on t.id = e.team_id
@@ -279,6 +294,10 @@ export function mountOverview(app: Express): void {
         unattributedEvents: +t.unattributed,
       },
       grain,
+      /* THE ZONE THE BUCKETS WERE CUT IN, so the browser renders them on the same calendar
+       * rather than on the viewer's. A laptop in another country would otherwise label a
+       * Singapore day with its own, and the bars and their labels would disagree. */
+      timezone: ZZ_TZ,
       toolTrend: toolTrend.rows.map((r) => ({
         bucket: r.bucket, inside: +r.inside, outside: +r.outside, refused: +r.refused,
       })),

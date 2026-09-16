@@ -148,6 +148,22 @@ export function periodCutoff(req: Request): Date | null {
 
 type Grain = "hour" | "day" | "week" | "month";
 
+/**
+ * THE DEPLOYMENT'S OWN TIMEZONE — the one every date this platform states is local to.
+ *
+ * Buckets are cut on ITS calendar, not on UTC's. `date_trunc('day', ts)` puts the day
+ * boundary at 08:00 in Singapore, so eight hours of a working morning are filed under
+ * yesterday: measured on this deployment, 09-15 held 484 tool calls by the UTC calendar
+ * and 676 by the local one, and neither number is wrong about anything except which day
+ * it is describing. `zz-core`'s write guards already stamp dates through this variable,
+ * and their docstring calls it "the same variable the console renders through" — which
+ * was aspirational until the trend started using it too.
+ *
+ * Default and deployed value agree deliberately: a deployment that sets nothing gets the
+ * zone this platform is run in rather than UTC, which is nobody's working day.
+ */
+export const ZZ_TZ = (process.env.ZZ_TZ ?? "").trim() || "Asia/Singapore";
+
 /** How wide one bucket of the trend series is, chosen from how much time the series
  * actually covers.
  *

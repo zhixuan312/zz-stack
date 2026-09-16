@@ -33,6 +33,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.44.0] — 2026-09-16 · console 0.12.0
+
+Every capability is a plugin, and the platform now matches that sentence. This release removes
+the last of the concept that competed with it, and makes eleven of the thirteen rules it rests
+on things the gate fails on rather than things a document asserts.
+
+### Removed — breaking
+
+- **Four tools changed door.** `bug_list`, `bug_resolve`, `bug_delete` and `knowledge_reindex`
+  are on `/core`, not `/manage`. Filing a bug was on one door and answering one on the other,
+  because answering is an operator's act — which is role deciding a door. The subject decides
+  the door; role decides who SEES it, and all four are still superadmin-only. `/core` goes 20
+  tools to 24 for a superadmin and stays at 20 for everybody else; `/manage` goes 24 to 20.
+- **`flow.json` no longer carries `version`.** Every plugin ships at the platform's release
+  number. It had two answers: flow.json said zz-access 2.3.0 while the shipped plugin.json said
+  0.43.0, and the registry recorded the former — so evaluation, whose job is comparing versions,
+  was reading a number nobody ran.
+- **`document_write` and `document_revise` no longer take `blocks`.** No flow declares a
+  selection document, so the guards behind it had never fired.
+- **`document_approve` refuses a document its flow declares WITHOUT a gate.** An ungated
+  document is finished by being written; there is no verdict to record.
+- **Three migrations drop schema.** 057 removes the third-party server tables and columns; 058
+  folds the platform's own tool surface into `zz.plugin_tool` and drops `zz.block*`; 059 moves
+  853 knowledge nodes into `zz.knowledge_node`, where `adopted` stops sharing a column with
+  `approved`. After all three: no `block*` table or column remains.
+
+### Fixed
+
+- **Telemetry attributed tool calls to the wrong plugin.** It inferred them from the caller's
+  most recently read skill. 3,928 calls on `/core`, 192 attributed, 150 of those naming a plugin
+  that declares no server and so cannot serve a tool call. A door IS a plugin's declared server.
+- **Ungated documents carried an approval verdict.** Two writers, and correcting one was not
+  durable: `stampEnvelope` conditioned on "the manifest declares this" where the rule is "the
+  manifest gates this", and `document_approve` had the same wrong predicate spelled differently.
+- **The document insert named 19 columns and 20 values.** Postgres refuses that, inside the
+  catch that makes indexing non-fatal — the service would have started, the store kept working,
+  and the index silently stopped being written.
+- **The live chain check left its initiatives behind.** It opens one per run and closes it, and
+  closing is not deleting. Three days of releases — `--dry-run` included, the mode that reports
+  touching nothing — left 56 probe initiatives holding 434 documents, 1,882 events and 240 of
+  the platform's 350 runs. Four sat on a real person's team. Every ratio anybody had computed
+  about this platform was taken over a store that was 81% probe output.
+
+### Added
+
+- **`checks/definition-rules.ts`** — R1, R3, R4, R5's write half, R7, R8 and R12, each its own
+  clause naming its own rule. R8 carries a frozen tool→domain table for all 54 tools, because
+  the test is a question a person answers and a check could only ask a model.
+- **`checks/insert-arity.ts`** — counts an insert's columns against its values, offline. `tsc`
+  cannot read SQL in a template literal and `check:sql` needs a database, so this class of
+  defect had no check at all.
+- **Three doctor probes** — the two rules about DATA cannot live in the gate, which is offline
+  by design: no initiative left by a probe, no document carrying a status its flow does not
+  gate, and every tool call naming the plugin whose door it arrived on.
+- **`scripts/ops/purge-probes.ts`** — an operator script, deliberately not a tool on any door.
+
+### Console 0.12.0
+
+- **One width inside a card.** A document page was 832px while the other nineteen were 1536, so
+  opening a spec from its initiative halved the layout under a full-width header. Capping the
+  prose and not the tables was worse — two widths in one card. Content fills its card.
+
 ## [0.43.0] — 2026-09-16 · console 0.11.0
 
 The two panels under the overview tiles. One drew the wrong population; the other drew the

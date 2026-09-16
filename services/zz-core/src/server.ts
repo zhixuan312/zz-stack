@@ -92,7 +92,17 @@ async function recordOwnSurface(): Promise<void> {
         `select pv.id::text as id from zz.plugin_version pv
            join zz.plugin pl on pl.id = pv.plugin_id
           where pl.name = $1 and pv.version = $2`, [plugin, version]);
-      if (!rows[0]) continue;           // this version is not in the registry yet
+      if (!rows[0]) {
+        // LOUD, because this is the case the ordering used to guarantee and the silence hid.
+        // The deploy restarts this service BEFORE the release registers the version, so at boot
+        // the row is absent, this skipped, and nothing ran again — 0.44.0 recorded no surface
+        // at all and said nothing. release.ts now restarts this service after registering; if
+        // that ever stops happening, this line is what says so.
+        console.warn(`no zz.plugin_version row for ${plugin} ${version} — its tool surface was ` +
+                     "not recorded. register-plugins creates that row at release; this service " +
+                     "must boot after it, not before.");
+        continue;
+      }
       for (const name of names.sort()) {
         await p.query(
           `insert into zz.plugin_tool (plugin_version_id, name, door) values ($1::uuid, $2, $3)

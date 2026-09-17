@@ -167,8 +167,8 @@ export function mountOverview(app: Express): void {
              on date_trunc($2::text, e.ts at time zone $3::text) = slot.b and e.kind='tool_call'
           group by 1 order by 1`,
         [since, grain, ZZ_TZ]),
-      db.query<{ kind: string; n: string; failed: string }>(
-        `select kind, count(*) as n, count(*) filter (where ok = false) as failed
+      db.query<{ kind: string; n: string }>(
+        `select kind, count(*) as n
            from zz.event
           where ($1::timestamptz is null or ts >= $1)
           group by 1 order by count(*) desc`,
@@ -252,8 +252,8 @@ export function mountOverview(app: Express): void {
             and e.kind='tool_call' and e.team_id = t.id
           group by 1 order by 1`,
         [scope.slug, since, grain, ZZ_TZ]),
-      db.query<{ kind: string; n: string; failed: string }>(
-        `select e.kind, count(*) as n, count(*) filter (where e.ok = false) as failed
+      db.query<{ kind: string; n: string }>(
+        `select e.kind, count(*) as n
            from zz.event e join zz.team t on t.id = e.team_id
           where t.slug = $1
             and ($2::timestamptz is null or e.ts >= $2)
@@ -295,7 +295,7 @@ export function mountOverview(app: Express): void {
       toolTrend: toolTrend.rows.map((r) => ({
         bucket: r.bucket, inside: +r.inside, outside: +r.outside, refused: +r.refused,
       })),
-      eventKinds: kinds.rows.map((r) => ({ kind: r.kind, n: +r.n, failed: +r.failed })),
+      eventKinds: kinds.rows.map((r) => ({ kind: r.kind, n: +r.n })),
       refusals: {
         /* THE TOTAL IS SUMMED FROM THE TREND, not counted a third time. It is the same
          * predicate as the trend's `refused` over the same window, so a separate

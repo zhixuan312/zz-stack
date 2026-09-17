@@ -1,7 +1,7 @@
 {
   "name": "@zz/catalog",
   "private": true,
-  "version": "0.44.0",
+  "version": "0.45.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

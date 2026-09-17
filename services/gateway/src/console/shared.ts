@@ -321,7 +321,13 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
     // stopped. The console carried only a boolean, so a delivered initiative and one still
     // being written were the same value — and the state column filled the gap with the stage
     // name, which answers a different question from the one the column asks.
-    const outcome = closing ? (byName.get(closing.name)?.outcome ?? null) : null;
+    //
+    // AND ON WHICHEVER DOCUMENT CARRIES IT. The closing document is today's manifest's, and a
+    // flow can move its close: sdlc-flow closed on spec.md before it closed on review.md, so an
+    // initiative closed back then carries its outcome on spec.md and read here as open forever.
+    // Only initiative_close writes an outcome, so any document carrying one is the record.
+    const outcome = (closing ? byName.get(closing.name)?.outcome : null)
+      ?? live.find((d) => d.outcome)?.outcome ?? null;
     const accepted = outcome === "accepted";
     // The stage list is the flow's if it declares one; otherwise the documents stand in for
     // it, which is the same shape and never a different flow's vocabulary.

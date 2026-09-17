@@ -141,7 +141,19 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       sections: d.sections?.length ? d.sections : undefined,
     };
   });
-  const closingEnv = envelopeOf(join(dir, chain.closingDoc));
+  // THE CLOSE IS WHEREVER initiative_close WROTE IT. The closing document is today's
+  // manifest's, and a flow can move its close — sdlc-flow closed on spec.md before review.md —
+  // so an initiative closed back then carries its outcome on the older closing document, and
+  // reading only today's reported it open forever. Only initiative_close writes an outcome.
+  const closingEnv = ((): Record<string, string> => {
+    const today = envelopeOf(join(dir, chain.closingDoc));
+    if (today.outcome || !existsSync(dir)) return today;
+    for (const f of readdirSync(dir).filter((x) => x.endsWith(".md") && !x.startsWith("_")).sort()) {
+      const env = envelopeOf(join(dir, f));
+      if (env.outcome) return env;
+    }
+    return today;
+  })();
   const outcome = closingEnv.outcome || null;
   // WHO recorded the close, beside WHAT it was. Both are on the closing document's envelope
   // and both are stamped by initiative_close(), and reporting one without the other left the smoke

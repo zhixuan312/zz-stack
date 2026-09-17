@@ -1,6 +1,5 @@
 /**
- * client-package — turn a person's installed flows into an installable package
- * for their client.
+ * client-package — turn the catalog into the installable package a client takes.
  *
  * The rule this module exists to keep: **a client is told where the tools are
  * and what the entry skill is called, and nothing else.** No stage, no gate and
@@ -26,12 +25,12 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntry, catalogManifest } from "@zz/catalog";
+import { catalogEntry, catalogManifest, pluginName } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
 import { EVALS_DIR, OUTPUT_DIR } from "./package/plugin-lock.js";
-import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, pluginName, promoteCommands, routerSkill, withoutFrontmatter } from "./package/skills.js";
+import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one
  * number and no second place to forget to update.
@@ -72,7 +71,7 @@ export interface PackageFile {
   mode?: number;
 }
 
-export interface InstalledFlow {
+export interface ShelfFlow {
   flow: string;
   version: string;
   entry: string;
@@ -166,7 +165,7 @@ function platformOwnEvals(): PackageFile[] {
  * one at `catalog/zz/zz-core/flow.json` now, so the map lives where every other package's map
  * lives. Its SKILLS are still the tree beside the catalog rather than that entry's `skills/` —
  * one of them is GENERATED per person and none of them can be read from a shared catalog. */
-function baselineFiles(flows: InstalledFlow[]): PackageFile[] {
+function baselineFiles(flows: ShelfFlow[]): PackageFile[] {
   const skills = [
     { path: "skills/zz-router/SKILL.md", content: routerSkill(flows) },
     ...platformOwnSkills("skills"),
@@ -245,13 +244,13 @@ export interface ClientPackage {
   files: PackageFile[];
   /** Shell lines, in order, that install it. */
   install: string[];
-  /** How to pick up a newly installed flow. */
+  /** How to pick up a change to the shelf. */
   refresh: string[];
   /** How to remove it completely. */
   remove: string[];
   /** Anything true that the person should know, including what we cannot do. */
   notes: string[];
-  flows: InstalledFlow[];
+  flows: ShelfFlow[];
 }
 
 /* ── the package ─────────────────────────────────────────────────── */
@@ -274,38 +273,26 @@ export interface Plugin {
   /** MCP servers this plugin needs, and nothing more. */
   servers: { name: string; url: string }[];
   files: PackageFile[];
-  /** The baseline is not a choice — nothing else works without it. */
+  /** The platform's own plugins are not a choice — nothing else works without them. */
   required?: boolean;
 }
 
 interface PackageInput {
   target: string;
   base: string;
-  flows: InstalledFlow[];
 }
 
-export function buildClientPackage({ target, base, flows }: PackageInput): ClientPackage {
-  // ONE PLUGIN PER FLOW is a property of the package, so two entries for one flow is not
-  // something to render — it is incoherent input, and rendering it produced two plugins of
-  // one name and the same skill files written twice into one tarball, where extraction takes
-  // whichever wins. The caller that could produce it has been fixed; this says so out loud
-  // rather than leaving the next caller to discover it in a file somebody installed.
-  const twice = flows.map((f) => f.flow).filter((f, i, all) => all.indexOf(f) !== i);
-  if (twice.length) {
-    throw new Error(
-      `a client package carries one plugin per flow, and this one was given ` +
-      `${[...new Set(twice)].join(", ")} more than once. Pick which install applies before ` +
-      "rendering — two plugins of one name collide on install.",
-    );
-  }
+export function buildClientPackage({ target, base }: PackageInput): ClientPackage {
+  // THE SAME SHELF FOR EVERYONE: the catalog's flows, never a team's record of installs.
+  const flows = shelfFlows();
   const files: PackageFile[] = [];
   const notes: string[] = [];
 
   // ── what the shelf holds ───────────────────────────────────────────
   //
-  // Baseline first: the platform's own MCP and the router. Then one plugin per flow,
-  // each carrying its own blocks. Admin is its own plugin because most people never
-  // need it, and a tool that can create teams should not arrive by default.
+  // Baseline first: the platform's own MCP and the router. Then the platform's other own
+  // plugins, which are REQUIRED like the baseline — zz-access is how a person gets a token at
+  // all. Then one OPTIONAL plugin per catalog flow: a person installs the ones they want.
   const core = { name: "zz-core", url: `${base}/core/mcp` };
   const plugins: Plugin[] = [
     {
@@ -313,8 +300,8 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       description: baselineCard(target),
       servers: [core],
       required: true,
-      // The one plugin whose content is generated rather than read: the router describes
-      // THIS person's installed flows, so it cannot live in a catalog shared by everyone.
+      // The one plugin whose content is generated rather than read: the router names the
+      // flows on the shelf.
       // The hermes flavour differs only in frontmatter, and it is built HERE so there is one
       // router in the package. Pushing a second copy in the hermes branch put two entries at
       // the same tar path, and the one that won on extraction was the wrong one.
@@ -332,6 +319,7 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
         name: pp.name,
         description: pp.description,
         servers: pp.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
+        required: true,
         // Assets beside a promoted skill still travel: only its SKILL.md moves.
         files: [...commands, ...skills.filter((sk) => !promoted.has(sk)),
                 ...residentFiles(pp.dir, "evals")],
@@ -449,7 +437,8 @@ export function buildClientPackage({ target, base, flows }: PackageInput): Clien
       // that could not exist yet. The shelf is public because it was never the boundary:
       // every tool below is a door at the gateway and the door still refuses.
       `claude plugin marketplace add ${MARKETPLACE_REPO}`,
-      `claude plugin install zz-core@${MARKETPLACE} # the baseline — everything else needs it`,
+      ...plugins.filter((pl) => pl.required)
+        .map((pl) => `claude plugin install ${pl.name}@${MARKETPLACE} # required`),
       ``,
       `# Then the token — it is what every tool above actually authenticates with.`,
       // CREATED restricted, not restricted afterwards. `>` makes the file with the shell's

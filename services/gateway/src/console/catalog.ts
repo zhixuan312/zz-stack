@@ -26,12 +26,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntries, isFlow } from "@zz/catalog";
+import { catalogEntries, isFlow, pluginName } from "@zz/catalog";
 import type { Express } from "express";
 
 import { PLATFORM_VERSION } from "../client-package.js";
 import { platformDb } from "../db.js";
-import { BASELINE, pluginName } from "../package/skills.js";
+import { BASELINE } from "../package/skills.js";
 import { teamless } from "./shared.js";
 import { PLATFORM_SKILLS_DIR, type ShippedSkill, blockSkills, readSkillAt, skillsIn } from "./skill-source.js";
 
@@ -157,9 +157,7 @@ export function mountCatalog(app: Express): void {
    */
   app.get("/api/console/plugins", teamless("plugins", async (_req, res) => {
     // NO TEAM DIMENSION: a plugin's manifest, its skills and its release digest are the same
-    // rows for every reader. Which teams INSTALLED a flow was per-team data and went out with
-    // the flows route — see the note in /api/console/teams, which is where a team's own
-    // installs are answered from a scope that authorises them.
+    // rows for every reader. The platform records no installs, so there is nothing per team.
     const db = platformDb();
     const [ran, released] = await Promise.all([
       // EVERY SKILL THE STORE HAS SEEN, whatever kind it is. The flows route filtered

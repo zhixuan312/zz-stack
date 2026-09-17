@@ -206,8 +206,8 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             thousand events), register-plugins (the same, one level up: each
             plugin VERSION and which skill versions it contained, from
             plugins.lock.json. Release is the only moment anybody knows, because
-            zz.skill.flow is current registration rather than per-version and
-            flow_install overwrites its own history), plugin-surface (what a plugin's
+            zz.skill.flow is current registration rather than per-version),
+            plugin-surface (what a plugin's
             tool surface DID between its last two recorded versions — including a
             tool that stayed and changed door, which a diff of names alone reports
             as no change at all), watch-results

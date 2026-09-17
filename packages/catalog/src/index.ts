@@ -181,9 +181,8 @@ export function catalogEntries(): CatalogEntry[] {
  *
  * `includePlatform` is off by default, and that default is the guard. Filtering where a
  * thing is LOOKED UP rather than where it is LISTED is the difference between a guard and a
- * cosmetic: the platform filter first went into the listing alone, so catalog_list correctly
- * hid zz-access while flow_install, which resolves a manifest directly, installed it anyway.
- * Callers that genuinely want a platform entry — the package builder — ask for it. */
+ * cosmetic: a filter applied only to a listing leaves every direct lookup able to reach the
+ * entry anyway. Callers that genuinely want a platform entry — the package builder — ask for it. */
 export function catalogEntry(flow: string, includePlatform = false): CatalogEntry | null {
   for (const e of catalogEntries()) {
     if (e.flow !== flow) continue;
@@ -264,40 +263,24 @@ export function pluginForDoor(surface: string): string | null {
   return null;
 }
 
-/** Flows a team can install. NOT every catalog entry: platform capabilities live here too,
- * so that their description and skills have one home, but installing one would create a
- * flow_install row for something the shelf already ships to everyone — and then package it
- * a second time as a flow plugin. */
+/** The optional plugins on the shelf. NOT every catalog entry: the platform's own required
+ * plugins live here too, so that their description and skills have one home, but they ship as
+ * required plugins and must not be packaged a second time as optional ones. */
 export function installableFlows(): string[] {
   return catalogEntries()
     .filter((e) => !e.manifest.shelved)
     .map((e) => `${e.owner}/${e.flow}`);
 }
 
-/** Platform packages that can GOVERN an initiative — the ones shipped to every team that
- * declare documents of their own.
+/** Every catalog package that can GOVERN an initiative: the ones that declare documents.
  *
- * Not the same question as installableFlows(), and the difference is the point. A shelved
- * package is uninstallable because the shelf already ships it to everyone; that says nothing
- * about whether it OWNS DOCUMENTS, which is what governing means here.
- *
- * The test is `isFlow` plus ownership, and it is the same `documents` question the classifier
- * asks — deliberately, now that it is one question. It was two: this filtered on `documents`
- * while the platform classified on `stages`, so `zz-access` was a flow that could not govern
- * anything, and the comment here had to explain the gap rather than the rule. A governor with
- * no documents gates nothing, which is precisely the permanent-ungoverned failure the next
- * paragraph records — and a package with no documents is not a flow, so the two collapse.
- *
- * It exists because "which flows could govern this initiative" was answered from
- * zz.flow_install alone, and that table has no row for a platform package by construction.
- * So a team was never asked to declare which flow it was running when the answer was one of
- * these, and zz-platform — whose ONLY flows are these — was asked nothing ever: its first
- * document could omit `flow:` and the initiative was then governed by nothing, permanently,
- * with no gate on the document the flow exists to gate.
- */
-export function governingPlatformFlows(): string[] {
+ * `isFlow` is the test, the same `documents` question the classifier asks, so there is one
+ * answer to "is this a flow". Ownership does not enter into it: an initiative may be governed
+ * by any flow the catalog has, because the platform keeps no record of which ones a team
+ * installed. */
+export function governingFlows(): string[] {
   return catalogEntries()
-    .filter((e) => e.manifest.shelved && isFlow(e.manifest))
+    .filter((e) => isFlow(e.manifest))
     .map((e) => e.flow);
 }
 
@@ -308,4 +291,23 @@ export function skillText(flow: string, skill: string): string | null {
   if (!e) return null;
   const p = join(e.dir, "skills", skill, "SKILL.md");
   return existsSync(p) ? readFileSync(p, "utf8") : null;
+}
+
+/** What a flow is called as a plugin.
+ *
+ * A command is `/<plugin>:<file>`, so the two names are typed together every time. Taken
+ * literally from the catalog they repeat themselves: the flow `sdlc-flow` and the skill
+ * `sdlc-deck` gave `/sdlc-flow:sdlc-deck`, which says "sdlc" twice and "flow" once more than
+ * anyone needs. The trailing `-flow` is the same fact the namespace already carries.
+ *
+ * ONE RULE FOR EVERY READER: the packager names the plugin with it, the release registers it
+ * under it, and a `flow:` subject tag resolves to the release through it.
+ *
+ * The COMMAND half of that name used to be derived here too, by stripping the plugin's
+ * prefix off the skill. It is declared now: see `declaredCommands` in the gateway's packager. The strip is gone rather
+ * than kept as a default, because an entry skill is named after its plugin and nothing
+ * survives the strip — so three of four front doors came out called `flow`, and none of them
+ * said what it did. A fallback that names most things the same thing is not a fallback. */
+export function pluginName(flow: string): string {
+  return flow.endsWith("-flow") ? flow.slice(0, -"-flow".length) : flow;
 }

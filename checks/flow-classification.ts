@@ -139,9 +139,9 @@ try {
 // ── 3. the sites that classify, read for the field they name ──────────────────────────────
 // Each entry: file, a pattern that MUST be there, a pattern that must NOT, and why.
 const sites: [string, RegExp, RegExp, string][] = [
-  ["packages/catalog/src/index.ts", /\.filter\(\(e\) => e\.manifest\.shelved && isFlow\(e\.manifest\)\)/,
-   /shelved && \(e\.manifest\.stages/,
-   "governingPlatformFlows must ask isFlow, not rebuild the test"],
+  ["packages/catalog/src/index.ts", /\.filter\(\(e\) => isFlow\(e\.manifest\)\)/,
+   /\(e\.manifest\.stages/,
+   "governingFlows must ask isFlow, not rebuild the test"],
   ["packages/catalog/src/index.ts", /if \(isFlow\(m\) && !\(m\.stages\?\.length \?\? 0\)\)/,
    /\(m\.documents\?\.length \?\? 0\) > 0 &&/,
    "manifestAt enforces the obligation `documents` creates, so it must ASK isFlow — an " +
@@ -159,9 +159,6 @@ const sites: [string, RegExp, RegExp, string][] = [
    "a chain IS a flow's discipline over its documents, so chainForFlow asks the classifier " +
    "rather than re-deriving it — and a bare `documents` test is truthy on `[]`, which " +
    "resolves a NAMED chain with nothing in it"],
-  ["services/zz-core/src/chain.ts", /\(m && isFlow\(m\) \? deriveChain\(m\.documents, rows\[0\]\.flow\)/,
-   /m\?\.documents\?\.length \? deriveChain/,
-   "chainForTeam asks the same question of an installed manifest and must ask it the same way"],
   ["services/zz-core/src/tools/initiative-status.ts", /if \(docs\.length === 0\) \{/,
    /if \(!chain\.name && docs\.length === 0\)/,
    "initiative_status must refuse to compute a next move over an empty document chain, " +

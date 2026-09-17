@@ -15,45 +15,12 @@
  */
 import { buildClientPackage } from "../../services/gateway/dist/client-package.js";
 
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. `unknown?.message` narrows to `{}`, which has no properties at all. */
-function errMessage(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as Record<string, unknown>).message;
-    if (m !== undefined && m !== null) return String(m);
-  }
-  return String(err);
-}
-
-const flows = [{
-  flow: "sdlc-flow", version: "0.1.0", entry: "sdlc-flow", agentName: "SDLC Agent",
-  whenToUse: "x", blocks: [], servers: [],
-}];
 const base = "https://zz.example";
 const target = "a@b.example.com";
 
 const bad: string[] = [];
 
-// ONE FLOW WAS THE WHOLE CORPUS, so the failure below was invisible to it. A person in two
-// teams that installed one flow differently produced two entries for it, and the renderer
-// turned each into a plugin: two plugins of one name, and the same skill files written twice
-// into one package, where the later write wins.
-//
-// The caller is fixed and this holds the package's own rule: one plugin per flow, refused
-// loudly rather than rendered.
-try {
-  buildClientPackage({
-    target, base,
-    flows: [flows[0], { ...flows[0], version: "0.2.0", agentName: "Another Agent" }],
-  });
-  bad.push("a package built two plugins for one flow instead of refusing");
-} catch (e) {
-  if (!/more than once/.test(errMessage(e))) {
-    bad.push(`two entries for one flow were refused, but not by that rule: ${errMessage(e)}`);
-  }
-}
-
-const pkg = buildClientPackage({ target, base, flows });
+const pkg = buildClientPackage({ target, base });
 const paths = pkg.files.map((f) => f.path);
 
 // The module's first stated rule: it never writes the engine-global files, because a flow
@@ -143,14 +110,11 @@ for (const f of pkg.files.filter((x) => /scripts\/zz-mcp-headers\.sh$/.test(x.pa
 // teams and must never arrive by default. The whole reason there is a plugin per flow is that
 // installing one used to bring everything.
 //
-// The allowance names the BASELINE PLUGIN, not the shelf it sits on. It was the literal
-// `zz@zz-platform`, so renaming the marketplace to `zz-stack` turned a correct install block
-// red — the probe was asserting which marketplace exists, a fact it has no business holding,
-// on its way to asserting which plugin may install itself. `zz-core@` matches only the baseline:
-// The baseline has since been renamed `zz` -> `zz-core`, so the name here moved with it;
-// `zz-access@zz-stack` and the rest have no `zz-core@` in them.
+// The allowance names the REQUIRED PLUGINS, not the shelf they sit on — asserting which
+// marketplace exists is a fact this probe has no business holding. zz-core and zz-access are
+// required, and nothing else may install itself.
 const live = pkg.install.filter((l) => /^\s*claude plugin install /.test(l));
-const wrong = live.filter((l) => !/\bzz-core@[A-Za-z0-9._-]+\b/.test(l));
+const wrong = live.filter((l) => !/\b(zz-core|zz-access)@[A-Za-z0-9._-]+\b/.test(l));
 if (wrong.length) {
   bad.push(`the install block installs without being asked: ${wrong.join(" | ")}`);
 }

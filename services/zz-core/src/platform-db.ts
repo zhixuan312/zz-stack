@@ -9,6 +9,7 @@
  */
 import pg from "pg";
 
+import { pluginName } from "@zz/catalog";
 import { actingTeam } from "@zz/contracts";
 import { configureIndexing } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
@@ -147,62 +148,38 @@ export async function teamsFor(email: string): Promise<{ active: string | null; 
       `${(err as Error).message}. Nothing was written. Tell an administrator if it persists.`);
   }
 }
-/** The version behind a subject tag, and why the three kinds it can name are not answered
- *  the same way.
+/** The version behind a subject tag.
  *
- *  `plugin:<name>` — the newest row in zz.plugin_version, which is what that plugin last
- *  released. ORDERED BY THE VERSION ITSELF, semver-wise, because zz.plugin_version carries no
- *  timestamp: a lexicographic sort would put 0.9.0 above 0.43.0 and quietly answer with an
- *  older release than the one in force.
+ *  `plugin:<name>` and `flow:<name>` — the newest row in zz.plugin_version, which is what that
+ *  plugin last released. A flow IS a plugin, registered at release under `pluginName` of its
+ *  directory (`flow:sdlc-flow` is the plugin `sdlc`), so the two tags resolve the same way. (A `flow:` tag used to resolve from a team's install record, which
+ *  the platform no longer keeps.) ORDERED BY THE VERSION ITSELF, semver-wise, because
+ *  zz.plugin_version carries no timestamp: a lexicographic sort would put 0.9.0 above 0.43.0 and
+ *  quietly answer with an older release than the one in force.
  *
- *  `flow:<name>` — resolved from zz.flow_install, scoped to the caller's team: an install is
- *  team-scoped by its own primary key (team_id, flow), so the same flow name can carry a
- *  different version per team and there is no team-less answer to give.
+ *  `provider:` and `interface:` — there is NO backing table for either kind, so their
+ *  "unresolved" is PERMANENT rather than a lookup that is merely failing today.
  *
- *  `provider:` and `interface:` — there is NO backing table for either kind.
- *  zz.plugin_version tracks plugins and zz.flow_install tracks flows; nothing records a
- *  version for a provider or an interface. Their "unresolved" is therefore PERMANENT rather than a lookup that is
- *  merely failing today — there is no query that could ever make it resolve, unlike the other
- *  two kinds' "unresolved", which means only that this particular lookup did not find a row.
- *
- *  Returns null when none of the four kinds is present — a node not about any of them — and
- *  the field is then written empty rather than guessed. Never null once a subject tag IS
- *  present: an infra hiccup at write time must not be indistinguishable from "no subject
- *  involved", or it would permanently produce a claim that can never be retired. */
-export async function subjectVersionFor(tags: string[] | undefined, team: string | null): Promise<string | null> {
+ *  Returns null when no subject tag is present — a node not about any of them — and the field
+ *  is then written empty rather than guessed. Never null once a subject tag IS present: an infra
+ *  hiccup at write time must not be indistinguishable from "no subject involved", or it would
+ *  permanently produce a claim that can never be retired. */
+export async function subjectVersionFor(tags: string[] | undefined): Promise<string | null> {
   const all = tags ?? [];
-  const pluginTag = all.find((t) => t.startsWith("plugin:"));
-  const flowTag = all.find((t) => t.startsWith("flow:"));
+  const pluginTag = all.find((t) => t.startsWith("plugin:") || t.startsWith("flow:"));
   const otherTag = all.find((t) => t.startsWith("provider:") || t.startsWith("interface:"));
   if (pluginTag) {
     try {
       const p = db();
-      // `unresolved`, NOT null. A `plugin:` tag is present, so the subject exists and only the
-      // lookup failed — which is precisely the distinction the docstring above promises and
-      // this branch was quietly breaking. Returning null here wrote the field empty, and empty
-      // is this function's word for "no subject involved": a node about a plugin, filed on a
-      // deployment with no database, became indistinguishable from a node about nothing.
-      // Found in review, in the same initiative that added the `flow:` branch two lines below
-      // with this case already handled correctly.
+      // `unresolved`, NOT null: a tag is present, so the subject exists and only the lookup
+      // failed. Empty is this function's word for "no subject involved".
       if (!p) return "unresolved";
       const r = await p.query<{ version: string }>(
         `select pv.version from zz.plugin_version pv join zz.plugin p on p.id = pv.plugin_id
           where p.name = $1
           order by string_to_array(regexp_replace(pv.version, '[^0-9.].*$', ''), '.')::int[] desc
-          limit 1`, [pluginTag.slice(7)]);
+          limit 1`, [pluginName(pluginTag.slice(pluginTag.indexOf(":") + 1))]);
       return r.rows[0]?.version ?? "unresolved";
-    } catch {
-      return "unresolved";
-    }
-  }
-  if (flowTag) {
-    try {
-      const p = db();
-      if (!p || !team) return "unresolved";
-      const r = await p.query<{ version: string }>(
-        `select f.version from zz.flow_install f join zz.team t on t.id = f.team_id
-          where t.slug = $1 and f.flow = $2`, [team, flowTag.slice(5)]);
-      return r.rows[0]?.version || "unresolved";
     } catch {
       return "unresolved";
     }

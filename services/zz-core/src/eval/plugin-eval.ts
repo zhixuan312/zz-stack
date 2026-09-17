@@ -22,7 +22,7 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntries } from "@zz/catalog";
+import { catalogEntries, pluginName } from "@zz/catalog";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
@@ -41,11 +41,9 @@ const noDb = () => text("ERROR: this deployment has no platform database, so not
 
 /** A plugin's catalog entry, by the name a person installs it under.
  *
- * pluginName's rule, applied here rather than imported: the gateway owns that function and this
- * service does not depend on the gateway. One line, and the alternative is a package boundary
- * crossed for a suffix strip. */
+ * Through pluginName, the one rule for what a flow is called as a plugin. */
 export function entryOf(plugin: string): ReturnType<typeof catalogEntries>[number] | undefined {
-  return catalogEntries().find((e) => e.flow.replace(/-flow$/, "") === plugin);
+  return catalogEntries().find((e) => pluginName(e.flow) === plugin);
 }
 
 /** The platform's own skills — the `zz-core` plugin's content. The same constant plugin-lock.ts

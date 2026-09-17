@@ -188,22 +188,13 @@ check("the second distillation exists and is reachable", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the shelf is on the door everyone has, and installing is not", () => {
-  // Seeing what your team COULD run and deciding what it DOES run are different acts, and
-  // they are separated by ROLE. catalog_list is registered for everybody — a person's own
-  // access, and browsing is nobody's privilege; flow_install is registered only for a caller
-  // who administers a team, because it changes what a whole team runs.
+check("the shelf is on the door everyone has, and each admin act is in its tier", () => {
+  // Seeing what the shelf offers is nobody's privilege, so catalog_list is registered for
+  // everybody. Gate it behind `sup` or `lead` and discovery disappears for everyone else, with
+  // no error anywhere — the tool simply is not there. Installing is not a platform act at all:
+  // a person installs a plugin in their own client, and the platform records none of it.
   //
-  // This used to be a separation by DOOR, /manage against /admin, and the door was retired
-  // because it authorised nothing: any member could open /admin, see every tool, and be
-  // refused by each. The invariant survived the door and is now written where it always
-  // belonged — in which tier each tool is registered under.
-  //
-  // The failure this refuses is quiet in both directions. Gate the shelf behind `sup` or
-  // `lead` and discovery disappears for everyone else, with no error anywhere — the tool
-  // simply is not there, and the only way left to find a flow is to guess its name at
-  // flow_install and read the refusal. Register flow_install unconditionally and any member
-  // is offered a tool that changes what their whole team runs.
+  // The admin acts are separated by ROLE, written in which tier each tool is registered under.
   //
   // Comments stripped first. Testing the raw text passed on `// registerShelf(server)` —
   // found by commenting the line out to check this check, which is the whole reason to try
@@ -229,7 +220,6 @@ check("the shelf is on the door everyone has, and installing is not", () => {
   for (const [name, want, why] of [
     ["catalog_list", "everyone", "browsing what your team could run is not a privilege"],
     ["whoami", "everyone", "it is the tool that explains a refusal, so a refused caller must have it"],
-    ["flow_install", "lead", "installing changes what a whole team runs"],
     ["member_add", "lead", "team membership is a team admin's act"],
     ["person_add", "sup", "creating a principal is a platform act"],
   ]) {

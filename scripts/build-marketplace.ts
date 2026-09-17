@@ -11,9 +11,9 @@
  * the token. The shelf was never the boundary — it only looked like one.
  *
  * It does NOT re-implement the packaging. `buildClientPackage` is the one function that
- * knows what a plugin directory contains, and it is pure — files in, files out — so this
- * calls it with flows read from the catalog instead of from a database, and writes the
- * result to disk instead of tarring it. A second renderer here is precisely the drift the
+ * knows what a plugin directory contains, and it is pure — catalog in, files out — so this
+ * calls it and writes the result to disk. The gateway's client_setup calls the same function,
+ * so the committed shelf and what a person is told to install are one thing. A second renderer here is precisely the drift the
  * gateway's own comments keep warning about.
  */
 import { execFileSync } from "node:child_process";
@@ -55,12 +55,8 @@ process.env.ZZ_SKILLS_DIR ??= join(root, "skills");
 process.env.ZZ_EVALS_DIR ??= join(root, "evals");
 
 const load = (p: string) => import(pathToFileURL(join(root, p)).href);
-const { catalogManifest, installableFlows } =
-  (await load("packages/catalog/dist/index.js")) as typeof import("../packages/catalog/dist/index.js");
-const { buildClientPackage, PLATFORM_VERSION } =
+const { buildClientPackage } =
   (await load("services/gateway/dist/client-package.js")) as typeof import("../services/gateway/dist/client-package.js");
-const { whenToUse } =
-  (await load("services/gateway/dist/package/skills.js")) as typeof import("../services/gateway/dist/package/skills.js");
 
 /** The address every `.mcp.json` on this shelf points at.
  *
@@ -72,32 +68,10 @@ const { whenToUse } =
  */
 const GATEWAY = "https://api.165-232-169-165.nip.io";
 
-/* ── the flows, from the catalog rather than from a database ──────── */
-
-// Mirrors `shape()` in services/gateway/src/admin/flows.ts field for field. That function
-// shapes a `flow_install` row; there is no database here, so everything comes from the
-// manifest — which is what the row's own `manifest` column stores anyway.
-const flows = installableFlows()
-  .map((entry) => entry.split("/")[1] ?? entry)
-  .map((flow) => {
-    const m = catalogManifest(flow);
-    if (!m) throw new Error(`catalog lists '${flow}' but has no manifest for it`);
-    const entry = m.entry || flow;
-    return {
-      flow,
-      version: PLATFORM_VERSION,
-      entry,
-      agentName: null,
-      whenToUse: whenToUse(flow, entry),
-      servers: m.servers ?? [],
-    };
-  })
-  .sort((a, b) => a.flow.localeCompare(b.flow));
-
 // `target` reaches exactly one string: the baseline plugin's description. On the gateway it
 // is the person's email, which is right for a package built for them and wrong for a shelf
 // anyone can read — a marketplace card is not the place to publish an address.
-const pkg = buildClientPackage({ target: "your team", base: GATEWAY, flows });
+const pkg = buildClientPackage({ target: "your team", base: GATEWAY });
 
 /* ── writing it out ───────────────────────────────────────────────── */
 

@@ -191,14 +191,13 @@ const IDENTIFIER_ARGS = new Set([
   // `platform` and `block` LEFT WITH THE CONCEPT. Both named a third party's server — the
   // argument every credential and grant tool took — and nothing declares either now.
   // `harness` left with render_harness_config, then `client` and `clients` left with Codex
-  // and Hermes: client_setup takes no client any more, because there is one, and
-  // flow_install no longer asks a team to choose between them.
+  // and Hermes: client_setup takes no client any more, because there is one.
   // `id` LEFT WITH revoke_my_access_token, which was the only tool on the platform that ever
   // declared it — a bare `id` at the top level, where every survivor names what the id is OF
   // (`pat_id`, `old_id`, `new_id`). That tool was a duplicate of pat_revoke and was deleted,
   // so the entry became unreachable in the same change.
   "old_id", "new_id", "slug", "role",
-  "scope", "status", "prefix", "version", "agent_name", "limit",
+  "scope", "status", "prefix", "version", "limit",
   "include_superseded",
   // `direction` LEFT WITH encode_base64, the only tool that ever declared it — encode or
   // decode, and nothing else on any door takes the name. An allowlist entry that cannot be
@@ -429,8 +428,8 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
     // that never came back produced no row at all, so the record showed a flow that simply
     // stopped making calls. Both are wired, and `done` makes sure one call writes one row.
     let done = false;
-    // ASYNC, because the flow a team is running is a fact in the database and the row should
-    // carry it rather than leave every reader to look it up against a team's CURRENT install.
+    // ASYNC, because the flow an initiative runs is a fact in the database and the row should
+    // carry it rather than leave every reader to look it up later.
     // `done` is set synchronously on the first line, so "finish" and "close" both firing still
     // writes exactly one row — the guard never awaits anything before it closes.
     const record = async (): Promise<void> => {
@@ -490,7 +489,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         if (typeof named === "string" && named) { initiativeSeen(caller, named); break; }
       }
       const step = currentStep(caller);
-      const flow = await flowFor(req.zzIdentity?.activeTeam ?? null);
+      const flow = await flowFor(req.zzIdentity?.activeTeam ?? null, step?.initiative);
 
       for (const call of wanted) {
         const given = call.params?.arguments ?? {};
@@ -582,7 +581,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           step: stepName,
           stepVersion: step?.step_version,
           // WHICH PLUGIN, AND WHICH RELEASE OF IT — the answer this task adds. Never `flow`
-          // (a team's last install, not a skill's owner) and never `x-zz-client` in `detail`
+          // (the initiative's flow, not a skill's owner) and never `x-zz-client` in `detail`
           // below (which program made the call, not which plugin's skill it was following).
           plugin: plugin ?? undefined,
           // THE DOOR'S OWN ACCOUNT OF ITS VERSION, from the `initialize` handshake it already

@@ -82,8 +82,7 @@ try {
   process.env.ZZ_SKILLS_DIR = join(pkgRoot, "skills");
   process.env.ZZ_CATALOG_DIR ??= join(process.cwd(), "catalog");
   const { buildClientPackage } = await import("../services/gateway/dist/client-package.js");
-  const pkg = buildClientPackage({
-    target: "https://example.test", base: "https://example.test", flows: [] });
+  const pkg = buildClientPackage({ target: "https://example.test", base: "https://example.test" });
 
   const shipped = pkg.files.map((f) => f.path);
   const leaked = shipped.filter((p) => /(^|\/)evals\/results\//.test(p));

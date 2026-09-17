@@ -12,9 +12,11 @@
  */
 import { createHash } from "node:crypto";
 
+import { pluginName } from "@zz/catalog";
+
 import { MARKETPLACE, type ClientPackage } from "../client-package.js";
 import type { Plugin } from "../client-package.js";
-import { entryCommand, pluginName } from "./skills.js";
+import { entryCommand } from "./skills.js";
 
 /** A short, stable digest of everything on this person's shelf — the plugin names and the
  * bytes of every file. Two people with the same shelf get the same digest; one changed
@@ -99,7 +101,7 @@ export function describePackage(pkg: ClientPackage, target: string): string {
   );
 
   if (pkg.flows.length === 0) {
-    lines.push(`No flow is installed for your team yet — ask a platform admin to install one.`);
+    lines.push(`The shelf has no flow yet.`);
   } else {
     // READ FROM THE MANIFEST, the same declaration the packager emits from, never spelled
     // out here. This said `/zz:<flow>` — the namespace from when every flow shipped inside
@@ -115,7 +117,8 @@ export function describePackage(pkg: ClientPackage, target: string): string {
       return cmd ? [`\`/${pluginName(f.flow)}:${cmd}\``] : [];
     });
     lines.push(
-      ...(typed.length ? [`Type ${typed.join(" or ")} when you know what you want,`] : []),
+      `Install the flows you want from the shelf — none is required.`,
+      ...(typed.length ? [`Once installed, type ${typed.join(" or ")} when you know what you want,`] : []),
       `${typed.length ? "or just describe" : "Describe"} the work and the \`zz-router\` skill will pick the flow.`,
     );
   }
@@ -129,24 +132,21 @@ export function describePackage(pkg: ClientPackage, target: string): string {
   // the whole of it.
   lines.push(
     ``,
-    `## When a new flow is installed for your team`,
+    `## When the shelf changes`,
     "```bash",
     ...pkg.refresh,
     "```",
   );
   if (pkg.flows.length) {
     lines.push(
-      `Your team's ${pkg.flows.length === 1 ? "flow travels" : "flows travel"} as files, not as a`,
-      `pointer, so a fix on the platform reaches you only when you update. Nothing warns you`,
+      `A flow travels as files, not as a pointer, so a fix on the platform reaches you only`,
+      `when you update. Nothing warns you`,
       `otherwise, because the old files keep working:`,
       "```bash",
-      // pluginName(f.flow), not f.flow. A flow named ops-flow ships as the plugin `sm` —
-      // `install` uses the plugin name and this used the flow name, so the update command
-      // handed to a person named a plugin they never installed and the runtime would say so.
-      //
-      // MARKETPLACE, not a literal: the shelf was renamed zz-platform -> zz-stack and this
-      // line kept the old name, in the one paragraph a person reads AT INSTALL.
-      ...pkg.flows.map((f) => `claude plugin update ${pluginName(f.flow)}@${MARKETPLACE}`),
+      // The platform does not know which plugins this person installed, so it names the
+      // pattern rather than a list. MARKETPLACE, not a literal: the shelf was renamed
+      // zz-platform -> zz-stack and a literal kept the old name.
+      `claude plugin update <plugin>@${MARKETPLACE} # for each plugin you installed`,
       "```",
     );
   }

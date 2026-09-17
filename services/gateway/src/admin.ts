@@ -17,14 +17,11 @@
  * a front end's own tables: the registry is the truth, and clients read it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { catalogManifest } from "@zz/catalog";
-import { type CatalogManifest, mintPat } from "@zz/contracts";
+import { mintPat } from "@zz/contracts";
 import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { PLATFORM_VERSION } from "./client-package.js";
 import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority.js";
-import { autoFlows, canonicalJson, installFlow, uninstallFlow } from "./admin/flows.js";
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
 import { platformDb } from "./db.js";
@@ -41,7 +38,7 @@ import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, sha256, typ
  *
  * And the filter is NOT the authorisation. Every handler below still resolves the caller and
  * checks for itself, because `lead` is "administers SOME team" while the act is always about
- * ONE named team — flow_install for a team you do not lead is a refusal a visible tool must
+ * ONE named team — member_add for a team you do not lead is a refusal a visible tool must
  * still make, with its reason. */
 export function registerAdminTools(server: McpServer, id: Identity | null): void {
   const sup = !!id && isSuper(id);
@@ -368,125 +365,6 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     return text(JSON.stringify(r.rows.map((row) => ({
       ...row, your_role: id.teams.find((x) => x.slug === row.slug)?.role ?? null,
     }))));
-  });
-
-  if (lead) server.registerTool("flow_install", {
-    description:
-      "WHEN a team should start running one of the catalog's flows — browse them with " +
-      "catalog_list first. RETURNS the install, pinning the flow's manifest as the single " +
-      "place that says what this team runs; clients read it rather than being written into, " +
-      "and the shelf a person installs from is generated from it. agent_name is what the " +
-      "team sees. REFUSES anyone who does not administer THIS team, a flow the catalog does " +
-      "not have, and a team that is not active.",
-    inputSchema: {
-      team: z.string(), flow: z.string(), version: z.string().optional(),
-      agent_name: z.string().optional(),
-    },
-  }, async ({ team, flow, version, agent_name }) => {
-    const id = await caller();
-    const r = await installFlow(id, team, flow, version, agent_name);
-    return text(r.ok ? r.message : `ERROR: ${r.error}`);
-  });
-
-  if (lead) server.registerTool("flow_uninstall", {
-    description:
-      "WHEN a team should stop running a flow it chose. RETURNS confirmation, and says " +
-      "plainly when the team never had that flow rather than reporting a removal that did " +
-      "not happen. REFUSES anyone who does not administer THIS team, and refuses unless " +
-      "confirm repeats the flow name. It cannot remove an automatic flow: those are the " +
-      "platform's own and every team has them without installing them.",
-    inputSchema: { team: z.string(), flow: z.string(), confirm: z.string() },
-  }, async ({ team, flow, confirm }) => {
-    const id = await caller();
-    const r = await uninstallFlow(id, team, flow, confirm);
-    return text(r.ok ? r.message : `ERROR: ${r.error}`);
-  });
-
-  server.registerTool("install_list", {
-    description:
-      "WHEN you need to know what a team actually runs and what it has been trusted with — " +
-      "before granting, revoking or debugging a refusal. RETURNS the registry view: every " +
-      "team's flows and block grants, each with who put it there and when, automatic flows " +
-      "included rather than only the ones the team chose, and a flag on any install whose " +
-      "pinned manifest has drifted from the catalog. REFUSES to widen past your access: a " +
-      "superadmin sees the registry, everyone else sees their own teams.",
-    inputSchema: {},
-  }, async () => {
-    const id = await caller();
-    if (!id) return text("ERROR: no platform identity");
-    // The third listing that answered about teams the caller has nothing to do with — which
-    // flows they run and which blocks they were trusted with is a description of another
-    // team's work. A superadmin sees the registry; everyone else sees their own teams.
-    const all = isSuper(id);
-    const mine = id.teams.map((t) => t.slug);
-    const db = platformDb();
-    // WHO DID IT, and when. `installed_by` and `granted_by` have been written on every row
-    // since the schema was created and read by nothing — provenance recorded and then
-    // unreadable, which answers the audit question no better than not recording it. This is
-    // the registry view; "who gave this team casebox, and when" belongs here or nowhere.
-    const flows = await db.query<{
-      team: string; flow: string; version: string; manifest: CatalogManifest | null;
-      installed_by: string | null; created_at: string;
-    }>(
-      `select t.slug as team, f.flow, f.version, f.manifest, p.email as installed_by, f.created_at
-         from flow_install f join team t on t.id = f.team_id
-         left join principal p on p.id = f.installed_by
-       where $1 or t.slug = any($2) order by t.slug, f.flow`, [all, mine]);
-    // An install PINS the manifest it was made from, deliberately — that is what a version
-    // means. But a manifest can change without its version moving, and then the pin and the
-    // catalog differ silently, at the same version number, with nothing anywhere saying so.
-    // It has already happened: sdlc-flow's pinned 0.1.0 predates `agentName`, so the team's
-    // agent is called "Sdlc Agent" — titleCase of the directory — while the catalog has said
-    // "SDLC Agent" for some time. Nothing was wrong with the pin. What was missing was any
-    // way to find out.
-    interface InstallRow {
-      team: string; flow: string; version: string; install: string;
-      installed_by?: string; installed_at?: string;
-      pinned_manifest_differs_from_catalog?: boolean;
-    }
-    const rows: InstallRow[] = flows.rows.map((r) => {
-      const current = catalogManifest(r.flow, true);
-      const stale = current !== null && canonicalJson(current) !== canonicalJson(r.manifest);
-      return { team: r.team, flow: r.flow, version: r.version, install: "opt-in",
-               installed_by: r.installed_by ?? "unknown", installed_at: r.created_at,
-               ...(stale ? { pinned_manifest_differs_from_catalog: true } : {}) };
-    });
-    // The flows a team has WITHOUT installing them. This listed flow_install alone, so a
-    // team's automatic flows were absent — while render_agent_definition's own refusal
-    // pointed the reader here with "install_list shows what they do have". It did not show
-    // what they have; it showed what they chose. An answer that is silently partial is worse
-    // than one that refuses, because the reader has no reason to look further.
-    //
-    // No pin to compare for these: an automatic flow is read from the catalog every time, so
-    // there is nothing that can go stale.
-    // EVERY ACTIVE TEAM, not every team that happens to have an opt-in install. Deriving the
-    // list from flow_install rows meant a team that installed nothing never appeared at all —
-    // so a newly created team, which HAS the automatic flows, was absent from the registry
-    // view entirely. That is the same silently partial answer the paragraph above describes,
-    // one level up: it fixed the auto flows missing for teams with installs, and left the
-    // teams with none.
-    const teams = all
-      ? (await db.query<{ slug: string }>(
-          "select slug from team where status = 'active' order by slug")).rows.map((r) => r.slug)
-      : mine;
-    for (const t of teams) {
-      const chosen = new Set(flows.rows.filter((r) => r.team === t).map((r) => r.flow));
-      for (const a of autoFlows()) {
-        if (!chosen.has(a.flow)) {
-          // No installer and no date: nobody installed an automatic flow, and inventing
-          // either would make a fact out of the absence of one.
-          rows.push({ team: t, flow: a.flow, version: PLATFORM_VERSION, install: "automatic" });
-        }
-      }
-    }
-    rows.sort((x, y) => x.team.localeCompare(y.team) || x.flow.localeCompare(y.flow));
-    return text(JSON.stringify({
-      scope: all ? "platform" : mine,
-      flows: rows,
-      ...(rows.some((r) => r.pinned_manifest_differs_from_catalog)
-        ? { note: "A flow marked pinned_manifest_differs_from_catalog is running an older manifest than the catalog ships. Re-run flow_install for that team to take the current one." }
-        : {}),
-    }));
   });
 
   // render_harness_config USED TO BE HERE, and the door split was the only thing keeping it

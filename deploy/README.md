@@ -183,18 +183,18 @@ token is scoped down to prevent. There is no default block, for the reason there
 gateway: a key stored against the wrong one authenticates as nobody and still prints OK.
 Three-column rows carry their own; anything else needs `--platform`.
 
-## Installing a flow for a team
+## Installing plugins
 
-Flows are installed per team over MCP, not from this directory:
+Nothing is installed from this directory, and the platform records no installs. `zz-core` and
+`zz-access` are required; every other plugin on the shelf is a person's own choice, installed
+in their client:
 
 ```bash
-./zz-tool call /manage/mcp flow_install '{"team":"<slug>","flow":"sdlc-flow"}'
+claude plugin install sdlc@zz-stack
 ```
 
-There is one door. `/manage/mcp` serves everybody and registers the tools the caller's role can
-execute, so `flow_install` is there if your token administers a team and absent if it does not
-— `whoami` on the same door says which. `catalog_list` says what is available to install. What
-a person then gets is a client package.
+`catalog_list` on `/manage/mcp` says what the shelf offers, and `client_setup` prints the full
+install for a person.
 
 ## Interfaces
 

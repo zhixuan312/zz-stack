@@ -255,41 +255,6 @@ check("every flow that declares stages ships scenarios, or says why not", () => 
   return bad.length ? bad.join("; ") : null;
 });
 
-check("every door that asks what a team runs counts the flows they did not install", () => {
-  // `install: "auto"` means every team has that flow and no flow_install row is ever
-  // written for it. Three doors answer "what does this team run", and two of them read only
-  // that table:
-  //
-  //   render_agent_definition answered "ERROR: <team> does not have 'zz-flow-builder'
-  //   installed" for a flow whose manifest says every team has it — and the provisioner
-  //   calls exactly this for each flow it is given, so the browser agent every account is
-  //   meant to get could not be rendered at all.
-  //
-  //   install_list listed the flows a team CHOSE, while render_agent_definition's own
-  //   refusal pointed the reader at it: "install_list shows what they do have". It showed
-  //   what they picked. A silently partial answer is worse than a refusal, because the
-  //   reader has no reason to look further.
-  //
-  // flowsFor and catalog_list merge both sources and always did. The check is that every
-  // reader of flow_install does — autoFlows() is the merge, so a function that queries the
-  // table for a team and never calls it is answering half the question.
-  const src = readFileSync(join(root, "services/gateway/src/admin.ts"), "utf8");
-  const bad: string[] = [];
-  // Function bodies, crudely: from a `function name(` / `server.registerTool("name"` to the
-  // next one. Enough to attribute a query to the thing that runs it.
-  const marks = [...src.matchAll(/(?:^(?:async )?function ([a-zA-Z_]\w*)|registerTool\(\s*\n?\s*"([a-z0-9_]+)")/gm)];
-  for (const [i, m] of marks.entries()) {
-    const name = m[1] ?? m[2];
-    const body = src.slice(m.index, i + 1 < marks.length ? marks[i + 1].index : src.length);
-    // Only READS scoped to a team. An insert or a delete is about one named flow.
-    if (!/select[^;]*from flow_install/i.test(body)) continue;
-    if (!/autoFlows\(\)/.test(body)) bad.push(`${name} reads flow_install without autoFlows()`);
-  }
-  return bad.length
-    ? `${bad.join("; ")} — a flow with install: "auto" has no row there, so this answers half the question`
-    : null;
-});
-
 check("every section a manifest declares is taught by one of its skills", () => {
   // normalizeSections renames a near-miss heading to the one the manifest declares, silently
   // and on every write. That is the right behaviour and it is also why the two must agree: a

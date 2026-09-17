@@ -106,7 +106,7 @@ export function schemaColumns() {
 /**
  * How a flow becomes a plugin and a skill becomes a command — READ FROM THE DEFINITION.
  *
- * client-package.ts is where these live, and three checks here had each retyped them. A
+ * @zz/catalog is where the rule lives, and three checks here had each retyped it. A
  * mirror of a derivation is the worst of both: it looks like the rule, so nobody re-reads
  * the real one, and it goes wrong silently the day the real one changes.
  *
@@ -114,20 +114,20 @@ export function schemaColumns() {
  * mirrored here; the command half is not derived at all any more — each manifest declares it
  * in a `commands` map, and `declaredCommands` below reads that declaration instead.
  *
- * The bodies are lifted out of that file's source and evaluated. Source rather than dist,
+ * The body is lifted out of the catalog package's source and evaluated. Source rather than dist,
  * — the gate runs before `tsc -b` has necessarily
  * produced anything — and the extraction fails loudly if the shape moves, which is the point:
  * a mirror that cannot find its original must not quietly fall back to its own copy.
  */
 export const NAMING = (() => {
   try {
-    // THE GATEWAY, not one file in it. The naming rules moved into package/skills.ts when
-    // client-package.ts was split, and this reported that in a sentence rather than falling
-    // back to a copy — which is the behaviour its own docstring above promises.
-    const src = gatewaySource();
+    // THE CATALOG PACKAGE, which every reader of the rule imports it from. It moved there out
+    // of the gateway so zz-core could resolve a `flow:` tag with it too; a move is reported in
+    // a sentence rather than papered over with a copy.
+    const src = readFileSync(join(root, "packages/catalog/src/index.ts"), "utf8");
     const grab = (name: string): string => {
       const at = src.indexOf(`function ${name}(`);
-      if (at < 0) throw new Error(`the gateway no longer defines ${name}()`);
+      if (at < 0) throw new Error(`@zz/catalog no longer defines ${name}()`);
       const body = src.slice(src.indexOf("{", at), src.indexOf("\n}", at) + 2);
       return body.replace(/:\s*string/g, "");          // the types, which JS has no use for
     };

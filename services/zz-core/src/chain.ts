@@ -10,11 +10,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { type CatalogManifest, type FlowDoc, parseEnvelope } from "@zz/contracts";
+import { type FlowDoc, parseEnvelope } from "@zz/contracts";
 import { catalogManifest, isFlow } from "@zz/catalog";
 
 import { openRecord } from "./initiative-record.js";
-import { db } from "./platform-db.js";
 import { type Chain } from "./write-guards.js";
 
 function deriveChain(list: FlowDoc[], name: string | null = null): Chain {
@@ -46,17 +45,7 @@ function deriveChain(list: FlowDoc[], name: string | null = null): Chain {
   return {
     name,
     documents,
-    // STAGES COME FROM THE CATALOG, never from the manifest stored at install time.
-    //
-    // The two disagree, and the disagreement is silent. zz.flow_install keeps the manifest a
-    // team installed, which is right for a team's DOCUMENT chain — that is the shape of work
-    // they agreed to — and wrong for a stage's block authority, because a team that has not
-    // reinstalled since the field was added would carry a manifest with no `blocks` anywhere
-    // and the write guard would simply never fire. A guard switched off by an install date is
-    // one nobody can say was applied, and it fails in the direction that looks like success.
-    //
-    // It is also what makes zz-core and the gateway agree: the proxy's stage check reads the
-    // catalog, so if this read the registry the same rule would have two sources.
+    // STAGES COME FROM THE CATALOG — the one source zz-core and the gateway both read.
     stages: name ? (catalogManifest(name.split("@")[0].trim(), true)?.stages ?? []) : [],
     docs: new Set(documents.map((d) => d.name)),
     requires: Object.fromEntries(documents.filter((d) => d.requires).map((d) => [d.name, d.requires as string])),
@@ -118,67 +107,17 @@ function chainForFlow(declared: string): Chain | null {
   chainCache.set(name, { chain, expires: Date.now() + 60_000 });
   return chain;
 }
-/** The team's installed flow, from the registry (zz.flow_install stores each install's
- * manifest). Used when an initiative declares no flow of its own.
- *
- * ONE install, or nothing. A team running several has no answer here — which of them
- * governs is the document's to declare — and the honest outcome of not knowing is
- * EMPTY_CHAIN, not somebody else's chain. (This used to add "plus flowDeclarationCheck's
- * refusal"; that guard is gone — the question it asked is asked once, by initiative_open.)
- *
- * This said "must not be judged by another flow's chain merely because that other one is
- * the mounted default". There is no mounted default: EMPTY_CHAIN replaced the hardcoded
- * copy of ops-flow's documents, and its own comment says why. */
-const installCache = new Map<string, { chain: Chain | null; expires: number }>();
-async function chainForTeam(team: string | null): Promise<Chain | null> {
-  const p = db();
-  if (!team || !p) return null;
-  const hit = installCache.get(team);
-  if (hit && hit.expires > Date.now()) return hit.chain;
-  let chain: Chain | null = null;
-  try {
-    const { rows } = await p.query<{ flow: string; manifest: CatalogManifest | null }>(
-      `SELECT f.flow, f.manifest FROM zz.flow_install f
-       JOIN zz.team t ON t.id = f.team_id WHERE t.slug = $1`,
-      [team],
-    );
-    // Exactly one installed flow -> it governs. With several, the document must name its
-    // own; an undeclared one resolves to nothing here and chainFor returns EMPTY_CHAIN.
-    //
-    // REACHED ONLY WITHOUT AN OPEN RECORD. An initiative opened freeform short-circuits above,
-    // because "one install" is not consent — it is the only thing there was to guess with.
-    if (rows.length === 1) {
-      const m = rows[0].manifest;
-      // THE CATALOG FIRST, the stored manifest only when the catalog cannot resolve the flow.
-      //
-      // This was the other way round, and the snapshot is old. team-one's stored ops-flow
-      // manifest carries neither `stage` nor `sections` on any document — both were added to
-      // flow.json after that install and no reinstall has happened since — so sectionCheck
-      // had nothing to require and the stage guards had nothing to place. Two guards silently
-      // off for a live team, with nothing anywhere saying so.
-      //
-      // Keeping the snapshot sounds like the safer half of the trade, and it is not: what it
-      // preserves is the shape of a flow as it was on the day somebody ran flow_install, and
-      // what it costs is every rule added since. The registry row still records what was
-      // installed and when; it is simply not the thing a write is judged against.
-      // isFlow here too, and for the same reason as chainForFlow: an installed manifest
-      // carrying `documents: []` is a package with no chain, not a chain with no documents.
-      chain = chainForFlow(rows[0].flow) ?? (m && isFlow(m) ? deriveChain(m.documents, rows[0].flow) : null);
-    }
-  } catch { /* registry unreachable or absent: no chain, so no discipline is enforced */ }
-  installCache.set(team, { chain, expires: Date.now() + 60_000 });
-  return chain;
-}
 /** Which flow's discipline governs this write.
  *
  * `content`, when given, is the document ABOUT to be written, and it is consulted first.
  * Without that there is a chicken-and-egg on every new initiative: the first document
  * cannot resolve a chain because the folder is empty, so the platform cannot stamp its
- * `flow:`, so the second document cannot resolve one either. It only ever worked because
- * a team with exactly ONE installed flow resolves from the registry — and stopped working
- * the day a team installed a second, which is not a condition anyone would connect to a
- * refused write. */
-export async function chainFor(root: string, relPath: string, team: string | null, content?: string): Promise<Chain> {
+ * `flow:`, so the second document cannot resolve one either.
+ *
+ * THE INITIATIVE ANSWERS, AND NOTHING ELSE DOES. There was a last fallback to the team's single
+ * installed flow; the platform keeps no install registry any more, and a team's installs were
+ * never the initiative's declaration anyway. An initiative that declares nothing is freeform. */
+export function chainFor(root: string, relPath: string, content?: string): Chain {
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return EMPTY_CHAIN;   // not an initiative document
   const declaredHere = parseEnvelope(content ?? "").flow;
@@ -189,8 +128,7 @@ export async function chainFor(root: string, relPath: string, team: string | nul
   // THE DECLARATION MADE AT OPEN TIME, before any document exists to carry one.
   //
   // Between `initiative_open("x", "sdlc-flow")` and that initiative's first document there is
-  // no envelope to read a `flow:` off, and on a team running two flows there is no single
-  // install to fall back to either — so without this the initiative a person opened WITH a
+  // no envelope to read a `flow:` off — so without this the initiative a person opened WITH a
   // flow resolves to EMPTY_CHAIN and `initiative_status` reports it freeform. That window is
   // not an edge case: it is exactly when an agent picks the work up, because picking it up is
   // what `initiative_status` is called for.
@@ -202,16 +140,9 @@ export async function chainFor(root: string, relPath: string, team: string | nul
     const own = chainForFlow(opened.flow);
     if (own) return own;
   }
-  // A DECLARED FREEFORM IS AN ANSWER, AND IT OUTRANKS EVERY FALLBACK BELOW.
+  // A DECLARED FREEFORM IS AN ANSWER, AND IT OUTRANKS THE WALK BELOW.
   //
-  // `flow: null` in the record is a person saying "nothing governs this", and without this
-  // return the team fallback at the bottom of the function would overrule them: a team with
-  // exactly ONE installed flow resolves to that flow for any initiative that names none, so
-  // a deliberately freeform initiative would have been governed by it — every write judged
-  // against a chain nobody asked for, and initiative_status naming stages off a manifest the
-  // person declined. That is a flow adopted at open time against a stated wish, which FR-30
-  // forbids doing afterwards and which the comment on EMPTY_CHAIN calls a wrong answer rather
-  // than a fallback.
+  // `flow: null` in the record is a person saying "nothing governs this".
   //
   // The oldest-document walk is skipped too, deliberately: the platform does not stamp `flow:`
   // onto a freeform document, so an envelope carrying one here was either hand-written or left
@@ -226,8 +157,7 @@ export async function chainFor(root: string, relPath: string, team: string | nul
   // is what declares the flow. Those are the same thing only by luck. On ext4 the order is
   // a hash of the names, and in `2026-09-05-blockeval-casebox` it was `findings.md surface.md
   // target.md usage.md`: the initiative opened with `target.md` declaring zz-block-eval,
-  // and every later write resolved off `surface.md` instead and was governed by ops-flow —
-  // the team's single install, reached as a fallback three steps further down.
+  // and every later write resolved off `surface.md` instead and was governed by another flow.
   //
   // That is self-reinforcing, which is what makes it worth the sort. The platform STAMPS
   // the flow it resolved onto each governed document, so one wrong fallback becomes a
@@ -243,13 +173,13 @@ export async function chainFor(root: string, relPath: string, team: string | nul
     for (const { f } of dated) {
       const fl = parseEnvelope(readFileSync(join(dir, f), "utf8")).flow;
       // An unresolvable declaration must NOT masquerade as a resolution: fall through to
-      // the team's install, and past that to EMPTY_CHAIN — never to another flow's chain.
+      // EMPTY_CHAIN — never to another flow's chain.
       const declared = fl ? chainForFlow(fl) : null;
       if (declared) return declared;
       if (fl) break;
     }
   } catch { /* folder does not exist yet */ }
-  return (await chainForTeam(team)) ?? EMPTY_CHAIN;
+  return EMPTY_CHAIN;
 }
 export function frontmatterStatus(file: string): string | null {
   if (!existsSync(file)) return null;

@@ -1,8 +1,8 @@
 ---
 name: zz-admin
-version: 2.5
+version: 2.6
 description: "Running the platform itself: who exists, which teams they are in, which flows each team may reach, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
-when_to_use: "Someone needs a principal created or deactivated, a team made or retired, a person added to or removed from a team, a flow installed for a team, a PAT issued or revoked, or a passkey enrolment link minted. Also for an access review — who has what, and who gave it to them."
+when_to_use: "Someone needs a principal created or deactivated, a team made or retired, a person added to or removed from a team, a PAT issued or revoked, or a passkey enrolment link minted. Also for an access review — who has what, and who gave it to them."
 ---
 
 # zz-admin
@@ -23,8 +23,8 @@ people depend on, and the register is the truth — not your memory of it.
 
 ## Look before you change
 
-`person_list`, `team_list`, `install_list` and `pat_list` answer who exists, who is in
-what, what each team runs, and which tokens are live. **An access review is those four**,
+`person_list`, `team_list` and `pat_list` answer who exists, who is in what, and which
+tokens are live. **An access review is those three**,
 and every change below should start with whichever of them names the thing you are about
 to touch.
 
@@ -41,7 +41,6 @@ which is almost always the answer to "why was that a 403".
 | a way for a person to get in | `enrolment_issue` (passkey) · `pat_issue` `pat_revoke` (machine) |
 | a team | `team_create` `team_archive` `team_list` |
 | who is in a team | `member_add` `member_remove` |
-| what a team runs | `flow_install` `flow_uninstall` `install_list` |
 | a person's or a team's generated setup | `client_setup` (pass `email`) |
 | a team's knowledge index, when it disagrees with the files | `knowledge_reindex` |
 | what people have reported as broken | `bug_list` `bug_resolve` `bug_delete` |

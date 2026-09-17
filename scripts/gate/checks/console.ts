@@ -207,11 +207,9 @@ check("every console write route records the door it came through", () => {
   // not "any call").
   const WRITE_CALLS = [
     "issueMyAccessTokenFor", "revokeMyAccessTokenFor",
-    // Task I-14: team settings — member_add/member_remove/flow_install/flow_uninstall's own
-    // guarded bodies (admin.ts), shared with settings.ts's /team/* routes the same way the
-    // my_* functions above are. The team-wide credential tools were listed here too until the
-    // shared credential tier was deleted; the tools went with it.
-    "addMember", "removeMember", "installFlow", "uninstallFlow",
+    // Task I-14: team settings — member_add/member_remove's own guarded bodies (admin.ts),
+    // shared with settings.ts's /team/* routes the same way the my_* functions above are.
+    "addMember", "removeMember",
     // Task I-15: platform settings — person_add/person_deactivate/team_create/team_archive's
     // own guarded bodies (admin.ts), shared with settings.ts's
     // /platform/* routes the same way the team-tier functions above are. `listPeople` is not

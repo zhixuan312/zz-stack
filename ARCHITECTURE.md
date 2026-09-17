@@ -242,12 +242,9 @@ that could have said "not a flow" was already spoken for by ownership, so the co
 shape from contents instead. Worse, `catalogEntry` carried a comment reading "ANY `kind` means
 not a flow", which was simply false about three of the five packages that had it.
 
-It is NOT the same axis as `install`. `install: "auto"` means every team automatically has this
-flow; all three evaluation-track packages declare both, so one field cannot carry them.
-
 ### The generated router assumes a flow
 
-`flow_install` writes a system prompt: the package's own `agents/<name>/system-prompt.md` if it
+A flow's agent gets a system prompt: the package's own `agents/<name>/system-prompt.md` if it
 has one, otherwise a generated router. The generated router ends every agent with
 `skill_read("<entry>")` and describes running a flow for a team.
 

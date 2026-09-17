@@ -33,8 +33,7 @@
  * extended for Task I-13 to recognise this pattern (the marker inside the call to a named
  * shared function, not only inside a literal `logEvent(...)` in the route body).
  *
- * TASK I-14's team routes import `addMember`, `removeMember`, `installFlow` and
- * `uninstallFlow` from admin.js AS VALUES, unlike the `my_*` functions above — admin.ts
+ * TASK I-14's team routes import `addMember` and `removeMember` from admin.js AS VALUES, unlike the `my_*` functions above — admin.ts
  * never imports this file, so there is no cycle here for dependency injection to avoid. Its
  * `teamAuthority` is imported the same way, so this file's team routes and member_add's own
  * `on conflict` insert both drive the identical check identity.ts computes; a re-implemented

@@ -12,7 +12,7 @@ import { type PlatformWriteOutcome } from "./people.js";
 
 // ---------------------------------------------------------------- shared team-write logic
 //
-// The guarded bodies behind member_add, member_remove, flow_install and flow_uninstall —
+// The guarded bodies behind member_add and member_remove —
 // extracted once (Task I-14) so the admin tools (below) and settings.ts's browser routes
 // call the SAME function rather than a second copy of the authority check and the query
 // drifting apart. settings.ts imports these as VALUES: unlike server.ts, this module never
@@ -30,7 +30,7 @@ import { type PlatformWriteOutcome } from "./people.js";
 // type-only import the way there is for server.ts's my_* functions (see settings.ts's
 // header). An `export` nobody imports is exactly what "nothing is exported that nobody
 // imports" (gate.ts) exists to catch.
-export type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
+type TeamWriteOutcome = { ok: true; message: string } | { ok: false; status: 400 | 403; error: string };
 /** Add a principal to a team, or change their role — the SAME call, because the insert's
  * own `on conflict (team_id, principal_id) do update set role = excluded.role` already
  * handles both. A second code path for "already a member" would only be a second way for

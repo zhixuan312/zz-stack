@@ -70,7 +70,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       if (!existsSync(target)) {
         return text(`ERROR: ${relPath} does not exist — approve records a verdict on a document that is already written`);
       }
-      const chain = await chainFor(root, relPath, team);
+      const chain = chainFor(root, relPath);
       // ONLY A FLOW CAN SAY A DOCUMENT IS NOT ITS BUSINESS.
       //
       // This was `if (!chain.docs.has(parts[1]))` unconditionally, and a freeform initiative
@@ -228,7 +228,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       // Refused, not silently corrected. `delivered` is a claim about the work and only the
       // caller can make it — the platform's job is to say the two do not agree.
       if (disposition === OUTCOME_STOPPED) {
-        const chain = await chainFor(root, join(initiative, "probe.md"), team);
+        const chain = chainFor(root, join(initiative, "probe.md"));
         const dir = join(root, initiative);
         // THE HANDOVER IS EXCLUDED, and leaving it in silently disabled this whole refusal.
         //
@@ -273,7 +273,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
         : acceptor ? "accepted" : "delivered";
       const probe = join(initiative, "probe.md");
-      const chain = await chainFor(root, probe, team);
+      const chain = chainFor(root, probe);
       // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
       //
       // This refused outright when `chain.closingDoc` was empty — "the flow governing '<x>'
@@ -453,7 +453,7 @@ export function registerInitiativeActTools(server: McpServer): void {
       if (blocked) return text(blocked);
       const target = await safePath(relPath);
       if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`);
-      const chain = await chainFor(root, relPath, team);
+      const chain = chainFor(root, relPath);
       // Narrowed by a flow's declaration, never by its absence — see document_approve above.
       // Unconditionally, this refused every revision on a freeform initiative.
       if (chain.documents.length && !chain.docs.has(parts[1]))

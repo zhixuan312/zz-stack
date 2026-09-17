@@ -161,7 +161,7 @@ export function registerSkillTools(server: McpServer): void {
       },
     },
     async ({ owner }) => {
-      const { roots, degraded } = await allSkillRoots();
+      const roots = await allSkillRoots();
 
       // WHERE A ROOT CAME FROM, decided by matching it rather than by spelling a path. The
       // catalog's location is settable (`CATALOG_DIR`) and this file used to be one of the
@@ -226,9 +226,9 @@ export function registerSkillTools(server: McpServer): void {
           ? `- ${name} [stage ${stage.at} of ${stage.of}` +
             (stage.produces && stage.produces !== "nothing" ? ` → ${stage.produces}]` : "]")
           : `- ${name}`;
-        // Registered and not on this caller's shelf. Said plainly rather than omitted: a
-        // skill missing from the list reads as a block that does not ship one.
-        if (!dir) return [head, "  (registered; its text is not installed for your team)"];
+        // Registered and not on disk here. Said plainly rather than omitted: a skill missing
+        // from the list reads as a package that does not ship one.
+        if (!dir) return [head, "  (registered; its text is not on this deployment)"];
         // INDEXED, not read as a property, and not because the property read is wrong. A
         // SKILL.md's frontmatter is not a document envelope — `when_to_use` and `description`
         // are a skill's own fields and belong in no document's schema — but the gate's
@@ -309,15 +309,6 @@ export function registerSkillTools(server: McpServer): void {
         'usage_skill_view: it knows only that block\'s skills and answers "no usage skill" ' +
         "for a name it does not own, which looks like the skill being missing when it is not.");
 
-      // A SHORT LIST FOR A REASON, said out loud. Without the platform database there is no
-      // way to know which flows this team installed, so this is the platform's own skills and
-      // nothing else — which looks exactly like a team that has installed nothing.
-      if (degraded) {
-        return text(
-          "ERROR: the platform database is unreachable, so which flows your team has installed " +
-          "cannot be read. What follows is what is on disk for everybody, not your team's " +
-          "shelf.\n\n" + lines.join("\n"));
-      }
       return text(lines.join("\n"));
     },
   );
@@ -378,7 +369,7 @@ export function registerSkillTools(server: McpServer): void {
       if (badName) return text(badName);
       const badFile = file === undefined ? null : safeRelPath(file, "file");
       if (badFile) return text(badFile);
-      const { roots, degraded } = await allSkillRoots();
+      const roots = await allSkillRoots();
       for (const root of roots) {
         const dir = join(root, name);
         const path = join(dir, "SKILL.md");
@@ -402,16 +393,7 @@ export function registerSkillTools(server: McpServer): void {
           return text(readFileSync(sub, "utf8"));
         }
       }
-      // WHICH of the two, when the platform can tell. During a database outage the flow list
-      // cannot be read at all, and answering "its flow is not installed for your team" sends
-      // the reader to an admin to install a flow they already have.
-      if (degraded) {
-        return text(
-          `ERROR: the platform database is unreachable, so whether '${name}' belongs to a flow ` +
-          "your team has installed cannot be read. This is not a statement about the skill. " +
-          "Try again once the platform is back.");
-      }
-      return text(`ERROR: no skill named '${name}' is available to you — either it does not exist, or its flow is not installed for your team. Call skill_list to see what is.`);
+      return text(`ERROR: no skill named '${name}'. Call skill_list to see what is.`);
     },
   );
 }

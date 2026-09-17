@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.39
+version: 3.40
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -103,9 +103,9 @@ Two different needs arise, usually at different moments:
   signal, and it is a fact about what is installed rather than about what exists.
 
   The answer is one sentence to the person: **that capability is a plugin, and it is not
-  installed.** Installing is the **ZZ Access** agent's job — `flow_install` puts it on the
-  team's shelf. Never ask anyone to paste a credential to you; a credential in a transcript is
-  a leaked credential.
+  installed.** Installing is their own choice, made in their client —
+  `claude plugin install <plugin>@zz-stack`; `client_setup` on /manage prints it. Never ask
+  anyone to paste a credential to you; a credential in a transcript is a leaked credential.
 
 **A plugin is skills plus the MCP servers those skills call.** They arrive together and are
 reached together, because a skill telling you to call a tool you do not have is not a

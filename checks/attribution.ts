@@ -1,19 +1,20 @@
-// The attribution key is the loaded skill, never the team's last-installed flow.
+// The attribution key is the door the call arrived on, never the initiative's flow.
 import { readFileSync } from "node:fs";
 const fail = [];
 const tel = readFileSync("services/gateway/src/tool-telemetry.ts", "utf8");
-const trace = readFileSync("services/gateway/src/step-trace.ts", "utf8");
 
 if (!/\bplugin\s*:/.test(tel) || !/plugin_version|pluginVersion/.test(tel)) {
   fail.push("tool-telemetry does not write plugin / plugin_version");
 }
-// The join, not the flow_install shortcut, must be what resolves a plugin.
-if (!/plugin_version_skill/.test(trace + tel)) {
-  fail.push("plugin is not resolved through zz.plugin_version_skill");
+// The door's owning plugin, from the catalog, must be what resolves a plugin. This asserted a
+// `plugin_version_skill` join, and passed after that join was gone only because a comment
+// still named the table.
+if (!/const plugin = pluginForDoor\(/.test(tel)) {
+  fail.push("plugin is not resolved from the door through pluginForDoor");
 }
 // flowFor must not be the source of the plugin field.
 const pluginFromFlow = /plugin\s*:\s*(await\s+)?flowFor\(/.test(tel);
-if (pluginFromFlow) fail.push("plugin is derived from flowFor() — the team's last-installed flow");
+if (pluginFromFlow) fail.push("plugin is derived from flowFor() — the initiative's flow, not the plugin");
 // Nor may it come from the client header, which names the program, not the plugin.
 if (/plugin\s*:[^,\n]*x-zz-client/.test(tel) || /plugin\s*:[^,\n]*detail\.client/.test(tel)) {
   fail.push("plugin is populated from x-zz-client — that is the client program, not the plugin");

@@ -20,13 +20,13 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogEntries } from "@zz/catalog";
+import { catalogEntries, pluginName } from "@zz/catalog";
 
 import { PLATFORM_VERSION } from "../client-package.js";
 
 import type { PackageFile } from "../client-package.js";
 import { digestOfPlugin } from "./describe.js";
-import { BASELINE, pluginName } from "./skills.js";
+import { BASELINE } from "./skills.js";
 
 /** The platform's own skills — the `zz` plugin's content. Overridable because the gate builds
  *  real packages on a machine where /skills does not exist. */

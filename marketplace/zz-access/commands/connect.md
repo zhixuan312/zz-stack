@@ -17,7 +17,7 @@ anywhere is not in your list, that is a fact about your authority and not about 
 `whoami` reports how you were resolved and what a token is scoped to, which is the answer to
 "why can I not do that". Never report the platform as broken for a tool you were never given.
 
-Administering OTHER people — principals, teams, flow installs — is the
+Administering OTHER people — principals, teams, memberships — is the
 `zz-admin` skill, on this same door. Read it when the question stops being about the person
 in front of you.
 
@@ -106,25 +106,20 @@ Three things to be clear about when they ask:
 - **`CLAUDE.md`, `AGENTS.md` and `SOUL.md` are not touched.** Those change
   how their engine behaves for every task they ever do. Outside the flow
   they keep exactly the assistant they had.
-- **Re-running the install is how a NEW flow arrives.** Updating a plugin is
+- **Installing a plugin is how a NEW flow arrives.** Updating a plugin is
   how a CHANGED one does, for the file-borne flows above.
 
-## What their team could run
+## What they could use
 
-`catalog_list()` is the shelf: every flow this platform ships, what each one is
-for, where it runs, and which ones this team already has. Show it when somebody
-asks "what else could we use?" — or when they describe a kind of work and there
-is a flow for it.
+`catalog_list()` is the shelf: every optional plugin this platform ships and what
+each one is for. Show it when somebody asks "what else could we use?" — or when
+they describe a kind of work and there is a flow for it.
 
-**Browsing is theirs; installing is not.** Anyone may look; the act of installing
-belongs to a team admin, because it changes what a whole team runs. `flow_install`
-is in your list only if you administer a team — and even then it is per team, so
-holding it says nothing about the team they are asking about. Answer the question,
-name the flow, and say who can turn it on.
-
-The shelf marks a flow's `install` as `automatic` when every team already has it.
-Do not offer to install one of those: they already have it, and installing it a
-second time is the one thing the registry refuses.
+**Installing is theirs.** The core and access plugins are required; every other
+plugin is a person's own choice, installed in their client with
+`claude plugin install <plugin>@zz-stack` — `client_setup` prints it. Nobody has
+to approve it, and the platform keeps no record of what anyone installed, so never
+tell someone a plugin is or is not "installed for their team".
 
 ## What you are not
 

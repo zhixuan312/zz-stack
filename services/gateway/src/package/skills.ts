@@ -1,15 +1,36 @@
 /**
- * Turning a team's installed flows into the skills and commands a client will carry.
+ * Turning the catalog's flows into the skills and commands a client will carry.
  *
  * The router skill is the largest piece and the one that matters most: it is what an agent
- * reads first, and it has to name every flow the team runs without teaching the agent to
+ * reads first, and it has to name every flow on the shelf without teaching the agent to
  * load anything it cannot reach. A skill promoted to a standalone command is the same text
  * under a name a person can type — one source, two projections, never two copies.
  */
-import { catalogEntries, catalogEntry, skillText } from "@zz/catalog";
+import { catalogEntries, catalogEntry, catalogManifest, installableFlows, pluginName, skillText } from "@zz/catalog";
 import { ENVELOPE_BLOCK, documentBody } from "@zz/contracts";
 
-import { PLATFORM_VERSION, type InstalledFlow, type PackageFile } from "../client-package.js";
+import { PLATFORM_VERSION, type ShelfFlow, type PackageFile } from "../client-package.js";
+
+/** Every optional plugin on the shelf, from the catalog.
+ *
+ * ONE SHELF FOR EVERYONE. This was each person's team installs, read from a table the platform
+ * kept of what a team had "installed" — a record of choices made on machines it cannot see, so
+ * it was a claim it could not back and a restriction it could not enforce. A person installs
+ * what they want from the marketplace; every catalog flow is offered to everyone. */
+export function shelfFlows(): ShelfFlow[] {
+  return installableFlows()
+    .map((qualified) => qualified.split("/")[1] ?? qualified)
+    .map((flow) => {
+      const m = catalogManifest(flow);
+      if (!m) throw new Error(`catalog lists '${flow}' but has no manifest for it`);
+      const entry = m.entry || flow;
+      return {
+        flow, version: PLATFORM_VERSION, entry, agentName: m.agentName ?? null,
+        whenToUse: whenToUse(flow, entry), servers: m.servers ?? [],
+      };
+    })
+    .sort((a, b) => a.flow.localeCompare(b.flow));
+}
 
 /** The entry skill's own `when_to_use`, so the router describes each flow in
  * the flow's words rather than ours. Falls back to `description`. */
@@ -112,7 +133,7 @@ function trimTo(text: string, max: number): string {
 /** The commands a package declares: the name a person types, mapped to the skill that
  * carries the method.
  *
- * Read from the manifest rather than InstalledFlow because it is a property of the package
+ * Read from the manifest rather than ShelfFlow because it is a property of the package
  * as authored, not of how a team installed it. NOT `tools`: that field already names the
  * package's building blocks, and the installer grants MCP access from it. */
 function declaredCommands(flow: string): Record<string, string> {
@@ -136,7 +157,7 @@ export function entryCommand(flow: string, entry: string): string | undefined {
  * commands — so it has to match delivery work and nothing else. Too broad and
  * it fires on ordinary coding; too narrow and those two clients have no way in.
  */
-export function routerSkill(flows: InstalledFlow[]): string {
+export function routerSkill(flows: ShelfFlow[]): string {
   const names = flows.map((f) => f.flow).join(", ") || "none yet";
   const fm = [
     "---",
@@ -176,8 +197,7 @@ export function routerSkill(flows: InstalledFlow[]): string {
 
   if (flows.length === 0) {
     body.push(
-      "No flow is installed for your team yet. Say so, and point the person at the",
-      "**ZZ Access** agent to find out who can install one. Do not improvise a method.",
+      "The shelf has no flow yet. Say so, and do not improvise a method.",
       "",
     );
   } else {
@@ -224,21 +244,6 @@ export function routerSkill(flows: InstalledFlow[]): string {
 
   return fm.join("\n") + body.join("\n");
 }
-/** What a flow is called as a plugin.
- *
- * A command is `/<plugin>:<file>`, so the two names are typed together every time. Taken
- * literally from the catalog they repeat themselves: the flow `sdlc-flow` and the skill
- * `sdlc-deck` gave `/sdlc-flow:sdlc-deck`, which says "sdlc" twice and "flow" once more than
- * anyone needs. The trailing `-flow` is the same fact the namespace already carries.
- *
- * The COMMAND half of that name used to be derived here too, by stripping the plugin's
- * prefix off the skill. It is declared now: see `declaredCommands`. The strip is gone rather
- * than kept as a default, because an entry skill is named after its plugin and nothing
- * survives the strip — so three of four front doors came out called `flow`, and none of them
- * said what it did. A fallback that names most things the same thing is not a fallback. */
-export function pluginName(flow: string): string {
-  return flow.endsWith("-flow") ? flow.slice(0, -"-flow".length) : flow;
-}
 /** The flow's front door.
  *
  * A pointer command is deliberately about five lines. If it grows, method has leaked into
@@ -255,7 +260,7 @@ export function pluginName(flow: string): string {
  * skill for the entry: on Claude Code a flow's front door is a command, and having
  * both means the same router arrives twice under two names. Codex has no commands
  * and keeps the skill — same text, the door its runtime actually has. */
-export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): string {
+export function commandFile(f: ShelfFlow, cmd: string, entryBody?: string): string {
   const plugin = pluginName(f.flow);
   const head = [
     "---",
@@ -268,8 +273,7 @@ export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): 
     // validating the input.
     `name: ${JSON.stringify(cmd)}`,
     // QUOTED WITH JSON.stringify, like the standalone command forty lines down. `agentName`
-    // is free text an admin types at flow_install — "what the team sees" — and it went into
-    // a hand-quoted YAML string. An agent called `My "Special" Agent` closed the quote early
+    // is free text from a manifest, and it went into a hand-quoted YAML string. An agent called `My "Special" Agent` closed the quote early
     // and produced frontmatter the client cannot parse, so the command silently does not
     // exist and nothing says why.
     `description: ${JSON.stringify(`Run the ${f.agentName || f.flow} flow for your team.`)}`,
@@ -306,7 +310,7 @@ export function commandFile(f: InstalledFlow, cmd: string, entryBody?: string): 
  * other is not one field.
  *
  * `except` is the entry skill on the flow branch, which is promoted THERE: it needs the
- * InstalledFlow to build a pointer command for the case where the skill did not ship, and a
+ * ShelfFlow to build a pointer command for the case where the skill did not ship, and a
  * platform plugin has no front door of that kind. Excluded by SKILL name rather than by
  * command name, because the entry's command is whatever the manifest chose to call it. */
 export function promoteCommands(flow: string, skills: PackageFile[], except: string[] = []):

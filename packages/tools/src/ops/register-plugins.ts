@@ -15,8 +15,7 @@
  * file and the rows look like the same fact, and only one of them is in the database.
  *
  * AND THE MEMBERSHIP IS THE HALF NOTHING ELSE RECORDS. zz.skill_version has no plugin column,
- * zz.skill.flow is CURRENT registration rather than per-version, and flow_install overwrites its
- * own history on reinstall. So "which version of this skill was running when that event fired"
+ * and zz.skill.flow is CURRENT registration rather than per-version. So "which version of this skill was running when that event fired"
  * had no honest answer and resolved to whatever happened to be current at read time — a wrong
  * answer indistinguishable from a right one. Release knows; nothing later does.
  *

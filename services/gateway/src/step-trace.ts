@@ -8,8 +8,8 @@
  *
  *   which BLOCK misbehaved   — yes: `subject` is `<surface>:<tool>` and for `/p/<block>/mcp`
  *                              the surface IS the block.
- *   which FLOW was running   — no. Recoverable only through the team's CURRENT install, so a
- *                              team that reinstalls rewrites its own history.
+ *   which FLOW was running   — no. Recoverable only by looking the initiative up later, and
+ *                              only for a call that named one.
  *   which STEP was running   — no. Recoverable only by replaying every row in id order and
  *                              remembering the last `skill_read` PER ACTOR.
  *
@@ -194,38 +194,32 @@ export function currentStep(caller: string):
            initiative: t.initiative, run: t.run };
 }
 
-/** The flow a team is running, cached briefly. Recorded per call so a later reinstall cannot
- * rewrite what an earlier call was doing — the failure the team-lookup-at-read-time has.
+/** The flow the call's initiative runs, cached briefly — the initiative's own `flow`, as
+ * `initiative_open` recorded it.
  *
- * TEAM CONTEXT ONLY — NOT ATTRIBUTION. This used to be the closest thing a row had to an
- * answer for "which plugin owns this call", and it was the wrong answer: `flow_install` names
- * the team's most recently installed flow, so a team running two flows has every row read as
- * whichever was installed last, and a call made while working a block usage skill (no flow
- * open at all) got nothing. `plugin` / `plugin_version` on `zz.event` (Task I-4) answer that
- * question properly, resolved from the loaded skill through `zz.plugin_version_skill` rather
- * than from this lookup. `flow` keeps its column and keeps being written — it is still real
- * team context, and `migrations-next/022_drop_denormalized.sql` is the migration that will
- * eventually remove it, once every reader has moved off it — but nothing may treat it as the
- * plugin, here or anywhere added after this comment. */
-const flowCache = new Map<string, { flow: string; version: string; at: number }>();
+ * It was the TEAM's most recently installed flow, read from an install registry the platform
+ * no longer keeps: a team running two flows had every row read as whichever was installed
+ * last, and a call outside any initiative still got one. The initiative is what actually says
+ * which flow is running.
+ *
+ * CONTEXT ONLY — NOT ATTRIBUTION. `plugin` / `plugin_version` on `zz.event` answer "which plugin
+ * owns this call", resolved from the loaded skill; nothing may treat `flow` as the plugin. */
+const flowCache = new Map<string, { flow: string; at: number }>();
 const FLOW_TTL_MS = 60_000;
 
-export async function flowFor(teamSlug: string | null): Promise<{ flow: string; flow_version: string } | undefined> {
-  if (!teamSlug || !platformDbReady()) return undefined;
+export async function flowFor(teamSlug: string | null, initiative: string | undefined): Promise<{ flow: string } | undefined> {
+  if (!teamSlug || !initiative || !platformDbReady()) return undefined;
+  const key = `${teamSlug}/${initiative}`;
   const now = Date.now();
-  const hit = flowCache.get(teamSlug);
-  if (hit && now - hit.at < FLOW_TTL_MS) {
-    return hit.flow ? { flow: hit.flow, flow_version: hit.version } : undefined;
-  }
+  const hit = flowCache.get(key);
+  if (hit && now - hit.at < FLOW_TTL_MS) return hit.flow ? { flow: hit.flow } : undefined;
   try {
-    const { rows } = await platformDb().query<{ flow: string; version: string }>(
-      `select fi.flow, fi.version from zz.flow_install fi
-         join zz.team t on t.id = fi.team_id
-        where t.slug = $1 order by fi.created_at desc limit 1`, [teamSlug]);
+    const { rows } = await platformDb().query<{ flow: string }>(
+      `select i.flow from zz.initiative i join zz.team t on t.id = i.team_id
+        where t.slug = $1 and i.slug = $2`, [teamSlug, initiative]);
     const flow = rows[0]?.flow ?? "";
-    const version = rows[0]?.version ?? "";
-    flowCache.set(teamSlug, { flow, version, at: now });
-    return flow ? { flow, flow_version: version } : undefined;
+    flowCache.set(key, { flow, at: now });
+    return flow ? { flow } : undefined;
   } catch {
     // A lookup failure must not cost the row. An event that vanishes because a side lookup
     // failed is a hole in the record, and the record is the thing being defended here.

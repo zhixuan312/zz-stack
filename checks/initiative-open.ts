@@ -42,8 +42,7 @@
  *     `declaredFlowContent`, which is defined nowhere in this repository and which nothing
  *     below calls — a docstring claiming coverage that could not exist.)
  *
- * WHAT IS NOT DRIVEN, and why. The flow-not-installed refusal reads `governingFlows(team)`,
- * which needs the platform database; there is none in the gate. The handler itself resolves
+ * WHAT IS NOT DRIVEN, and why. The handler resolves
  * through `userRoot()`, which is rooted at the hard-coded `/artifacts`. So the two assertions
  * about the WRITE path are source-level over comment-stripped text, labelled as such in
  * section 7, and each is written to fail on the specific defect the contract names rather
@@ -296,7 +295,7 @@ is(openedFree.next_move === null, "an initiative opened deliberately freeform is
 // window is exactly when a resuming agent calls initiative_status. `chainForTeam(null)`
 // returns null with no database, so the ONLY thing that can produce a named chain here is
 // the record written above.
-const resolved = await chainFor(root, `${GOVERNED_NAME}/x.md`, null);
+const resolved = chainFor(root, `${GOVERNED_NAME}/x.md`);
 is(resolved.name === "sdlc-flow",
    `chainFor answered ${JSON.stringify(resolved.name)} for an initiative opened WITH a flow ` +
    "and no documents yet — the open record is not consulted, so the platform reports work " +
@@ -305,7 +304,7 @@ is(resolved.documents.length > 0,
    "the chain resolved off the open record declares no documents, so there is nothing to " +
    "compute a next move over and a governed initiative still answers like a freeform one");
 // The control, in the other direction: an initiative opened freeform must NOT acquire one.
-is((await chainFor(root, `${FREEFORM_NAME}/x.md`, null)).name === null,
+is(chainFor(root, `${FREEFORM_NAME}/x.md`).name === null,
    "an initiative opened freeform resolves to a named chain — the record is being read as a " +
    "declaration where it declares nothing, which is the platform choosing a flow for somebody");
 
@@ -328,7 +327,7 @@ mkdirSync(join(root, STRAY), { recursive: true });
 rec.recordOpen(root, STRAY, null, "cy@zz.test");
 writeFileSync(join(root, STRAY, "notes.md"),
   doc({ title: "Notes", flow: "sdlc-flow" }, "# Notes"));
-is((await chainFor(root, `${STRAY}/other.md`, null)).name === null,
+is(chainFor(root, `${STRAY}/other.md`).name === null,
    "an initiative opened deliberately freeform picked up a flow from a fallback further down " +
    "chainFor — a `flow: null` record is a person declining a flow, and anything that overrules " +
    "it adopts one on their behalf at open time, which is what FR-30 forbids doing afterwards");
@@ -337,7 +336,7 @@ is((await chainFor(root, `${STRAY}/other.md`, null)).name === null,
 const LEGACY = `${isoToday()}-no-record-at-all`;
 mkdirSync(join(root, LEGACY), { recursive: true });
 writeFileSync(join(root, LEGACY, "spec.md"), doc({ title: "S", flow: "sdlc-flow" }, "# S"));
-is((await chainFor(root, `${LEGACY}/other.md`, null)).name === "sdlc-flow",
+is(chainFor(root, `${LEGACY}/other.md`).name === "sdlc-flow",
    "an initiative with NO open record no longer resolves its flow from its own documents — " +
    "every initiative written before the record existed just became ungoverned");
 
@@ -355,7 +354,7 @@ is((await chainFor(root, `${LEGACY}/other.md`, null)).name === "sdlc-flow",
 // because the open IS an event; what this asserts is that nothing READS the declaration from
 // there.
 rmSync(join(root, GOVERNED_NAME, "activity.jsonl"), { force: true });
-is((await chainFor(root, `${GOVERNED_NAME}/x.md`, null)).name === "sdlc-flow",
+is(chainFor(root, `${GOVERNED_NAME}/x.md`).name === "sdlc-flow",
    "with the activity log deleted the flow can no longer be resolved — the declaration is " +
    "being read out of best-effort telemetry, so an append that silently failed leaves an " +
    "initiative somebody governed reporting as freeform for the rest of its life");

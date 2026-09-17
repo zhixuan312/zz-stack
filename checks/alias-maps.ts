@@ -18,7 +18,7 @@ size("TOOL_ALIAS", TOOL_ALIAS, 17);
 // rename; these outlive nothing, because the tool they resolve TO no longer exists on any
 // door. An alias pointing at a name that 404s is worse than an absent one: it turns "no such
 // tool" into a tool the client accepts and the gateway refuses.
-size("MANAGE_ALIAS", MANAGE_ALIAS, 19);
+size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
 size("EVAL_ALIAS", EVAL_ALIAS, 7);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 

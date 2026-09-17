@@ -14,7 +14,7 @@
     {
       "name": "zz-access",
       "source": "./marketplace/zz-access",
-      "description": "Access, yours and everybody's: your platform token, your keys for the building blocks, and the setup for whichever client you work in — plus, if your role carries them, the people, teams, flow installs and block grants behind them. One door; the tools you are offered are the ones your role can execute."
+      "description": "REQUIRED — Access, yours and everybody's: your platform token and the setup for whichever client you work in — plus, if your role carries them, the people and teams behind them. One door; the tools you are offered are the ones your role can execute."
     },
     {
       "name": "sdlc",

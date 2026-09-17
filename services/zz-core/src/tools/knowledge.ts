@@ -265,7 +265,7 @@ function subjectTagError(tags: string[] | undefined): string | null {
         // Resolved from the registry when the node is about a block and the caller did not
         // say. A claim about a block with no version behind it cannot be retired when the
         // block moves, so it is followed forever.
-        `verified_against: ${yamlValue(verified_against ?? (await subjectVersionFor(tags, team)) ?? "")}`,
+        `verified_against: ${yamlValue(verified_against ?? (await subjectVersionFor(tags)) ?? "")}`,
         "supersededBy: null", "---", "", body, "",
       ].filter((l) => l !== null).join("\n");
       writeFileSync(join(ndir, file), doc);   // fills the placeholder claimed above

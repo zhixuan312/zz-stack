@@ -387,7 +387,6 @@ export function registerInitiativeStatusTools(server: McpServer): void {
       }
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
-      const team = await teamFor(who.email);
       const names = initiative
         ? [initiative]
         // Dot-entries are not initiatives, and since the store became a git repository there
@@ -409,7 +408,7 @@ export function registerInitiativeStatusTools(server: McpServer): void {
           out.push({ initiative: name, error: "no such initiative" });
           continue;
         }
-        const chain = await chainFor(root, `${name}/x.md`, team);
+        const chain = chainFor(root, `${name}/x.md`);
         const state = initiativeState(root, name, chain, chain.documents);
         // OPTIONAL-CHAINED, because `next_move` is null for a freeform initiative. Indexing
         // it bare threw here, in the no-argument listing — the one call zz-platform tells

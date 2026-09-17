@@ -223,7 +223,7 @@ check_archive "$CRED_VOLUME" "$cred_file" "$cred_before"
 # 2026-08-23, aborted a live backup with "FAIL: dump has no zz.membership data" against a
 # dump that contains zz.membership. Reading the stream to the end cannot lose that race.
 present="$(zcat "$db_file" | sed -n 's/^COPY zz\.\([a-z_]*\) .*/\1/p' | sort -u)"
-for t in principal team membership pat flow_install; do
+for t in principal team membership pat; do
   grep -qx "$t" <<<"$present" || { echo "FAIL: dump has no zz.$t data"; exit 1; }
 done
 

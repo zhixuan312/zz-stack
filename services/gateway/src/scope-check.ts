@@ -212,7 +212,7 @@ const TEAM_AUTHORITY_CASES: TeamAuthorityCase[] = [
   {
     name: "a team admin on their own team",
     id: teamAdminOfP1, team: "team_one", expect: true,
-    why: "an admin of the team named is exactly who member_add, flow_install and their " +
+    why: "an admin of the team named is exactly who member_add, member_remove and their " +
          "console-side routes exist for",
   },
   {

@@ -85,7 +85,7 @@ export function registerArtifactTools(server: McpServer): void {
       // `initiative_open`, at the one moment the choice is meaningful, and chainFor reads it
       // from the record written there — which is also what covers the window this argument
       // used to cover, an initiative whose first document is not yet on disk.
-      const chain = await chainFor(root, path, team, content);
+      const chain = chainFor(root, path, content);
       content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields });
       const fixed = normalizeSections(chain, path, content);
       const gate = documentGuards(chain, root, path, fixed.content, team);
@@ -313,7 +313,7 @@ export function registerArtifactTools(server: McpServer): void {
       // The chain comes from what the document says. It cannot differ from the file's own
       // envelope now, and reading it from `result` keeps this the same expression document_write
       // uses rather than a second way of asking the same question.
-      const chain = await chainFor(root, path, team, result);
+      const chain = chainFor(root, path, result);
       // Against the RESULTING document, not the replacement fragment. A patch is normally a
       // few lines, so a check reading `replace` was reading a document with no frontmatter —
       // which is why the guards have to see the whole thing.

@@ -25,6 +25,7 @@
  * the record, the collision). This file is the door.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { governingFlows } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
@@ -34,8 +35,6 @@ import { slugRefusal } from "../document-rules.js";
 import { initiativeNameFor, OPEN_RECORD, recordOpen, takenRefusal } from "../initiative-record.js";
 import { userRoot } from "../paths.js";
 import { logActivity } from "../persist.js";
-import { teamFor } from "../platform-db.js";
-import { governingFlows } from "../skill-roots.js";
 
 import { initiativeState } from "./initiative-status.js";
 
@@ -71,30 +70,19 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       const taken = takenRefusal(root, slug);
       if (taken) return text(taken);
 
-      // A FLOW THE TEAM HAS NOT INSTALLED IS REFUSED, and the refusal lists the ones they
-      // have. Accepting it would open an initiative whose declaration resolves to no chain,
-      // which reads back as freeform — so a person who asked for gates would be told they
-      // have none much later, by nothing in particular, and after writing documents under
-      // the belief that something was checking them.
-      const team = await teamFor(who);
+      // A FLOW THE CATALOG DOES NOT HAVE IS REFUSED, and the refusal lists the ones it does.
+      // Accepting it would open an initiative whose declaration resolves to no chain, which
+      // reads back as freeform — so a person who asked for gates would be told they have none
+      // much later, by nothing in particular.
       if (flow?.trim()) {
         const declared = flow.trim().split("@")[0].trim();
-        let installed: Set<string> | null = null;
-        try {
-          installed = await governingFlows(team);
-        } catch {
-          // The registry is unreachable. Refusing here would block work over an outage the
-          // caller cannot fix and cannot wait out, and unlike a write this act is cheap to
-          // repeat. Accepted, and the chain simply resolves when the registry returns.
-          installed = null;
-        }
-        if (installed && !installed.has(declared)) {
+        const known = governingFlows();
+        if (!known.includes(declared)) {
           return text(
-            `ERROR: no flow named '${declared}' is installed for your team. Installed: ` +
-            `${[...installed].sort().join(", ") || "none"}. Open this WITHOUT a flow if none ` +
-            "of them govern the work — freeform is supported and loses only the platform's " +
-            "next-move answer — or ask an admin to install the one you meant. It cannot be " +
-            "adopted once the initiative exists.");
+            `ERROR: no flow named '${declared}'. Flows: ${[...known].sort().join(", ") || "none"}. ` +
+            "Open this WITHOUT a flow if none of them govern the work — freeform is supported and " +
+            "loses only the platform's next-move answer. It cannot be adopted once the " +
+            "initiative exists.");
         }
       }
 
@@ -121,7 +109,7 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       // open time and the one they read a week later come from the same code rather than from
       // two that agree today. chainFor picks the declaration up from the record written above;
       // there is no document yet for it to read one off.
-      const chain = await chainFor(root, `${name}/x.md`, team);
+      const chain = chainFor(root, `${name}/x.md`);
       const state = initiativeState(root, name, chain, chain.documents);
       return text(JSON.stringify({
         initiative: name,

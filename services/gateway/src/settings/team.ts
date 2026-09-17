@@ -1,5 +1,5 @@
 /**
- * Team administration: who is in a team, and what that team runs.
+ * Team administration: who is in a team.
  *
  * Every route is behind `teamAuthority` for the team NAMED IN THE REQUEST, never behind
  * "administers some team" — a team admin asking about another team's members is answered no.
@@ -10,7 +10,6 @@ import type { Express, Request, Response } from "express";
 import { redact } from "../redact.js";
 import { platformDb, platformDbReady } from "../db.js";
 import { addMember, removeMember } from "../admin/teams.js";
-import { installFlow, uninstallFlow } from "../admin/flows.js";
 import { teamAuthority } from "../admin/authority.js";
 
 export function mountTeamSettings(app: Express): void {
@@ -105,74 +104,6 @@ export function mountTeamSettings(app: Express): void {
     })().catch((err: unknown) => {
       console.error("settings/team/members (remove) failed:", err);
       if (!res.headersSent) res.status(500).json({ error: "could not remove team member" });
-    });
-  });
-
-  /** Flows installed for a team the caller administers. See the members GET above for why
-   *  a read is still gated by `teamAuthority` on this surface. */
-  app.get("/api/console/settings/team/flows", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const team = teamField(req.query.team);
-      if (!team) { res.status(400).json({ error: "team is required" }); return; }
-      if (!teamAuthority(id, team)) {
-        res.status(403).json({ error: `team admin or superadmin required for ${team}` });
-        return;
-      }
-      const rows = await platformDb().query<{ flow: string; version: string; agent: string }>(
-        `select fi.flow, fi.version, fi.agent_name as agent from zz.flow_install fi
-           join zz.team t on t.id = fi.team_id
-          where t.slug = $1 order by fi.flow`, [team]);
-      res.json(redact(rows.rows));
-    })().catch((err: unknown) => {
-      console.error("settings/team/flows (list) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not list team flows" });
-    });
-  });
-
-  /** Install a catalog flow for a team. */
-  app.post("/api/console/settings/team/flows", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const team = teamField(body.team);
-      const flow = typeof body.flow === "string" ? body.flow.trim() : "";
-      if (!team) { res.status(400).json({ error: "team is required" }); return; }
-      if (!flow) { res.status(400).json({ error: "flow is required" }); return; }
-      const version = typeof body.version === "string" ? body.version : undefined;
-      const agentName = typeof body.agent_name === "string" ? body.agent_name : undefined;
-      const r = await installFlow(id, team, flow, version, agentName, { via: "web" });
-      if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
-      res.json(redact({ ok: true, result: r.message }));
-    })().catch((err: unknown) => {
-      console.error("settings/team/flows (install) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not install flow" });
-    });
-  });
-
-  /** Uninstall a team's flow. `confirm` must repeat the flow name exactly — `uninstallFlow`'s
-   *  own rule; not duplicated here. */
-  app.delete("/api/console/settings/team/flows", (req: Request, res: Response) => {
-    void (async () => {
-      const id = req.zzIdentity;
-      if (!id) { res.status(401).json({ error: "authentication required" }); return; }
-      if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const team = teamField(body.team);
-      const flow = typeof body.flow === "string" ? body.flow.trim() : "";
-      const confirm = typeof body.confirm === "string" ? body.confirm : "";
-      if (!team) { res.status(400).json({ error: "team is required" }); return; }
-      if (!flow) { res.status(400).json({ error: "flow is required" }); return; }
-      const r = await uninstallFlow(id, team, flow, confirm, { via: "web" });
-      if (!r.ok) { res.status(r.status).json({ error: r.error }); return; }
-      res.json(redact({ ok: true, result: r.message }));
-    })().catch((err: unknown) => {
-      console.error("settings/team/flows (uninstall) failed:", err);
-      if (!res.headersSent) res.status(500).json({ error: "could not uninstall flow" });
     });
   });
 }

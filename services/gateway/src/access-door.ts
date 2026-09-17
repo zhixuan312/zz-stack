@@ -40,7 +40,7 @@ import { registerShelf, renderClientSetup } from "./admin/flows.js";
  * list speak for itself. `whoami` is named because it is the tool that explains the cut. */
 const ACCESS_INSTRUCTIONS =
   "This is /manage: your own access to the ZZ platform — and, if your role carries them, the " +
-  "people, teams and installs behind it. Every tool here acts on YOU, the caller, rather " +
+  "people and teams behind it. Every tool here acts on YOU, the caller, rather " +
   "than on a team's work.\n\n" +
   "START HERE: `whoami`. It says how the platform resolved you, what your platform role is, " +
   "and what your token is scoped to. THE TOOL LIST IS YOUR ROLE — this door registers only " +
@@ -49,11 +49,9 @@ const ACCESS_INSTRUCTIONS =
   "What is here, a line each:\n" +
   "  your identity        which team you are acting for, and switching between them\n" +
   "  your platform token  issue one, list them masked, revoke one — shown ONCE, never again\n" +
-  "  your block keys      store, list and delete your own key for a building block\n" +
-  "  connecting a block   sign in as yourself, so it records you and there is no key to keep\n" +
   "  your client setup    which marketplace, which plugins, and where the token goes\n" +
-  "  the shelf            what your team may install\n" +
-  "  administration       people, teams, tokens, installs and grants — only if your role " +
+  "  the shelf            the optional plugins you may install, in your own client\n" +
+  "  administration       people, teams and tokens — only if your role " +
   "carries them, and every one still refuses per call\n\n" +
   "NOT FOR: doing any work. Documents, the knowledge store, the skills library and today's " +
   "date are the /core door. This one changes who may do things, not what gets done.";

@@ -172,9 +172,8 @@ const TOOL_DOMAIN: Record<string, string> = {
   // the initiative) and not Access. Filing and answering are one subject; role decides which
   // half you see.
   bug_report: "defect", bug_list: "defect", bug_resolve: "defect", bug_delete: "defect",
-  // Catalog — what is on the shelf and what a team installed.
-  catalog_list: "catalog", install_list: "catalog", flow_install: "catalog",
-  flow_uninstall: "catalog", client_setup: "catalog",
+  // Catalog — what is on the shelf, and how to install from it.
+  catalog_list: "catalog", client_setup: "catalog",
   // Access — who may do what, and the credential that says so.
   person_add: "access", person_list: "access", person_deactivate: "access",
   enrolment_issue: "access", team_create: "access", team_archive: "access",

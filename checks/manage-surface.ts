@@ -118,15 +118,15 @@ for (const f of FILES) {
 //
 // DERIVED, and here is the derivation, because the spec froze "16 for a member" as a NUMBER and
 // never enumerated it: a member sees every ungated registration, which is the nine in
-// access-door.ts, the six in admin.ts, and catalog_list in admin/flows.ts. A lead adds the four
+// access-door.ts, the five in admin.ts, and catalog_list in admin/flows.ts. A lead adds the two
 // `if (lead)` registrations; a superadmin adds the eight `if (sup)` ones in admin.ts, one in
 // access-door.ts, and the three in admin/bugs.ts, which the door registers as one call. The numbers are not asserted against themselves — counting a list this file
 // also wrote proves nothing. What carries the weight is the set equality below, against the gates
 // parsed out of the source, and the cross-check against MANAGE_ALIAS above it.
 const MEMBER = ["team_mine", "team_switch", "client_setup",
-                "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list", "install_list",
+                "whoami", "pat_issue", "pat_revoke", "pat_list", "team_list",
                 "catalog_list"];
-const LEAD = ["member_add", "member_remove", "flow_install", "flow_uninstall"];
+const LEAD = ["member_add", "member_remove"];
 // THE BUG TOOLS AND knowledge_reindex ARE NOT HERE ANY MORE, and that is the change rather
 // than an omission. They were superadmin-only on this door because answering for a whole
 // deployment is an operator's act — but the door a tool sits on is decided by its SUBJECT, and
@@ -186,11 +186,12 @@ for (const [who, got, want] of tierSets) {
 // ONE PLACE, because the first version of this spelled the number in the condition and again
 // in the sentence, and a mutation that changed the condition alone printed "/manage registers
 // 31 tools, expected 31" — a failure a reader cannot act on, on a check that was right.
-// 20, was 24. Four tools left for /core in the same change: bug_list, bug_resolve, bug_delete
-// and knowledge_reindex. They were here because answering for a deployment is an operator's
-// act — which is role deciding a door. The subject decides the door; role decides who sees it,
-// and all four are still superadmin-only, now on /core.
-const DOOR_SIZE = 20;
+// 17, was 20. flow_install, flow_uninstall and install_list left with the install registry:
+// the platform cannot see what is on a person's machine, so it records no installs and
+// restricts none. Before that, 20 was 24 — bug_list, bug_resolve, bug_delete and
+// knowledge_reindex went to /core, because the subject decides the door and role decides who
+// sees it.
+const DOOR_SIZE = 17;
 if (registered.size !== DOOR_SIZE) {
   fail.push(`/manage registers ${registered.size} tools, expected ${DOOR_SIZE} ` +
             `(34 until the third-party-server layer went, which took ten with it: ` +

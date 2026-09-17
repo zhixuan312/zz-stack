@@ -67,6 +67,5 @@
       "stage": "zz-plugin-report"
     }
   ],
-  "install": "auto",
   "license": "MIT"
 }

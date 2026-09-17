@@ -25,7 +25,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { manifestAt } from "@zz/catalog";
+import { manifestAt, pluginName } from "@zz/catalog";
 import { Mcp } from "@zz/mcp-client";
 
 import { walkBugs } from "./chain-bugs.js";
@@ -148,11 +148,10 @@ const sectionsFor = (name: string): string[] => SECTIONS.get(name) ?? [];
 
 /**
  * The plugin the plugin-eval tools are exercised against, below. `entryOf` on the core
- * resolves a plugin from a flow the same way — `e.flow.replace(/-flow$/, "") === plugin` —
- * so this names the same catalog entry FLOW already had to resolve for `firstDocument()` to
+ * resolves a plugin from a flow through the same `pluginName` — so this names the same catalog entry FLOW already had to resolve for `firstDocument()` to
  * succeed, rather than a second identifier this script would have to keep in sync with it.
  */
-const PLUGIN = FLOW.replace(/-flow$/, "");
+const PLUGIN = pluginName(FLOW);
 
 const core = new Mcp(`${GW}/core/mcp`, { pat: PAT, client: "chain-check" });
 

@@ -391,7 +391,6 @@ export const CatalogManifest = z.object({
    * second question is the one that decides whether a catalog stays coherent, and nothing in
    * the manifest asked it. */
   purpose: z.string().min(1).optional(),
-  install: z.enum(["auto", "opt-in"]).optional(),
   /** THE COMMANDS A PERSON CAN TYPE: the name they type, mapped to the skill that carries
    * the method. `{ "flow": "sdlc-flow" }` ships `/sdlc:flow`, and `{ "deck": "zz-deck" }` ships
    * `/zz-core:deck`, each carrying that skill's own text.
@@ -458,11 +457,7 @@ export const CatalogManifest = z.object({
    * and the wrong field. Every package that opens a skill has steps, so `stages` said yes to
    * all of them: zz-access declared a single stage repeating its own entry, produced nothing,
    * and got a stepper. A flow is a discipline over documents — gates, order, a closing
-   * document — so the packages that have one are the packages that declare documents.
-   *
-   * Separate from `install`, which answers a different question: `install: "auto"` means every
-   * team automatically HAS this flow. All three evaluation-track packages declare both, which
-   * is why the two cannot be one field. */
+   * document — so the packages that have one are the packages that declare documents. */
   shelved: z.literal(true).optional(),
   /** The flow's stages IN ORDER, each naming a skill, and each able to declare which
    * building blocks it may call. See FlowStage.

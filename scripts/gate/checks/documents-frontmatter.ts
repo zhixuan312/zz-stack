@@ -25,8 +25,8 @@ function errMessage(err: unknown): string {
 // A VALUE SOMEBODY TYPED, INSIDE HAND-WRITTEN YAML QUOTES.
 //
 // client-package generates the frontmatter of every file a person installs. Most of it is
-// slugs the platform controls, and one field is not: `agentName` is free text an admin gives
-// flow_install — "agent_name is what the team sees" — and it was interpolated into
+// slugs the platform controls, and one field is not: `agentName` is free text from a manifest,
+// and it was interpolated into
 // `description: "Run the ${…} flow…"`. An agent called `My "Special" Agent` closes the quote
 // early, and the client then cannot parse the command: it silently does not exist, and
 // nothing anywhere says why.

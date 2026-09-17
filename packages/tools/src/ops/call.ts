@@ -13,7 +13,7 @@
  * would be a second MCP client. The gate refuses the third by name.
  *
  * That gap is felt hardest at exactly two moments, and both are ones where nothing else can
- * help: setting a deployment up (`tool_grant`, `flow_install`, `member_add` — the calls that
+ * help: setting a deployment up (`team_create`, `member_add`, `pat_issue` — the calls that
  * come BEFORE anybody has a working client), and reading the record back after an evaluation
  * (`initiative_status`, `source_list`) without asking the agent under test what it thinks
  * happened. A harness that scores a run by asking the run is not a harness.

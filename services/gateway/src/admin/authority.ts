@@ -31,11 +31,7 @@ export async function principalId(db: pg.Pool, email: string): Promise<string | 
 }
 /** The id of an ACTIVE team, or null.
  *
- * This returned any team, archived included, and every caller then acted on it. flow_install
- * was the worst of them: projecting a preset re-created the front end's own group, so
- * installing a flow for an archived team handed the browser back the access team_archive had
- * just taken away. That projection is gone with the front end that needed it, and the rule it
- * broke is the reason this filters. member_add and pat_issue wrote
+ * This returned any team, archived included, and every caller then acted on it. member_add and pat_issue wrote
  * rows that resolve to nothing, because every identity query filters on status — so the tool
  * reported success and the person got no team, and a token that carries none. */
 export async function teamId(db: pg.Pool, slug: string): Promise<string | null> {

@@ -504,8 +504,8 @@ check("plugins.lock.json says what the catalog ships, on both version and digest
 check("a plugin's recorded membership is the one it ships", () => {
   // WHICH SKILL VERSIONS WERE IN THIS PLUGIN VERSION, which nothing recorded until now.
   //
-  // zz.skill_version has no plugin column, zz.skill.flow is CURRENT registration rather than
-  // per-version, and flow_install overwrites its own history on reinstall. So "which version of
+  // zz.skill_version has no plugin column, and zz.skill.flow is CURRENT registration rather than
+  // per-version. So "which version of
   // this skill was running" had no honest answer, and the evaluation track resolved it to
   // whatever happened to be current at read time -- a wrong answer indistinguishable from a
   // right one.
@@ -521,7 +521,7 @@ check("a plugin's recorded membership is the one it ships", () => {
   for (const [plugin, entry] of Object.entries(recorded) as [string, { skills?: Record<string, unknown> }][]) {
     // catalogPackages is an ARRAY of {owner, flow, dir}, not a function, and dir is already
     // absolute -- so the plugin name is its flow with the -flow suffix off, the same rule
-    // pluginName() applies in the packager.
+    // pluginName() applies everywhere else.
     const dirs = plugin === BASELINE
       ? [join(root, "skills")]
       : catalogPackages.filter((e) => e.flow.replace(/-flow$/, "") === plugin)

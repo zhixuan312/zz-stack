@@ -33,6 +33,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.45.0] — 2026-09-17 · console 0.13.0
+
+The platform stops keeping a record it could not back: which plugins a team had "installed".
+It cannot see what is on a person's machine, so that record was a claim, and every use of it a
+restriction nobody could enforce. zz-core and zz-access are required; every other plugin is a
+person's own choice.
+
+### Removed — breaking
+
+- **`flow_install`, `flow_uninstall` and `install_list` are gone.** `/manage` goes 20 tools to
+  17 for a superadmin. `catalog_list` still lists the shelf, and no longer takes `team` or says
+  whether a team "has" a plugin.
+- **Migration 060 drops `zz.flow_install`.** Nothing is carried forward: an initiative's flow
+  is its own declaration, and every initiative on this deployment already makes one.
+- **The install registry no longer decides anything.** The client package is built from the
+  catalog — the same shelf for everyone, zz-core and zz-access marked required and installed by
+  the setup block, the rest listed for a person to choose. Every catalog skill is readable by
+  everyone. `initiative_open` accepts any flow the catalog has. An initiative that declares no
+  flow is freeform; it is no longer governed by a team's single install.
+- **zz-plugin-eval is no longer installed for every team**, and the automatic-install flag it
+  was the only user of is gone.
+- **Console API:** `/api/console/settings/team/flows` is removed; `/api/console/teams` rows
+  lose `plugins`, `events`, `workEvents` and `instrumented` and gain `sources` and `knowledge`;
+  `/api/console/teams/:slug` loses `flows`; overview `eventKinds` rows lose `failed`.
+
+### Fixed
+
+- **Closed initiatives read as open.** sdlc-flow once closed on `spec.md` and now closes on
+  `review.md`. Initiatives closed back then carry their outcome on `spec.md`, and both the
+  console and `initiative_status` looked only at today's closing document — three closed
+  initiatives showed "Waiting on you". The outcome is read from whichever document carries it.
+- **A team's documents included its sources.** One team read 240 documents: 31 written, 209
+  registered sources. They are counted apart.
+- **A `flow:` knowledge tag resolved per team.** It resolves to the plugin's release now, through
+  `pluginName` — which moved into `@zz/catalog`, where every reader of the rule imports it.
+- **The attribution check passed on a comment.** It asserted a join that no longer ran and
+  matched only because a comment still named the table. It asserts the door lookup now.
+
+### Console 0.13.0
+
+- **Overview tiles line up whatever the period.** Fixed one-line slots; the comparison moved onto
+  the delta pill's hover; no legend rows; a row counts its columns from its own width.
+- **Bar lists are honest.** A bar is its share of the total, one number per row, the share on
+  hover, in the theme accent. The refusals panel lost its duplicate headline and sits beside
+  Event kinds, which states its total.
+- **Titles are statements**, across every page.
+- **Teams** counts documents, sources and knowledge nodes apart; the install views are gone.
+- **An outage is not a refusal.** A gateway that cannot reach its database no longer sends a
+  signed-in person to the login screen as "not open to you".
+
+### Upgrade notes
+
+- **Release the console right after the platform.** Console 0.12.0 reads team flows and errors on
+  a team page against this gateway.
+- **Clients re-pull the shelf.** zz-access is now marked required, and anyone who relied on
+  zz-plugin-eval arriving automatically installs it: `claude plugin install zz-plugin-eval@zz-stack`.
+
 ## [0.44.0] — 2026-09-16 · console 0.12.0
 
 Every capability is a plugin, and the platform now matches that sentence. This release removes

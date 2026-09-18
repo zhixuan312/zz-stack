@@ -26,6 +26,7 @@ import { z } from "zod";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
+import { ask, configured, NOT_CONFIGURED, type ChoiceQuestion, type ScoreQuestion } from "./typesafe.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing can be recorded");
@@ -47,11 +48,17 @@ export function registerPluginRecordTools(server: McpServer): void {
         plugin: z.string(),
         version: z.string(),
         rubric_version: z.string().describe("this ruler's own version, e.g. \"1\""),
-        subject: z.enum(["auto", "document", "trace"])
+        subject: z.enum(["auto", "document", "trace", "initiative"])
           .describe("what the qualitative dimensions are applied to"),
         dimensions: z.array(z.object({
           name: z.string(),
           kind: z.enum(["qualitative", "quantitative"]),
+          /** 2-10 ORDERED level descriptions, low end first. This is what a qualitative
+           *  dimension IS — a scale somebody can place an artifact on — and it replaces the
+           *  two-ends form below, which left the rungs between them to whoever was marking. */
+          levels: z.array(z.string()).min(2).max(10).optional(),
+          /** The two-ends form. Kept for the rulers written before levels existed; a NEW
+           *  qualitative dimension must send `levels`. */
           five_means: z.string().optional(),
           one_means: z.string().optional(),
           threshold: z.string().optional(),
@@ -78,11 +85,19 @@ export function registerPluginRecordTools(server: McpServer): void {
                      "stated reason is a number somebody can move later to make a result come " +
                      "out differently, and nobody would be able to tell");
           }
-        } else if (!d.five_means?.trim() || !d.one_means?.trim()) {
-          // Both ends, for 016_reference.sql's own reason: "a dimension a marker cannot place
-          // is a dimension that gets placed by mood."
-          bad.push(`${d.name}: qualitative and missing five_means or one_means — a dimension a ` +
-                   "marker cannot place is one that gets placed by mood");
+        } else if (!d.levels?.length) {
+          // NAME EVERY LEVEL, for 016_reference.sql's own reason one step further on: "a
+          // dimension a marker cannot place is a dimension that gets placed by mood." Two ends
+          // and a number do not place the middle — they leave three rungs to the marker's
+          // taste, and two rounds then mark the same artifact differently for no recorded
+          // reason. A level that cannot be described is one nobody should be asked to award.
+          bad.push(`${d.name}: qualitative and carries no levels — give 2-10 ordered level ` +
+                   "descriptions, low end first. Two ends and a 1-5 scale leave the rungs " +
+                   "between them to whoever is marking, and that is where two rounds stop " +
+                   "being comparable");
+        } else if (d.levels.some((l) => !l.trim())) {
+          bad.push(`${d.name}: a level is blank — every level a marker may award has to say ` +
+                   "what it means");
         }
       }
       if (bad.length) return text(`REFUSED: ${bad.join("; ")}`);
@@ -141,17 +156,17 @@ export function registerPluginRecordTools(server: McpServer): void {
           await p.query(`
             update zz.rubric_dimension
                set five_means = $2, one_means = $3, ordinal = $4, kind = $5,
-                   threshold = $6, threshold_reason = $7
+                   threshold = $6, threshold_reason = $7, levels = $8::text[]
              where id = $1::uuid`,
             [id, d.five_means ?? "", d.one_means ?? "", i,
-             d.kind, d.threshold ?? "", d.threshold_reason ?? ""]);
+             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null]);
         } else {
           await p.query(`
             insert into zz.rubric_dimension
-              (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason)
-            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8)`,
+              (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason, levels)
+            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::text[])`,
             [rubricId, d.name, d.five_means ?? "", d.one_means ?? "", i,
-             d.kind, d.threshold ?? "", d.threshold_reason ?? ""]);
+             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null]);
         }
       }
 
@@ -236,6 +251,159 @@ export function registerPluginRecordTools(server: McpServer): void {
         next: "These are DEFERRED. Nothing here changes the plugin — the catalog is read-only " +
               "wherever the platform runs, and a change is a repository edit and a release by " +
               "whoever owns it.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "round_recommend",
+    {
+      description:
+        "WHEN a round's marks and findings are in and the report needs its one-word verdict. " +
+        "It assembles what this round actually established — the dimension means, the judge's " +
+        "own control gap, every threshold and whether it was met, the case delta and the trace " +
+        "window — and puts them to the TYPED judgement service as a closed choice, then " +
+        "records what came back. RETURNS the recommendation, the probability of every option " +
+        "and the confidence, which is the shape of that distribution and not the model's " +
+        "opinion of itself. YOU DO NOT CHOOSE THE WORD: the enum is `keep`, `keep-and-change`, " +
+        "`re-run`, `not-evaluable`, `retire`, and which one this evidence supports is the " +
+        "judgement being outsourced. Writing the paragraph that explains it is yours. REFUSES " +
+        "an eval_id nothing minted; reports the judgement as ABSENT, without failing, when the " +
+        "deployment has no key for the service.",
+      inputSchema: { eval_id: z.string() },
+    },
+    async ({ eval_id }) => {
+      const p = db();
+      if (!p) return noDb();
+      const round = (await p.query<{
+        plugin: string; version: string; rubric: string; judge: string; is_control: boolean;
+      }>(`
+        select pl.name as plugin, pv.version, rb.version as rubric, e.judge_model as judge,
+               e.is_control
+          from zz.eval e
+          join zz.plugin_version pv on pv.id = e.plugin_version_id
+          join zz.plugin pl on pl.id = pv.plugin_id
+          join zz.rubric rb on rb.id = e.rubric_id
+         where e.id = $1::uuid`, [eval_id])).rows[0];
+      if (!round) return text(`ERROR: no plugin evaluation ${eval_id}`);
+      if (round.is_control) {
+        return text(
+          "ERROR: that eval_id is the CONTROL run. A control marks another plugin's work to " +
+          "test whether the ruler discriminates; it is not the round being recommended on. " +
+          "Pass the real round's eval_id — round_scores shows both.");
+      }
+
+      // WHAT THIS ROUND ESTABLISHED, read back rather than re-derived. Every figure here is
+      // already stored: the means the judge produced, the control it was tried against, the
+      // thresholds with the line each was held to. Re-deriving any of them would let the
+      // recommendation rest on numbers the report never showed.
+      const dims = (await p.query<{ dimension: string; kind: string; mean: string; n: string;
+                                    confidence: string | null }>(`
+        select d.name as dimension, d.kind, round(avg(s.score),2)::text as mean,
+               count(*)::text as n, round(avg(s.confidence),2)::text as confidence
+          from zz.eval_score s join zz.rubric_dimension d on d.id = s.dimension_id
+         where s.eval_id = $1::uuid and not s.is_control
+         group by d.name, d.kind, d.ordinal order by d.ordinal`, [eval_id])).rows;
+      const control = (await p.query<{ real: string | null; ctl: string | null }>(`
+        select round(avg(s.score) filter (where not s.is_control),2)::text as real,
+               round(avg(s.score) filter (where s.is_control),2)::text as ctl
+          from zz.eval_score s
+          join zz.rubric_dimension d on d.id = s.dimension_id and d.kind <> 'quantitative'
+         where s.eval_id in (
+                 select e2.id from zz.eval e2
+                  where e2.plugin_version_id = (select plugin_version_id from zz.eval where id = $1::uuid)
+                    and e2.rubric_id = (select rubric_id from zz.eval where id = $1::uuid))`,
+        [eval_id])).rows[0];
+      const findings = (await p.query<{ scope: string; pattern: string }>(
+        "select scope, pattern from zz.eval_finding where eval_id = $1::uuid", [eval_id])).rows;
+
+      const gap = control?.real && control?.ctl
+        ? Math.round((Number(control.real) - Number(control.ctl)) * 100) / 100 : null;
+      const state = [
+        `Plugin under evaluation: ${round.plugin} ${round.version}, marked against rubric ` +
+        `version ${round.rubric} by judge ${round.judge}.`,
+        dims.length
+          ? "Dimension results: " + dims.map((d) => `${d.dimension} (${d.kind}) mean ${d.mean} ` +
+              `over ${d.n} mark(s)` + (d.confidence ? `, judge confidence ${d.confidence}` : "")).join("; ") + "."
+          : "No dimension produced a mark in this round.",
+        gap === null
+          ? "No blind control was run, so nothing establishes whether the ruler can tell this " +
+            "plugin's work from another plugin's."
+          : `Judge on trial: the real subjects averaged ${control?.real} and the blind control ` +
+            `averaged ${control?.ctl}, a gap of ${gap}. A gap below 1.5 means the ruler failed ` +
+            "to tell the right artifact from the wrong one and the round establishes nothing.",
+        findings.length
+          ? `Findings recorded: ${findings.length} (` +
+            findings.map((f) => `${f.scope}: ${f.pattern}`).join(" | ").slice(0, 1200) + ")."
+          : "No findings were recorded against this round.",
+      ].join(" ");
+
+      // ABSENCE IS AN ANSWER. A deployment with no key still produces a report; it produces one
+      // that says the typed judgement was not taken and why, which a reader can act on. A
+      // report that refuses to exist because a third party is unreachable is a dependency
+      // nobody agreed to.
+      if (!configured()) {
+        return json({
+          eval_id, plugin: round.plugin, version: round.version,
+          recommendation: null, absent: NOT_CONFIGURED,
+          state_that_would_have_been_asked: state,
+          next: "Write the report without a recommendation and say in section 1 that the typed " +
+                "judgement was not taken, and why. Do not substitute your own word for it — " +
+                "an enum chosen in prose is the thing this tool exists to stop.",
+        });
+      }
+
+      const questions: Record<string, ChoiceQuestion | ScoreQuestion> = {
+        recommendation: {
+          type: "choice",
+          instructions: "A plugin evaluation has finished. Choose the single recommendation this evidence supports.",
+          criteria: {
+            "keep": "Working as intended; the evidence supports leaving it exactly as it is.",
+            "keep-and-change": "Valuable and worth keeping, but the evidence identifies specific defects to fix.",
+            "re-run": "The evidence exists but THIS round is not usable — a void control, or a round taken on evidence since corrected — so the measurement should be taken again before any verdict.",
+            "not-evaluable": "The evidence needed to judge this plugin does not exist at all, so no verdict about the plugin can honestly be given.",
+            "retire": "It costs more than it returns; remove it.",
+          },
+        },
+        evidence_strength: {
+          type: "score",
+          instructions: "How strong is the body of evidence behind this verdict?",
+          criteria: ["No usable evidence", "Thin — one source only", "Adequate", "Strong across two independent sources"],
+        },
+      };
+      let rec, strength;
+      try {
+        const answers = await ask(state, questions);
+        rec = answers.recommendation;
+        strength = answers.evidence_strength;
+      } catch (err) {
+        return text(String((err as Error).message));
+      }
+      if (rec?.type !== "choice") return text("ERROR: the typed judgement service did not answer a choice");
+
+      await p.query(`
+        update zz.eval set recommendation = $2, recommendation_confidence = $3,
+                           recommendation_probabilities = $4::jsonb
+         where id = $1::uuid`,
+        [eval_id, rec.choice, rec.confidence, JSON.stringify(rec.probabilities)]);
+
+      const who = parseCaller(requestHeaders()).email;
+      logActivity(await userRoot(), null,
+        { user: who, action: "round_recommend", eval_id, plugin: round.plugin,
+          version: round.version, recommendation: rec.choice, confidence: rec.confidence });
+
+      return json({
+        eval_id, plugin: round.plugin, version: round.version,
+        recommendation: rec.choice,
+        confidence: rec.confidence,
+        probabilities: rec.probabilities,
+        evidence_strength: strength?.type === "score"
+          ? { score: strength.score, legend: strength.legend, confidence: strength.confidence }
+          : null,
+        judge_on_trial_gap: gap,
+        next: "The word and its confidence are recorded. Section 1 of findings.md carries them " +
+              "verbatim; the paragraph underneath is yours to write, from these numbers and " +
+              "from reading the artifacts — never a different verdict reached in prose.",
       });
     },
   );

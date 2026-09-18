@@ -58,6 +58,19 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-}
       - ZZ_JUDGE_MODEL=${ZZ_JUDGE_MODEL:-glm-5.3}
       - ZZ_JUDGE_THINKING=${ZZ_JUDGE_THINKING:-on}
+      # The TYPED judge — the one that answers shapes rather than sentences. A ruler dimension
+      # is a position on named levels, a recommendation is one word from a closed set, a
+      # threshold is a yes/no: each of those has a shape a general model can answer outside of,
+      # and this service cannot. It marks a ruler whose dimensions name their levels, and it
+      # decides the recommendation enum.
+      #
+      # WITHOUT IT NOTHING FAILS. A deployment with no key keeps the reading judge for rulers
+      # written the old way, and reports the recommendation as absent WITH THE REASON rather
+      # than refusing to produce a report. A third party that can stop an evaluation existing
+      # is a dependency nobody agreed to.
+      - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
+      - TYPESAFE_MODEL=${TYPESAFE_MODEL:-jev-latest}
+      - TYPESAFE_BASE_URL=${TYPESAFE_BASE_URL:-}
     volumes:
       # /catalog and /skills now ship inside the image — see the root Dockerfile.
       # docker-compose.build.yml mounts the working tree back over them for development.

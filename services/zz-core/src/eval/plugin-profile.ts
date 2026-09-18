@@ -65,12 +65,34 @@ interface PluginTraces {
  * when a skill is served whole through skill_read and has been frozen at 39 rows while the event
  * log grew by a third. The membership is written at release, which is the only moment anybody
  * actually knows what a plugin version contained. */
-const RUNS_OF = `
+const RUNS_BY_SKILL = `
   from zz.run r
   join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
   join zz.plugin_version pv on pv.id = pvs.plugin_version_id
   join zz.plugin p on p.id = pv.plugin_id
  where p.name = $1 and pv.version = $2`;
+
+/** THE OTHER KIND OF PLUGIN, and the other place its evidence lives.
+ *
+ * A FLOW is a sequence of stages delivering one initiative, so what it did is the runs of its
+ * own skills — RUNS_BY_SKILL above. A plugin that SERVES A DOOR is not that shape at all: it
+ * is a backbone, used all day by every other plugin's runs, and nothing it does shows up as a
+ * run of its own skills. Measured on this deployment, the difference is not marginal:
+ * zz-core's door took 627 tool calls while a skill-based profile of zz-core reported ONE run
+ * and all fifteen of its tools as never called. The same query counted those very calls as
+ * sdlc's use, because the run's step happened to be an sdlc skill.
+ *
+ * Which plugin a tool call belongs to is a fact about the DOOR IT ARRIVED ON, never an
+ * inference from the caller — the platform already holds that rule as a knowledge node, and
+ * `zz.event.plugin` is written from the door precisely so this question has one answer. This
+ * is that rule applied where it was missing.
+ *
+ * The manifest decides which shape a plugin is, with no judgement required: a plugin that
+ * declares `servers` owns a door; one that declares none rides the baseline and is a flow. */
+const RUNS_ON_DOOR = `
+  from zz.run r
+ where exists (select 1 from zz.event e
+                where e.run_id = r.id and e.plugin = $1 and e.plugin_version = $2)`;
 
 export async function pluginTraces(
   pool: pg.Pool, plugin: string, version: string,
@@ -81,7 +103,13 @@ export async function pluginTraces(
   /** The flow's declared stage order. A return is defined against it, so a plugin whose manifest
    *  declares none reports no returns rather than guessing an order. */
   stages: string[],
+  /** Whether this plugin DECLARES A SERVER of its own — read from its manifest by the caller.
+   *  True for zz-core, zz-access and zz-plugin-eval; false for sdlc, which declares none and
+   *  reaches the baseline door. It decides where this plugin's evidence lives; see
+   *  RUNS_ON_DOOR. */
+  servesOwnDoor: boolean,
 ): Promise<PluginTraces> {
+  const RUNS_OF = servesOwnDoor ? RUNS_ON_DOOR : RUNS_BY_SKILL;
   const n = async (sql: string): Promise<number> =>
     Number((await pool.query<{ n: string }>(sql, [plugin, version])).rows[0]?.n ?? 0);
 
@@ -176,13 +204,19 @@ export async function pluginTraces(
   //
   // coalesce covers rows written before migration 050 added the column; those are backfilled
   // on this deployment, and the fallback keeps a fresh one honest.
+  // WHAT THE DOOR SERVED, for a plugin that has one — counted from the door directly and not
+  // through a run, because a call that reached the door is use of this plugin whether or not
+  // the reconciler has since tied it to a run.
+  const useSource = servesOwnDoor
+    ? `from zz.event e where e.plugin = $1 and e.plugin_version = $2 and e.kind = 'tool_call'`
+    : `from zz.event e
+        where e.run_id in (select r.id ${RUNS_BY_SKILL})
+          and e.kind = 'tool_call'`;
   const useRows = (await pool.query<{ tool: string; calls: string; refusals: string }>(`
     select coalesce(e.tool_key, e.subject) as tool,
            count(*)::text as calls,
            count(*) filter (where e.ok is false)::text as refusals
-      from zz.event e
-     where e.run_id in (select r.id ${RUNS_OF})
-       and e.kind = 'tool_call'
+      ${useSource}
      group by coalesce(e.tool_key, e.subject)
      order by count(*) desc`, [plugin, version])).rows;
   const use = useRows.map((r) => ({ tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals) }));

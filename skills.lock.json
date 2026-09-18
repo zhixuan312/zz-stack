@@ -72,8 +72,8 @@
     "sha": "a5d73e2d40eb"
   },
   "zz-plugin-define": {
-    "version": "0.4",
-    "sha": "bd839816ca4b"
+    "version": "1.0",
+    "sha": "42da76f204f8"
   },
   "zz-plugin-eval": {
     "version": "0.7",
@@ -92,8 +92,8 @@
     "sha": "327db77c93b6"
   },
   "zz-plugin-report": {
-    "version": "0.4",
-    "sha": "fd7f1f5bf8d7"
+    "version": "1.0",
+    "sha": "d51f767858ec"
   },
   "zz-authoring": {
     "version": "1.1",
@@ -112,8 +112,8 @@
     "sha": "5a5e750ecabf"
   },
   "zz-platform": {
-    "version": "3.43",
-    "sha": "d0c6ac8bff66"
+    "version": "3.44",
+    "sha": "04b312d42315"
   },
   "zz-tldr": {
     "version": "1.2",

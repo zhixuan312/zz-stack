@@ -63,6 +63,13 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",
       dimensions: [{ name: "chain-check probe", kind: "quantitative" }],
     }), /no platform database|carries no threshold/);
+  // round_recommend puts the round's own figures to the TYPED judgement service and records the
+  // word it returns. On a throwaway stack there is no evaluation to recommend on, and there may
+  // be no key either — both are named refusals, and either proves the door serves the tool and
+  // reaches its argument checks before anything is spent.
+  eitherOr("round_recommend refuses an eval_id nothing minted",
+    await callEval("round_recommend", { eval_id: randomUUID() }),
+    /no platform database|no plugin evaluation|TYPESAFE_API_KEY/);
   eitherOr("finding_record refuses an eval_id nothing minted",
     await callEval("finding_record", {
       eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],

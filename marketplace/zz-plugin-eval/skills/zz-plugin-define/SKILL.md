@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 0.4
+version: 1.0
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into rulers.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.md, which is gated — judging does not start until somebody approves it."
 ---
@@ -24,13 +24,30 @@ things measured with two instruments.
 
 ## Two kinds of dimension, and the second one is where the boundary lives
 
-**Qualitative** — a reader scores 1–5 against two ends you write out:
+**Qualitative** — you NAME EVERY LEVEL, low end first, between two and ten of them:
 
 ```
 document depth      qualitative
-  5 = a plan a stranger could execute to the finished thing
-  1 = a list of headings
+  levels:
+    1  a list of headings, or prose restating the request
+    2  a plan with steps, but a stranger would have to ask what each one means
+    3  executable by somebody who already knows this system
+    4  executable by a stranger, with one or two things left implicit
+    5  a stranger could execute it to the finished thing, author absent
 ```
+
+**Two ends and a number is not a scale.** The old form wrote only `5 =` and `1 =` and left the
+three rungs between them to whoever was marking — so two rounds marked the same artifact
+differently for no recorded reason, and neither could say why. `ruler_record` refuses a
+qualitative dimension with no levels for exactly that reason.
+
+It is also what lets the TYPED judge mark it. That service is asked against described levels and
+returns a continuous position between them with the distribution behind it; it cannot be asked
+against two ends and a number. A ruler that names its levels is marked by it; one that does not
+stays with the reading judge, and the two are different scales.
+
+**A level you cannot describe is one nobody should be asked to award.** If you find yourself
+writing "3 = somewhere in between", you have four levels, not five. Say four.
 
 **Quantitative** — a tool computes the fact, and **you** say where the line is:
 

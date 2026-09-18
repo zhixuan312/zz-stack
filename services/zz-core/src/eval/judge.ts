@@ -30,6 +30,10 @@
  */
 import type pg from "pg";
 
+import { configured as typedJudgeConfigured } from "./typesafe.js";
+import { markTyped } from "./judge-typed.js";
+import { applyThresholds } from "./judge-thresholds.js";
+
 /** The judge is NOT the platform's base model. The base model is what the flows' own agents
  *  run on, and judging with it would make the judge exactly as good as the thing being
  *  judged — the one property a ruler must not have. It is pinned separately and defaults to
@@ -71,6 +75,10 @@ const JUDGE_BASE = process.env.ZZ_JUDGE_MODEL || "glm-5.3";
  * never averages with these. */
 const THINKING = (process.env.ZZ_JUDGE_THINKING || "on").toLowerCase() === "on";
 const JUDGE_MODEL = THINKING ? JUDGE_BASE : `${JUDGE_BASE}/no-reasoning`;
+/** What goes in `judge_model` when the typed service marked the round. Read from the same
+ *  environment the client reads, so the recorded name is the model that actually answered. */
+const typedJudgeName = (): string =>
+  `typesafe/${(process.env.TYPESAFE_MODEL || "jev-latest").trim()}`;
 const LLM_BASE = (process.env.LLM_BASE_URL || "").replace(/\/+$/, "");
 const LLM_KEY = process.env.LLM_API_KEY || "";
 
@@ -87,12 +95,22 @@ const TRACE_CAP = 400;
  * print it beside the denominator so a capped round reads as a sample rather than a census. */
 export const SUBJECT_CAP = 20;
 
-export type Subject = "document" | "trace";
+export type Subject = "document" | "trace" | "initiative";
 
-interface Mark { dimension: string; score: number; cite: string; why: string }
+export interface Mark {
+  dimension: string; score: number; cite: string; why: string;
+  /** Present only from the typed judge — the shape of its distribution, and the distribution
+   *  itself, so a later reader can apply their own threshold rather than ours. */
+  confidence?: number; probabilities?: Record<string, number>;
+}
 
 export interface Dim {
   dim_id: string; name: string; five_means: string; one_means: string;
+  /** 2-10 ORDERED level descriptions, low end first — what a qualitative dimension is once a
+   *  ruler names its rungs instead of only its ends. Null on a ruler written before levels
+   *  existed, and that is what decides which judge can mark it: a typed judgement service is
+   *  asked against named levels, and cannot be asked against two ends and a number. */
+  levels: string[] | null;
   /** 'qualitative' is what a dimension has always been: a reader places the artifact between
    *  two written ends. 'quantitative' is a line a person drew over a figure a tool computed,
    *  and it is not scored by reading the artifact at all — see the threshold pass below. */
@@ -144,7 +162,7 @@ const count = (v: unknown): number | null =>
  * The timeout is explicit because fetch has none: without it a stalled endpoint hangs the
  * request until something upstream gives up, and the reason never reaches anybody.
  */
-async function ask(p: pg.Pool, plugin: string | null,
+export async function ask(p: pg.Pool, plugin: string | null,
                    system: string, user: string): Promise<Record<string, unknown> | null> {
   if (!LLM_BASE || !LLM_KEY) throw new Error("no LLM endpoint configured for the judge");
   let body: string;
@@ -324,6 +342,13 @@ export interface MarkItem {
   key: string; label: string;
   runId: string | null; docId: string | null;
   team: string; init: string; path: string;
+  /** THE CLOSING DOCUMENT, when the subject is a whole INITIATIVE rather than one document.
+   *
+   *  "Does the end deliver what the beginning asked for" is a property of the SEQUENCE, and a
+   *  judge handed one document at a time can never see it: it can say a review is well written
+   *  without knowing whether it answers the exploration that opened the work. So this subject
+   *  hands over both ends at once, `path` being the opening document and this the closing one. */
+  closePath?: string;
 }
 
 /**
@@ -408,7 +433,7 @@ const factsKey = (versionId: string): string => `facts:${versionId}`;
  * quantitative one would have stored a 1 — a threshold failed by a spelling, indistinguishable
  * afterwards from a threshold the plugin actually missed.
  */
-function matcher(dims: Dim[]): (named: unknown) => string | null {
+export function matcher(dims: Dim[]): (named: unknown) => string | null {
   const loosen = (n: string) => n.replace(/\([^)]*\)/g, " ").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const byName = new Map(dims.map((d) => [d.name, d.dim_id]));
   const loose = new Map<string, string | null>();
@@ -420,62 +445,6 @@ function matcher(dims: Dim[]): (named: unknown) => string | null {
     const n = String(named ?? "");
     return byName.get(n) ?? loose.get(loosen(n)) ?? null;
   };
-}
-
-/** The threshold pass: quantitative dimensions, scored against figures a tool computed.
- *
- * THE MODEL IS NOT ASKED WHETHER THIS IS GOOD. It is asked one question per dimension — does
- * the recorded threshold hold against the recorded fact — and the stored `reason` is the
- * ruler's own threshold_reason rather than anything it says back. That ordering is the whole
- * guard: the line was written down before any artifact was measured, so it cannot be moved
- * afterwards to flatter the number it produces, and a reason generated here would be exactly
- * that move made invisibly.
- *
- * Met is 5 and unmet is 1 because a line is binary. A band between them would be this pass
- * inventing degrees the ruler did not write.
- */
-async function applyThresholds(p: pg.Pool, plugin: string | null, dims: Dim[], facts: string):
-    Promise<{ dimension: string; meets: boolean; fact: string }[]> {
-  const system = [
-    "The message below is a set of facts about one subject, computed by a tool with no model",
-    "anywhere in the derivation. You are applying thresholds that were written down BEFORE any",
-    "of those measurements were taken. You are not judging quality, you are not reading any",
-    "artifact, and you are not deciding where a line should be.",
-    "",
-    "THE THRESHOLDS:",
-    ...dims.map((d) => `- ${d.name}\n    the line: ${d.threshold}`),
-    "",
-    "For each one, answer whether the line is met by the facts above, and quote the single",
-    "figure you read it against. If the facts do not contain the figure a threshold needs, the",
-    "line is NOT met and the quote says which figure is missing.",
-    "",
-    'Answer as JSON only: {"met": [{"dimension": string, "meets": boolean, "fact": string}]}',
-  ].join("\n");
-  const got = await ask(p, plugin, system, facts);
-  const said = (got?.met as { dimension?: unknown; meets?: unknown; fact?: unknown }[] | undefined) ?? [];
-  const dimOf = matcher(dims);
-  const answered = new Map<string, { meets: boolean; fact: string }>();
-  for (const one of said) {
-    const id = dimOf(one.dimension);
-    if (!id || answered.has(id)) continue;
-    answered.set(id, {
-      // The type is not trusted, for the same reason the qualitative pass coerces its score: a
-      // model asked for a boolean returns the string "true" often enough that reading it
-      // strictly turns a met line into an unmet one.
-      meets: one.meets === true || String(one.meets).toLowerCase() === "true",
-      fact: String(one.fact ?? "").slice(0, 800),
-    });
-  }
-  return dims.map((d) => {
-    const hit = answered.get(d.dim_id);
-    return {
-      dimension: d.name,
-      // ABSENT IS NOT MET. A dimension the answer skipped has no evidence that its line holds,
-      // and scoring it met would let a truncated answer pass a threshold silently.
-      meets: hit?.meets ?? false,
-      fact: hit?.fact || "the answer said nothing about this dimension",
-    };
-  });
 }
 
 /**
@@ -516,6 +485,28 @@ export async function markAll(
   // caller; anything else is a subject with no plugin to charge, and null says so.
   const plugin = m.noun === "plugin" ? m.name : null;
 
+  // TWO KINDS OF DIMENSION, AND ONLY ONE OF THEM IS SHOWN THE ARTIFACT. A quantitative
+  // dimension asks whether a measured figure clears a line; putting it in the prompt below
+  // would ask the judge to re-derive that figure from a document that does not contain it.
+  const qual = dims.filter((d) => d.kind !== "quantitative");
+  const quant = dims.filter((d) => d.kind === "quantitative");
+
+  // WHICH JUDGE MARKS THIS RULER, decided once per round and recorded on it.
+  //
+  // The typed service is asked against NAMED LEVELS, so it can only mark a ruler whose
+  // dimensions have them. A ruler written before levels existed carries two ends and a 1-5
+  // scale, and there is nothing to ask — those stay with the reading judge, which is also what
+  // keeps their earlier rounds comparable.
+  //
+  // Recorded rather than assumed: `judge_model` goes on the round, so a change of judge reads
+  // like a change of rubric version instead of silently redefining what every earlier score
+  // meant. Two rounds marked by different judges are two scales, and the column is what lets a
+  // reader see that rather than discover it.
+  const typed = typedJudgeConfigured() && qual.length > 0
+    && qual.every((d) => (d.levels?.length ?? 0) >= 2);
+  const judgeName = typed ? typedJudgeName() : JUDGE_MODEL;
+
+
   // The session. A caller that passes an id continues that evaluation; one that does not
   // starts a new one, which is what a fresh round is.
   let session = evalId;
@@ -549,7 +540,7 @@ export async function markAll(
     session = (await p.query<{ id: string }>(`
       insert into zz.eval (${m.versionColumn}, rubric_id, judge_model, selection_note, doc_count, is_control)
       values ($1::uuid, $2::uuid, $3, $4, 0, $5) returning id::text`,
-      [versionId, m.rubricId, JUDGE_MODEL,
+      [versionId, m.rubricId, judgeName,
        `${kind === "document" ? "documents" : "run traces"}` +
        ` of ${m.name} ${m.version}${control ? ", control" : ""}`, control])).rows[0].id;
   }
@@ -561,12 +552,6 @@ export async function markAll(
 
   const todo = m.items.filter((x) => !done.has(x.key)).slice(0, take);
 
-  // TWO KINDS OF DIMENSION, AND ONLY ONE OF THEM IS SHOWN THE ARTIFACT. A quantitative
-  // dimension asks whether a measured figure clears a line; putting it in the prompt below
-  // would ask the judge to re-derive that figure from a document that does not contain it.
-  const qual = dims.filter((d) => d.kind !== "quantitative");
-  const quant = dims.filter((d) => d.kind === "quantitative");
-
   const controlText = control && todo.length ? await m.control() : null;
 
   const system = systemFor(control ? "trace" : kind, m.noun, m.name, m.version,
@@ -576,13 +561,17 @@ export async function markAll(
   const skipped: string[] = [], unmatched: string[] = [];
   let stored = 0, uncited = 0, cutTotal = 0;
 
-  const store = async (subjId: string, dim: string, score: number, quote: string, reason: string) => {
+  const store = async (subjId: string, dim: string, score: number, quote: string, reason: string,
+                      confidence?: number, probabilities?: Record<string, number>) => {
     await p.query(`
-      insert into zz.eval_score (eval_id, subject_id, dimension_id, score, quote, reason, is_control)
-      values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7)
+      insert into zz.eval_score (eval_id, subject_id, dimension_id, score, quote, reason,
+                                 is_control, confidence, probabilities)
+      values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb)
       on conflict (eval_id, subject_id, dimension_id, is_control) do update
-        set score = excluded.score, quote = excluded.quote, reason = excluded.reason`,
-      [session, subjId, dim, score, quote.slice(0, 800), reason.slice(0, 800), control]);
+        set score = excluded.score, quote = excluded.quote, reason = excluded.reason,
+            confidence = excluded.confidence, probabilities = excluded.probabilities`,
+      [session, subjId, dim, score, quote.slice(0, 800), reason.slice(0, 800), control,
+       confidence ?? null, probabilities ? JSON.stringify(probabilities) : null]);
     stored++;
   };
   const subjectRow = async (init: string, path: string | null, runId: string | null, docId: string | null) =>
@@ -618,13 +607,28 @@ export async function markAll(
   for (const x of todo) {
     let text = "", truncated = 0;
     if (controlText) { text = controlText.text; truncated = controlText.truncated; }
+    else if (x.closePath) {
+      // BOTH ENDS, LABELLED. The judge is asked whether the second answers the first, so it
+      // has to be able to tell them apart — an unlabelled concatenation reads as one long
+      // document and the question becomes unanswerable.
+      const opened = bodyOf(x.team, x.init, x.path) ?? "";
+      const closed = bodyOf(x.team, x.init, x.closePath) ?? "";
+      text = opened.trim() && closed.trim()
+        ? `=== THE BEGINNING: ${x.init}/${x.path} ===\n\n${opened}\n\n` +
+          `=== THE END: ${x.init}/${x.closePath} ===\n\n${closed}`
+        : "";
+    }
     else if (x.docId) text = bodyOf(x.team, x.init, x.path) ?? "";
     else if (x.runId) { const t = await traceOf(p, x.runId); text = t.text; truncated = t.truncated; }
     if (!text.trim()) { skipped.push(`${x.label} — nothing to read`); continue; }
     let marks: Mark[] = [];
     try {
-      const got = await ask(p, plugin, system, text);
-      marks = (got?.marks as Mark[] | undefined) ?? [];
+      if (typed) {
+        marks = await markTyped(qual, text);
+      } else {
+        const got = await ask(p, plugin, system, text);
+        marks = (got?.marks as Mark[] | undefined) ?? [];
+      }
     } catch (err) {
       // Out of quota stops the round; anything else is this subject's problem, and the next
       // call retries it with a fresh budget.
@@ -649,7 +653,8 @@ export async function markAll(
       // judge worth keeping and reporting.
       if (!String(mk.cite ?? "").trim()) uncited++;
       const score = Math.max(1, Math.min(5, Number(mk.score) || 1));
-      await store(subjId, dim, score, String(mk.cite ?? ""), String(mk.why ?? ""));
+      await store(subjId, dim, score, String(mk.cite ?? ""), String(mk.why ?? ""),
+                  mk.confidence, mk.probabilities);
       sum += score; n++;
     }
     cutTotal += truncated;

@@ -29,7 +29,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
-import { entryOf, toolsNamedBy } from "./plugin-eval.js";
+import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
 import { Dim, MarkItem, Marking, SUBJECT_CAP, Subject, markAll, traceOf } from "./judge.js";
 import { logActivity } from "../persist.js";
 import { pluginCases } from "./plugin-cases.js";
@@ -84,6 +84,50 @@ async function usageRuns(p: pg.Pool, plugin: string, version: string) {
      order by r.started_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
 }
 
+/** The INITIATIVES this plugin version worked on, each with both of its ends.
+ *
+ * The subject is the sequence, not a document: "does the end deliver what the beginning asked
+ * for" cannot be asked of one file. So each row is one initiative with its FIRST document and
+ * its LAST — earliest and latest by creation, which is the order they were written in — and an
+ * initiative that has only one document is not a subject at all, because it has no two ends to
+ * compare.
+ *
+ * Snapshots are excluded like everywhere else: `_versions/` holds frozen copies of approvals,
+ * and the newest of them is not the end of the work. */
+async function usageInitiatives(p: pg.Pool, plugin: string, version: string) {
+  return (await p.query<{ team_slug: string; initiative: string; open_path: string;
+                          close_path: string; open_id: string; scored: boolean }>(`
+    with touched as (
+      select distinct d.team_slug, d.initiative
+        from zz.doc d
+        join zz.run r on r.id = d.produced_by_run_id
+        join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
+        join zz.plugin_version pv on pv.id = pvs.plugin_version_id
+        join zz.plugin p on p.id = pv.plugin_id
+       where p.name = $1 and pv.version = $2
+    ),
+    ends as (
+      select t.team_slug, t.initiative,
+             (array_agg(d.path order by d.created_at))[1]                as open_path,
+             (array_agg(d.id::text order by d.created_at))[1]            as open_id,
+             (array_agg(d.path order by d.created_at desc))[1]           as close_path,
+             count(*)                                                    as docs
+        from touched t
+        join zz.doc d on d.team_slug = t.team_slug and d.initiative = t.initiative
+       where d.path not like '\\_versions/%'
+       group by t.team_slug, t.initiative
+    )
+    select e.team_slug, e.initiative, e.open_path, e.close_path, e.open_id,
+           exists (select 1 from zz.eval_subject es
+                    where es.doc_id = e.open_id::uuid
+                      and es.plugin_version_id = (select pv.id from zz.plugin_version pv
+                                                    join zz.plugin p on p.id = pv.plugin_id
+                                                   where p.name = $1 and pv.version = $2)) as scored
+      from ends e
+     where e.docs > 1
+     order by e.initiative desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
+}
+
 /** The ruler this plugin VERSION declares, dimension by dimension. Through
  *  zz.plugin_version.rubric_id and never through zz.rubric.plugin_id: a plugin may carry more
  *  than one ruler over its life, and which one judges THIS version is a decision ruler_affirm
@@ -92,6 +136,10 @@ async function pluginRuler(p: pg.Pool, plugin: string, version: string) {
   return (await p.query<Dim & { version_id: string; rubric_id: string; rubric_version: string; subject: string }>(`
     select pv.id::text as version_id, rb.id::text as rubric_id, rb.version as rubric_version,
            rb.subject, d.id::text as dim_id, d.name, d.five_means, d.one_means,
+           -- THE NAMED LEVELS, which decide which judge can mark this ruler: a typed
+           -- judgement service is asked against described levels and cannot be asked against
+           -- two ends and a number. Null on a ruler written before levels existed.
+           d.levels,
            d.kind, d.threshold, d.threshold_reason
       from zz.plugin p
       join zz.plugin_version pv on pv.plugin_id = p.id
@@ -121,7 +169,7 @@ const bodyOf = (team: string, initiative: string, path: string): string | null =
 async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<string> {
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages);
+  const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
   const cases = await pluginCases(p, plugin, version);
   const { stage_paths, ...figures } = traces;
   const named = toolsNamedBy(plugin);
@@ -161,7 +209,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
       const [traces, cases, docs, runs] = await Promise.all([
-        pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages),
+        pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin)),
         pluginCases(p, plugin, version),
         usageDocs(p, plugin, version),
         usageRuns(p, plugin, version),
@@ -326,8 +374,23 @@ export function registerPluginJudgeTools(server: McpServer): void {
         // as insurance: an unreachable branch costs the next reader the time to work out what
         // could ever trip it, and the answer is nothing.
         const declared = (dims[0].subject ?? "auto") as Subject | "auto";
-        const docs = declared === "trace" ? [] : await usageDocs(p, plugin, version);
-        const kind: Subject = docs.length ? "document" : "trace";
+        // AN INITIATIVE IS ASKED FOR, never fallen back to. A ruler whose dimensions are about
+        // the sequence — does the end deliver the beginning — declares `subject: "initiative"`,
+        // and if this version has left no initiative with two ends then that ruler cannot be
+        // scored and says so, rather than quietly marking single documents against dimensions
+        // written about a whole arc.
+        const inits = declared === "initiative" ? await usageInitiatives(p, plugin, version) : [];
+        if (declared === "initiative" && !inits.length) {
+          return text(
+            `ERROR: ${plugin} ${version} has left no initiative carrying both a first and a ` +
+            "last document, so a ruler whose subject is the initiative has nothing to read. " +
+            "This is a fact about its reach rather than its quality — plugin_profile says how " +
+            "thin the evidence is. Either wait for an initiative to close under this version, " +
+            "or record a ruler whose subject is the document.");
+        }
+        const docs = declared === "trace" || declared === "initiative"
+          ? [] : await usageDocs(p, plugin, version);
+        const kind: Subject = inits.length ? "initiative" : docs.length ? "document" : "trace";
         const runs = kind === "trace" ? await usageRuns(p, plugin, version) : [];
         if (kind === "trace" && !runs.length) {
           return text(
@@ -335,7 +398,11 @@ export function registerPluginJudgeTools(server: McpServer): void {
             "there is nothing to judge. This is a fact about its reach, not its quality: " +
             "plugin_profile says how thin the evidence is and why.");
         }
-        const items: MarkItem[] = kind === "document"
+        const items: MarkItem[] = kind === "initiative"
+          ? inits.map((i) => ({ key: i.open_id, label: `${i.initiative} (${i.open_path} -> ${i.close_path})`,
+                                runId: null, docId: i.open_id, team: i.team_slug,
+                                init: i.initiative, path: i.open_path, closePath: i.close_path }))
+          : kind === "document"
           ? docs.map((d) => ({ key: d.id, label: `${d.initiative}/${d.path}`, runId: null,
                                docId: d.id, team: d.team_slug, init: d.initiative, path: d.path }))
           : runs.map((r) => ({ key: r.run_id, label: r.started, runId: r.run_id,

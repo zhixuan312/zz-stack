@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EVAL_ALIAS } from "../packages/contracts/dist/index.js";
 const fail = [];
 
-const registered = new Set();
+const registered = new Set<string>();
 for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
@@ -20,7 +20,25 @@ for (const keep of ["plugin_locate", "plugin_profile", "plugin_conform"]) {
 for (const old of Object.keys(EVAL_ALIAS)) {
   if (registered.has(old)) fail.push(`${old} is still registered`);
 }
-if (registered.size !== 10) fail.push(`the eval door registers ${registered.size} tools, expected 10`);
+// THE SET, NOT THE SIZE. This asserted a count of 10, which fails identically whether a tool
+// was lost or one was added — and says neither. Naming the set fails on both and tells you
+// which: a missing name is a tool that vanished, an unexpected one is a tool nobody wrote into
+// the door's own description.
+const EXPECTED = new Set([
+  "plugin_locate", "plugin_profile", "plugin_conform",
+  "ruler_read", "ruler_record", "ruler_affirm",
+  "round_judge", "round_scores", "round_recommend",
+  "case_record", "finding_record",
+]);
+for (const want of EXPECTED) {
+  if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);
+}
+for (const got of registered) {
+  if (!EXPECTED.has(got)) {
+    fail.push(`${got} is registered on the eval door and this check does not expect it — add ` +
+              "it here and to the door's own description, or it is a tool nobody announced");
+  }
+}
 
 // AC-2.13: every description on this door says when / returns / refuses.
 //
@@ -116,7 +134,7 @@ if (namedARegisteredTool === 0) fail.push(`no grader under ${evalsDir} names a t
 const CHAIN_DIR = "packages/tools/src/testing";
 const CHAIN_FILES = readdirSync(CHAIN_DIR).filter((f) => /^chain-.*\.ts$/.test(f));
 const CHAIN = `${CHAIN_DIR}/chain-*.ts`;
-const called = new Set();
+const called = new Set<string>();
 for (const f of CHAIN_FILES) {
   for (const m of readFileSync(`${CHAIN_DIR}/${f}`, "utf8").matchAll(/callEval\(\s*"([a-z0-9_]+)"/g)) called.add(m[1]);
 }

@@ -33,28 +33,28 @@
   },
   "zz-core": {
     "version": "0.51.0",
-    "digest": "6ce29c68",
+    "digest": "894fcd47",
     "cases_digest": "f64bba10",
     "skills": {
       "zz-authoring": "60f258ebec54",
       "zz-breakout": "44950226bab5",
       "zz-deck": "564cc938a102",
       "zz-handover": "5a5e750ecabf",
-      "zz-platform": "d0c6ac8bff66",
+      "zz-platform": "04b312d42315",
       "zz-tldr": "ac9890b7fffb"
     }
   },
   "zz-plugin-eval": {
     "version": "0.51.0",
-    "digest": "fac8ffcf",
+    "digest": "bee83725",
     "cases_digest": "cfa54fb8",
     "skills": {
-      "zz-plugin-define": "bd839816ca4b",
+      "zz-plugin-define": "42da76f204f8",
       "zz-plugin-eval": "4d8fdcfa5956",
       "zz-plugin-judge": "efd2664c0e10",
       "zz-plugin-locate": "641a2d2e8a99",
       "zz-plugin-profile": "327db77c93b6",
-      "zz-plugin-report": "fd7f1f5bf8d7"
+      "zz-plugin-report": "d51f767858ec"
     }
   }
 }

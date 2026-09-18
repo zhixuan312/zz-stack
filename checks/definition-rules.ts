@@ -183,7 +183,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   // Evaluation — the only subject in which a model's judgement is admissible.
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
   ruler_read: "evaluation", ruler_record: "evaluation", ruler_affirm: "evaluation",
-  round_judge: "evaluation", round_scores: "evaluation",
+  round_judge: "evaluation", round_scores: "evaluation", round_recommend: "evaluation",
   case_record: "evaluation", finding_record: "evaluation",
 };
 {

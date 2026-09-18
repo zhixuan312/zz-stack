@@ -99,6 +99,16 @@ function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined)
   return all;
 }
 
+/** Does this plugin DECLARE A SERVER of its own?
+ *
+ * The manifest answers it with no judgement required: a plugin that declares `servers` owns a
+ * door and its evidence is that door's traffic; one that declares none rides the baseline and
+ * is a flow, whose evidence is the runs of its own skills. zz-core, zz-access and
+ * zz-plugin-eval are the first kind; sdlc is the second. */
+export function servesOwnDoor(plugin: string): boolean {
+  return (entryOf(plugin)?.manifest.servers?.length ?? 0) > 0;
+}
+
 /** Every tool this plugin's own skills tell an agent to call.
  *
  * NOT "every tool on the surfaces it declares", which was the first shape and the wrong
@@ -203,7 +213,7 @@ export function registerPluginEvalTools(server: McpServer): void {
       if (!pool) return noDb();
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-      const traces = await pluginTraces(pool, plugin, version, toolsNamedBy(plugin), stages);
+      const traces = await pluginTraces(pool, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
       const cases = await pluginCases(pool, plugin, version);
       const enough = traces.sufficient || cases.sufficient;
       return json({

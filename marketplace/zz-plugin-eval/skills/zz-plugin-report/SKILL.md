@@ -1,153 +1,150 @@
 ---
 name: zz-plugin-report
-version: 0.4
-description: Stage 5 of plugin evaluation. Read the scores back, say what the pattern is, propose the cases the next round should lock in, and write findings.md — which is gated and closes the initiative.
+version: 1.0
+description: Stage 5 of plugin evaluation. Take the recommendation from the typed judge, read the scores back, and write findings.md — five sections, gated, and it closes the initiative.
 when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation and what admits the proposed cases into the suite."
 ---
 
 # zz-plugin-report
 
 ```
-round_scores(eval_id)     every score, the control's, and the findings
+round_scores(eval_id)       every score, the control's, the thresholds, the findings
+finding_record(eval_id, …)  what recurred, and what change you expect it to move
+round_recommend(eval_id)    the verdict — ONE WORD, and it is not yours to choose
 ```
 
-Then `findings.md`, with the six sections the manifest declares.
+Then `findings.md`, with the five sections the manifest declares — written with
+`document_write`, put in front of the person with `document_present`, and approved by them with
+`document_approve`. The fetch is not a formality: it is what puts the bytes on the record as
+seen before the gate, and approving a document nobody fetched leaves the approval standing on
+text the record cannot show anyone read.
 
-## The six sections, and what each is for
+## Which model decides what, because this is the whole design
 
-The manifest declares them and this stage writes all six.
+**The typed judge fixes the numbers. You write what they mean. In that order.**
 
-**The verdict** — one paragraph, at the top, that a person can act on. Whether the plugin does
-the job it claims, on which evidence, and how far you would trust it. If the control failed,
-the verdict is "this round is void" and nothing below it is a number.
+| | typed judge | you |
+|---|---|---|
+| the mark against named levels | ✓ | |
+| whether a threshold is met | ✓ | |
+| the recommendation enum | ✓ | |
+| confidence and the distribution behind it | ✓ | |
+| the one-sentence outcome | | ✓ |
+| what is good, what is bad, what to do | | ✓ |
+| why a mark landed where it did | | ✓ |
 
-**What the evidence says** — the findings, each naming which block it rests on.
+The ordering is the safeguard. A typed answer cannot be off-vocabulary or unparseable. A written
+explanation cannot invent a score to suit its argument, because the score was settled before any
+prose existed. Lose the order and you have neither guarantee.
 
-**Where the evidence is thin** · **Proposed cases** · **Recommendation** · **What this does not
-say** — below.
+**So `round_recommend` is not advisory and you do not overrule it.** If the word it returns
+surprises you, that is the finding — write the paragraph explaining what the evidence shows and
+let the word stand. An agent that reaches a different verdict in prose has reintroduced exactly
+the failure the enum exists to remove. The one thing you may do is say, in section 1, that you
+find it surprising and why.
+
+**When the service has no key it reports the judgement as absent, with the reason.** Write the
+report without a recommendation and say so in section 1. Do not substitute a word of your own.
+
+## The five sections
+
+**`## 1 · Outcome`** — short. Four things and nothing else:
+
+- **Recommendation** — the enum from `round_recommend`, verbatim: `keep`, `keep-and-change`,
+  `re-run`, `not-evaluable`, `retire`.
+- **Confidence** — the number it returned, and the runner-up option if the distribution is not
+  concentrated. A 0.42 spread across two options is a different message from a 0.95.
+- **Key numbers** — the same table every time, so two reports can be read side by side: each
+  dimension's mean, the judge-on-trial gap, every threshold met-or-not, the case delta.
+- **One paragraph** — why those numbers support that word. Written from them, not beside them.
+
+Anything that is not one of those four belongs in a later section.
+
+**`## 2 · What is good`** — each claim carrying the figure it rests on.
+
+**`## 3 · What is bad`** — defects IN THE PLUGIN, each carrying its figure.
+
+**`## 4 · What to do to improve it`** — the actions. A table reads best: what to change, the
+finding id it was recorded as, and what you expect it to move. Every generic finding should
+appear here; if one cannot, it was not a generic finding.
+
+**`## 5 · What this does not establish`** — two things that used to be separate sections and
+belong together, because both answer "do not read more into this than it says":
+
+- what could NOT be measured, and why — thin evidence, a void control, a dimension with no
+  subject to read
+- what the numbers do not mean even though they exist — a ceiling score over n=3, a delta that
+  measures reachability rather than whether anybody is better off
+
+## `not-evaluable` is a verdict about the MEASUREMENT
+
+It is in the enum because "we could not measure this" is a real and useful answer, and reporting
+it as a low score defames the plugin. The first report written on this platform made exactly
+that mistake: zz-core's trace window held one event, its round was void, and the report called
+the plugin weak. The plugin was not weak. The measurement was absent.
+
+**Section 3 and section 5 are never merged for this reason.** *Bad* means the evidence shows a
+defect. *Not established* means there is no evidence. A reader who cannot tell them apart cannot
+act on either.
 
 ## Lead with whether the numbers can be trusted
 
-**The control comes first, before any score.** If the control scored close to the real pairing,
-the round is void and every number below it is noise — a reader must learn that before they read
-anything they might act on, not in a caveat at the bottom.
+**The control comes first, before any score.** If the real-vs-control gap is under 1.5 the ruler
+failed to tell the right artifact from the wrong one, the round is void, and every mean below it
+is noise. That belongs in section 1 beside the recommendation, never in a caveat at the bottom —
+and `round_recommend` will usually answer `re-run` when it happens, which is the correct word.
 
 Then the coverage. A verdict drawn from 198 of 510 events is a verdict about 198 events, and the
-sentence has to say so.
+sentence says so.
 
-## Say what the evidence says, and which evidence
+## Findings: generic means you can name the change
 
-The two blocks answer different questions and a finding has to name which one it rests on:
+`finding_record` refuses a generic finding that proposes no change, and the refusal is right.
+Generic means *this is the plugin's habit and worth changing the plugin over* — so say what
+change and what you expect it to move. If you cannot, it is an observation about one round:
+scope it `specific`, or leave it in the prose where a reader can weigh it without the platform
+treating it as a claim about the plugin.
 
-- a **case** finding is causal — the plugin made the difference, because the arm without it did
-  not.
-- a **trace** finding is real but not causal — this is what happened, with this plugin
-  installed, in work somebody actually did.
+An observation that something is GOOD is never a generic finding. It has no proposed change by
+construction. It belongs in section 2.
 
-A finding that mixes them without saying so is a claim nobody can check.
+## ONE CHANGE, AND SAY WHAT YOU EXPECT IT TO DO
 
-## Record the findings, not just write them
+**A generic finding proposes ONE change and what you expect it to move.** Two changes in a round
+make the next round unable to attribute either — the number moves and nothing says which change
+moved it. And a recommendation with no stated expectation cannot be contradicted, which means it
+can never be wrong, which means it was never a measurement.
 
-```
-finding_record(eval_id, findings)
-```
+**Say where the change happens.** The catalog is read-only wherever the platform runs: nothing
+in this flow edits a plugin, and `finding_record` lands everything `deferred` for that reason. A
+change is **a repository edit and a release by whoever owns the plugin**. A recommendation that
+does not say so dead-ends in a document nobody can act from.
 
-`findings.md` is what a person reads. These rows are what the NEXT round reads — a finding that
-exists only in prose cannot be asked "did this recur?" six weeks later, and that question is
-the whole reason to keep a series.
+## After the close comes the handover
 
-Each is **generic** (it recurs across unrelated work, so it is the plugin's habit and worth
-changing the plugin over) or **specific** (one piece of work's own problem). The tool refuses a
-generic finding with no proposed change, and the refusal is the same argument as the
-Recommendation section below: a claim about the plugin that names no change leaves the next
-round nothing to test against.
+`findings.md` is this flow's closing document, so approving it lets `initiative_close()` record
+the outcome — one call, naming who accepted it. That ends the EVALUATION, not the cycle.
 
-For somebody else's plugin, findings carry no proposed change at all. We assess and stop.
-
-Recording is not deciding. A finding lands `deferred`; applying or rejecting it is a separate
-act by whoever owns the plugin.
-
-## Where the evidence is thin
-
-Its own section, and it is not an apology. "Four usable runs, so nothing here rests on trace
-evidence" is a complete and useful finding — it tells a reader what the next round needs.
-**A plugin nobody has used is a correct outcome**, and the honest report of it is more valuable
-than a number computed from two runs.
-
-## Proposed cases — the section that makes the next round better
-
-This is where the loop closes, and it is the most valuable thing this stage produces.
-
-A trace finding says *what happened once*. A case says *whether it still happens*. So every
-finding that could recur becomes a proposed case here, with its provenance:
-
-```markdown
-### recovers-from-a-bad-spec  (new)
-  from: this round's `returns` — spec-audit sent the spec back three times
-  locks: that a flow can return to an earlier stage and re-ground
-  expected Δ: high — a bare agent would edit forward rather than go back
-
-  <the case.yaml, whole>
-```
-
-**Approving `findings.md` is what admits these into the suite.** Same reasoning as the ruler:
-a case defines what good means, and a system that writes its own cases and then grades itself
-against them is a candidate setting its own exam.
-
-Prefer graders that cost nothing — `tool_order`, `tool_used`, `regex`, `file_exists` — over
-`llm`, which is a paid model call per run. And a case that both arms pass tests nothing about
-the plugin: say the delta you expect and why, so a later reader can tell a regression from a
-badly written case.
-
-## Recommendation — ONE CHANGE, AND SAY WHAT YOU EXPECT IT TO DO
-
-Say what to change and why. **Do not change it.**
-
-**One change, with its expected effect stated.** Not a list of five improvements — one, named,
-with the number you expect it to move and roughly how far. "Drop /manage from sdlc's servers;
-never_called should fall from 6 to 3" is a recommendation the next round can contradict.
-"Tighten the plan stage" is not, and a recommendation nothing can contradict is one nobody can
-learn from — it reads as vindicated whatever happens next, which is the opposite of evidence.
-
-Five changes at once have the same problem in a different shape: if the next round moves, you
-cannot say which one moved it. The catalog is read-only wherever the platform
-runs, and that is what keeps every agent's copy of a skill identical to what the gate checked.
-The change is a repository edit and a release by whoever owns the plugin.
-
-For somebody else's plugin there is no recommendation at all — we assess and stop.
-
-## What this does not say
-
-An explicit section, because the honest limits are part of the finding. Cases score prompts
-somebody imagined; traces see only what has been run. Neither sees the path nobody has taken.
-
-## Closing
-
-Write it with `document_write`, then fetch it back with `document_present` and put what THAT returns in
-front of the person. They are approving the document, not your account of it — and a write that
-succeeded is not a document anybody read.
-
-`findings.md` is gated and closing. Once a person approves it, close the initiative directly —
-one `initiative_close()` call, as `zz-platform` describes — and say plainly whether the evaluation reached
-a verdict or stopped for want of evidence. Both are complete outcomes; only one of them is a
-score.
-
-**The close ends the evaluation, not the cycle.** `initiative_status` returns
-`action: handover` afterwards, and `zz-handover` is what writes it — cold, after the work is
-over. Report the initiative closed and say the handover is what remains.
+`initiative_status` then answers `action: "handover"` until `handover.md` exists and is
+approved. `zz-handover` writes it, cold and afterwards: it reads the closed initiative, mints
+what generalises onto the platform shelf, and proposes to the team shelf what only this team
+needs. Report the evaluation closed and say the handover is what remains.
 
 ## Pitfalls
 
-❌ **Burying the control at the bottom.** It decides whether the rest is readable.
+❌ **Writing a verdict in prose that differs from the enum.** The enum is the verdict.
 
-❌ **A verdict without its coverage.**
+❌ **Quoting a void round's means.** If the control failed, those numbers are not results. Say
+the round is void and report no mean.
 
-❌ **Mixing a case finding and a trace finding in one sentence.**
+❌ **Padding section 4.** Zero actions is a correct outcome for a plugin that is working.
 
-❌ **Proposing a case with no expected delta.** Nobody can tell later whether it broke or was
-always useless.
+❌ **Merging sections 3 and 5.** See above — it is the mistake that produced the first wrong
+report on this platform.
 
-❌ **Making the change.** This flow measures.
+❌ **Comparing two plugins.** Every ruler is its own plugin's. Two scores taken under two rulers
+are two things measured with two instruments, and a ranking of them means nothing.
 
-❌ **Padding "Proposed cases" to look productive.** Zero is a correct answer when nothing this
-round could recur.
+❌ **Comparing across a change of judge.** The judge is recorded per round. Marks from the
+reading judge and marks from the typed judge are two scales; put them in two tables or say which
+is which.

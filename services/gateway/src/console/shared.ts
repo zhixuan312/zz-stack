@@ -259,8 +259,29 @@ export function flowShape(flow: string | null): Map<string, { gate: boolean; clo
 }
 
 export function stageOf(docs: StageDoc[], flow: string | null): {
-  at: number; of: number; stage: string; steps: { name: string; what: string; produces: string }[];
+  at: number; of: number; stage: string;
+  /** EVERY STEP OF THE DIAGRAM, bookends included, in order.
+   *
+   * `open` and `closed` are steps of every flow because they are acts of every initiative —
+   * the folder was created, and `initiative_close` ended it — and no manifest declares them.
+   * Between them are the flow's own stages, whatever they are.
+   *
+   * `state` is DERIVED, never stored: the manifest says which documents a stage writes and
+   * which of those carry a gate, and the record says which exist and which were approved.
+   *   done      every document this step declares exists, and every gated one is approved
+   *   partial   its documents exist, but a gate on one is still open
+   *   empty     it declares documents and none has been written
+   *   untracked it declares none, so nothing it could leave behind exists to look for
+   * `current` marks where an open initiative is now. */
+  steps: {
+    name: string; what: string; produces: string;
+    state: "done" | "partial" | "empty" | "untracked"; current: boolean;
+  }[];
+  /** Placed by INDEX INTO `steps`, bookends included, so the console places nothing itself. */
   gates: { name: string; passed: boolean; after: number }[]; accepted: boolean;
+  /** Everything the flow asks for was there at the close: every gate approved, every document
+   *  it requires to close present. False on a close that stopped short. */
+  complete: boolean;
   /** WHETHER IT IS FINISHED, which is a different question from whether a person signed it.
    *  All three outcomes mean closed, so a `delivered` initiative is as finished as an
    *  `accepted` one — the stepper drew only `accepted` as done, so a delivered initiative's
@@ -354,28 +375,63 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
       // said where its documents are written.
       reached = Math.max(reached, i >= 0 ? i + 1 : declared.filter((x) => byName.has(x.name)).length);
     }
-    // CLOSED IS THE END, whichever of the three words closed it. An initiative that stopped
-    // is not sitting at the stage after its last document — it is finished, and drawing it
-    // mid-flow invites somebody to go and continue it.
+    // A CLOSE IS AN ACT, NOT A POSITION. `initiative_close` is the only thing that closes an
+    // initiative, so being closed is its own step at the end rather than a filling-in of the
+    // stages — a diagram that shows a close by ticking everything before it claims work nobody
+    // did. OPENING is the same act at the other end: the folder exists, which is what `open`
+    // means, and no manifest declares either.
     const closed = outcome !== null;
-    const at = closed ? stages.length : Math.min(stages.length, Math.max(1, reached + 1));
+    const at = closed
+      ? Math.max(1, reached)
+      : Math.min(stages.length, Math.max(1, reached + 1));
+    // WAS EVERYTHING THE FLOW ASKS FOR THERE WHEN IT CLOSED? Every gate approved and every
+    // document required to close present. Both closes are closes and the diagram says so
+    // either way; this is what tells a reader whether it ran the whole way.
+    const complete = gates.every((g) => g.passed)
+      && declared.filter((d) => d.requiredForClose === true).every((d) => byName.has(d.name));
+    // EACH STAGE FROM WHAT IT DECLARES, mechanically. A stage that writes nothing can never be
+    // evidenced — there is no document to find and no approval to read — so it is `untracked`
+    // rather than guessed at in either direction. Everything else follows from the manifest.
+    const stageState = (n: string): "done" | "partial" | "empty" | "untracked" => {
+      const mine = declared.filter((d) => d.stage === n);
+      if (!mine.length) return "untracked";
+      const written = mine.filter((d) => byName.has(d.name));
+      if (!written.length) return "empty";
+      const gatesOpen = mine.some((d) => d.gate === true && byName.get(d.name)?.status !== "approved");
+      return written.length === mine.length && !gatesOpen ? "done" : "partial";
+    };
+    const flowSteps = stages.map((n) => ({
+      name: label(String(n)),
+      // What this stage writes, from the manifest. A stage that writes nothing says so.
+      produces: declared.filter((d) => d.stage === n).map((d) => d.name).join(", "),
+      // The stage skill's own first sentence, and only the first. A skill that ships no
+      // description leaves the caption empty rather than being given one the console made
+      // up. The leading "Stage N of <flow>." is stripped if a skill still carries one: the
+      // node already shows the number, and a second copy in prose drifts — two of these
+      // said the wrong stage before the numbers were taken out of the descriptions.
+      what: (/^description:\s*(.+)$/m.exec(skillText(flow as string, String(n)) ?? "")?.[1] ?? "")
+        .replace(/^["']|["']$/g, "")
+        .replace(/^Stage \d+[^.]*\.\s*/i, "")
+        .split(/(?<=\.)\s/)[0].trim().slice(0, 120),
+      state: stageState(String(n)),
+      current: false,
+    }));
+    // WHERE IT IS NOW is the first stage that is not done, and only while it is open. A closed
+    // initiative is not anywhere.
+    const currentAt = flowSteps.findIndex((st) => st.state !== "done" && st.state !== "untracked");
+    if (!closed && currentAt >= 0) flowSteps[currentAt].current = true;
+    const steps = [
+      { name: "open", what: "the initiative exists: its folder was created and it was opened",
+        produces: "", state: "done" as const, current: false },
+      ...flowSteps,
+      { name: "closed", what: "initiative_close recorded an outcome",
+        produces: "", state: (closed ? "done" : "empty") as "done" | "empty", current: false },
+    ];
     return {
-      at, of: stages.length, stage: label(String(stages[at - 1] ?? "")), gates, accepted,
-      closed, outcome,
-      steps: stages.map((n) => ({
-        name: label(String(n)),
-        // What this stage writes, from the manifest. A stage that writes nothing says so.
-        produces: declared.filter((d) => d.stage === n).map((d) => d.name).join(", "),
-        // The stage skill's own first sentence, and only the first. A skill that ships no
-        // description leaves the caption empty rather than being given one the console made
-        // up. The leading "Stage N of <flow>." is stripped if a skill still carries one: the
-        // node already shows the number, and a second copy in prose drifts — two of these
-        // said the wrong stage before the numbers were taken out of the descriptions.
-        what: (/^description:\s*(.+)$/m.exec(skillText(flow as string, String(n)) ?? "")?.[1] ?? "")
-          .replace(/^["']|["']$/g, "")
-          .replace(/^Stage \d+[^.]*\.\s*/i, "")
-          .split(/(?<=\.)\s/)[0].trim().slice(0, 120),
-      })),
+      at, of: stages.length, stage: label(String(stages[at - 1] ?? "")), accepted,
+      closed, outcome, complete, steps,
+      // +1 for the `open` bookend: a gate declared after stage 2 sits after the third step.
+      gates: gates.map((g) => ({ ...g, after: g.after > 0 ? g.after + 1 : steps.length - 1 })),
     };
   }
 
@@ -396,21 +452,44 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
   // Closed on ANY of the three outcomes, not on acceptance alone. Same reason as above.
   const closed = (spec?.outcome ?? null) !== null;
   let at = 1;
-  if (closed) at = 7;
-  else if (ver) at = 6;
+  if (ver) at = 6;
   else if (g3) at = 5;
   else if (plan) at = 4;
   else if (sel || g2) at = 3;
   else if (spec || g1) at = 2;
+  // WHICH OF THESE UNTYPED DOCUMENTS EXIST, stage by stage — the same evidence rule the
+  // manifest branch applies, over the only document kinds this fallback knows. `build` writes
+  // nothing here either, so it is untracked rather than assumed.
+  const stateOf: Record<string, "done" | "partial" | "empty" | "untracked"> = {
+    intent: intent ? (g1 ? "done" : "partial") : "empty",
+    spec: spec ? (g2 ? "done" : "partial") : "empty",
+    select: sel ? "done" : "empty",
+    plan: plan ? (g3 ? "done" : "partial") : "empty",
+    build: "untracked",
+    verify: ver ? "done" : "empty",
+    close: closed ? "done" : "empty",
+  };
+  const fallbackSteps = STAGES.map((n) => ({
+    name: n, what: "", produces: "", state: stateOf[n] ?? "empty", current: false,
+  }));
+  const currentAt = fallbackSteps.findIndex((st) => st.state !== "done" && st.state !== "untracked");
+  if (!closed && currentAt >= 0) fallbackSteps[currentAt].current = true;
   return {
     at, of: STAGES.length, stage: STAGES[at - 1], accepted, closed,
     outcome: spec?.outcome ?? null,
-    steps: STAGES.map((n) => ({ name: n, what: "", produces: "" })),
+    complete: !!g1 && !!g2 && !!g3 && accepted,
+    steps: [
+      { name: "open", what: "the initiative exists: its folder was created and it was opened",
+        produces: "", state: "done" as const, current: false },
+      ...fallbackSteps,
+      { name: "closed", what: "initiative_close recorded an outcome",
+        produces: "", state: (closed ? "done" : "empty") as "done" | "empty", current: false },
+    ],
     gates: [
-      { name: "approve intent", passed: !!g1, after: 1 },
-      { name: "approve spec", passed: !!g2, after: 2 },
-      { name: "approve plan", passed: !!g3, after: 4 },
-      { name: "accept", passed: accepted, after: 6 },
+      { name: "approve intent", passed: !!g1, after: 2 },
+      { name: "approve spec", passed: !!g2, after: 3 },
+      { name: "approve plan", passed: !!g3, after: 5 },
+      { name: "accept", passed: accepted, after: 7 },
     ],
   };
 }

@@ -30,7 +30,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         "Close an initiative, in one call. You say what you KNOW — the work `finished` or was " +
         "`abandoned`, and who accepted it if anyone did — and THE PLATFORM derives the outcome: " +
         "finished with an acceptor is `accepted`, finished without one is `delivered`, stopped " +
-        "is `abandoned`. You never write `outcome` yourself and writing it by hand is refused. " +
+        "is `abandoned`. An acceptor you do not name is READ OFF the closing document: whoever " +
+        "approved it said this is what they wanted, and naming them again is not asked of you. " +
+        "You never write `outcome` yourself and writing it by hand is refused. " +
         "Closing without an acceptor is a legitimate route and costs a sentence saying why " +
         "nobody signed off — an honest close is never the expensive one, but it is never free " +
         "either.",
@@ -76,12 +78,6 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           "accepted this, the other says nobody did. You supplied both (`" + acceptor +
           "` / `" + reason + "`). Send the one that is true; a close that names an acceptor " +
           "needs no reason.");
-      }
-      if (disposition === "finished" && !acceptor && !reason) {
-        return text(
-          "ERROR: finished with nobody named needs `no_signoff_reason` — one line on why " +
-          "nobody signed off. If somebody DID say this is what they wanted, pass their name " +
-          "as `accepted_by` instead and the close records an acceptance.");
       }
       // AN ABANDON MUST NOT CONTRADICT THE RECORD.
       //
@@ -142,8 +138,8 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // the one place the platform DERIVES an outcome, so it names all three words by
       // necessity — but naming them and being checked against them are different things, and
       // without the annotation a typo here would have shipped a word nothing else accepts.
-      const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
-        : acceptor ? "accepted" : "delivered";
+      // The outcome is derived below, once the closing document has been read: whether anybody
+      // signed off is a fact ON that document, not only an argument to this call.
       const probe = join(initiative, "probe.md");
       const chain = chainFor(root, probe);
       // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
@@ -221,18 +217,43 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           "wrong, record WHY as a journal node against this initiative — a correction somebody " +
           "can find beats an overwrite nobody can.");
       }
+      // THE APPROVAL ON THE CLOSING DOCUMENT IS THE SIGN-OFF, and it was being ignored.
+      //
+      // A gated closing document is approved by a PERSON — `document_approve` stamps who and
+      // when — and that is the same act `accepted_by` describes. Asking the closer to name
+      // them again made the two disagree: three initiatives closed `delivered` ("nobody signed
+      // it off") with their review approved by name on the document the close was written on.
+      //
+      // The caller may still name someone else — an acceptor who is not the approver is a real
+      // case — but silence is no longer read as "nobody".
+      const approver = (parseEnvelope(doc).approved_by ?? "").trim();
+      const gated = chain.documents.find((d) => d.name === closingDoc)?.gate === true;
+      const signedBy = acceptor || (gated && approver ? approver : "");
+      if (disposition === "finished" && !signedBy && !reason) {
+        return text(
+          `ERROR: finished with nobody named needs \`no_signoff_reason\` — one line on why ` +
+          "nobody signed off. If somebody DID say this is what they wanted, pass their name " +
+          "as `accepted_by` instead and the close records an acceptance. " +
+          (gated
+            ? `${closingDoc} carries a gate and no approval, so there is nobody to read one off.`
+            : `${closingDoc} carries no gate, so there is no approval to read one off.`));
+      }
+      // Typed from OUTCOMES so the compiler holds this to the contract's vocabulary. It is the
+      // one place the platform DERIVES an outcome, so it names all three words by necessity.
+      const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
+        : signedBy ? "accepted" : "delivered";
       doc = putEnvelopeField(doc, "outcome", outcome);
       doc = putEnvelopeField(doc, "closed_by", who.email);
-      if (acceptor) doc = putEnvelopeField(doc, "accepted_by", acceptor);
-      if (!acceptor && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
+      if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);
+      if (!signedBy && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
       const bad = documentGuards(chain, root, relPath, doc, team, "initiative_close");
       if (bad) return text(bad);
       persistDocument(chain, root, relPath, target, doc, `close ${outcome}`);
       logActivity(root, relPath,
-        { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: acceptor || null });
+        { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: signedBy || null });
       return text(
         `${initiative} closed as ${outcome}, recorded by ${who.email}.\n` +
-        (acceptor ? `Accepted by ${acceptor}.\n`
+        (signedBy ? `Accepted by ${signedBy}${signedBy === approver && !acceptor ? " — read from their approval of " + closingDoc : ""}.\n`
                   : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
         "Closed is not yet complete — one step remains, and it belongs to the platform rather " +

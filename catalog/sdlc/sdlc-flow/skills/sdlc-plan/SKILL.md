@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.5
+version: 1.6
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Local runtimes only (Claude Code, Codex)."
 ---
@@ -315,7 +315,21 @@ standing on bytes they never read.
 document_revise(
   path: "<initiative>/plan.md",
   content: "<the full revised plan>",
-  source_content: "<the audit finding or the execution report, verbatim>",
+  sources: ["plan-audit.md"])            # the audit round that sent it back
+```
+
+**THE AUDIT DOCUMENT IS THE SOURCE.** `sdlc-plan-audit` already wrote its round to
+`plan-audit.md`, so pasting the same findings back as `source_content` puts one round on the
+record twice and leaves a reader two places to look. Cite the document instead.
+
+`source_content` is still right for a cause that exists nowhere else — an execution report, or
+something a person said:
+
+```
+document_revise(
+  path: "<initiative>/plan.md",
+  content: "<the full revised plan>",
+  source_content: "<the execution report or the person's own words, verbatim>",
   source_title: "<what sent it back>")
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 1.3
+version: 2.0
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, at most three rounds.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -29,9 +29,12 @@ the main agent, and that agent decides what anybody is shown — so do not paste
 or `document_present` output, into what you return. Presenting a document in full belongs
 to the gate the main agent is asking somebody to sign, and this round is not that.
 
-**Your round is recorded in `<initiative>/spec-audit.md`.** That document is what a planner has
-to go on when building from a spec you passed, and what tells anyone later that this spec was
-read by somebody who did not write it. `sdlc-audit-criteria` carries how to write it.
+**Your round is recorded as a SOURCE supporting `spec.md`** — `source_add(..., supports:
+"spec.md")`. It is what a planner has to go on when building from a spec you passed, what tells
+anyone later that this spec was read by somebody who did not write it, and what the platform
+requires the next version of the spec to cite. It is not a document of the flow: an audit
+report is the material that makes a revision necessary. `sdlc-audit-criteria` carries how to
+write it and the exact call.
 
 ## Twelve: the spec's own contract
 

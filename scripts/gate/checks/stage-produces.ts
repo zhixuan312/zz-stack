@@ -57,7 +57,7 @@ import { check, note } from "../run.ts";
  *  Read from the contract's own literals, not invented here — the union in @zz/contracts is
  *  `z.string() | "record" | "nothing"`, and a third literal added there must arrive here or
  *  this check would report it as an undeclared document. */
-const NOT_A_DOCUMENT = new Set(["record", "nothing"]);
+const NOT_A_DOCUMENT = new Set(["source", "record", "nothing"]);
 
 check("every stage says what it leaves behind, and the document it names names it back", () => {
   const bad = [];
@@ -92,7 +92,30 @@ check("every stage says what it leaves behind, and the document it names names i
       stages++;
       if (!s.produces) {
         bad.push(`${where}: stage '${s.name}' declares no produces — name the document it ` +
-                 `writes, or "record" if its result is stored by the platform, or "nothing"`);
+                 `writes, or "source" for evidence another document changes because of, or ` +
+                 `"record" if its result is stored by the platform, or "nothing"`);
+        continue;
+      }
+      // A SOURCE STAGE NAMES WHAT ITS EVIDENCE IS ABOUT, and only a source stage may.
+      //
+      // `produces: "source"` says the stage leaves supporting material rather than a
+      // deliverable; `supports` says which document that material bears on, and without it
+      // nothing can tell whether the round happened — the contract requires the pair, and this
+      // is the half the contract cannot see: that the name resolves to a document THIS flow
+      // declares.
+      if (s.produces === "source") {
+        if (!s.supports) {
+          bad.push(`${where}: stage '${s.name}' produces a source and names no document in ` +
+                   "`supports` — evidence is always evidence FOR something");
+        } else if (!declared.has(s.supports)) {
+          bad.push(`${where}: stage '${s.name}' supports '${s.supports}', which this flow ` +
+                   `declares no document for — it declares ${[...declared.keys()].join(", ")}`);
+        }
+        continue;
+      }
+      if (s.supports) {
+        bad.push(`${where}: stage '${s.name}' produces '${s.produces}' and also names ` +
+                 `supports: '${s.supports}' — only a stage producing a source supports one`);
         continue;
       }
       if (NOT_A_DOCUMENT.has(s.produces)) continue;

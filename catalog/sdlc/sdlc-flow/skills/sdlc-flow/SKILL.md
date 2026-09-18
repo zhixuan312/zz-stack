@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 1.7
+version: 2.0
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
@@ -39,15 +39,17 @@ Not a ratchet. An audit that finds the spec rests on an unsettled decision sends
 |---|---|---|---|
 | 1 | `sdlc-explore` | `explore.md` | **main agent** — fans out, waits, synthesises |
 | 2 | `sdlc-spec` | `spec.md` | **main agent** → the person agrees |
-| 3 | `sdlc-spec-audit` | `spec-audit.md` — findings on `spec.md` | subagent per round, sequential, max 3 |
+| 3 | `sdlc-spec-audit` | a SOURCE supporting `spec.md` | subagent per round, sequential, max 3 |
 | 4 | `sdlc-plan` | `plan.md` | **main agent** → the person approves |
-| 5 | `sdlc-plan-audit` | `plan-audit.md` — findings on `plan.md` | subagent per round, sequential, max 3 |
+| 5 | `sdlc-plan-audit` | a SOURCE supporting `plan.md` | subagent per round, sequential, max 3 |
 | 6 | `sdlc-execute` | the change itself, and no document | subagent per plan item |
 | 7 | `sdlc-review` | `review.md` — and it closes the initiative | subagents |
 
-Six documents, not three. The two audits leave theirs on the record ungated — an audit's value
-is that it happened and its findings are readable, which is advice to the author rather than
-an agreement with anybody. `review.md` is the exception and is gated, because shipping is a
+Four documents, and the audits produce none of them. An audit report is a SOURCE: it is the
+material that makes the next version of somebody else's document necessary, and the platform
+refuses that revision until the source is cited — so a round is on the record, findable from
+the document it changed, without being a document of its own that says the same thing twice.
+`review.md` is gated, because shipping is a
 decision a person owns; it is also this flow's **closing** document, so nothing closes until it
 is written and approved.
 
@@ -100,7 +102,7 @@ Order, risk and scope are the person's judgement. Dispatch it and you get a plau
 nobody chose.
 
 **Ask for approval on `plan.md` before the plan audit runs**, the same way the spec is agreed
-before its audit — `plan-audit.md` requires `plan.md`, which is gated, so a round dispatched
+before its audit — an audit round registers a source against `plan.md`, which is gated, so a round dispatched
 first has its document refused at the write. How they answer is entirely theirs —
 a yes, a yes with a change, or a standing "you do not need to ask me about these". Delegating
 it to you is an ordinary answer, not a loophole.

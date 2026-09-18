@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 1.3
+version: 2.0
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -29,23 +29,38 @@ independent confirmations of one problem.
 you find. An audit that edits the document destroys the caller's ability to decide which findings
 to accept, and removes the evidence that anything was ever wrong.
 
-**Recording your round is not fixing it.** The one file you write is your own findings, to the
-document your stage produces — `spec-audit.md` for `sdlc-spec-audit`, `plan-audit.md` for
-`sdlc-plan-audit`. Write it with `document_write` before you return.
+**Recording your round is not fixing it. Your round is a SOURCE, not a document of the flow.**
+An audit produces the material that makes the next version of somebody else's document
+necessary, which is exactly what a source is — so register it with `source_add`, naming the
+document it bears on:
 
-**ONE FILE, and it is also the source.** Do not call `source_add` with your findings as well:
-the document you just wrote IS what the revision cites (`document_revise(sources:
-["plan-audit.md"])`), and a second copy under `sources/` is the same round recorded twice. The JSON block below is
+```
+source_add(
+  initiative: "<initiative>",
+  title: "<stage> round N — <what it found, in a few words>",
+  content: "<your findings, in full>",
+  supports: "spec.md")            # plan.md for sdlc-plan-audit
+```
+
+`supports` is what makes it findable: the platform refuses the next revision of that document
+until this source is cited, so the version that answers your round says so on its own face.
+
+**Do not write a document.** The flow declares four — explore, spec, plan, review — and an
+audit is not one of them. A document beside the source would put one round on the record
+twice, and a reader then has two accounts of it and no way to tell which was read. The JSON block below is
 still your FINAL text response and is still never written to a file: the report is how the main
-agent decides what happens next, and the document is how anyone reading the initiative later
+agent decides what happens next, and the source is how anyone reading the initiative later
 knows this round happened at all. Both, every round.
 
-**A round appends.** `document_read` the document first; if it is already there, send its body
-back with your round added under a new `## Round N — <date>` heading, so three rounds leave three
-rounds on the record. `document_write` OVERWRITES, and there is no append tool — skip the read
-and round three is the only one anybody can find. Send the BODY only, starting at its first
-heading: the platform writes the envelope and refuses content that opens with frontmatter, and
-`document_read` hands you that envelope along with the body.
+**Each round is its own source.** `source_add` writes a new file every time, so three rounds
+leave three sources and none overwrites another — nothing to read first and nothing to append
+to. Title yours so the order is readable at a glance (`<stage> round 2 — …`), and send the
+findings as the body: the platform writes the envelope and refuses content that opens with
+frontmatter.
+
+**A source is immutable and ungated.** Nobody approves your round — evidence is not agreed to —
+and nothing edits it afterwards. If a later round changes what you concluded, that is the later
+round's source saying so, not a rewrite of yours.
 
 ## Role
 

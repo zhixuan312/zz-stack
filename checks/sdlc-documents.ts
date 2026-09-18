@@ -1,5 +1,5 @@
-// sdlc's own shape: which document closes it, which one carries the gate, and that an audit
-// is recorded rather than approved. What every flow's manifest owes is checked for every flow,
+// sdlc's own shape: which document closes it, which one carries the gate, and that its audits
+// produce a SOURCE rather than a document of the flow. What every flow's manifest owes is checked for every flow,
 // in scripts/gate/checks/stage-produces.ts — not again here for one of them.
 import { readFileSync } from "node:fs";
 
@@ -7,24 +7,36 @@ interface Doc {
   name: string; closing?: boolean; gate?: boolean; requiredForClose?: boolean;
   [key: string]: unknown;
 }
-interface Stage { name: string; produces?: string }
+interface Stage { name: string; produces?: string; supports?: string }
 interface Flow { documents?: Doc[]; stages?: Stage[] }
 
 const fail: string[] = [];
 const m: Flow = JSON.parse(readFileSync("catalog/sdlc/sdlc-flow/flow.json", "utf8"));
 const docs: Record<string, Doc> = Object.fromEntries((m.documents ?? []).map((d) => [d.name, d]));
 
-for (const n of ["explore.md", "spec.md", "spec-audit.md", "plan.md", "plan-audit.md", "review.md"]) {
+for (const n of ["explore.md", "spec.md", "plan.md", "review.md"]) {
   if (!docs[n]) fail.push(`${n} is not declared`);
+}
+// AND NO MORE THAN THOSE FOUR. An audit report is evidence — the material that makes the next
+// version of somebody else's document necessary — so it is a source, cited by that revision,
+// not a document this flow delivers. Declaring one would put a round on the record twice.
+for (const n of ["spec-audit.md", "plan-audit.md"]) {
+  if (docs[n]) fail.push(`${n} is declared as a document; an audit round is a source`);
 }
 if (docs["spec.md"]?.closing) fail.push("spec.md is still the closing document");
 const r = docs["review.md"] || {};
 for (const f of ["gate", "closing", "requiredForClose"]) {
   if (!r[f]) fail.push(`review.md does not carry ${f}`);
 }
-// Control: the audits must stay UNGATED. A sweep that gated everything fails here.
-for (const a of ["spec-audit.md", "plan-audit.md"]) {
-  if (docs[a]?.gate) fail.push(`${a} is gated; an audit is recorded, not approved`);
+// THE AUDIT STAGES SAY WHAT THEY LEAVE AND WHAT IT IS ABOUT. `produces: "source"` is the
+// manifest's word for evidence, and `supports` names the document that evidence bears on —
+// which is what lets the platform require the next version of that document to cite it, and
+// what lets a diagram show the round happened without anything knowing the word "audit".
+for (const [stage, target] of [["sdlc-spec-audit", "spec.md"], ["sdlc-plan-audit", "plan.md"]]) {
+  const st = (m.stages || []).find((x) => x.name === stage);
+  if (!st) { fail.push(`${stage} is not a stage of this flow`); continue; }
+  if (st.produces !== "source") fail.push(`${stage} produces ${st.produces}; an audit round is a source`);
+  if (st.supports !== target) fail.push(`${stage} supports ${st.supports ?? "nothing"}, not ${target}`);
 }
 // Execute declares "nothing" explicitly — sdlc's own decision, and the only part of this
 // paragraph that is about sdlc. That every stage declares SOMETHING is the contract's rule

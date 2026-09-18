@@ -1,4 +1,4 @@
-// A revision names why, one way or the other, and never both.
+// A revision names the MATERIAL behind it, and there is no other route.
 //
 // WHY THIS IS NOT THE PLAN'S CHECK. The plan-authored form asked whether the words "both"
 // and "neither" appear somewhere in the tool's source. Every comment in that handler is
@@ -7,11 +7,15 @@
 // red. A check an explanatory comment can satisfy is a check that reads nothing.
 //
 // So the guard conditions are EXECUTED here rather than read. The `if (…)` expressions that
-// return a refusal are lifted out of the comment-stripped handler and evaluated over all
-// four combinations of (self_edit supplied, cause supplied). That is the technical AC
-// stated exactly: neither is refused, both is refused, and EITHER ALONE IS ACCEPTED. The
-// last one is the half a refusal-only check cannot see — an implementation that refuses
-// every revision satisfies "no cause is refused" and is completely broken.
+// return a refusal are lifted out of the comment-stripped handler and evaluated over each
+// combination of the cause fields. A revision citing nothing is refused; one citing a source
+// or carrying `source_content` is accepted — the second half is what a refusal-only check
+// cannot see, since an implementation that refuses everything satisfies the first.
+//
+// `self_edit` USED TO BE THE OTHER ROUTE and this check kept it deliberately: "without it a
+// wording fix would have to invent a source". That is now the rule rather than the exception —
+// a content change names its material, and one line saying what was wrong IS the material — so
+// the field is gone and this check asserts its absence.
 import { readFileSync } from "node:fs";
 
 const fail = [];
@@ -39,10 +43,13 @@ const head = block.slice(0, cut < 0 ? block.length : cut);
 const body = block.slice(cut < 0 ? block.length : cut)
   .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
 
-// `self_edit` is kept deliberately: without it a wording fix would have to invent a source,
-// and a record that looks complete and is not is worse than a refusal.
-if (!/self_edit:\s*z\.string\(\)/.test(head)) {
-  fail.push("self_edit is gone or is not a string; a wording fix would have to invent a source");
+// The route that let a version name no material is gone, and stays gone.
+if (/self_edit:\s*z\./.test(head)) {
+  fail.push("document_revise still takes `self_edit` — a content change names its material");
+}
+if (!/sources:\s*z\.array/.test(head) || !/source_content:\s*z\.string\(\)/.test(head)) {
+  fail.push("document_revise no longer takes both `sources` and `source_content` — " +
+            "a revision needs a way to cite what is on the record and a way to add it");
 }
 // Control: the description must no longer say a cause is optional.
 if (/not required|may simply edit/i.test(head)) {
@@ -63,7 +70,7 @@ const balanced = (s: string, open: number) => {
 const guards = [];
 for (const m of body.matchAll(/\bif\s*\(/g)) {
   const cond = balanced(body, m.index + m[0].length - 1);
-  if (cond === null || !/\bselfEdit\b|\bcauses\b/.test(cond)) continue;
+  if (cond === null || !/\bcauses\b/.test(cond)) continue;
   const after = body.slice(m.index + m[0].length + cond.length);
   const ret = after.search(/^\s*\)?\s*\{?\s*return text\(/);
   if (ret !== 0) continue; // a conditional that does something other than refuse
@@ -75,12 +82,12 @@ if (!guards.length) {
             "either the rule is gone or this check can no longer read it");
 }
 
-// The four cases, named as the technical AC names them.
+// Every combination of the cause fields there is now.
 const CASES = [
-  { name: "neither a source nor a self_edit", selfEdit: "", causes: [], refuse: true },
-  { name: "both a source and a self_edit", selfEdit: "tightened AC-3", causes: ["source_content"], refuse: true },
-  { name: "a source alone", selfEdit: "", causes: ["source_content"], refuse: false },
-  { name: "a self_edit alone", selfEdit: "tightened AC-3", causes: [], refuse: false },
+  { name: "no material at all", causes: [], refuse: true },
+  { name: "words passed as source_content", causes: ["source_content"], refuse: false },
+  { name: "a source already on the record", causes: ["sources"], refuse: false },
+  { name: "both a cited source and new words", causes: ["sources", "source_content"], refuse: false },
 ];
 
 for (const c of CASES) {
@@ -88,25 +95,25 @@ for (const c of CASES) {
   for (const g of guards) {
     let fn;
     try {
-      fn = new Function("selfEdit", "causes", "explained", `return (${g.cond});`);
+      fn = new Function("causes", "explained", `return (${g.cond});`);
     } catch {
       fail.push(`a refusal condition cannot be parsed: ${g.cond}`);
       continue;
     }
     try {
-      if (fn(c.selfEdit, c.causes, c.causes.length > 0)) firing.push(g);
+      if (fn(c.causes, c.causes.length > 0)) firing.push(g);
     } catch (err) {
       // An honest red. The condition reads something this check cannot bind, so the check
       // no longer knows what the tool does and must not report that it does.
       fail.push(`the refusal condition \`${g.cond}\` reads something this check cannot ` +
-                `bind (${err instanceof Error ? err.message : String(err)}) — rewrite it in terms of selfEdit/causes, or teach ` +
+                `bind (${err instanceof Error ? err.message : String(err)}) — rewrite it in terms of causes, or teach ` +
                 `this check the new name`);
       continue;
     }
   }
   if (c.refuse && !firing.length) fail.push(`a revision with ${c.name} is accepted`);
   if (!c.refuse && firing.length) fail.push(`a revision with ${c.name} is refused`);
-  if (c.name.startsWith("neither") && firing.length) {
+  if (c.name.startsWith("no material") && firing.length) {
     // The way out has to exist. A refusal naming a field the tool does not take is a dead
     // end dressed as an instruction, and this one is reached by a caller whose revision is
     // legitimate — the only thing left to tell them is which claim to make.

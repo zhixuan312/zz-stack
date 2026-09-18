@@ -33,7 +33,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [0.46.0] — 2026-09-18 · console 0.14.0
+## [0.47.0] — 2026-09-18 · console 0.15.0
+
+How a flow defines a step, said once and enforced everywhere: what it leaves behind, whether
+that is a deliverable or evidence, and whether a person has to agree to it. Plus the reason
+0.45.0 and 0.46.0 were rolled back — nothing exercised the tool chain until production did.
+
+### Added
+
+- **The dry run walks the tool chain against the image being released.** A postgres, a zz-core
+  and a gateway from the new image on their own docker network, a first token minted the way a
+  fresh install mints one, then `chain-check`. Both rollbacks this week were checks that only
+  ever ran against the live deployment, asserting contracts those releases had changed; that
+  class of failure is now local, a minute in, with nothing pushed.
+- **`deploy/issue-first-pat.sh` works again.** It still inserted `scope`, a column dropped when
+  PAT scopes went, so the one script a fresh install cannot do without died at the moment there
+  is no other way in. Found by the tool-chain walk, which mints its token the same way.
+
+### Changed — breaking
+
+- **A step declares what it leaves behind, in one vocabulary.** `produces` is a document name (a
+  MAIN deliverable the flow declares), `"source"` (SUPPORTING evidence another document changes
+  because of), `"record"` (rows in the platform's tables) or `"nothing"`. A source stage names
+  its target — `supports: "plan.md"` — and only a source stage may. ARCHITECTURE.md carries the
+  model; `FlowStage` is two shapes rather than one loose object.
+- **An audit round is a SOURCE, not a document.** sdlc-flow declares four documents, not six.
+  The audit registers its findings with `source_add(..., supports: "spec.md")`, the revision it
+  causes cites that source, and each round is its own file — so three rounds leave three, with
+  nothing to append to and no second copy of any of them.
+- **A content change names the material behind it.** `document_revise` refuses a revision that
+  cites nothing: `sources` for what is on the record, `source_content` for words that are not.
+  `self_edit` is gone — it was the route for a version nothing caused. A revision must also cite
+  any source that supports the document and is newer than the version being replaced. The
+  envelope is untouched by this: approving and closing are not content changes.
+- **A stage's state is derived from what it produces**, so a `"source"` stage is done when a
+  source declares it supports that stage's target — no ordering guess, and nothing anywhere
+  knows the word "audit".
+
+### Console 0.15.0
+
+- **The diagram carries its own detail.** The paragraph under the stepper is gone; the outcome
+  sits under the closed node, the way a gate says "approved" under itself.
+- **A step that leaves no document is shown as passed** when a later step produced something —
+  `execute` is green because the review after it exists — rather than drawn as a mystery.
+
+## [0.46.0] — 2026-09-18 · console 0.14.0 — NEVER SHIPPED
+
+Deployed, failed verification and was rolled back: `chain-check` still asserted the contract this
+release changed. Its content ships in 0.47.0. What follows is that content.
 
 Closing is an act, and the progress diagram now shows only what the record can evidence.
 

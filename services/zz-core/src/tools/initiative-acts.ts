@@ -11,7 +11,7 @@
  * approver's name would stand on bytes they never read. It bumps the version, returns the
  * document to draft, clears the stale approval and keeps the approved copy in `_versions/`.
  */
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -166,12 +166,11 @@ export function registerInitiativeActTools(server: McpServer): void {
         "`version` (v1 -> v2), puts `status` back to draft so the gate goes to a human again, " +
         "clears the stale approval, and links the material behind the change; the previously " +
         "approved version stays in _versions/. " +
-        "EVERY VERSION SAYS WHY IT CHANGED, one way or the other. If a person said something " +
-        "new — a second brain dump, pasted notes, a decision taken elsewhere — pass their " +
-        "words as source_content and they are stored as a source and linked, so v2 explains " +
-        "itself. If you simply edited your own document, name WHAT you edited as self_edit. " +
-        "A revision naming neither is refused, and naming both is refused. " +
-        "Never overwrite an approved document with document_write.",
+        "EVERY VERSION NAMES THE MATERIAL BEHIND IT. Cite what is already on the record with " +
+        "`sources` — an audit round, a decision written down — or pass the words themselves as " +
+        "`source_content` and the platform stores them as a source and links them. A revision " +
+        "naming neither is refused, whatever the edit was: content does not change without " +
+        "material behind it. Never overwrite an approved document with document_write.",
       inputSchema: {
         path: z.string().describe("e.g. '2026-08-23-sample-queue/intent.md'"),
         content: z.string().describe("The full revised document, body and all."),
@@ -186,72 +185,39 @@ export function registerInitiativeActTools(server: McpServer): void {
         title: z.string().optional().describe("Document title for the index."),
         fields: z.record(z.string()).optional()
           .describe("This FLOW's own frontmatter fields. Not envelope names."),
-        note: z.string().optional().describe("One line on what changed and why."),
-        self_edit: z.string().optional().describe(
-          "WHAT you edited, when nothing outside the document caused this version — " +
-          "'tightened the wording of AC-3', 'fixed the broken table'. It is a DECLARATION, " +
-          "not a justification: nobody owes the platform a reason for editing their own " +
-          "document. Send it INSTEAD OF source_content/sources/note, never alongside them — " +
-          "they are opposite claims about the same version and supplying both is refused."),
+        note: z.string().optional().describe(
+          "One line on WHAT changed, recorded as the revision note. An annotation, not a " +
+          "cause: a version still names the material behind it."),
       },
     },
     async ({ path: relPath, content, source_content, source_title, sources, note,
-             self_edit, stakeholder, tags, title, fields }) => {
+             stakeholder, tags, title, fields }) => {
       const refusedFm = frontmatterRefusal(content, "document_revise") ?? fieldRefusal(fields)
         ?? tagRefusal(tags);
       if (refusedFm) return text(refusedFm);
       // WHAT CAUSED THIS VERSION, ASKED ONCE.
       //
-      // The three fields below are the only ways a revision can point at something outside
-      // itself, and `explained` further down used to re-derive the same predicate from the
-      // same three arguments. Two copies of "was this caused by anything" is a rule that can
-      // be half-changed — the file has already paid for that once with fieldRefusal.
+      // A CONTENT CHANGE NAMES THE MATERIAL BEHIND IT.
       //
-      // Emptiness is measured the way `explained` measured it: a blank string and `sources:
-      // []` are not causes, so passing one of those with `self_edit` is not a contradiction.
-      const selfEdit = (self_edit ?? "").trim();
+      // `self_edit` was the other route — a declaration of WHAT you edited, for a wording fix
+      // nobody caused — and it is gone. The rule it softened is the whole rule: a document does
+      // not change because somebody felt like it, and the next reader cannot tell a decision
+      // taken elsewhere from a second thought when the record says neither. A typo fix costs
+      // one `source_content` line naming what was wrong, and that line IS the evidence.
+      //
+      // `note` says what changed, not what changed it, so it never satisfies this on its own.
       const causes = [
         source_content && source_content.trim() ? "source_content" : null,
         sources && sources.length ? "sources" : null,
-        note && note.trim() ? "note" : null,
       ].filter((c): c is string => c !== null);
-      // A VERSION CANNOT BOTH HAVE NO EXTERNAL CAUSE AND HAVE ONE.
-      //
-      // `self_edit` says nothing outside the document produced this version. Each of the
-      // three fields above says something did. Taking both would mean writing a record that
-      // contradicts itself, and there is no rule for deciding which half to believe —
-      // silently preferring one is how initiative_close() and knowledge_reconcile() lost supplied values before
-      // they were repaired. Refused, in the same shape as those two.
-      if (selfEdit && causes.length) {
+      if (!causes.length) {
         return text(
-          "ERROR: `self_edit` says nothing external caused this version, but you also " +
-          "supplied `" + causes.join("`, `") + "`. Send the cause, or send `self_edit`, " +
-          "not both.");
-      }
-      // A VERSION THAT NAMES NOTHING IS A CHANGE NOBODY CAN REDO.
-      //
-      // Silence used to be accepted and nudged: the success text said the record could not
-      // tell "there was no cause" from "the cause was not captured", and one initiative
-      // received that sentence four times and changed nothing. A nudge on the way out is
-      // read after the write has already landed, which is the wrong end of the call.
-      //
-      // The gap it left is not tidiness. An approved spec is the thing the next reader
-      // reasons from, and v2 arriving with nothing attached means they cannot tell a
-      // decision taken elsewhere and incorporated from somebody's second thought — the two
-      // carry opposite weight and look identical in the record.
-      //
-      // `self_edit` is why this can be required at all, and it is kept for exactly that:
-      // the cost of the rule is one short declaration, not an invented source for a typo
-      // fix. Both routes are named here because a caller who reaches this refusal has a
-      // legitimate revision and the only question left is which claim to make.
-      if (!selfEdit && !causes.length) {
-        return text(
-          "ERROR: nothing says what caused this version. An approved document does not " +
-          "change with the reason left off the record: the next reader cannot tell a " +
-          "decision taken elsewhere from a second thought. If a person said something " +
-          "that made you change it, pass their words as `source_content`. If you simply " +
-          "edited your own document, name what you edited as `self_edit` — a declaration " +
-          "of WHAT changed, never a justification for changing it. Send one, not both.");
+          "ERROR: nothing says what caused this version. Content does not change without " +
+          "material behind it: cite what is already on the record with `sources` — an audit " +
+          "round, a decision written down — or pass the words themselves as `source_content`, " +
+          "which the platform stores as a source and links. Even a wording fix has a cause " +
+          "worth one line. Approving, closing and the envelope are untouched by this: it is " +
+          "the BODY that may not change with the reason left off the record.");
       }
       const who = parseCaller(requestHeaders());
       const root = await userRoot();
@@ -326,29 +292,30 @@ export function registerInitiativeActTools(server: McpServer): void {
       // WHAT ALREADY EXPLAINS THIS REVISION IS CITED, and the platform says so rather than
       // trusting the caller to remember.
       //
-      // A flow declares which of its documents READ another: `spec-audit.md` requires
-      // `spec.md`, `plan-audit.md` requires `plan.md`. So an audit round newer than the version
-      // being replaced is, by the flow's own declaration, about that version — it is the cause
-      // of this revision whether or not anybody names it. Leaving it uncited put one round on
-      // the record in two places, or in none: the agent pasted the findings back as
-      // `source_content` and a reader met two accounts of one audit.
+      // A source declares in `supports` which documents it bears on, so a source added after
+      // the version being replaced, naming THIS document, is — by its own declaration — what
+      // this revision answers. An audit round is exactly that: the stage produces evidence,
+      // the evidence names the document it read, and the next version of that document cites
+      // it. Nothing here knows the word "audit"; it follows from what a source says.
       //
       // Refused rather than linked silently: what changed a gated document is the caller's
       // claim to make, and a platform that adds causes nobody stated is writing the record.
       const dir = join(root, parts[0]);
-      const owed = chain.documents
-        .filter((d) => d.requires === parts[1] && existsSync(join(dir, d.name)))
-        .filter((d) => statSync(join(dir, d.name)).mtimeMs > statSync(target).mtimeMs)
-        .map((d) => d.name)
-        .filter((name) => !linked.has(name));
+      const sourceDir = join(dir, "sources");
+      const owed = (existsSync(sourceDir) ? readdirSync(sourceDir) : [])
+        .filter((f) => f.endsWith(".md"))
+        .filter((f) => statSync(join(sourceDir, f)).mtimeMs > statSync(target).mtimeMs)
+        .filter((f) => (parseEnvelope(readFileSync(join(sourceDir, f), "utf8")).supports || "")
+          .split(",").map((x) => x.trim()).includes(parts[1]))
+        .map((f) => `sources/${f}`)
+        .filter((ref) => !linked.has(ref));
       if (owed.length) {
         return text(
-          `ERROR: ${owed.join(", ")} ${owed.length === 1 ? "reads" : "read"} ${parts[1]} and ` +
-          `${owed.length === 1 ? "was" : "were"} written after the version you are replacing, ` +
+          `ERROR: ${owed.join(", ")} ${owed.length === 1 ? "supports" : "support"} ${parts[1]} ` +
+          `and ${owed.length === 1 ? "was" : "were"} added after the version you are replacing, ` +
           `so ${owed.length === 1 ? "it is" : "they are"} what this revision answers. Cite ` +
-          `${owed.length === 1 ? "it" : "them"}: \`sources: ${JSON.stringify(owed)}\`. If the ` +
-          "change has a different cause, cite that too — `sources` takes several, and " +
-          "`source_content` records a cause that exists nowhere else.");
+          `${owed.length === 1 ? "it" : "them"}: \`sources: ${JSON.stringify(owed)}\`. A version ` +
+          "that does not name what changed it cannot be checked by anybody later.");
       }
 
       // The input that caused the change is knowledge too: it is stored beside the document
@@ -381,16 +348,11 @@ export function registerInitiativeActTools(server: McpServer): void {
         linked.add(capturedSource);
       }
 
-      // WHETHER THE CAUSE WAS EXTERNAL, which by here is a real two-way question rather
-      // than a three-way one. The refusal above spent the third state: a version with
-      // nothing attached no longer reaches this line, so `explained` false means
-      // `self_edit` was sent and says so, not that nobody wrote anything down.
-      //
-      // Links inherited from the previous version explain THAT version, not this one, so
-      // they are not consulted here — a v1 with three sources does not make v2 explained.
-      //
-      // A reason is still not owed to anybody. What is required is which KIND of change
-      // this was, and `self_edit` answers that in a few words without inventing a source.
+      // ALWAYS TRUE BY HERE, and kept because the activity log is read by people who were not
+      // in this call: the refusal above spends the other case, so a version that reaches this
+      // line named its material. Links inherited from the previous version explain THAT
+      // version, not this one, so they are not consulted — a v1 with three sources does not
+      // make v2 explained.
       const explained = causes.length > 0;
       const env: Record<string, string> = { ...prevEnv };
       if (stakeholder?.trim()) env.stakeholder = oneLine(stakeholder);
@@ -494,7 +456,6 @@ export function registerInitiativeActTools(server: McpServer): void {
       logActivity(root, relPath, {
         user: who.email, action: "document_revise", path: relPath,
         version: nextVersion, sources: [...linked].join(","), explained,
-        self_edit: selfEdit || null,
       });
       return text(
         // SAY WHAT ACTUALLY HAPPENED. This announced "status draft" unconditionally, and on
@@ -514,18 +475,6 @@ export function registerInitiativeActTools(server: McpServer): void {
           : "") +
         (capturedSource ? `The input behind it is stored as ${parts[0]}/${capturedSource}.\n` : "") +
         (linked.size ? `Linked sources: ${[...linked].join(", ")}\n` : "") +
-        // TWO STATES, TWO SENTENCES — and the third one is gone from here because it is
-        // gone from the tool. This branch used to carry a nudge for the version that named
-        // no cause at all: "pass their words as source_content next time", read after the
-        // write had landed, by a caller who in a third of cases had nothing to pass. One
-        // initiative received it four times and changed nothing. That case is refused on
-        // the way in now, so the only unexplained version reaching this line is one that
-        // declared itself as such, and what it gets back is a confirmation, not a nudge.
-        (selfEdit
-          ? `Recorded as a self-edit: ${oneLine(selfEdit)}\n` +
-            "Nothing outside the document caused this version, and the record says so — " +
-            "which is a different fact from nobody having written the cause down.\n"
-          : "") +
         "Nothing downstream may be written until this document is approved again.",
       );
     },

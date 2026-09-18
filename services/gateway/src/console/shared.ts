@@ -223,6 +223,9 @@ export function grainForSpan(days: number): Grain {
  * resolve. It is a short column and it is genuinely read; `bytes` and `title` were neither. */
 export interface StageDoc {
   path: string; type: string; status: string | null; outcome: string | null;
+  /** Which documents this one bears on, comma-joined — a SOURCE's own declaration. It is what
+   *  evidences a stage that produces evidence rather than a deliverable. */
+  supports?: string | null;
 }
 
 /** How far an initiative got, from the documents that exist and their approvals.
@@ -268,14 +271,14 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
    *
    * `state` is DERIVED, never stored: the manifest says which documents a stage writes and
    * which of those carry a gate, and the record says which exist and which were approved.
-   *   done      every document this step declares exists, and every gated one is approved
+   *   done      every document this step declares exists and every gated one is approved — or
+   *             it declares none and a later step produced something, so it was passed through
    *   partial   its documents exist, but a gate on one is still open
-   *   empty     it declares documents and none has been written
-   *   untracked it declares none, so nothing it could leave behind exists to look for
+   *   empty     nothing shows it happened
    * `current` marks where an open initiative is now. */
   steps: {
     name: string; what: string; produces: string;
-    state: "done" | "partial" | "empty" | "untracked"; current: boolean;
+    state: "done" | "partial" | "empty"; current: boolean;
   }[];
   /** Placed by INDEX INTO `steps`, bookends included, so the console places nothing itself. */
   gates: { name: string; passed: boolean; after: number }[]; accepted: boolean;
@@ -389,12 +392,34 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
     // either way; this is what tells a reader whether it ran the whole way.
     const complete = gates.every((g) => g.passed)
       && declared.filter((d) => d.requiredForClose === true).every((d) => byName.has(d.name));
-    // EACH STAGE FROM WHAT IT DECLARES, mechanically. A stage that writes nothing can never be
-    // evidenced — there is no document to find and no approval to read — so it is `untracked`
-    // rather than guessed at in either direction. Everything else follows from the manifest.
-    const stageState = (n: string): "done" | "partial" | "empty" | "untracked" => {
+    // EACH STAGE FROM WHAT IT DECLARES, mechanically. A stage that writes nothing leaves nothing
+    // to find, and the pass below reads it from ORDER instead: work that reached a later stage
+    // went through this one. Everything else follows from the manifest.
+    // WHAT A STAGE LEAVES BEHIND IS THE MANIFEST'S ANSWER, and there are three kinds of it.
+    //
+    //   a document  the flow declares it; done when it exists, and when a gate on it is
+    //               approved — written but unapproved is `partial`, which is the one state
+    //               that means "waiting on a person"
+    //   a source    supporting material, not a deliverable: an audit round is evidence about
+    //               the document it read. Done when a source in the initiative declares it
+    //               `supports` that document. Never gated — evidence is not agreed to.
+    //   nothing     no artifact at all; the order pass below reads it from what came after
+    const meta = new Map((manifest.stages ?? []).map((x) => [x.name, x]));
+    const sources = live.filter((d) => d.type === "source");
+    const stageState = (n: string): "done" | "partial" | "empty" => {
+      const produces = meta.get(n)?.produces;
+      if (produces === "source") {
+        // `supports` exists on the source shape of a stage and on no other — the contract is a
+        // union of the two — so it is read off the entry only after `produces` has said which
+        // shape this is.
+        const st = meta.get(n);
+        const target = st && "supports" in st ? st.supports : undefined;
+        const found = !!target && sources.some((d) => (d.supports ?? "").split(",")
+          .map((x) => x.trim()).includes(target));
+        return found ? "done" : "empty";
+      }
       const mine = declared.filter((d) => d.stage === n);
-      if (!mine.length) return "untracked";
+      if (!mine.length) return "empty";
       const written = mine.filter((d) => byName.has(d.name));
       if (!written.length) return "empty";
       const gatesOpen = mine.some((d) => d.gate === true && byName.get(d.name)?.status !== "approved");
@@ -403,7 +428,11 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
     const flowSteps = stages.map((n) => ({
       name: label(String(n)),
       // What this stage writes, from the manifest. A stage that writes nothing says so.
-      produces: declared.filter((d) => d.stage === n).map((d) => d.name).join(", "),
+      produces: ((): string => {
+        const st = meta.get(String(n));
+        if (st && st.produces === "source" && "supports" in st) return `a source supporting ${st.supports}`;
+        return declared.filter((d) => d.stage === n).map((d) => d.name).join(", ");
+      })(),
       // The stage skill's own first sentence, and only the first. A skill that ships no
       // description leaves the caption empty rather than being given one the console made
       // up. The leading "Stage N of <flow>." is stripped if a skill still carries one: the
@@ -416,9 +445,20 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
       state: stageState(String(n)),
       current: false,
     }));
+    // A STAGE THAT WRITES NOTHING WAS PASSED THROUGH, when something after it exists. `execute`
+    // declares no document, so nothing it leaves behind can be looked for — but a review written
+    // after it could not have been written without it. Order is the evidence, and it is the same
+    // kind of derivation as the rest: read off the manifest and the record, never assumed.
+    for (let i = flowSteps.length - 1; i >= 0; i--) {
+      const produces = meta.get(String(stages[i]))?.produces;
+      const writesNothing = produces === "nothing" || produces === "record"
+        || (!produces && !declared.some((d) => d.stage === stages[i]));
+      const somethingAfter = flowSteps.slice(i + 1).some((st) => st.state === "done" || st.state === "partial");
+      if (writesNothing && somethingAfter) flowSteps[i].state = "done";
+    }
     // WHERE IT IS NOW is the first stage that is not done, and only while it is open. A closed
     // initiative is not anywhere.
-    const currentAt = flowSteps.findIndex((st) => st.state !== "done" && st.state !== "untracked");
+    const currentAt = flowSteps.findIndex((st) => st.state !== "done");
     if (!closed && currentAt >= 0) flowSteps[currentAt].current = true;
     const steps = [
       { name: "open", what: "the initiative exists: its folder was created and it was opened",
@@ -460,19 +500,19 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
   // WHICH OF THESE UNTYPED DOCUMENTS EXIST, stage by stage — the same evidence rule the
   // manifest branch applies, over the only document kinds this fallback knows. `build` writes
   // nothing here either, so it is untracked rather than assumed.
-  const stateOf: Record<string, "done" | "partial" | "empty" | "untracked"> = {
+  const stateOf: Record<string, "done" | "partial" | "empty"> = {
     intent: intent ? (g1 ? "done" : "partial") : "empty",
     spec: spec ? (g2 ? "done" : "partial") : "empty",
     select: sel ? "done" : "empty",
     plan: plan ? (g3 ? "done" : "partial") : "empty",
-    build: "untracked",
+    build: ver || closed ? "done" : "empty",   // writes nothing; a later stage is the evidence
     verify: ver ? "done" : "empty",
     close: closed ? "done" : "empty",
   };
   const fallbackSteps = STAGES.map((n) => ({
     name: n, what: "", produces: "", state: stateOf[n] ?? "empty", current: false,
   }));
-  const currentAt = fallbackSteps.findIndex((st) => st.state !== "done" && st.state !== "untracked");
+  const currentAt = fallbackSteps.findIndex((st) => st.state !== "done");
   if (!closed && currentAt >= 0) fallbackSteps[currentAt].current = true;
   return {
     at, of: STAGES.length, stage: STAGES[at - 1], accepted, closed,

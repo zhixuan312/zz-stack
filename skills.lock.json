@@ -1,7 +1,7 @@
 {
   "sdlc-audit-criteria": {
-    "version": "1.3",
-    "sha": "dd8d57f4c235"
+    "version": "2.0",
+    "sha": "762b4305ebbe"
   },
   "sdlc-execute": {
     "version": "1.0",
@@ -12,24 +12,24 @@
     "sha": "9964d100ebd9"
   },
   "sdlc-flow": {
-    "version": "1.7",
-    "sha": "43418d89f0fd"
+    "version": "2.0",
+    "sha": "587dc27418f8"
   },
   "sdlc-investigate": {
     "version": "1.0",
     "sha": "c52bfb4eff39"
   },
   "sdlc-method": {
-    "version": "1.6",
-    "sha": "1611df40c3d5"
+    "version": "1.7",
+    "sha": "6300c802a9a4"
   },
   "sdlc-plan-audit": {
-    "version": "1.3",
-    "sha": "973f99739a50"
+    "version": "2.0",
+    "sha": "6d0a05e5dbbb"
   },
   "sdlc-plan": {
-    "version": "1.6",
-    "sha": "cd3eb1b139dd"
+    "version": "1.7",
+    "sha": "4a60f403f832"
   },
   "sdlc-recall": {
     "version": "1.4",
@@ -44,8 +44,8 @@
     "sha": "afe2f28aeb27"
   },
   "sdlc-spec-audit": {
-    "version": "1.3",
-    "sha": "194dab411b6f"
+    "version": "2.0",
+    "sha": "02eea2b655f6"
   },
   "sdlc-spec": {
     "version": "1.4",

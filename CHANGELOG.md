@@ -33,6 +33,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.0] — 2026-09-19
+
+Two models, split by what each is good at — and the evidence fix that changed a verdict.
+
+### Added
+
+- **Typed judgments.** A ruler dimension is a position on named levels; a recommendation is one
+  word from a closed set; a threshold is a yes/no over a figure. Those have SHAPES, and a
+  general model asked for them in prose can answer outside them. A typed judgement service now
+  fixes the score, the recommendation and every threshold verdict, and a language model reads
+  the artifact beside those numbers and writes what they mean. **The order is the safeguard**: a
+  typed answer cannot be off-vocabulary or unparseable, and an explanation written afterwards
+  cannot invent a score to suit its argument, because the score was settled before any prose
+  existed.
+
+- **`round_recommend`** — the verdict as an enum with its probability distribution and a
+  confidence that is the distribution's shape rather than the model's opinion of itself.
+  `keep` · `keep-and-change` · `re-run` · `not-evaluable` · `retire`.
+
+- **`not-evaluable`, and it earns its place.** It is a verdict about the MEASUREMENT. The first
+  report written on this platform called zz-core weak when the truth was that nothing had
+  measured it — a void round over a one-event window, reported as a low score.
+
+- **An initiative-level judge subject.** "Does the end deliver what the beginning asked for" is
+  a property of the sequence, so a judge marking one document at a time could never see it: the
+  most important question a flow can be asked was the one its rulers could not express. The
+  judge now reads both ends of one initiative together, labelled.
+
+- **A ruler names its levels** — 2 to 10, ordered. Two ends and a 1–5 scale left the rungs
+  between them to whoever was marking, which is where two rounds stop being comparable.
+
+### Fixed
+
+- **`plugin_profile` gave two plugins each other's evidence.** Tool use was attributed by SKILL:
+  runs of a plugin's own skills, and the calls inside them. But which plugin a tool call belongs
+  to is a fact about **the door it arrived on** — a rule this platform already holds as a
+  knowledge node. zz-core serves `/core/mcp` and read as **1 run with all 15 of its tools never
+  called**; its door had taken **627 calls** and 14 of the 15 were in daily use. The same query
+  counted those calls as sdlc's own. A plugin that declares a server is now profiled from its
+  door; one that declares none is a flow and keeps skill-based attribution.
+
+### Changed
+
+- **findings.md is five sections**: Outcome (recommendation · confidence · key numbers · one
+  paragraph), what is good, what is bad, what to do to improve it, and what this does not
+  establish. *Bad* and *not established* are kept apart deliberately — one says the evidence
+  shows a defect, the other that there is no evidence.
+
+- **The judge is recorded per round**, so moving to a typed judge reads like a change of rubric
+  version rather than silently redefining what every earlier score meant.
+
+- **`checks/eval-names.ts` names the door's tool set** instead of asserting a count of ten — a
+  count fails identically whether a tool was lost or added, and says neither.
+
+### Upgrade notes
+
+- **Migration 062** adds dimension levels, per-mark confidence and probabilities, and the
+  recommendation enum as a check constraint. No action.
+- **`TYPESAFE_API_KEY` is optional and absent is supported.** Without it, rulers written the old
+  way keep the reading judge, and a report says its recommendation was not taken and why.
+- **`plugin_profile` figures move for any plugin that serves a door.** That is the correction.
+
 ## [0.51.0] — 2026-09-19
 
 The evaluation instrument, fixed before it was used to evaluate anything.

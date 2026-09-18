@@ -11,7 +11,7 @@
  * approver's name would stand on bytes they never read. It bumps the version, returns the
  * document to draft, clears the stale approval and keeps the approved copy in `_versions/`.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -322,6 +322,33 @@ export function registerInitiativeActTools(server: McpServer): void {
                       "letters, digits, dot, dash, underscore and / only");
         }
         linked.add(src.trim());
+      }
+      // WHAT ALREADY EXPLAINS THIS REVISION IS CITED, and the platform says so rather than
+      // trusting the caller to remember.
+      //
+      // A flow declares which of its documents READ another: `spec-audit.md` requires
+      // `spec.md`, `plan-audit.md` requires `plan.md`. So an audit round newer than the version
+      // being replaced is, by the flow's own declaration, about that version — it is the cause
+      // of this revision whether or not anybody names it. Leaving it uncited put one round on
+      // the record in two places, or in none: the agent pasted the findings back as
+      // `source_content` and a reader met two accounts of one audit.
+      //
+      // Refused rather than linked silently: what changed a gated document is the caller's
+      // claim to make, and a platform that adds causes nobody stated is writing the record.
+      const dir = join(root, parts[0]);
+      const owed = chain.documents
+        .filter((d) => d.requires === parts[1] && existsSync(join(dir, d.name)))
+        .filter((d) => statSync(join(dir, d.name)).mtimeMs > statSync(target).mtimeMs)
+        .map((d) => d.name)
+        .filter((name) => !linked.has(name));
+      if (owed.length) {
+        return text(
+          `ERROR: ${owed.join(", ")} ${owed.length === 1 ? "reads" : "read"} ${parts[1]} and ` +
+          `${owed.length === 1 ? "was" : "were"} written after the version you are replacing, ` +
+          `so ${owed.length === 1 ? "it is" : "they are"} what this revision answers. Cite ` +
+          `${owed.length === 1 ? "it" : "them"}: \`sources: ${JSON.stringify(owed)}\`. If the ` +
+          "change has a different cause, cite that too — `sources` takes several, and " +
+          "`source_content` records a cause that exists nowhere else.");
       }
 
       // The input that caused the change is knowledge too: it is stored beside the document

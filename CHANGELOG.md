@@ -54,6 +54,16 @@ Closing is an act, and the progress diagram now shows only what the record can e
   the two bookends, and gate `after` indexes that list; each initiative also reports `complete`,
   which is whether every gate was approved and every document required to close was present.
 
+- **The approval on the closing document IS the sign-off.** A gated closing document is approved
+  by a person, and that is the same act `accepted_by` describes — but the close asked for the name
+  again, so three initiatives closed `delivered` ("nobody signed it off") with their review
+  approved by name on the very document the close was written on. `initiative_close` reads the
+  acceptor off that approval when the caller names nobody. The three are corrected in the store.
+- **An audit round is recorded once.** `sdlc-plan` told the agent to paste the audit's findings
+  back as `source_content` on the revision, while the auditor had already written them to
+  `plan-audit.md` — the same round on the record twice. The revision cites the audit document
+  instead, and `source_content` stays for a cause that exists nowhere else.
+
 ### Console 0.14.0
 
 - **One alignment rule for every table**, held by the `Table` primitive: first column left, last

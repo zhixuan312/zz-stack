@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.49.0] — 2026-09-18
+
+An abandoned close named an acceptor.
+
+### Fixed
+
+- **`abandoned` recorded `accepted_by`.** Closing is the sign-off (0.48.0), and that rule was
+  applied to every close — including one saying the work stopped before it was done, which left
+  `accepted_by` on a record whose outcome says nobody got what they wanted. Only a finished close
+  has an acceptor now. Found on the first real abandon after 0.48.0 shipped; the chain check
+  walks both halves — a finished close records an acceptor, an abandoned one records none — and
+  the freeform walk moved into `chain-freeform.ts`, its own subject and under the line ceiling.
+
 ## [0.48.0] — 2026-09-18 · console 0.15.0
 
 0.47.0's content, plus the defect its own verification found.

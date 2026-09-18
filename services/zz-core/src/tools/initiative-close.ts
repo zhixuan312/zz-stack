@@ -233,7 +233,11 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // for a close nobody accepted — automation finishing a queue, work shipped while the
       // stakeholder is away. That close records `delivered`, which is now what it says rather
       // than what a caller forgot to say.
-      const signedBy = reason ? "" : (acceptor || who.email);
+      // AND ONLY A FINISHED CLOSE HAS ONE. `abandoned` says the work stopped before it was
+      // done, so there is nothing for anybody to have accepted — stamping the closer as the
+      // acceptor put "accepted_by" on a record whose outcome is that nobody got what they
+      // wanted, which is the contradiction this tool refuses in the other direction.
+      const signedBy = disposition === OUTCOME_STOPPED || reason ? "" : (acceptor || who.email);
       // Typed from OUTCOMES so the compiler holds this to the contract's vocabulary. It is the
       // one place the platform DERIVES an outcome, so it names all three words by necessity.
       const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
@@ -250,7 +254,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       return text(
         `${initiative} closed as ${outcome}, recorded by ${who.email}.\n` +
         (signedBy ? `Accepted by ${signedBy}${!acceptor ? " — closing it is saying so" : ""}.\n`
-                  : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
+          : disposition === OUTCOME_STOPPED
+            ? "Nobody accepted it, because it stopped before it was done.\n"
+            : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
         "Closed is not yet complete — one step remains, and it belongs to the platform rather " +
         "than to this flow. Run `skill_read(\"zz-handover\")` next: it mints whatever " +

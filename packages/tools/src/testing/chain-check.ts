@@ -30,6 +30,7 @@ import { parseEnvelope } from "@zz/contracts";
 import { Mcp } from "@zz/mcp-client";
 
 import { walkBugs } from "./chain-bugs.js";
+import { walkFreeform } from "./chain-freeform.js";
 import { walkShelf } from "./chain-shelf.js";
 import { die, envRequired, parseArgs } from "../lib/cli.js";
 
@@ -286,16 +287,6 @@ async function main(): Promise<number> {
     // which was meant.
     check("a slug already taken is refused",
       await call("initiative_open", { slug: SLUG }), true, /already taken/);
-    // FREEFORM IS ACCEPTED. A missing flow is a choice the platform supports, and a door that
-    // refused it would make every freeform initiative unreachable — with nothing here to say
-    // so, because every other assertion in this probe declares a flow.
-    const freeSlug = `${SLUG}-freeform`;
-    const free = await call("initiative_open", { slug: freeSlug });
-    check("opening without a flow is accepted", free, false);
-    const freeName = (JSON.parse(free) as { initiative?: string; next_move?: unknown }).initiative;
-    record(JSON.parse(free).next_move === null,
-      "a freeform initiative is given no next move",
-      `freeform next_move was ${JSON.stringify(JSON.parse(free).next_move)}, expected null`);
     // AND THE OTHER DIRECTION, which is the half a null-only assertion cannot see: the
     // flow-driven initiative opened above must still be told its first document.
     const govNext = JSON.parse(
@@ -303,20 +294,7 @@ async function main(): Promise<number> {
     record(govNext.next_move?.action === "write_document",
       "a flow-driven initiative is told its first document",
       `governed next_move was ${JSON.stringify(govNext.next_move)}, expected write_document`);
-    check("a write into an initiative nobody opened is refused",
-      await writeDoc(`${SLUG}-never-opened/spec.md`, "x"), true, /initiative_open/);
-    if (freeName) {
-      check("a freeform initiative still takes a document",
-        await writeDoc(`${freeName}/notes.md`, "hand-assembled"), false);
-      check("a freeform initiative still records a gate",
-        await call("document_approve", { path: `${freeName}/notes.md`, on_behalf_of: "Chain Check" }),
-        false);
-      check("a freeform initiative still closes, on the document it names",
-        await call("initiative_close", {
-          initiative: freeName, disposition: "finished", accepted_by: "Chain Check",
-          document: "notes.md",
-        }), false);
-    }
+    await walkFreeform({ call, check, record, writeDoc, SLUG });
   }
   console.log(`walking ${INIT}/ through ${GW}`);
 

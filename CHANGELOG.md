@@ -33,6 +33,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.1] — 2026-09-19
+
+The window a tool-use figure is counted over.
+
+### Fixed
+
+- **`never_called` asked about four minutes.** 0.52.0 correctly moved tool attribution onto the
+  plugin's own door, then scoped it to a single plugin VERSION — so for a plugin released
+  minutes earlier it reported the surface as unused. Measured: zz-core's door has taken 627
+  calls across its life and 1 since 0.52.0 shipped, and the list built on the second called
+  fourteen tools in daily use dead surface. "Is this tool ever called" is a property of the
+  SURFACE, which barely moves between releases; the run-shaped figures stay version-scoped
+  because those genuinely are about the version. `use_window` now states which question was
+  asked.
+
 ## [0.52.0] — 2026-09-19
 
 Two models, split by what each is good at — and the evidence fix that changed a verdict.

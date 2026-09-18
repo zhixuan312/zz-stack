@@ -54,11 +54,13 @@ const skillPath = (name: string) => `catalog/sdlc/sdlc-flow/skills/${name}/SKILL
 // FROM THE MANIFEST, not from a list retyped here. This check and `sdlc-documents.ts` would
 // otherwise be two copies of one fact, and a rename in flow.json would leave this one testing
 // a document name nothing produces any more.
-interface Stage { name: string; produces?: string }
+interface Stage { name: string; produces?: string; supports?: string }
 interface Flow { stages?: Stage[] }
 const flow: Flow = JSON.parse(readFileSync("catalog/sdlc/sdlc-flow/flow.json", "utf8"));
 const produces = new Map((flow.stages ?? []).map(
   (s): [string, string | undefined] => [s.name, s.produces]));
+const supports = new Map((flow.stages ?? []).map(
+  (s): [string, string | undefined] => [s.name, s.supports]));
 
 // THE LOAD IMPERATIVE, not a mention of a name. Both audits ALSO refer to their library in
 // passing ("the eleven failure modes in `sdlc-audit-criteria` are about prose"), and keying on
@@ -94,15 +96,27 @@ const bodyOf = (text: string) =>
   text.replace(/^---\n[\s\S]*?\n---\n/, "").replace(/<!--[\s\S]*?-->/g, "");
 
 for (const stage of STAGES) {
-  const doc = produces.get(stage);
-  if (!doc || !doc.endsWith(".md")) {
-    fail.push(`${stage} produces ${doc ?? "nothing the flow declares"}, so there is no document to write`);
+  // WHAT THIS STAGE LEAVES, from the manifest: a document it writes, or a SOURCE supporting
+  // one. The two audits produce evidence about the document they read — the material that
+  // makes its next version necessary — and `sdlc-review` writes the flow's closing document.
+  // Both are artifacts a worker must actually create, and this check follows the manifest
+  // rather than assuming which shape a verification stage has.
+  const produced = produces.get(stage);
+  const target = supports.get(stage);
+  const isSource = produced === "source";
+  if (isSource && !target) {
+    fail.push(`${stage} produces a source and names no document in supports`);
     continue;
   }
+  if (!isSource && (!produced || !produced.endsWith(".md"))) {
+    fail.push(`${stage} produces ${produced ?? "nothing the flow declares"}, so there is nothing for it to leave`);
+    continue;
+  }
+  const doc = isSource ? (target as string) : (produced as string);
   const own = bodyOf(readFileSync(skillPath(stage), "utf8"));
 
-  // NAMING ITS OWN DOCUMENT IS THE STAGE'S OWN JOB and is never delegated: the library serves
-  // both audits and cannot say which of the two documents this worker is writing.
+  // NAMING ITS OWN TARGET IS THE STAGE'S OWN JOB and is never delegated: the library serves
+  // both audits and cannot say which document this worker read.
   if (!own.includes(doc)) fail.push(`${stage} does not name ${doc}`);
 
   // Everything else may live in a library — but only one this stage says to load.
@@ -124,15 +138,28 @@ for (const stage of STAGES) {
     }
   }
 
-  // 1. THE WRITE. The document the manifest promises, through the platform's write tool.
-  if (!/document_write/.test(reach)) fail.push(`${where} does not write its document`);
-  if (/you write no file|write no file/i.test(reach)) fail.push(`${where} still says it writes no file`);
-
-  // 2. THE APPEND. `document_write` is create-or-OVERWRITE and there is no append tool, so
-  // three audit rounds through a bare write leave one round on the record and silently
-  // destroy the two the method exists to make possible. The read is what makes it an append.
-  if (!/document_read/.test(reach)) {
-    fail.push(`${where} writes ${doc} without reading it first, so a later round overwrites the earlier ones`);
+  // 1. THE ARTIFACT, through the platform's own tool: `source_add` for a stage whose result is
+  // evidence, `document_write` for one that writes a document. A stage that leaves nothing has
+  // not run as far as anybody reading the initiative can tell.
+  if (isSource) {
+    if (!/source_add/.test(reach)) fail.push(`${where} does not register its round as a source`);
+    // AND WHAT IT IS EVIDENCE FOR. `supports` is what ties the round to the document it read —
+    // the platform refuses that document's next version until this source is cited, and
+    // without the field the source explains nothing.
+    if (!/supports/.test(reach)) fail.push(`${where} registers a source without naming what it supports`);
+    if (/document_write/.test(reach)) {
+      fail.push(`${where} writes a document; an audit round is a source, and doing both puts ` +
+                "one round on the record twice");
+    }
+  } else {
+    if (!/document_write/.test(reach)) fail.push(`${where} does not write its document`);
+    if (/you write no file|write no file/i.test(reach)) fail.push(`${where} still says it writes no file`);
+    // THE APPEND. `document_write` is create-or-OVERWRITE and there is no append tool, so a
+    // second round through a bare write destroys the first. The read is what makes it an
+    // append. A source needs none of this: `source_add` writes a new file every time.
+    if (!/document_read/.test(reach)) {
+      fail.push(`${where} writes ${doc} without reading it first, so a later round overwrites the earlier ones`);
+    }
   }
 
   // 3. THE REPORT SURVIVES THE DOCUMENT. The dispatching agent decides what happens next from

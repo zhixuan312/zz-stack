@@ -69,15 +69,20 @@ if [ "$(printf '%s' "$EXISTS" | tr -d '[:space:]')" != "1" ]; then
   exit 1
 fi
 
-printf '%s\n' "insert into zz.pat (principal_id, token_hash, label, scope)
-   select id, :'hash', 'bootstrap — issue-first-pat.sh', 'admin'
+# NO `scope`. A PAT carried `member` or `admin` until the platform stopped asking the TOKEN
+# what its holder may do — authority is a fact about the person, read from their principal — and
+# the column went with it. This still named it, so the one script a fresh install cannot do
+# without died on "column scope of relation pat does not exist" at the moment there is no other
+# way in. Found by the release's own tool-chain walk, which mints its token exactly this way.
+printf '%s\n' "insert into zz.pat (principal_id, token_hash, label)
+   select id, :'hash', 'bootstrap — issue-first-pat.sh'
    from zz.principal where email = :'email';" \
   | docker compose exec -T postgres psql -U "${POSTGRES_USER:-zz}" -d "${POSTGRES_DB:-zz}" -q \
       -v email="$EMAIL" -v hash="$HASH" >/dev/null
 
 cat <<MSG
 
-Platform token for $EMAIL (scope: admin)
+Platform token for $EMAIL
 
   $TOKEN
 

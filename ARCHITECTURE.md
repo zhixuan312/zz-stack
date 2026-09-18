@@ -216,6 +216,72 @@ It simply no longer decides what the package *is*.
 - `stages` without `documents` is **not** an error. It is an ordinary non-flow package: a
   method somebody follows that leaves no governed document behind.
 
+### Defining a step: three questions, answered in the manifest
+
+A flow is a sequence of steps, and each step answers the same three questions about what it
+leaves behind. The manifest is where it answers them, and every reader — the write guards, the
+console's diagram, the release's own checks — derives from those answers rather than knowing
+anything about a particular flow.
+
+**1 · Does this step produce documentation?** `produces` says so, in one of four values:
+
+| `produces` | What the step leaves | Example |
+|---|---|---|
+| `"<name>.md"` | a MAIN document, declared in `documents` | `sdlc-spec` → `spec.md` |
+| `"source"` | SUPPORTING material another document changes because of | `sdlc-plan-audit` → a source about `plan.md` |
+| `"record"` | rows in the platform's own tables | `zz-plugin-judge` → scores |
+| `"nothing"` | no artifact at all | `sdlc-execute` → the repository itself |
+
+**2 · Main or supporting?** That is the difference between the first two rows, and it is a
+difference in kind rather than in importance. A main document is a deliverable: the flow
+declares it in `documents`, somebody may be asked to approve it, and downstream steps wait for
+it. A source is evidence: it is filed under `sources/`, nobody approves it, and its whole job is
+to explain why a main document changed. An audit report is a source — **the material that makes
+the next version of somebody else's document necessary** — which is why declaring it as a
+document put one round on the record twice.
+
+A step producing a source names its target: `supports: "plan.md"`. The contract requires the
+pair, and the gate requires the name to resolve to a document the same flow declares. That one
+field is what lets the platform refuse `plan.md`'s next version until the round is cited, with
+nothing anywhere knowing the word "audit".
+
+**3 · Does it need a person?** `gate: true` on the declared document, and only there. A gate is
+a verdict a person records with `document_approve`; the platform stamps `status` only where a
+gate exists, and refuses to approve a document that carries none. A source is never gated.
+
+```json
+{ "name": "sdlc-plan",       "produces": "plan.md" },
+{ "name": "sdlc-plan-audit", "produces": "source", "supports": "plan.md" },
+{ "name": "sdlc-execute",    "produces": "nothing" }
+```
+
+### What a step's state is derived from
+
+Nothing stores progress. It is read from the manifest and the record, per step:
+
+| `produces` | done when | other states |
+|---|---|---|
+| a document | the file exists, and a gate on it is approved | `partial` — written, gate still open (this is "waiting on a person"); `empty` — not written |
+| `"source"` | a source in the initiative declares `supports: <target>` | `empty` — no such source |
+| `"nothing"` / `"record"` | any later step is done or partial | `empty` — nothing after it either |
+
+The last row is order, not assumption: a review that exists could not have been written without
+the execution before it. A step is drawn `empty` rather than done whenever the record cannot
+show it happened, and nothing infers the other way.
+
+**Every initiative also opens and closes, and no manifest declares either.** `open` is the
+initiative existing; `closed` is an outcome recorded by `initiative_close`. They are the two
+bookends of every flow's diagram, added by the platform, because they are acts of the initiative
+rather than steps of the method.
+
+### A version names the material behind it
+
+`document_revise` refuses a content change that cites nothing: pass `sources` for material
+already on the record, or `source_content` for words that are not yet. It also refuses a
+revision that ignores what already explains it — any source supporting this document, added
+after the version being replaced, must be cited. Approving, closing and the envelope are
+untouched by this rule: it is the BODY that may not change with the reason left off the record.
+
 ### `entry` — the skill the agent opens first
 
 `entry` is orthogonal to shape. A flow needs a door — `stages` without `entry` is an error,

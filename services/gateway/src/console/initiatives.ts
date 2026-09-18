@@ -59,20 +59,20 @@ export function mountInitiatives(app: Express): void {
     };
     const { rows } = scope.kind !== "platform"
       ? await db.query<ListRow>(
-      `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
+      `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc
         where initiative <> '_knowledge' and team_slug = $1
         order by team_slug, initiative, path`, [scope.slug])
       : want !== null
       ? await db.query<ListRow>(
-      `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
+      `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc
         where initiative <> '_knowledge' and team_slug = $1
         order by team_slug, initiative, path`, [want])
       : await db.query<ListRow>(
-      `select team_slug, initiative, flow, path, type, status, outcome, approved_by,
+      `select team_slug, initiative, flow, path, type, status, outcome, approved_by, supports,
               to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
          from zz.doc
         where initiative <> '_knowledge'

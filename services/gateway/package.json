@@ -1,7 +1,7 @@
 {
   "name": "@zz/gateway",
   "private": true,
-  "version": "0.46.0",
+  "version": "0.47.0",
   "type": "module",
   "scripts": {
     "build": "tsc -b"

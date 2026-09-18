@@ -305,60 +305,46 @@ export const FlowDoc = z.object({
 }).strict();
 export type FlowDoc = z.infer<typeof FlowDoc>;
 
-/** One stage of a flow, and WHICH BUILDING BLOCKS IT MAY CALL.
+/** A DOCUMENT NAME here is a CLAIM the rest of the manifest can be held to: `documents`
+ * already says which stage writes each document, so a stage naming one the flow does not
+ * declare is a stage nobody can verify. */
+const stageBase = { name: z.string().min(1) };
+
+/** A STAGE WHOSE RESULT IS EVIDENCE, and the document that evidence is about.
  *
- * `blocks` is a CALL AUTHORITY, and it is the only one this platform has that is finer than a
- * team. The manifest's own `tools` grants building blocks to a whole flow, so every stage of
- * ops-flow could reach casebox, RuleMill and bookit — including ops-intent, which states what a person
- * wants and names no technology at all, and ops-spec, which writes the agreement in their words.
- * The event log showed the first stage — the one that only listens — reaching all three blocks
- * anyway, including one call that WRITES. Nothing was broken by an agent going around a rule:
- * there was no rule to go around, because a flow had no way to say it.
+ * A source is filed under `sources/`, nobody approves it, and its whole job is to explain why a
+ * main document changed — an audit round is the material that makes the next version of the
+ * document it read necessary. `supports` names that document, which is what lets the platform
+ * refuse the next version until this round is cited, and what lets a diagram show the round
+ * happened. Required here and refused everywhere else: a stage that writes a document already
+ * names it, and a stage that produces nothing supports nothing. */
+const SourceStage = z.object({
+  ...stageBase,
+  produces: z.literal("source"),
+  supports: z.string().regex(/^[a-z0-9][a-z0-9-]*\.md$/, "a document name, like \"spec.md\""),
+}).strict();
+
+/** EVERY OTHER STAGE: one that writes a MAIN document the flow declares, one whose result is
+ * rows in the platform's own tables (`"record"`), or one that leaves no artifact at all
+ * (`"nothing"`).
  *
- * The two fields are different questions and both are real:
- *
- *   tools   — what the CLIENT PACKAGE CARRIES. It builds the agent's MCP server list at
- *             provisioning time (render_agent_definition) and the install report's grant list.
- *             A context budget, decided once per team and flow.
- *   blocks  — what THIS STAGE MAY CALL. Enforced per call at the gateway proxy, against the
- *             skill the caller last loaded.
- *
- * A stage's `blocks` must be a subset of the flow's `tools`; the gate checks it. Declaring a
- * block a stage cannot be given is a manifest that describes a flow nobody can run.
- *
- * ABSENT MEANS UNENFORCED, and an EMPTY LIST IS A STATEMENT. A stage with no `blocks` key is
- * one the flow has said nothing about, and it behaves exactly as it did before this field
- * existed — which is what keeps this from silently constraining five flows that were written
- * before it. `blocks: []` is the flow saying, on the record, that this stage calls nothing. */
-export const FlowStage = z.object({
-  name: z.string().min(1),
-  /** WHAT THIS STAGE LEAVES BEHIND, in one of three shapes: the name of a document it
-   * writes (`"spec.md"`), the literal `"record"` for a stage whose result is stored by the
-   * platform rather than written as a document, or the literal `"nothing"` for a stage that
-   * reads and reports and stores neither.
-   *
-   * REQUIRED, and that is the whole point of the third value. An optional field answers "the
-   * author forgot" and "this stage genuinely produces nothing" with the same absence, and
-   * those are different facts about a flow — the first is a manifest to fix, the second is a
-   * design decision somebody made. `"nothing"` is how a stage says the second one out loud.
-   *
-   * A document name here is a CLAIM the rest of the manifest can be held to: `documents`
-   * already says which stage writes each document, so a stage that names a document the
-   * flow does not declare is a stage nobody can verify. `"record"` is for the stages that
-   * write into the platform's own tables — an audit's findings, a judge's scores — where
-   * there is a durable result and no document and no gate.
-   *
-   * THE UNION IS LOAD-BEARING NOW, AND WAS NOT. Beside `z.string().min(1)` the two literals
-   * decided nothing — a non-empty string already accepts them — so `produces: "garbage"`
-   * validated, while contract-fields.ts's control claimed otherwise by testing `""`, the one
-   * value `.min(1)` catches on its own. Every reader already treats a document name as a name
-   * (stage-produces.ts resolves it against `documents`; sdlc-documents.ts orders the flow by
-   * which values end in `.md`), so the shape was load-bearing everywhere but here. */
+ * REQUIRED, and that is the whole point of the last value. An optional field answers "the
+ * author forgot" and "this stage genuinely produces nothing" with the same absence, and those
+ * are different facts about a flow — the first is a manifest to fix, the second is a design
+ * decision somebody made. */
+const ArtifactStage = z.object({
+  ...stageBase,
   produces: z.union([
     z.string().regex(/^[a-z0-9][a-z0-9-]*\.md$/, "a document name, like \"spec.md\""),
     z.literal("record"), z.literal("nothing"),
   ]),
 }).strict();
+
+/** WHAT A STEP LEAVES BEHIND, which is how a flow answers the three questions about it: does it
+ * produce documentation, is that documentation main or supporting, and does it need a person.
+ * The first two are `produces` (and `supports` with it); the third is `gate` on the declared
+ * document. See ARCHITECTURE.md, "Defining a step". */
+export const FlowStage = z.union([SourceStage, ArtifactStage]);
 export type FlowStage = z.infer<typeof FlowStage>;
 
 export const CatalogManifest = z.object({

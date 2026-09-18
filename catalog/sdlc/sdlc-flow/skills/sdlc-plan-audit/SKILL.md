@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 1.3
+version: 2.0
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, at most three rounds.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -29,10 +29,12 @@ the main agent, and that agent decides what anybody is shown — so do not paste
 or `document_present` output, into what you return. Presenting a document in full belongs
 to the gate the main agent is asking somebody to sign, and this round is not that.
 
-**Your round is recorded in `<initiative>/plan-audit.md`.** That document is the only thing
-standing between an unread plan and `sdlc-execute` dispatching its tasks one by one, and it is
-what tells anyone later that somebody who did not write the plan read it. `sdlc-audit-criteria`
-carries how to write it.
+**Your round is recorded as a SOURCE supporting `plan.md`** — `source_add(..., supports:
+"plan.md")`. It is the only thing standing between an unread plan and `sdlc-execute`
+dispatching its tasks one by one, it is what tells anyone later that somebody who did not write
+the plan read it, and it is what the platform requires the next version of the plan to cite. It
+is not a document of the flow: an audit report is the material that makes a revision necessary.
+`sdlc-audit-criteria` carries how to write it and the exact call.
 
 ## Twelve: the plan's own contract
 

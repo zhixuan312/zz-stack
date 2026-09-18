@@ -1,26 +1,26 @@
 {
   "sdlc": {
-    "version": "0.46.0",
-    "digest": "7142537e",
+    "version": "0.47.0",
+    "digest": "5c503c69",
     "cases_digest": "ac009e81",
     "skills": {
-      "sdlc-audit-criteria": "dd8d57f4c235",
+      "sdlc-audit-criteria": "762b4305ebbe",
       "sdlc-execute": "9a04bd96e3dd",
       "sdlc-explore": "9964d100ebd9",
-      "sdlc-flow": "43418d89f0fd",
+      "sdlc-flow": "587dc27418f8",
       "sdlc-investigate": "c52bfb4eff39",
-      "sdlc-method": "1611df40c3d5",
-      "sdlc-plan": "cd3eb1b139dd",
-      "sdlc-plan-audit": "973f99739a50",
+      "sdlc-method": "6300c802a9a4",
+      "sdlc-plan": "4a60f403f832",
+      "sdlc-plan-audit": "6d0a05e5dbbb",
       "sdlc-recall": "f4336b15795b",
       "sdlc-research": "356f31a674f0",
       "sdlc-review": "afe2f28aeb27",
       "sdlc-spec": "fbbd06be3b68",
-      "sdlc-spec-audit": "194dab411b6f"
+      "sdlc-spec-audit": "02eea2b655f6"
     }
   },
   "zz-access": {
-    "version": "0.46.0",
+    "version": "0.47.0",
     "digest": "b207c265",
     "cases_digest": "a0ba2ff9",
     "skills": {
@@ -32,7 +32,7 @@
     }
   },
   "zz-core": {
-    "version": "0.46.0",
+    "version": "0.47.0",
     "digest": "a9115fcc",
     "cases_digest": "f64bba10",
     "skills": {
@@ -45,7 +45,7 @@
     }
   },
   "zz-plugin-eval": {
-    "version": "0.46.0",
+    "version": "0.47.0",
     "digest": "de3a886a",
     "cases_digest": "cfa54fb8",
     "skills": {

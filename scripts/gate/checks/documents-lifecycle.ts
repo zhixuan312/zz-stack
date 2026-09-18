@@ -21,27 +21,36 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
-check("document_revise records whether a revision had an external cause", () => {
+check("document_revise records the material behind every version", () => {
   // An earlier version of this check searched forward from src.indexOf("explained") — which
-  // lands inside the word "unexplained" in a comment at :5124, 6,946 characters before the
-  // logActivity payload at :5226 and outside its own 4,000-char window. It could not have
-  // verified the thing it was written for. Anchored on the payload instead.
+  // lands inside the word "unexplained" in a comment, thousands of characters before the
+  // logActivity payload and outside its own window. It could not have verified the thing it
+  // was written for. Anchored on the payload instead.
   //
-  // The ERROR class matches the check above it and diverges from the plan's for the same
-  // reason: the refusal reads "ERROR: `self_edit` says nothing external caused this
-  // version", so a class excluding the backtick stops at the space-backtick and never
-  // reaches the field name. Backticks pass; the newline is the bound.
+  // WHAT CHANGED HERE, and why the old clauses are gone. `self_edit` was the route for a
+  // version nothing caused — a declaration of WHAT was edited, accepted instead of material.
+  // A content change names its material now, whatever the edit was, so this asserts the field
+  // is ABSENT and that the two routes that remain are both present: `sources` for material
+  // already on the record, `source_content` for words that are not yet.
   const src = zzCoreSource();
   const bad: string[] = [];
-  if (!/self_edit:\s*z\.string\(\)/.test(src)) bad.push("self_edit is missing or is not a string (spec D6 forbids a boolean)");
-  if (/self_edit:\s*z\.boolean\(\)/.test(src)) bad.push("self_edit is a boolean; D6 requires a declaration of what was edited");
-  if (!/ERROR:[^"'\n]*self_edit/.test(src)) bad.push("no refusal for self_edit supplied together with a cause");
+  // THE FIELD, not the word: the handler explains in a comment why the route was removed, and a
+  // check that cannot tell an explanation from a declaration fails on its own documentation.
+  if (/self_edit:\s*z\./.test(src)) bad.push("self_edit is back; a content change names its material");
+  if (!/sources:\s*z\.array/.test(src)) bad.push("document_revise no longer takes `sources` — nothing can cite an audit round");
+  if (!/source_content:\s*z\.string\(\)/.test(src)) bad.push("document_revise no longer takes `source_content` — a cause with no file has nowhere to go");
+  if (!/ERROR: nothing says what caused this version/.test(src)) bad.push("no refusal for a revision that cites nothing");
+  // AND THE ONE IT CANNOT INVENT: a source that already supports this document, newer than the
+  // version being replaced, must be cited rather than ignored.
+  if (!/supports/.test(src) || !/what this revision answers/.test(src)) {
+    bad.push("nothing requires a revision to cite the sources that already support the document");
+  }
   const at = src.indexOf('action: "document_revise"');
   if (at < 0) { bad.push("the document_revise activity payload was not found"); }
   else {
     const payload = src.slice(Math.max(0, at - 600), at + 600);
-    if (!/\bexplained\b/.test(payload) || !/\bself_edit\b/.test(payload)) {
-      bad.push("the document_revise activity payload does not carry both `explained` and `self_edit`, so the three states are indistinguishable");
+    if (!/\bexplained\b/.test(payload) || !/\bsources\b/.test(payload)) {
+      bad.push("the document_revise activity payload does not carry both `explained` and `sources`, so the record cannot say what a version rests on");
     }
   }
   return bad.length ? bad.join("; ") : null;

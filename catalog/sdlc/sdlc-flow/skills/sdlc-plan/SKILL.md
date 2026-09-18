@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.6
+version: 1.7
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Local runtimes only (Claude Code, Codex)."
 ---
@@ -315,12 +315,14 @@ standing on bytes they never read.
 document_revise(
   path: "<initiative>/plan.md",
   content: "<the full revised plan>",
-  sources: ["plan-audit.md"])            # the audit round that sent it back
+  sources: ["sources/<the audit round you are answering>.md"])
 ```
 
-**THE AUDIT DOCUMENT IS THE SOURCE.** `sdlc-plan-audit` already wrote its round to
-`plan-audit.md`, so pasting the same findings back as `source_content` puts one round on the
-record twice and leaves a reader two places to look. Cite the document instead.
+**THE AUDIT ROUND IS ALREADY A SOURCE.** `sdlc-plan-audit` registered it with `source_add`,
+supporting `plan.md` — so cite that file rather than pasting its findings back, which would put
+one round on the record twice. The platform refuses this revision until you do: a source that
+supports `plan.md` and is newer than the version you are replacing is, by its own declaration,
+what this revision answers. `document_list` on the initiative shows the sources.
 
 `source_content` is still right for a cause that exists nowhere else — an execution report, or
 something a person said:

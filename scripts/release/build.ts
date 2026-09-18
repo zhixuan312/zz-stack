@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, root, run, step } from "../deployment.ts";
 import { dryRun, version } from "./config.ts";
 import type { DashboardResolution } from "./dashboard.ts";
+import { walkToolChain } from "./tool-chain.ts";
 
 export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution; dashVersion: string | null }): string {
   step(2, "build and smoke the images");
@@ -204,6 +205,13 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     drop();
     process.removeListener("exit", drop);
   }
+
+  /* And the ACTS, on the same image, before anything is published.
+   *
+   * sql-check above proves every statement resolves; this proves the tools built on them still
+   * behave the way this release says they do. It is the check that was only ever run against
+   * production — see tool-chain.ts for the two rollbacks that bought it. */
+  walkToolChain(version);
 
   /* The deploy bundle: everything a person needs to run this release and nothing else.
    * The compose file already names this release's images as literals, so the bundle is

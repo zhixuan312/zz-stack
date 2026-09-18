@@ -33,6 +33,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.46.0] — 2026-09-18 · console 0.14.0
+
+Closing is an act, and the progress diagram now shows only what the record can evidence.
+
+### Changed — breaking
+
+- **An abandon records wherever the work stopped.** A flow's closing document is written by its
+  last stage, so an initiative that stopped at the plan had none — and `initiative_close` refused
+  until one was written, which made `abandoned` mean "write the review you never did first". It
+  now records on the furthest declared document that exists.
+- **The progress diagram is derived, bookend to bookend.** Every initiative opens and closes and
+  no manifest declares either, so `open` and `closed` are steps of every flow. Between them each
+  stage carries a state read off the manifest and the store: `done` (its documents exist and
+  their gates are approved), `partial` (written, a gate still open), `empty` (nothing written),
+  `untracked` (the stage declares no document, so nothing could evidence it). Closing no longer
+  fills the stages in: an initiative abandoned at the plan used to show six finished stages and a
+  review nobody wrote.
+- **`/api/console/initiatives`**: `steps` carry `state` and `current` instead of `done`, include
+  the two bookends, and gate `after` indexes that list; each initiative also reports `complete`,
+  which is whether every gate was approved and every document required to close was present.
+
+### Console 0.14.0
+
+- **One alignment rule for every table**, held by the `Table` primitive: first column left, last
+  right, everything between centred, header and cell alike. It was a class on individual cells,
+  so thirteen tables had each decided it separately.
+- **The stepper renders the API's states** and computes nothing: an outline node means the step
+  leaves no document behind, not that it was skipped.
+
 ## [0.45.0] — 2026-09-17 · console 0.13.0
 
 The platform stops keeping a record it could not back: which plugins a team had "installed".

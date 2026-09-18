@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.7
+version: 2.8
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -28,8 +28,11 @@ anything, as the signal this cycle is actually done.
 - Every document the flow declared, in order, and their `_versions/` snapshots: what
   changed between an approval and the next one is where the disagreements are.
 - `activity.jsonl` — every call, timestamped, with its arguments.
-- `knowledge_reconcile(<initiative>)` — what this initiative's stages PREDICTED about each plugin
-  against what the gateway actually recorded, refusal text included.
+- `knowledge_reconcile(<initiative>)` — **the claims this initiative's stages RECORDED, and
+  only those.** The right-hand side is gone and the tool says so in as many words: nothing
+  joins a claim to telemetry until something records which plugin a claim is about. Read it
+  for what was predicted; do not report an actual-versus-predicted comparison, and do not
+  reconstruct one from the activity log.
 - The `_ledger.md` row: the close, its outcome, and its date — written by the platform, not
   by the agent, which is why it is the one to measure against.
 - `knowledge_search` for what is ALREADY known, on both shelves — and OPEN the ones that
@@ -150,8 +153,11 @@ none of those things.
 
 ## Writing `handover.md`
 
-Three sections, at `##`, with exactly these headings — the platform checks for them and
-refuses the write without all three:
+Three sections, at `##`, with exactly these headings. **The platform checks them at the
+APPROVAL, not at the write**: `handover.md` is gated, and a gated document is allowed to be
+half-written while it is a draft, so `document_write` accepts a two-section handover and
+`document_approve` is what refuses it — in front of the person you asked to sign it. Write
+all three the first time:
 
 - **`## What this initiative taught`** — prose, not a list of nodes. What the read-back of
   the initiative's documents, telemetry and refusals actually showed, in enough detail that

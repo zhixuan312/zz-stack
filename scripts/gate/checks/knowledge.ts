@@ -10,7 +10,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { gatewaySource, root, zzCoreSource } from "../read.ts";
+import { catalogSource, gatewaySource, root, zzCoreSource } from "../read.ts";
 import { check } from "../run.ts";
 import { catalogRoot, flows } from "../facts.ts";
 
@@ -390,13 +390,21 @@ check("every flow that gates a document also carries the handover", () => {
   // manifest already states, so it is derived rather than configured. Five flows qualify
   // today; a sixth added later inherits it without its author remembering, which is the whole
   // point of deriving instead of declaring.
-  const src = zzCoreSource();
-  const at = src.indexOf("function deriveChain(");
-  if (at < 0) return "deriveChain is gone or was renamed — every document list resolves through it";
+  // IN @zz/catalog, NOT IN zz-core. The derivation was written inside zz-core's deriveChain,
+  // where the CONSOLE could not reach it — so the console drew the flow the manifest declares
+  // while the platform enforced a flow with one more gated document in it, and reported an
+  // initiative complete whose handover nobody had signed. Both readers call `withHandover`
+  // now, and this checks the one place it lives plus the fact that zz-core still delegates.
+  const src = catalogSource();
+  const at = src.indexOf("export function withHandover(");
+  if (at < 0) return "withHandover is gone or was renamed — both the platform and the console resolve a flow's documents through it";
   const body = src.slice(at, src.indexOf("\n}", at));
   const bad: string[] = [];
-  if (!/handover\.md/.test(body)) bad.push("deriveChain does not derive handover.md");
+  if (!/handover\.md/.test(body)) bad.push("withHandover does not derive handover.md");
   if (!/\.gate/.test(body)) bad.push("the derivation does not test for a gated document");
+  if (!/withHandover\(/.test(zzCoreSource())) {
+    bad.push("zz-core does not call withHandover — deriveChain must delegate, or the platform and the console describe different flows again");
+  }
   if (!/What this initiative taught/.test(body)) {
     bad.push("the derived entry declares no sections — sectionCheck returns early without them and the three headings would be unenforced");
   }
@@ -407,7 +415,7 @@ check("the handover carries a gate and does not carry the close", () => {
   // gate: true is what makes a person sign it. closing/requiredForClose would make initiative_close()
   // demand a document that cannot exist until after the close — documentGuards skips a gated
   // document that is absent, and that is the only reason the sequence is not circular.
-  const src = zzCoreSource();
+  const src = catalogSource();
   // ANCHORED ON THE ENTRY, not on the first textual occurrence of the name. The derivation
   // is preceded by a comment block that mentions handover.md several times, so indexOf on the
   // bare name lands in prose and the window never reaches the object literal — the check then

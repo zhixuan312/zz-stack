@@ -1,8 +1,8 @@
 ---
 name: sdlc-plan
-version: 1.7
+version: 1.8
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
-when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Local runtimes only (Claude Code, Codex)."
+when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Local runtimes only (Claude Code)."
 ---
 
 # sdlc-plan

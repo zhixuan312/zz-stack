@@ -1,7 +1,7 @@
 ---
 name: zz-admin
-version: 2.6
-description: "Running the platform itself: who exists, which teams they are in, which flows each team may reach, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
+version: 2.7
+description: "Running the platform itself: who exists, which teams they are in, and the tokens and enrolment links that let anyone in at all. Everything here acts on OTHER people — which is what makes it the one package that is not about the person in front of you."
 when_to_use: "Someone needs a principal created or deactivated, a team made or retired, a person added to or removed from a team, a PAT issued or revoked, or a passkey enrolment link minted. Also for an access review — who has what, and who gave it to them."
 ---
 
@@ -9,8 +9,14 @@ when_to_use: "Someone needs a principal created or deactivated, a team made or r
 
 Everything in this skill acts on **somebody else**. That is the whole difference from
 `zz-access`, which only ever touches the person in front of you: a token here is issued
-*for* a principal, a team is created *for* people who are not in the room, and a flow
-grant decides what a team you may not belong to can reach.
+*for* a principal, and a team is created *for* people who are not in the room.
+
+**THERE IS NO FLOW GRANT AND NO INSTALL REGISTRY.** The platform keeps no record of what
+a team has installed — it cannot see what is on a person's machine, so such a record was
+a claim it could not back and every use of it a restriction it could not enforce.
+The two platform plugins are required; every other plugin is a person's own choice, made on
+their own machine. Asked to "grant a team a flow", say that: there is nothing to grant,
+and `catalog_list` shows everyone the same shelf.
 
 Same tools list, same door — the platform does not sort administration into its own URL,
 because a URL that admits everybody sorts nothing. **What separates the two is your role**:

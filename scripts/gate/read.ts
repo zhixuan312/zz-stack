@@ -69,6 +69,7 @@ const subjectSource = (dirs: string[], exts: string[], also: string[] = []) => (
 export const zzCoreSource = subjectSource(["services/zz-core/src"], [".ts"]);
 export const gatewaySource = subjectSource(["services/gateway/src"], [".ts"]);
 export const contractsSource = subjectSource(["packages/contracts/src"], [".ts"]);
+export const catalogSource = subjectSource(["packages/catalog/src"], [".ts"]);
 export const consoleSource = subjectSource(["services/gateway/src/console"], [".ts"],
   ["services/gateway/src/console.ts"]);
 // THE RELEASE INCLUDES THE DEPLOYMENT DESCRIPTION IT IS BUILT ON. scripts/deployment.ts holds

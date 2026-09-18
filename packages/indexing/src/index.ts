@@ -132,7 +132,16 @@ export async function indexDoc(root: string, relPath: string, content: string, s
         `insert into zz.knowledge_node
            (team_slug, path, kind, lifecycle, superseded_by,
             title, body, tags, evidence, content_hash, updated_at, body_tsv)
-         values ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::text[],$10, now(),
+         -- THE NODE'S OWN RECORDED DATE, not the moment the index ran. This was now(), so
+         -- every row said "recorded" whenever it was last re-derived: a force rebuild
+         -- restamps the entire journal to one afternoon, and the console Recorded column
+         -- which reads this then reports 859 nodes as all having been written that day.
+         -- Measured on this deployment: every node across all three shelves carries
+         -- updated_at 2026-09-16, which is exactly one such rebuild. The date field is what
+         -- knowledge_add writes into the node frontmatter; now() remains the fallback for a
+         -- node that carries none, because a null here would lose the ordering entirely.
+         values ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::text[],$10,
+                 coalesce($11::timestamptz, now()),
                  setweight(to_tsvector('english', $6::text), 'A') ||
                  setweight(to_tsvector('english', array_to_string($8::text[], ' ')), 'B') ||
                  setweight(to_tsvector('english', $7::text), 'C'))
@@ -143,7 +152,8 @@ export async function indexDoc(root: string, relPath: string, content: string, s
            updated_at=excluded.updated_at, body_tsv=excluded.body_tsv`,
         [teamSlug, parts.slice(1).join("/"), kind, lifecycle,
          supersededBy && supersededBy !== "null" ? supersededBy : null,
-         title, body, list(env.tags), list(env.evidence), nodeHash]);
+         title, body, list(env.tags), list(env.evidence), nodeHash,
+         /^\d{4}-\d{2}-\d{2}$/.test((env.date ?? "").trim()) ? env.date.trim() : null]);
       return true;
     }
 
@@ -352,7 +362,12 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
   if (!existsSync(root)) {
     const r = await p.query("delete from zz.doc where team_slug=$1", [teamSlug]);
     await p.query("delete from zz.decision where team_slug=$1", [teamSlug]);
-    return { scanned: 0, indexed: 0, removed: r.rowCount ?? 0 };
+    // AND THE KNOWLEDGE SHELF. A team's nodes are its own subject in their own table since
+    // migration 059, and this only ever cleaned zz.doc — so a retired team's journal
+    // survived the archive and went on answering knowledge_search, which is the ghost-row
+    // failure the paragraph above calls the worst this store has.
+    const n = await p.query("delete from zz.knowledge_node where team_slug=$1", [teamSlug]);
+    return { scanned: 0, indexed: 0, removed: (r.rowCount ?? 0) + (n.rowCount ?? 0) };
   }
   const found = new Set<string>();
   let scanned = 0, indexed = 0;
@@ -367,6 +382,23 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
   const rows = await p.query<{ initiative: string; path: string }>(
     "select initiative, path from zz.doc where team_slug=$1", [teamSlug]);
   const gone = rows.rows.filter((r) => !found.has(`${r.initiative}\u0000${r.path}`));
+  // THE KNOWLEDGE SHELF IS REAPED TOO, and it is a SECOND table since migration 059.
+  //
+  // The walk above indexes a node into zz.knowledge_node and adds it to `found` like any
+  // other file, but this reap only ever asked zz.doc what it believed — so a node deleted or
+  // renamed on disk kept its row for good, unreachable by the rebuild that exists to repair
+  // exactly that. "A search returned a document whose file is gone" is the stated reason
+  // knowledge_reindex exists, and for a knowledge node it could not answer it.
+  //
+  // Keyed the same way the walk keys it: a node's `initiative` segment is the literal
+  // `_knowledge` directory and its path is the rest.
+  const nodeRows = await p.query<{ path: string }>(
+    "select path from zz.knowledge_node where team_slug=$1", [teamSlug]);
+  const nodesGone = nodeRows.rows.filter((r) => !found.has(`_knowledge\u0000${r.path}`));
+  for (const g of nodesGone) {
+    await p.query("delete from zz.knowledge_node where team_slug=$1 and path=$2",
+      [teamSlug, g.path]);
+  }
   for (const g of gone) {
     // BOTH tables. A document's row lives in zz.doc and its claims live in zz.decision, keyed
     // the same way, and only one of them was being cleaned. indexDoc deletes the claims of a
@@ -378,7 +410,7 @@ export async function reindexTeam(teamSlug: string, force = false): Promise<{ sc
     await p.query("delete from zz.decision where team_slug=$1 and initiative=$2 and path=$3",
       [teamSlug, g.initiative, g.path]);
   }
-  return { scanned, indexed, removed: gone.length };
+  return { scanned, indexed, removed: gone.length + nodesGone.length };
 }
 /** What one team's rebuild did, with the team named. */
 export interface TeamReindex {
@@ -410,8 +442,13 @@ export async function reindexAllTeams(force = false): Promise<TeamReindex[]> {
   // — is the one never visited. The union with what the index believes is what closes it.
   const dirs = readdirSync(teamsDir, { withFileTypes: true })
     .filter((t) => t.isDirectory()).map((t) => t.name);
+  // BOTH TABLES. A team whose store is gone is the one this union exists to reach, and since
+  // migration 059 a team can hold knowledge nodes and no documents at all — asking zz.doc
+  // alone left exactly that team unvisited, which is the shape of the gap the union closes.
   const indexed = (await p.query<{ team_slug: string }>(
-    "select distinct team_slug from zz.doc")).rows.map((r) => r.team_slug);
+    `select team_slug from zz.doc
+     union
+     select team_slug from zz.knowledge_node`)).rows.map((r) => r.team_slug);
   const out: TeamReindex[] = [];
   for (const name of [...new Set([...dirs, ...indexed])].sort()) {
     // ONE TEAM'S FAILURE IS ONE TEAM'S. A throw here used to end the boot rebuild at whichever

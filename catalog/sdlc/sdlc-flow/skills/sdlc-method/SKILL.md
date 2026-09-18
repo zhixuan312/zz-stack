@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.7
+version: 1.8
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -35,7 +35,7 @@ several times more for the same output.
 Which tier that is, is your runtime's answer, not this skill's. Ask what your runtime offers
 and pick the cheapest one that can hold the work; if it names only one tier, say so rather
 than silently spending the difference. As an illustration only, at the time of writing a
-Claude Code session would reach for something like `sonnet` and a Codex session for something
+A Claude Code session would reach for something like `sonnet`, and another harness for something
 like `terra` — treat those as the shape of the answer, not the answer. A tier named in a
 document goes stale faster than anything else in it, and a stale name fails by silently
 falling back to your own tier, which is the exact cost this rule exists to avoid.
@@ -186,7 +186,10 @@ approved. `initiative_open` is the one moment the choice is meaningful, and ther
 for changing it afterwards.
 
 `flow` is not decoration. The platform reads it to decide which chain of gates applies, and a
-flow your team has not installed is refused by name at the open. Opening WITHOUT one is a
+flow THE CATALOG does not have is refused by name at the open. Installing does not enter into
+it: the platform keeps no record of what a team installed, so an initiative may be governed by
+any flow the catalog carries. On `ERROR: no flow named 'x'` the name is wrong — no admin can
+grant you one. Opening WITHOUT one is a
 legitimate choice rather than a mistake: nothing is enforced on that initiative, and
 `initiative_status` says so by answering `next_move: null` instead of inventing a stage.
 

@@ -102,6 +102,7 @@ interface OverviewMetrics {
      * event of any kind — a different population with a different total, and so not a
      * composition of anything this tile states.
      */
+    byOwner: { guardrail: number; ours: number; theirs: number };
     byDoor: { door: string; n: number }[];
   };
   /** 4 · system. Bytes a run hands back to the agent, which is context it must then carry. */
@@ -115,6 +116,9 @@ interface OverviewMetrics {
     /** Runs whose bytes were never measured. Counted and excluded, never folded in as
      *  zero — see the note where the rows are read. */
     unmeasured: number;
+    /** True when the run query hit its 400-row cap, so `prev` is a median over a truncated
+     *  tail rather than over the whole previous window. */
+    capped: boolean;
     /** Rule of thumb at ~4 bytes per token. NOT a measurement: nothing on this platform
      *  counts tokens, and the tile says so. */
     contextWindowKb: number;
@@ -154,6 +158,12 @@ function progressOf(
   let score = 0, present = 0, approved = 0, gates = 0, gatesCleared = 0;
   const waiting: string[] = [];
   for (const [name, shape] of declared) {
+    // NOT THE HANDOVER. This function scores OPEN initiatives, and the handover is written
+    // after the close — so counting it made every open initiative one document short of a
+    // flow it had not finished, and put a signature owed on work nobody had completed. It is
+    // in `declared` because the platform gates it; it is skipped here because this question
+    // is about the part of the flow that is running.
+    if (shape.role === "handover") continue;
     const status = byPath.get(name);
     if (shape.gate) gates++;
     if (status === undefined) continue;
@@ -226,16 +236,26 @@ export async function readMetrics(
 ): Promise<OverviewMetrics> {
   const [calls, runs, shelf, inits, doors] = scope.kind === "platform"
     ? await Promise.all([
-      db.query<{ calls: string; refused: string; prev_calls: string; prev_refused: string; searches: string }>(
+      db.query<{ calls: string; refused: string; refused_guardrail: string; refused_ours: string;
+                 refused_theirs: string; prev_calls: string; prev_refused: string; searches: string }>(
         `select count(*) filter (where kind='tool_call'
                   and ($1::timestamptz is null or ts >= $1))                        as calls,
                 count(*) filter (where kind='tool_call' and ok = false
                   and ($1::timestamptz is null or ts >= $1))                        as refused,
+                -- SPLIT BY WHO IT BELONGS TO. "Not ok" is four different facts, and this
+                -- tile answering "is the tool surface breaking" was 76% one client sending
+                -- a malformed argument -- see @zz/contracts' refusalOwner and migration 061.
+                count(*) filter (where kind='tool_call' and refusal_owner = 'guardrail'
+                  and ($1::timestamptz is null or ts >= $1))                        as refused_guardrail,
+                count(*) filter (where kind='tool_call' and refusal_owner = 'ours'
+                  and ($1::timestamptz is null or ts >= $1))                        as refused_ours,
+                count(*) filter (where kind='tool_call' and refusal_owner = 'theirs'
+                  and ($1::timestamptz is null or ts >= $1))                        as refused_theirs,
                 count(*) filter (where kind='tool_call'
                   and $2::timestamptz is not null and ts >= $2 and ts < $1)         as prev_calls,
                 count(*) filter (where kind='tool_call' and ok = false
                   and $2::timestamptz is not null and ts >= $2 and ts < $1)         as prev_refused,
-                count(*) filter (where subject in ('core:knowledge_search','core:search_knowledge') and ok
+                count(*) filter (where coalesce(tool_key, subject) = 'core:knowledge_search' and ok
                   and ($1::timestamptz is null or ts >= $1))                        as searches
            from zz.event
           where ($1::timestamptz is null or ts >= coalesce($2::timestamptz, $1))`,
@@ -247,6 +267,11 @@ export async function readMetrics(
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
           where ($1::timestamptz is null or r.started_at >= coalesce($2::timestamptz, $1))
+          -- CAPPED, AND THE CAP IS REPORTED. This spans the current window AND the previous
+          -- one, ordered newest first, so past 400 runs the PREVIOUS window is truncated
+          -- first and the previous median is taken over an arbitrary tail. 141 runs live, so
+          -- it has not been reached — and nothing would have said so when it was. The capped
+          -- flag below turns that into a fact the tile can print.
           order by r.started_at desc limit 400`,
         [since, prevSince]),
       db.query<{ from_work: string; imported: string; prev_from_work: string; prev_imported: string }>(
@@ -286,7 +311,7 @@ export async function readMetrics(
       // A SECOND STATEMENT, not another `filter` on the one above: that query returns a
       // single row of counts and cannot also group.
       db.query<{ door: string; n: string }>(
-        `select coalesce(nullif(split_part(subject,':',1),''),'(unnamed)') as door, count(*) as n
+        `select coalesce(nullif(split_part(coalesce(tool_key, subject),':',1),''),'(unnamed)') as door, count(*) as n
            from zz.event
           where kind='tool_call' and ok = false
             and ($1::timestamptz is null or ts >= $1)
@@ -294,16 +319,23 @@ export async function readMetrics(
         [since]),
     ])
     : await Promise.all([
-      db.query<{ calls: string; refused: string; prev_calls: string; prev_refused: string; searches: string }>(
+      db.query<{ calls: string; refused: string; refused_guardrail: string; refused_ours: string;
+                 refused_theirs: string; prev_calls: string; prev_refused: string; searches: string }>(
         `select count(*) filter (where e.kind='tool_call'
                   and ($1::timestamptz is null or e.ts >= $1))                       as calls,
+                count(*) filter (where e.kind='tool_call' and e.refusal_owner = 'guardrail'
+                  and ($1::timestamptz is null or e.ts >= $1))                       as refused_guardrail,
+                count(*) filter (where e.kind='tool_call' and e.refusal_owner = 'ours'
+                  and ($1::timestamptz is null or e.ts >= $1))                       as refused_ours,
+                count(*) filter (where e.kind='tool_call' and e.refusal_owner = 'theirs'
+                  and ($1::timestamptz is null or e.ts >= $1))                       as refused_theirs,
                 count(*) filter (where e.kind='tool_call' and e.ok = false
                   and ($1::timestamptz is null or e.ts >= $1))                       as refused,
                 count(*) filter (where e.kind='tool_call'
                   and $2::timestamptz is not null and e.ts >= $2 and e.ts < $1)      as prev_calls,
                 count(*) filter (where e.kind='tool_call' and e.ok = false
                   and $2::timestamptz is not null and e.ts >= $2 and e.ts < $1)      as prev_refused,
-                count(*) filter (where e.subject in ('core:knowledge_search','core:search_knowledge') and e.ok
+                count(*) filter (where coalesce(e.tool_key, e.subject) = 'core:knowledge_search' and e.ok
                   and ($1::timestamptz is null or e.ts >= $1))                       as searches
            from zz.event e join zz.team t on t.id = e.team_id
           where t.slug = $3
@@ -315,6 +347,12 @@ export async function readMetrics(
            from zz.run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
+           -- A TEAMLESS RUN BELONGS TO NO TEAM, so this scope genuinely cannot see it, and
+           -- the join is inner on purpose. runs.ts records such runs deliberately (36 of 141
+           -- live), the platform branch above counts them, and the two scopes therefore
+           -- measure different populations — which is correct rather than a gap: "the median
+           -- context of MY team's work" and "the median context of all work" are different
+           -- questions. Stated here because the asymmetry reads like an oversight.
            join zz.initiative i on i.id = r.initiative_id
            join zz.team t on t.id = i.team_id
           where t.slug = $3
@@ -355,7 +393,7 @@ export async function readMetrics(
                                and e.initiative = i.slug and e.team_id = i.team_id and e.ts >= $1))`,
         [since, scope.slug]),
       db.query<{ door: string; n: string }>(
-        `select coalesce(nullif(split_part(e.subject,':',1),''),'(unnamed)') as door, count(*) as n
+        `select coalesce(nullif(split_part(coalesce(e.tool_key, e.subject),':',1),''),'(unnamed)') as door, count(*) as n
            from zz.event e join zz.team t on t.id = e.team_id
           where t.slug = $2 and e.kind='tool_call' and e.ok = false
             and ($1::timestamptz is null or e.ts >= $1)
@@ -414,7 +452,16 @@ export async function readMetrics(
   const kb = measured.map((r) => ({ kb: Number(r.bytes) / 1024, skill: r.skill, prev: r.is_prev }));
   const nowKb = kb.filter((r) => !r.prev).map((r) => r.kb);
   const prevKb = kb.filter((r) => r.prev).map((r) => r.kb);
-  const unmeasured = runs.rows.length - measured.length;
+  /* OVER THE CURRENT WINDOW ONLY, like the median it is printed beside. The query's bound
+   * is `coalesce(prevSince, since)`, so `runs.rows` spans BOTH windows — counting every
+   * unmeasured row in it put a caveat of roughly double the size next to a median taken over
+   * `nowKb` alone. A caveat has to be a caveat about the number it sits under. */
+  const unmeasured = runs.rows.filter((r) => !r.is_prev && r.bytes === null).length;
+  /* THE CAP, REACHED OR NOT. The run query takes the 400 most recent across both windows, so
+   * at the cap the previous window is the half that gets cut and `prev` becomes a median over
+   * an arbitrary tail. Silence at that point is the failure: the figure keeps rendering and
+   * quietly stops meaning what it says. */
+  const capped = runs.rows.length >= 400;
 
   const fromWork = count(k?.from_work), imported = count(k?.imported);
   const prevFromWork = count(k?.prev_from_work), prevImported = count(k?.prev_imported);
@@ -447,6 +494,15 @@ export async function readMetrics(
       value: pct(count(c?.refused), count(c?.calls)),
       prev: prevSince ? pct(count(c?.prev_refused), count(c?.prev_calls)) : null,
       refused: count(c?.refused), calls: count(c?.calls),
+      // WHO EACH ONE BELONGS TO, so the console can say which quarter of the number is the
+      // platform enforcing a rule and which is a client that needs fixing. `other` is the
+      // remainder rather than a fourth column: naming it would invite the reader to act on
+      // a bucket whose whole definition is "the text did not say".
+      byOwner: {
+        guardrail: count(c?.refused_guardrail),
+        ours: count(c?.refused_ours),
+        theirs: count(c?.refused_theirs),
+      },
       byDoor: doors.rows.map((r) => ({ door: r.door, n: +r.n })),
     },
     context: {
@@ -455,6 +511,7 @@ export async function readMetrics(
       p90: quantile(nowKb, 0.9),
       runs: kb.filter((r) => !r.prev).map((r) => ({ kb: r.kb, skill: r.skill })),
       unmeasured,
+      capped,
       contextWindowKb: CONTEXT_WINDOW_KB,
     },
   };

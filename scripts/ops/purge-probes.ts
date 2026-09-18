@@ -28,7 +28,7 @@
  * pattern from the command line is one typo away from deleting a team's work — and the only
  * thing this exists to remove is traffic the platform generated against itself.
  */
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import pg from "pg";
@@ -53,15 +53,18 @@ async function census() {
     one("event", `select count(*) n from zz.event where initiative like '${LIKE}'`),
     one("run", `select count(*) n from zz.run r join zz.initiative i on i.id = r.initiative_id
                 where i.slug like '${LIKE}'`),
-    one("node", `select count(*) n from zz.doc where path like 'nodes/%' and path ilike '${LIKE}'`),
+    // FROM zz.knowledge_node, which is where a node has lived since migration 059. This
+    // counted zz.doc — where nodes no longer are — so it read 0 whatever the store held, the
+    // DELETE below deleted nothing, and a purge that removed the FILES left their index rows
+    // behind. Two probe nodes were sitting in knowledge_search results when this was found.
+    one("node", `select count(*) n from zz.knowledge_node where path ilike '${LIKE}'`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
-    // INITIATIVE documents only. This counted every zz.doc row whose initiative is not a
-    // probe's — which includes the knowledge nodes, because a node's `initiative` is the one
-    // it was minted from. So deleting 58 probe NODES dropped this by 58 and the survivor
-    // assertion fired on a purge that had done exactly the right thing. One subject per count.
+    // INITIATIVE documents only — nodes are their own table now, and were their own subject
+    // before that: counting both here made deleting 58 probe NODES look like real documents
+    // going missing, and the survivor assertion fired on a purge that had done the right thing.
     one("REAL doc", `select count(*) n from zz.doc
                      where initiative not like '${LIKE}' and path not like 'nodes/%'`),
-    one("REAL node", `select count(*) n from zz.doc where path like 'nodes/%' and path not ilike '${LIKE}'`),
+    one("REAL node", `select count(*) n from zz.knowledge_node where path not ilike '${LIKE}'`),
   ]));
 }
 
@@ -101,6 +104,31 @@ function probeNodes(): string[] {
   });
 }
 
+/** Drop each deleted node's row from its shelf's `index.md`, keyed on the id in its file name.
+ *
+ *  Returns how many rows went, so a purge that found files and changed no index says so. */
+function dropIndexRows(files: string[]): number {
+  const byShelf = new Map<string, Set<string>>();
+  for (const f of files) {
+    const shelf = join(f, "..", "..", "index.md");
+    const id = /(^|\/)(\d+)-/.exec(f)?.[2];
+    if (!id) continue;
+    const got = byShelf.get(shelf);
+    if (got) got.add(id); else byShelf.set(shelf, new Set([id]));
+  }
+  let dropped = 0;
+  for (const [shelf, ids] of byShelf) {
+    if (!existsSync(shelf)) continue;
+    const kept = readFileSync(shelf, "utf8").split("\n").filter((line) => {
+      const id = /^\|\s*(\d+)\s*\|/.exec(line)?.[1];
+      if (id && ids.has(id)) { dropped += 1; return false; }
+      return true;
+    });
+    writeFileSync(shelf, kept.join("\n"));
+  }
+  return dropped;
+}
+
 const before = await census();
 const dirs = probeDirs();
 const nodes = probeNodes();
@@ -128,7 +156,7 @@ try {
   const d = await db.query(`delete from zz.doc where initiative like '${LIKE}'`);
   const e = await db.query(`delete from zz.event where initiative like '${LIKE}'`);
   const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
-  const k = await db.query(`delete from zz.doc where path like 'nodes/%' and path ilike '${LIKE}'`);
+  const k = await db.query(`delete from zz.knowledge_node where path ilike '${LIKE}'`);
   console.log(`  knowledge nodes: ${k.rowCount}`);
   await db.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
@@ -139,7 +167,15 @@ try {
 
 for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 for (const f of nodes) rmSync(f, { force: true });
-console.log(`removed ${dirs.length} directories and ${nodes.length} knowledge nodes`);
+// AND THE INDEX A PERSON READS. `_knowledge/index.md` is appended to on every mint and
+// rebuilt by nothing, so deleting a node's file and its row left the node listed in the one
+// place `zz-platform` tells every agent to look first: 62 probe rows were sitting in it.
+//
+// BY ID, NEVER BY TITLE — the same rule probeNodes() keeps, and for the same reason. A node's
+// id is the leading number of its file name, so the rows to drop are derived from the files
+// just deleted rather than matched on words a real finding might also carry.
+const droppedRows = dropIndexRows(nodes);
+console.log(`removed ${dirs.length} directories, ${nodes.length} knowledge nodes and ${droppedRows} index row(s)`);
 
 const after = await census();
 console.log("after:", after);

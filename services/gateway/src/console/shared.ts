@@ -1,4 +1,4 @@
-import { catalogManifest, isFlow, skillText } from "@zz/catalog";
+import { catalogManifest, isFlow, skillText, withHandover } from "@zz/catalog";
 import type { Request, Response } from "express";
 
 import { platformDbReady } from "../db.js";
@@ -248,14 +248,24 @@ export interface DocRow {
  * flow gates is the flow's business — a list in the console would be a second
  * copy of it, and would be wrong for every flow but the one it was written for.
  */
-export function flowShape(flow: string | null): Map<string, { gate: boolean; closing: boolean; requiredForClose: boolean }> {
-  const out = new Map<string, { gate: boolean; closing: boolean; requiredForClose: boolean }>();
+export function flowShape(flow: string | null): Map<string, { gate: boolean; closing: boolean; requiredForClose: boolean; role?: string }> {
+  const out = new Map<string, { gate: boolean; closing: boolean; requiredForClose: boolean; role?: string }>();
   if (!flow) return out;
-  for (const d of catalogManifest(flow, true)?.documents ?? []) {
+  // THROUGH withHandover, which is the flow AS THE PLATFORM ENFORCES IT. Read raw, this map
+  // had no entry for handover.md, so `gateRuleFor` answered "we do not know" and the console
+  // rendered a gated document's `status: draft` as an unexplained state.
+  for (const d of withHandover(catalogManifest(flow, true)?.documents ?? [])) {
     out.set(d.name, {
       gate: d.gate === true,
       closing: d.closing === true,
       requiredForClose: d.requiredForClose === true,
+      // THE PLATFORM'S OWN CLOSING STEP, told apart from the flow's documents. `withHandover`
+      // appends a gated handover.md to every gating flow, which is what the platform
+      // enforces and what this map must therefore contain — but it is written AFTER the
+      // close, so a reader asking about an OPEN initiative has to leave it out. Carrying the
+      // role is what lets each reader place it; without it the derived gate counted as a
+      // signature owed on work nobody had finished.
+      role: d.role,
     });
   }
   return out;
@@ -278,7 +288,11 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
    * `current` marks where an open initiative is now. */
   steps: {
     name: string; what: string; produces: string;
-    state: "done" | "partial" | "empty"; current: boolean;
+    /** `untracked` is a stage that CANNOT leave a document — it produces a record or
+     *  nothing — with no later stage to prove it ran. It is not the same fact as `empty`,
+     *  which is a stage that owes a document and has not written one, and the console draws
+     *  them differently; sending only three states made the two indistinguishable. */
+    state: "done" | "partial" | "empty" | "untracked"; current: boolean;
   }[];
   /** Placed by INDEX INTO `steps`, bookends included, so the console places nothing itself. */
   gates: { name: string; passed: boolean; after: number }[]; accepted: boolean;
@@ -325,7 +339,11 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
     // stages; the stage skill's own description says what happens there, in the words its
     // author chose, which is a better caption than anything the console could invent.
     const label = (n: string) => n.replace(/^[a-z]+-/, "").replace(/-/g, " ");
-    const declared = manifest.documents;
+    // AND THE SAME LIST HERE, so the gate count, the stepper and `complete` are computed
+    // over the documents zz-core actually gates. Without it the console reported
+    // `complete: true` on an initiative whose handover nobody had signed — the one step that
+    // exists precisely because delivery ending is not the cycle ending.
+    const declared = withHandover(manifest.documents);
     const byName = new Map(live.map((d) => [d.path, d]));
     // WHERE EACH GATE SITS, from the manifest's own `stage` on the gated document. Without it
     // a diagram can only distribute gates evenly and hope, which is what the console did with
@@ -336,7 +354,17 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
       n ? (manifest.stages ?? []).findIndex((x) => x.name === n) + 1 : 0;
     const gates = declared.filter((d) => d.gate === true)
       .map((d) => ({ name: `approve ${d.name.replace(/\.md$/, "")}`,
+                     // Carried for the same reason flowShape carries it.
+                     role: d.role,
                      passed: byName.get(d.name)?.status === "approved",
+                     // WHETHER THERE IS ANYTHING TO SIGN YET, which `passed: false` cannot
+                     // say on its own. A gate whose document nobody has drafted is waiting on
+                     // the AGENT; a gate whose document is written and unapproved is waiting
+                     // on a PERSON, and those are opposite instructions to the reader.
+                     // Without this the console's "Waiting on you" counted three unwritten
+                     // documents as three signatures owed, while the Overview tile — which
+                     // already draws the distinction — said none were.
+                     written: byName.has(d.name),
                      after: stageIndex(d.stage) }));
     const closing = declared.find((d) => d.closing === true);
     // THE OUTCOME, not just whether it was accepted. `initiative_close()` records one of three words and
@@ -442,7 +470,7 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
         .replace(/^["']|["']$/g, "")
         .replace(/^Stage \d+[^.]*\.\s*/i, "")
         .split(/(?<=\.)\s/)[0].trim().slice(0, 120),
-      state: stageState(String(n)),
+      state: stageState(String(n)) as "done" | "partial" | "empty" | "untracked",
       current: false,
     }));
     // A STAGE THAT WRITES NOTHING WAS PASSED THROUGH, when something after it exists. `execute`
@@ -454,7 +482,12 @@ export function stageOf(docs: StageDoc[], flow: string | null): {
       const writesNothing = produces === "nothing" || produces === "record"
         || (!produces && !declared.some((d) => d.stage === stages[i]));
       const somethingAfter = flowSteps.slice(i + 1).some((st) => st.state === "done" || st.state === "partial");
-      if (writesNothing && somethingAfter) flowSteps[i].state = "done";
+      if (!writesNothing) continue;
+      // AND `untracked` WHEN THERE IS NO LATER STAGE TO PROVE IT. Falling through left such
+      // a stage `empty`, which the console draws as "nothing written" — a claim about a
+      // stage that could never have written anything. The console has always had a fourth
+      // node style for this and the API never sent the word that selects it.
+      flowSteps[i].state = somethingAfter ? "done" : "untracked";
     }
     // WHERE IT IS NOW is the first stage that is not done, and only while it is open. A closed
     // initiative is not anywhere.

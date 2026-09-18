@@ -232,6 +232,39 @@ export function isFlow(manifest: CatalogManifest): manifest is CatalogManifest &
   return (manifest.documents?.length ?? 0) > 0;
 }
 
+/** A FLOW'S DOCUMENTS AS THE PLATFORM ENFORCES THEM: what the manifest declares, plus the
+ * handover every gating flow owes.
+ *
+ * DERIVED, NEVER CONFIGURED, so a flow written next week inherits it without its author
+ * remembering — and derived HERE rather than in zz-core, because two readers need the same
+ * answer. zz-core resolves the chain it gates writes against; the console draws the stepper,
+ * counts the gates and decides whether an initiative is complete. The console read
+ * `catalogManifest(flow).documents` raw, so it did not know the handover existed: it reported
+ * `complete: true` on an initiative `initiative_status` was still answering
+ * `action: "handover", waiting_on: "human"` for, and drew handover.md with no gate rule —
+ * "we do not know" — beside a `status: draft` it could not explain.
+ *
+ * Idempotent: a manifest that declares its own handover is left exactly as it is.
+ *
+ * Gated so somebody signs it, but never `closing` or `requiredForClose`: the flow's own
+ * closing document still closes the flow, and that is what lets the handover be written
+ * AFTER the close. */
+export function withHandover(documents: readonly FlowDoc[]): FlowDoc[] {
+  const list = [...documents];
+  if (!list.some((d) => d.gate) || list.some((d) => d.name === "handover.md")) return list;
+  return [
+    ...list,
+    {
+      name: "handover.md",
+      role: "handover",
+      stage: "zz-handover",
+      gate: true,
+      requires: list.find((d) => d.closing)?.name ?? list[list.length - 1]?.name ?? "",
+      sections: ["What this initiative taught", "Recorded for the platform", "Proposed for the team"],
+    },
+  ];
+}
+
 /** WHICH PLUGIN SERVES A DOOR, from the only place that states it.
  *
  * A door IS a plugin's declared server — its `servers[].path` — so which plugin a call belongs

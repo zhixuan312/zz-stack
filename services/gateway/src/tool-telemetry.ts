@@ -488,6 +488,27 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         const named = (c.params?.arguments as Record<string, unknown> | undefined)?.initiative;
         if (typeof named === "string" && named) { initiativeSeen(caller, named); break; }
       }
+      // AND SO DOES `initiative_open`, WHICH NAMES IT IN ITS ANSWER RATHER THAN ITS ARGUMENTS.
+      //
+      // It takes a `slug`; the platform composes `<YYYY-MM-DD>-<slug>` from its own clock and
+      // hands the name back — precisely so nobody types a date. The loop above reads
+      // ARGUMENTS only, so the one call that creates an initiative taught the trace nothing:
+      // measured on production, 3 of 38 `initiative_open` events carry an initiative, and the
+      // rest of the conversation was attributed only once some later call happened to pass
+      // the name. Read from the answer, through the same `lastJson` every other response
+      // reader here uses.
+      if (served !== null) {
+        for (const c of wanted) {
+          if (c.params?.name !== "initiative_open") continue;
+          const body = (lastJson(served)?.result?.content ?? [])
+            .map((x) => (x as { text?: string })?.text ?? "").join("");
+          try {
+            const opened = (JSON.parse(body) as { initiative?: unknown }).initiative;
+            if (typeof opened === "string" && opened) initiativeSeen(caller, opened);
+          } catch { /* not the JSON this tool returns; the trace simply learns nothing */ }
+          break;
+        }
+      }
       const step = currentStep(caller);
       const flow = await flowFor(req.zzIdentity?.activeTeam ?? null, step?.initiative);
 
@@ -521,6 +542,22 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
               .find((d) => d.name === docName)?.stage
           : undefined;
         const stepName = owedBy ?? step?.step;
+        // AND THE VERSION AND THE HASH FOLLOW THE NAME, or they are not written at all.
+        //
+        // When the manifest overrides the traced step, `step_version` and `step_sha` went on
+        // coming from the LAST SKILL LOADED — so a row named one skill and carried another
+        // one's bytes. Measured: step_sha 9a04bd96e3dd appears under five different step
+        // names and d7e8470ed416 under six; ten hashes in all span more than one name. The
+        // hash exists so a change cannot be shipped and never proved, and pinned to the
+        // wrong skill it proves the opposite. step-score.ts keys its whole per-version
+        // scoring on `${step} ${step_version}`, so the mismatch reaches the scores too.
+        //
+        // The manifest knows WHICH STAGE owes the document; it does not know which version
+        // of that stage's skill this caller has. Unknown is the honest answer, and this
+        // table already writes an absent version wherever the trace has none.
+        const owedElsewhere = !!owedBy && owedBy !== step?.step;
+        const stepVersion = owedElsewhere ? undefined : step?.step_version;
+        const stepSha = owedElsewhere ? undefined : step?.step_sha;
         // WHICH PLUGIN — A FACT ABOUT THE DOOR, not a guess about the caller.
         //
         // A door IS a plugin's declared server, so the plugin a tool call belongs to is fixed
@@ -579,7 +616,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           initiative: step?.initiative,
           flow: flow?.flow,
           step: stepName,
-          stepVersion: step?.step_version,
+          stepVersion,
           // WHICH PLUGIN, AND WHICH RELEASE OF IT — the answer this task adds. Never `flow`
           // (the initiative's flow, not a skill's owner) and never `x-zz-client` in `detail`
           // below (which program made the call, not which plugin's skill it was following).
@@ -621,7 +658,7 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
             // changed skill that kept its version, so authoring drift is caught in the repo
             // and what is left here is the narrower case of a host running text the repo does
             // not claim. Kept, because that case is invisible without it.
-            step_sha: step?.step_sha,
+            step_sha: stepSha,
             // Argument NAMES, never values: the values carry the team's own content, and the
             // names alone still answer "was the call even shaped right".
             args: Object.keys(given).sort(),

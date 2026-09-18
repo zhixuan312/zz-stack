@@ -1,15 +1,14 @@
 ---
 name: sdlc-flow
-version: 2.0
+version: 2.1
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
-when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
+when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
 
 # sdlc-flow
 
 The entry point. Starting an initiative, resuming one, or deciding what happens next all begin
-here. (You reached this as `/sdlc:flow` in Claude Code, or as the `sdlc-flow` skill in
-Codex. Same text; the door differs.)
+here. (You reached this as `/sdlc:flow` in Claude Code.)
 
 This file decides **which** stage. `sdlc-method` says **how** any stage is executed — who runs
 it, what a worker is handed, how to judge what comes back. **Load `sdlc-method` before running
@@ -102,8 +101,11 @@ Order, risk and scope are the person's judgement. Dispatch it and you get a plau
 nobody chose.
 
 **Ask for approval on `plan.md` before the plan audit runs**, the same way the spec is agreed
-before its audit — an audit round registers a source against `plan.md`, which is gated, so a round dispatched
-first has its document refused at the write. How they answer is entirely theirs —
+before its audit — an audit's findings are the input to the plan's next version, and a version the person has
+not agreed to yet is not a thing to audit. Nothing in the platform refuses it — `source_add`
+is ungated and immutable and may be called at any time, from any harness, including while
+the work is in flight — so this ordering is yours to keep, not a guardrail that keeps it
+for you. How they answer is entirely theirs —
 a yes, a yes with a change, or a standing "you do not need to ask me about these". Delegating
 it to you is an ordinary answer, not a loophole.
 
@@ -149,7 +151,7 @@ initiative closed and say the handover is what remains.
 ## The journal is the platform's, not a file
 
 `sdlc-recall` does not read or write anything local. It uses the ZZ knowledge base through
-zz-core, which arrives with the required `zz` plugin:
+zz-core, which arrives with the required `zz-core` plugin:
 
 | | Tool | |
 |---|---|---|

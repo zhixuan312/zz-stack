@@ -511,9 +511,14 @@ is(!/\|\|\s*!chain\.docs\.has\(parts\[1\]\)\) return;/.test(persist)
    "a bare `!chain.docs.has(...)` it returns for every document of a freeform initiative, so " +
    "an approval there files no frozen copy at all and the approver's name stands on bytes " +
    "with nothing recording what they were");
-is(/chain\.closingDoc && parts\[1\] !== chain\.closingDoc/.test(persist),
-   "ledgerOnClose still requires a DECLARED closing document — a freeform close appends no " +
-   "ledger row, so it is invisible to every total built on the ledger");
+is(!/chain\.closingDoc && parts\[1\] !== chain\.closingDoc/.test(persist),
+   "ledgerOnClose still skips a close that did not land on the manifest's closing " +
+   "document. An ABANDONED initiative is exactly that close — the work stopped before the " +
+   "closing document was written, so initiative_close records it on the furthest document " +
+   "that exists — and the ledger, which the team's counts are totalled from, never received " +
+   "the one outcome it most needs. The outcome's PRESENCE is the signal: outcomeCheck " +
+   "refuses an outcome typed by hand, initiative_close writes exactly one, and the " +
+   "already-closed test stops a second row");
 
 // FIRST, ahead of everything else: if a path could not be read, every assertion over it
 // passed on the empty string and this run measured less than it appears to have measured.

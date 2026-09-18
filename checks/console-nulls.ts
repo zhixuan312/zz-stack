@@ -36,11 +36,17 @@ if (!helper) {
   fail.push("num() does not test for null — a helper keyed on `> 0` would erase a measured zero");
 }
 
-// Control: `turns` MUST keep its `> 0` form. It is the one field where zero is not a real
-// finding — zz.run.turns is 0 on every row while the event log holds turn events with no run
-// id — so a check that rewrote every coercion the same way would break a deliberate difference.
-if (!/turns:\s*\+r\.turns\s*>\s*0/.test(src)) {
-  fail.push("turns lost its `> 0` form — there, 0 means unknown and the file says why");
+// Control: NOTHING may report `turns` again, in any form. The column was written by nothing
+// — no statement anywhere set it — and no `kind='turn'` event has ever been emitted either,
+// so the console reported a field that could only be zero and built a "turns are not
+// attributed to runs" caveat from it that could never clear. This used to pin the `> 0` form
+// as a deliberate exception to the null rule above; the honest resolution was to stop
+// reporting a measurement nothing takes. A reader that returns is a reader to delete, not a
+// coercion to get right.
+if (/\bturns\b/.test(src)) {
+  fail.push("skills.ts reads `turns` again — zz.run.turns is written by nothing and no turn " +
+            "event is emitted, so any figure built on it is a zero wearing the clothes of a " +
+            "measurement. Delete the reader; do not coerce it.");
 }
 
 // ── THE SAME PROPERTY, ON THE OVERVIEW ─────────────────────────────────────────────────

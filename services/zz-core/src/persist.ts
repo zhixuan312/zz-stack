@@ -140,7 +140,7 @@ export function logActivity(root: string, relPath: string | null, entry: Record<
 /** Mechanical ledger row on close: when outcome lands in the closing
  * document, append one row to the team's _ledger.md — basics only; the
  * learning analysis computes the rest from telemetry. */
-function ledgerOnClose(chain: Chain, root: string, relPath: string, content: string): void {
+function ledgerOnClose(root: string, relPath: string, content: string): void {
   try {
     const parts = relPath.replace(/^\/+/, "").split("/");
     // WHICHEVER DOCUMENT CARRIES THE OUTCOME, when no flow named one. A freeform initiative
@@ -150,7 +150,22 @@ function ledgerOnClose(chain: Chain, root: string, relPath: string, content: str
     // an `outcome` (outcomeCheck refuses one typed by hand), so the document it stamps is the
     // one that closed the initiative.
     if (parts.length !== 2) return;
-    if (chain.closingDoc && parts[1] !== chain.closingDoc) return;
+    // AND WHICHEVER DOCUMENT CARRIES IT WHEN A FLOW *DID* NAME ONE — the same argument, which
+    // was only ever applied to half the cases.
+    //
+    // `if (chain.closingDoc && parts[1] !== chain.closingDoc) return;` stood here, and an
+    // initiative abandoned part-way is exactly the close that does not land on the closing
+    // document: `initiative_close` records an abandon on the FURTHEST document that exists,
+    // because the closing one never got written — that is what abandoning means. So the one
+    // outcome the ledger most needs was the one it never received, while initiative_close
+    // told the caller in as many words that "a ledger row was appended". Live on this
+    // deployment: xuan/2026-09-13-platform-surface-redesign, abandoned on plan.md, absent
+    // from the ledger the team's counts are totalled from.
+    //
+    // Nothing is loosened by dropping it. `outcomeCheck` refuses an `outcome` typed by hand,
+    // so only initiative_close can put one there; it writes exactly one; and the
+    // already-closed test below stops a second row. The presence of the outcome IS the
+    // signal, which is what the paragraph above already concluded for freeform.
     // Through parseEnvelope: both of these scanned the whole document, so a closing document
     // that merely mentioned `outcome:` in its body — quoting the rule, or showing an
     // example — appended a ledger row for an initiative nobody had closed.
@@ -279,7 +294,7 @@ export function persistDocument(chain: Chain, root: string, relPath: string, tar
   const stamped = stampEnvelope(chain, relPath, content);
   mkdirSync(resolve(target, ".."), { recursive: true });
   snapshotOnApproval(chain, root, relPath, target, stamped);
-  ledgerOnClose(chain, root, relPath, stamped);
+  ledgerOnClose(root, relPath, stamped);
   writeFileSync(target, stamped);
   // The ACT, not "write". The store is a git repository so that a team can ask what
   // happened between the approval and the close, and a log in which an approval and a typo

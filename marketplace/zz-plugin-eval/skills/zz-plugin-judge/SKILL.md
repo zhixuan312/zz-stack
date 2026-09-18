@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-judge
-version: 0.2
+version: 0.3
 description: Stage 4 of plugin evaluation. Confirm the ruler was approved, then score the plugin's usage artifacts against it with a pinned model outside this conversation. Writes scores; decides nothing.
 when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Never before — the affirm call refuses, and that refusal is the gate working."
 ---
@@ -8,9 +8,15 @@ when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Ne
 # zz-plugin-judge
 
 ```
-ruler_affirm(plugin, version)                    is there an approved ruler?
-round_judge(plugin, version, rubric_id)          score against it
+ruler_affirm(plugin, version)                          is there an approved ruler?
+round_judge(plugin, version, rubric_id, take: 1-4)     score, ONE subject per call
+round_judge(..., eval_id, take: 1-4)                   again, until `remaining` is 0
+round_judge(..., control: true)                        and once blind — see below
 ```
+
+**`round_judge` MARKS ONE SUBJECT PER CALL.** It returns an `eval_id` and a `remaining`
+count; call it again with that `eval_id` until `remaining` is 0. `take` (1–4) says how many
+to mark in one call. A single call is not a round — it is one subject scored.
 
 **You are not the judge, and this stage is where that matters most.**
 
@@ -35,7 +41,12 @@ what it *did* is the only thing an evaluation adds.
 
 ## The blind control
 
-Every round also scores an artifact that does not belong under this ruler. If the control scores
+Every round also scores an artifact that does not belong under this ruler, and **it is a
+separate call you make deliberately**: `round_judge(..., control: true)`. Nothing runs it for
+you. Run the round plainly and run it once with `control: true` — one without the other is not
+a measurement, and the report will ask you to lead with a control that was never produced.
+
+If the control scores
 as well as the real pairing, the judge was rewarding confident prose rather than reading, and
 **the round is void** — say so in the report and do not average the scores in anyway.
 

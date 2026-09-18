@@ -16,7 +16,7 @@ disable-model-invocation: true
 
 A command that turns something already written — a changelog, a spec, a design doc, a report,
 the previous message — into a slide deck built on the house visual system. `/zz-core:deck` on
-Claude Code, a matched skill on Codex.
+Claude Code.
 
 It runs entirely in your own context: no platform tool is called, nothing is dispatched, and the
 only output is one HTML file on disk.
@@ -152,7 +152,6 @@ reading from is not:
 
 | Client | You are reading | The chassis asset is |
 |---|---|---|
-| Codex | `skills/zz-deck/SKILL.md` | beside you |
 | Claude Code | `commands/deck.md` | `../skills/zz-deck/deck-chassis.html` |
 
 On Claude Code this file is installed as a command, because a deck is something a person asks

@@ -457,7 +457,23 @@ export function identityMiddleware() {
       // canonical identity for everything downstream — spoofed headers die here
       req.headers["x-zz-user-email"] = id.email;
       req.headers["x-zz-user-name"] = id.displayName;
-      req.headers["x-zz-user-role"] = id.platformRole === "superadmin" ? "admin" : "user";
+      // AND x-zz-user-id, WHICH WAS THE ONE THIS BLOCK FORGOT. `parseCaller` reads four
+      // headers and this set three of them, so `x-zz-user-id` was whatever the caller sent —
+      // the exact thing the sentence below this block forbids ("never merged with what
+      // arrived"), and the thing identity.ts's own docblock says cannot happen because the
+      // proxy strips inbound x-zz-*. That is a fact about one deployment's front door, not a
+      // property of this middleware, and a door is a worse place to keep an invariant than
+      // the line that depends on it. The platform identifies a person by their email, so
+      // there is no second id to publish: it is cleared rather than filled, which is the
+      // truth and cannot be mistaken for an assertion.
+      req.headers["x-zz-user-id"] = "";
+      // THROUGH isSuper, not off platformRole. A PAT bound to a team is NOT platform authority
+      // — isSuper says so, scope-check asserts it, and /manage refuses such a token every
+      // superadmin tool. This line read the role alone, so the same token arrived at zz-core
+      // stamped `admin` and was offered knowledge_reindex with no team argument, bug_delete and
+      // bug_resolve over every team's reports. The binding held on one side of the proxy and
+      // not the other; the door that receives this header has no way to tell the difference.
+      req.headers["x-zz-user-role"] = isSuper(id) ? "admin" : "user";
       // How the caller proved who they are, and what their token is allowed to do.
       //
       // An MCP tool handler receives headers, not the request, so admin.ts could not see

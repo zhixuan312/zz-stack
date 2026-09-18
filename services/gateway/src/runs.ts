@@ -94,8 +94,59 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
      -- it: 299 of them on production, attributed to a thing nobody can open.
      -- (No backticks in here: this is inside a template literal, and a backtick in a SQL
      -- comment closes it. That has broken this repository twice already.)
+     -- AN INITIATIVE IS A FOLDER SOMETHING WAS WRITTEN INTO.
+     --
+     -- This minted a row from any string a call passed in its initiative argument,
+     -- recorded verbatim BEFORE the platform had answered. So a bad argument on a REFUSED
+     -- call became a real initiative, and so did an initiative belonging to another team
+     -- that this caller merely READ. Measured on production: 8 of 22 rows were never
+     -- opened by anybody -- two document PATHS (a slash in the name, first seen on a
+     -- failed document_read), one free-text sentence with spaces and a comma, and two
+     -- cross-team echoes from a successful initiative_status. Runs were then filed against
+     -- them, the progress tile counted them as active work, and two were duplicates of the
+     -- very initiative whose document path they were.
+     --
+     -- Three conditions, each dropping a different kind of ghost:
+     --   ok          -- nobody accepted this argument, so it says nothing
+     --   the shape   -- initiative_open composes <YYYY-MM-DD>-<slug> from the platform's
+     --                  own clock and safeName refuses a separator, so anything else was
+     --                  never a name this platform created
+     --   a WRITE     -- reading an initiative is not evidence it is yours. Only the acts
+     --                  that put something in the folder count, which is also what makes
+     --                  the row true of the TEAM it is filed under.
+     -- Through coalesce(tool_key, subject) and both spellings, because tool_key is written
+     -- only since migration 050 and the pre-rename history is the half that most needs
+     -- resolving -- see @zz/contracts' TOOL_ALIAS, which is where those names come from.
      where e.initiative is not null and e.initiative not in ('', '_knowledge')
+       and e.ok
+       and e.initiative ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
+       and coalesce(e.tool_key, e.subject) in (
+             'core:initiative_open', 'core:initiative_close', 'core:close',
+             'core:document_write', 'core:write_file',
+             'core:document_patch', 'core:patch_file',
+             'core:document_revise', 'core:revise_document',
+             'core:document_approve', 'core:approve',
+             'core:source_add', 'core:add_source')
      group by t.id, e.initiative
+    on conflict (team_id, slug) do nothing`);
+  // AND FROM THE DOCUMENTS, which are the record of what actually exists.
+  //
+  // The insert above derives an initiative from EVENTS, and events are telemetry: they can be
+  // absent, they can predate a column, and on this deployment one real initiative with
+  // documents -- quan/2026-09-12-btc-daily-probability-above-climatology -- had no row at all
+  // and was therefore invisible to the progress tile and the stage bar for good. Meanwhile
+  // the console carried two different initiative counts in one payload, 15 and 22, because
+  // one was taken over zz.doc and the other over this table.
+  //
+  // A folder holding a document is not a claim about an initiative; it IS one. So the two
+  // sources are unioned rather than argued about, and the count stops depending on which
+  // table a reader happened to ask.
+  const d = await db.query(`
+    insert into zz.initiative (team_id, slug, created_at)
+    select t.id, d.initiative, min(d.updated_at)
+      from zz.doc d join zz.team t on t.slug = d.team_slug
+     where d.initiative is not null and d.initiative not in ('', '_knowledge')
+     group by t.id, d.initiative
     on conflict (team_id, slug) do nothing`);
   // The flow, from the documents rather than from the events. zz.doc carries the flow the
   // platform resolved and stamped, and zz.event's own `flow` column is thinner: 409 of 510
@@ -252,6 +303,6 @@ export async function reconcileRuns(): Promise<{ initiatives: number; runs: numb
   }
   docs += di.rowCount ?? 0;
 
-  return { initiatives: i.rowCount ?? 0, runs: (r.rowCount ?? 0) + (r2.rowCount ?? 0),
+  return { initiatives: (i.rowCount ?? 0) + (d.rowCount ?? 0), runs: (r.rowCount ?? 0) + (r2.rowCount ?? 0),
            linked: (l.rowCount ?? 0) + (l2.rowCount ?? 0), docs };
 }

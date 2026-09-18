@@ -31,27 +31,18 @@
  * for something the first never was, and reading the gap as a regression blames a change for
  * work it was never doing.
  */
-import { resolveStep } from "@zz/contracts";
+import { refusalOwner, resolveStep } from "@zz/contracts";
 
 import { parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 
-/** A refusal the FLOW could have avoided: the shape of a call, not the health of a tool. */
-const OURS = /Missing required argument|Invalid arguments|Input validation error|could not be parsed as JSON|validation error/i;
-/** A refusal that belongs to the tool: it answered with a status, a web page, or not at all. */
-const THEIRS = /status code \d{3}|Error POSTing to endpoint|Unexpected content type|<html|No such tool available/i;
-/** The platform saying which rule was broken. Working as intended; never scored as a defect. */
-const GUARDRAIL = /^ERROR[: ]/;
-
-type Owner = "ours" | "theirs" | "guardrail" | "other";
-
-export const owner = (refusal: string): Owner => {
-  const t = refusal.replace(/\s+/g, " ").trim();
-  if (GUARDRAIL.test(t)) return "guardrail";
-  if (OURS.test(t)) return "ours";
-  if (THEIRS.test(t)) return "theirs";
-  return "other";
-};
+/** WHO A REFUSAL BELONGS TO — the contract's own classifier, not a second copy.
+ *
+ * These four regexes lived here, and nothing that WROTE a refusal could reach them: the
+ * gateway recorded every not-ok call as one undifferentiated "refusal" while this file, read
+ * by nobody at release time, knew the difference. The classifier is in @zz/contracts beside
+ * refusalClass now, and the gateway stamps its verdict onto the event as it happens. */
+export const owner = refusalOwner;
 
 interface Row {
   step: string | null;

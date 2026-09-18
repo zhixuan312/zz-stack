@@ -217,6 +217,18 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
       if (!team || !teamAuthority(id, team)) return text("ERROR: issuing for others needs superadmin, or team admin with team specified");
     }
     const db = platformDb();
+    // A BOUND TOKEN CANNOT ISSUE A WIDER ONE. `pat_issue` with no arguments is the ordinary
+    // self-issue path, and it skipped every authority branch — so an automation token confined
+    // to one team minted itself an UNBOUND token carrying its holder's whole membership and
+    // whatever platform role they have. Every guarantee the binding makes ends there, and
+    // nothing in the record would say a narrower token had been traded for a wider one.
+    if (id.patTeam && team !== id.patTeam) {
+      return text(
+        `ERROR: this token is bound to team '${id.patTeam}', so it cannot issue a token that ` +
+        `reaches further than it does. Pass \`team: "${id.patTeam}"\` to issue another bound ` +
+        "token, or use an unbound token — a binding is only worth something if it cannot be " +
+        "traded away by the token it binds.");
+    }
     const pid = await principalId(db, target);
     if (!pid) return text(`ERROR: no principal '${target}'`);
     const tid = team ? await teamId(db, team) : null;

@@ -67,20 +67,21 @@ export function mountSkills(app: Express): void {
          * is indistinguishable from the structural kind above: sdlc-explore has 38 timed runs
          * and a genuine median under a second, and it deserves to say so.
          *
-         * `teams` comes off the initiative, which is why it is a LEFT join twice over: 28 runs
-         * carry no initiative_id at all (a block usage skill's whole life, see runs.ts) and
-         * those runs still belong in every count on this row. array_remove drops the null the
-         * teamless ones contribute rather than dropping the runs. Neither join can fan out —
-         * a run has at most one initiative and an initiative exactly one team. */
+         * NO `teams` COLUMN, AND THERE MUST NOT BE ONE. This route is `teamless` — a skill is a
+         * platform-wide capability, so its run counts are the same figure for every caller —
+         * and it also returned `array_agg(distinct t.slug)`, which is not a fact about the
+         * skill but a list of the OTHER TEAMS on the deployment. A member of one team asking
+         * which skills exist learned that team `quan` exists, which skills it runs and how
+         * often. The console never read the field; it was payload nobody asked for carrying
+         * the one thing this route may not say. The gate check for a `teamless` body looks
+         * for a FILTER on team_slug, so an aggregated team column passed it. */
         `select s.name, sv.version, s.kind, s.flow, s.retired,
-                array_remove(array_agg(distinct t.slug), null)       as teams,
                 count(*)                                            as runs,
                 count(*) filter (where r.ended_at > r.started_at)   as timed_runs,
                 coalesce(sum(r.calls),0)                            as calls,
                 round(avg(r.calls)::numeric,1)                      as calls_avg,
                 coalesce(max(r.calls),0)                            as calls_max,
                 coalesce(sum(r.refusals),0)                         as refusals,
-                coalesce(sum(r.turns),0)                            as turns,
                 round(avg(extract(epoch from (r.ended_at-r.started_at)))
                       filter (where r.ended_at > r.started_at)::numeric,1) as dur_avg,
                 round(percentile_cont(0.5) within group
@@ -95,15 +96,13 @@ export function mountSkills(app: Express): void {
            from zz.run r
            join zz.skill_version sv on sv.id = r.skill_version_id
            join zz.skill s on s.id = sv.skill_id
-           left join zz.initiative i on i.id = r.initiative_id
-           left join zz.team t on t.id = i.team_id
           where ($1::timestamptz is null or r.started_at >= $1)
           group by 1,2,3,4,5`, [since]),
       db.query(
         // SAME WINDOW as the runs above, or `logged` would report all-time call counts
         // beside a windowed run count on one row.
         `select step, count(*) as calls, count(*) filter (where ok = false) as failed,
-                count(distinct subject) as tools
+                count(distinct coalesce(tool_key, subject)) as tools
            from zz.event where kind = 'tool_call' and step is not null and step <> ''
              and ($1::timestamptz is null or ts >= $1)
           group by 1`, [since]),
@@ -117,21 +116,15 @@ export function mountSkills(app: Express): void {
         // else, so the view kept listing casebox-stg-usage and zz-learn exactly as it lists a
         // skill that is still served — which is the state the column was added to end.
         retired: !!r.retired,
-        // Which teams' initiatives drove this skill. Empty when every run of it was teamless.
-        teams: (r.teams as string[] | null) ?? [],
         runs: +r.runs, calls: +r.calls, callsAvg: +r.calls_avg, callsMax: +r.calls_max,
         // How many of those runs a duration can be computed for — see the query.
         timedRuns: +r.timed_runs,
         refusals: +r.refusals,
-        // Reported as null, never 0. zz.run.turns is zero on every row while the
-        // event log holds turn events with no run id, so a 0 here would read as
-        // "this skill used no LLM turns" — which is false, not merely unknown.
-        turns: +r.turns > 0 ? +r.turns : null,
-        // Same rule as `turns` above, for the aggregates that can come back SQL-null.
-        // `+null` is 0, so a plain `+r.x` turns "no run in this group was ever measured"
-        // into "this skill is instant and free" — the exact conflation migration 051 removed
-        // from zz.run.bytes_total, one layer up. Tested against null rather than against 0,
-        // because unlike `turns` a real zero is meaningful here: measured, and empty.
+        // NULL IS NOT ZERO, for every aggregate that can come back SQL-null. `+null` is 0,
+        // so a plain `+r.x` reads "no run in this group was ever measured" as "this skill is
+        // instant and free" — the exact conflation migration 051 removed from
+        // zz.run.bytes_total, one layer up. Tested against null rather than against 0,
+        // because here a real zero IS meaningful: measured, and empty.
         durationAvg: num(r.dur_avg), durationMedian: num(r.dur_med), durationMax: num(r.dur_max),
         durationTotal: num(r.dur_total),
         kbPerRun: num(r.kb_avg), mbTotal: num(r.mb_total),
@@ -160,12 +153,13 @@ export function mountSkills(app: Express): void {
         // has written since attribution became a fact about the door — so every row fell into one
         // `platform` bucket and the split reported a composition of one. `subject` is
         // `<door>:<tool>` on every tool_call.
-        `select split_part(subject,':',1) as surface, count(*) as calls,
-                count(*) filter (where ok = false) as failed, count(distinct subject) as tools
+        `select split_part(coalesce(tool_key, subject),':',1) as surface, count(*) as calls,
+                count(*) filter (where ok = false) as failed,
+                count(distinct coalesce(tool_key, subject)) as tools
            from zz.event where kind = 'tool_call' and step = $1
           group by 1 order by count(*) desc`, [name]),
       db.query(
-        `select subject as tool, count(*) as calls,
+        `select coalesce(tool_key, subject) as tool, count(*) as calls,
                 count(*) filter (where ok = false) as failed
            from zz.event where kind = 'tool_call' and step = $1
           group by 1 order by count(*) desc limit 8`, [name]),
@@ -191,8 +185,7 @@ export function mountSkills(app: Express): void {
    * per-skill comparison the new design refuses, because every ruler now belongs to one
    * plugin and two skills' numbers under two rulers are not comparable.
    */
-  /** Runs, as recorded. States the one gap it still has rather than hiding it: turns that are
-   * never attributed.
+  /** Runs, as recorded.
    *
    * NO OUTCOME BREAKDOWN. This grouped every run by `zz.run.outcome` and reported the runs
    * that ended without one as a gap. 048 drops that column: its only writer was the
@@ -212,30 +205,21 @@ export function mountSkills(app: Express): void {
     const db = platformDb();
     const since = periodCutoff(req);
     const [totals] = await Promise.all([
+      // NO MODEL-TURN COLUMN AND NO CAVEAT BUILT ON ONE. zz.run's model-turn count was
+      // written by nothing — no statement anywhere set it — and nothing emitted the matching
+      // event either, so the "not attributed to runs" banner this used to build could never
+      // clear: a warning watching a column no code will ever fill. Both halves are gone
+      // rather than reported, because a caveat the platform cannot act on teaches the reader
+      // to skip the ones it can. checks/console-nulls.ts refuses a reader here again.
       db.query(`select count(*) as runs, coalesce(sum(calls),0) as calls,
-                       coalesce(sum(refusals),0) as refusals, coalesce(sum(turns),0) as turns,
-                       round((sum(bytes_total)/1048576.0)::numeric,1) as mb,
-                       (select count(*) from zz.event
-                         where kind='turn' and ($1::timestamptz is null or ts >= $1)) as turn_events
+                       coalesce(sum(refusals),0) as refusals,
+                       round((sum(bytes_total)/1048576.0)::numeric,1) as mb
                   from zz.run
                  where ($1::timestamptz is null or started_at >= $1)`, [since]),
     ]);
     const t = totals.rows[0];
     res.json({
       totals: { runs: +t.runs, calls: +t.calls, refusals: +t.refusals, mb: num(t.mb) },
-      gaps: {
-        // Both stated as data so the front end never has to hardcode a caveat
-        // that stops being true the day the platform starts recording them.
-        //
-        // A GAP YOU CANNOT HAVE IS NOT A GAP. This was `+t.turns > 0` alone, which is false
-        // on a platform that has never run anything — so a fresh install opened its Runs page
-        // to a warning banner reading "zz.run.turns is 0 on all 0 rows, while the event log
-        // holds 0 turn events", reporting a defect where there is simply no data yet. Nothing
-        // is unattributed when nothing exists, and a caveat that fires on emptiness teaches
-        // the reader to ignore the ones that mean something.
-        turnsAttributed: +t.turns > 0 || (+t.runs === 0 && +t.turn_events === 0),
-        turnEvents: +t.turn_events,
-      },
     });
   }));
 }

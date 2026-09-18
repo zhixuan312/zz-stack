@@ -1,8 +1,8 @@
 ---
 name: sdlc-spec
-version: 1.4
+version: 1.5
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
-when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Local runtimes only (Claude Code, Codex)."
+when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Local runtimes only (Claude Code)."
 ---
 
 # sdlc-spec

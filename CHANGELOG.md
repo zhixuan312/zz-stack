@@ -33,6 +33,163 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.50.0] — 2026-09-18 · console 0.16.0
+
+A full audit of both repositories, tool by tool, route by route, page by page. Six walks, every
+finding reproduced before it was fixed — and the new probe assertions were run against 0.49.0
+first, where all six go red, each naming its defect.
+
+### Fixed
+
+- **`initiative_status` could not answer `close` for any gating flow.** The platform appends a
+  handover to every flow that gates something, and its prerequisite is the closing document —
+  satisfied the moment the last gate is approved. So the handover became the pending document
+  and the platform told every agent to write a handover about an initiative that had not
+  closed; `document_approve` then refused the close until somebody signed it, while zz-handover
+  requires the outcome to exist already. Two of the six next moves were unreachable in
+  production. The handover is the closed branch's business now, and the probe asserts the close
+  is offered. A flow that gates nothing reaches `closed` instead of asking for a handover
+  forever.
+
+- **No gated document could be overwritten, draft included.** `document_write` says "create or
+  overwrite" and rebuilt the envelope from its arguments, so the rewrite dropped `status`,
+  `version` and any approval — and removing a field the platform owns is refused. An agent asked
+  to rewrite a spec nobody had approved was told to *approve* it instead. The previous copy's
+  platform-owned fields are carried forward now, which also stops a rewrite silently resetting a
+  revised document to v1 and overwriting a `_versions/` snapshot that already existed.
+
+- **An abandoned close reached no ledger row, and said it had.** Abandoning is the close that
+  does not land on the closing document — the work stopped before that document was written —
+  and the ledger append skipped exactly that case while the tool reported a row. The ledger is
+  what a team's counts are totalled from. The missing row for the one live instance is appended
+  and the store committed.
+
+- **An approved freeform document could be patched.** A gate is a person saying yes, not a
+  manifest, and `document_approve` accepts any document in a freeform folder for that reason —
+  but the guard that protects an approved document asked the manifest, found none, and stood
+  aside. It reads the signature on disk now. A document an initiative CLOSED on gets its own
+  refusal: a closed record may be corrected, and a correction says what caused it, which is
+  `document_revise` and not a silent overwrite.
+
+- **A registered source could be overwritten.** `source_add` calls itself immutable and was
+  enforced only by being the tool people used: writing to `sources/…` had three path segments,
+  so every document guard short-circuited and the overwrite landed with no contributor, no
+  `supports` and no date — taking the source out of attribution and out of the rule that a
+  revision must cite its evidence.
+
+- **`document_revise` minted an approval nobody gave.** Revising a document an initiative closed
+  on wrote `status: approved` with no approver, on a document no manifest gates — the state 0.44
+  removed, reached through a fourth writer, and the likeliest shape for it is an abandoned close
+  landing on `explore.md`. It also printed "status undefined" on every ungated revision and told
+  the caller nothing downstream could proceed until a document `document_approve` refuses was
+  approved.
+
+- **Two claims about frozen copies were false.** A snapshot is taken when a document goes draft
+  to approved and at no other time, so revising a closed document twice named a `_versions/`
+  file that was never written, and re-approving pointed at a copy that still carries the
+  previous signer.
+
+- **The console and the platform described different flows.** The handover derivation lived
+  inside zz-core, where the console cannot reach it, so the console reported an initiative
+  complete whose handover nobody had signed and drew that document with no gate rule. Both read
+  one function now.
+
+- **A `teamless` route returned every other team's slugs.** `/skills` is platform-wide by design
+  and also handed back the teams that had run each skill — a member of one team learned which
+  other teams exist, what they run and how often. Nothing read the field.
+
+- **Renamed tools were drawn as two unrelated series.** The console grouped by the name the
+  caller typed rather than the alias-resolved one, so one tool appeared twice and every ranking
+  built on it was wrong by that split; the historical rows are backfilled.
+
+- **The refusal rate counted things that are not refusals.** A call comes back not-ok for four
+  unrelated reasons, and the tile that asks "is the tool surface breaking" counted all of them —
+  most of what it was reporting was one client sending a malformed argument. Every refusal now
+  records whose it is, and the tile splits on it.
+
+- **Initiatives were minted from refused calls.** Whatever string a call passed as its
+  initiative was recorded before the platform had answered, so a bad argument on a failed call
+  became a real initiative — document paths and a free-text sentence among them — and runs were
+  filed against them. An initiative is now a folder something was successfully written into, or
+  one that has documents.
+
+- **A telemetry row named one skill and carried another one's hash.** When the manifest overrides
+  the traced step, the version and the content hash went on coming from the last skill loaded;
+  one hash spanned six different step names.
+
+- **The activity trend's first bucket included events from before the window**, so the chart and
+  the tile above it disagreed about the same number.
+
+- **`knowledge_reindex` could not repair the knowledge store.** The rebuild walked the documents
+  table only, so a node deleted on disk kept its row for good and a retired team's journal
+  survived the archive — the ghost row the rebuild exists to remove. It also stamped every node
+  with the moment the index ran, so a rebuild restamped the whole journal to one afternoon; a
+  node's own recorded date is used now.
+
+- **Deactivating a person did not revoke their tokens.** It said they stop working immediately,
+  which held only while the principal stayed deactivated — and adding them back is an upsert
+  that reactivates, so re-adding somebody months later silently restored every token they had.
+
+- **A bound token, and the fourth canonical header.** A team-bound superadmin token arrived at
+  zz-core stamped `admin`; `pat_issue`, `team_switch` and the console's token route each let one
+  reach further than it does. `x-zz-user-id` was the one identity header the middleware did not
+  overwrite, leaving it to a proxy rule rather than to the line that depends on it.
+
+### Fixed — console 0.16.0
+
+- **Every skill with a recorded run threw instead of rendering.** The page read a rubric, its
+  dimensions and its findings from fields the gateway stopped sending when an evaluation's
+  subject became a plugin version; the tab is what a skill cost to run.
+- **"Waiting on you" counted gates nobody had drafted** — work waiting on the agent, reported as
+  signatures owed, while the Overview tile one page away said none were.
+- **"Updated just now" could not be false.** The freshness stamp was evaluated at render, over
+  cached data and over the error state alike; it reads the real fetch now, oldest panel first.
+- **A completeness median was labelled as a count of open work**, which made the tile
+  arithmetically disagree with the bar beneath it.
+- **A knowledge node showed two different times one page apart**, and every platform-shelf node's
+  evidence linked to a team that does not hold it.
+- Plus: "null MB"; a caveat banner watching a column nothing writes; the Adopted tile and its own
+  row badge reading different fields; tiles stating zero while loading and after a failure; five
+  page descriptions claiming the platform over one team's rows; an ablation delta shown without
+  the errored-run count that qualifies it; two gates at one stage collapsing into one chip;
+  `abandoned` rendered in the success colour; a version badge disagreeing with the version chain
+  below it; an empty list blaming filters nobody had set.
+
+### Changed
+
+- **The handover derivation moved to `@zz/catalog`**, so zz-core and the console read one answer.
+- **`refusalOwner` is in `@zz/contracts`**, beside `refusalClass`, and the gateway stamps its
+  verdict on every refused call — previously it existed only in a release-time script, where the
+  instrument that writes the data could not reach it.
+- **Four source files were split by subject** to stay under the line ceiling: the chain check's
+  eval-door walk and its closing walk, the tool report's across-runs half, and the knowledge
+  store's read side.
+- **A test that asserted a literal against itself is gone**, and two that pinned defects in place
+  now assert the corrected behaviour.
+
+### Added
+
+- **`scripts/release/walk-released.ts`** — the same tool-chain walk, against an image ALREADY
+  released. The dry run proves a check green on the code about to ship; it cannot prove the check
+  would have failed on the code that ships replaced, and a check that passes against both is
+  measuring nothing. This release's six new assertions were run against 0.49.0 first and all six
+  go red.
+
+### Upgrade notes
+
+- **Migration 061** adds `zz.event.refusal_owner` and backfills it from the refusal text. No
+  action.
+- **`zz.run.turns` and the turn-event caveat are gone from the API.** Nothing wrote either.
+- **`GET /api/console/skills` no longer returns `teams`**, `/skills/:name` no longer returns
+  `dimensions`, `findings` or `evaluated`, and `Skill` no longer carries `turns`. All were
+  unread or unwritable.
+- **`Gate` now carries `written` and `role`.** A gate whose document does not exist is waiting on
+  the agent, and the derived handover belongs to the closed branch — a caller reading `passed`
+  alone will count both as signatures owed.
+- **The phantom initiative rows repaired in this release will come back until the fix is
+  deployed**, because the reconciler on the running deployment still mints them. Repeat the
+  repair after the deploy.
+
 ## [0.49.0] — 2026-09-18
 
 An abandoned close named an acceptor.

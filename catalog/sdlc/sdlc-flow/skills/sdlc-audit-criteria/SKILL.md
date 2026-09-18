@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.0
+version: 2.1
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -156,7 +156,7 @@ Read the document. Do similar items in a list/table follow the same shape? If on
 Read the document. For living/revised documents: is there a "last updated" / "as of" / version stamp? When findings claim "still unfixed in version X", is there a date timeline that supports the claim? Record findings.
 
 ### Step 13: Consolidate
-Collect all findings from your working-memory notes across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — the JSON itself is never written to a file; your findings go to the document as prose, above.
+Collect all findings from your working-memory notes across all failure modes, assign severities. Your FINAL response must be the JSON block below as plain text — the JSON itself is never written to a file, and neither is a document. Your findings go to a SOURCE, with `source_add`, as set out above — an audit is not one of this flow's four documents, and writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.
 
 ### Evidence Grounding (REQUIRED for every finding)
 
@@ -206,7 +206,7 @@ Findings that fail any check should be downgraded or dropped. However, logical-c
 
 ## Output
 
-After consolidating all failure-mode passes, your FINAL text response must be exactly one JSON block (the JSON itself is never written to a file — the prose findings are, as above):
+After consolidating all failure-mode passes, your FINAL text response must be exactly one JSON block (the JSON itself is never written to a file — the prose findings go to a `source_add` source, as above, never to a document):
 
 ```json
 {"criteriaCovered": ["recommendation-coherence", "internal-contradiction", "cross-item-duplication", "independence-claimed-without-evidence", "argument-soundness", "completeness-against-constraints", "fix-actionability", "drift-staleness", "scope-creep-framing", "structural-consistency", "metadata-completeness"], "findings": [{"weight": "critical|high|medium|low", "category": "<criterion-slug>", "claim": "<one sentence>", "evidence": "<quoted text or absence reference>", "suggestion": "<concrete fix>"}]}

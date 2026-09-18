@@ -30,6 +30,7 @@ import { parseEnvelope } from "@zz/contracts";
 import { Mcp } from "@zz/mcp-client";
 
 import { walkBugs } from "./chain-bugs.js";
+import { walkEvalDoor } from "./chain-eval.js";
 import { walkFreeform } from "./chain-freeform.js";
 import { walkShelf } from "./chain-shelf.js";
 import { die, envRequired, parseArgs } from "../lib/cli.js";
@@ -294,7 +295,8 @@ async function main(): Promise<number> {
     record(govNext.next_move?.action === "write_document",
       "a flow-driven initiative is told its first document",
       `governed next_move was ${JSON.stringify(govNext.next_move)}, expected write_document`);
-    await walkFreeform({ call, check, record, writeDoc, SLUG });
+    await walkFreeform({ call, check, record, writeDoc, SLUG, FLOW, OPENS_ON });
+
   }
   console.log(`walking ${INIT}/ through ${GW}`);
 
@@ -355,6 +357,26 @@ async function main(): Promise<number> {
     await call("document_patch", { path: `${INIT}/${FIRST_GATED}`, find: "status: draft", replace: "status: approved" }),
     true, /document_patch edits the document's BODY/);
 
+  // A GATED DRAFT IS REWRITTEN BY document_write, and the platform's own fields survive it.
+  //
+  // `document_write` says "create or overwrite", and the overwrite half was refused for
+  // EVERY gated document: the envelope it built carried no `status`, the copy on disk
+  // carried `status: draft`, and ownershipCheck read the difference as a hand removal —
+  // "this write would change it from `draft` to `(removed)`. Use document_approve(path) the
+  // moment the person agrees", which would have approved a document nobody had rewritten.
+  // Nothing here saw it because every write in this walk was a first write.
+  //
+  // `version` is asserted in the same breath and for the same root cause: it is not a field
+  // ownershipCheck guards, so a rewrite reset a revised document to v1 silently, and the
+  // next revise then wrote a `_versions/` snapshot over one that already existed.
+  check(`a gated draft is rewritten by document_write`,
+    await writeDoc(`${INIT}/${FIRST_GATED}`, `${FIRST_GATED} rewritten`), false);
+  const rewritten = parseEnvelope(await call("document_read", { path: `${INIT}/${FIRST_GATED}` }));
+  record(rewritten.status === "draft" && (rewritten.version ?? "1") === "1",
+    "a rewrite keeps the platform's own fields",
+    `after the rewrite status was ${JSON.stringify(rewritten.status)} and version ` +
+    `${JSON.stringify(rewritten.version)}, expected draft and 1`);
+
   // AN UNGATED DOCUMENT CANNOT BE APPROVED. It is finished by being written; there is no
   // verdict to record, and the platform says so rather than stamping an approval nobody gave.
   if (FIRST_GATED !== OPENS_ON) {
@@ -379,7 +401,16 @@ async function main(): Promise<number> {
     documents: { name: string; status?: string | null; gate?: boolean }[];
     next_move?: { action?: string; document?: string };
   };
-  const docs = status.documents.map((d) => d.name);
+  // THE FLOW'S OWN DOCUMENTS, WITHOUT THE PLATFORM'S HANDOVER.
+  //
+  // `initiative_status.documents` includes the handover the platform appends to every gating
+  // flow, and the handover is written AFTER the close — zz-handover's own first line requires
+  // the outcome to exist already. Walking it with the rest made this probe write and approve
+  // a handover for an initiative that had not closed, which is exactly the wrong sequence the
+  // platform used to advise, and it hid the defect: with the handover already approved,
+  // `next_move` reached the close branch and the assertion below passed while the platform
+  // was telling every real agent to write a handover instead.
+  const docs = status.documents.filter((d) => d.name !== "handover.md").map((d) => d.name);
   // What is ALREADY approved, from the platform's own answer. The write loop below walked
   // every document including the one approved above it — and document_write on an approved
   // document is refused by design, so the loop's first iteration failed against a platform
@@ -442,6 +473,22 @@ async function main(): Promise<number> {
   };
   // NOT A TOOL: matched against `next_move.action`, which is initiative_status's own verb
   // vocabulary and not a tool name — see the comment at its registration.
+  //
+  // ASSERTED, NOT MERELY READ. This took `close` when it was offered and fell back to the
+  // last document otherwise, which made the one state it was reading for unobservable: with
+  // every gate recorded and no outcome yet, `deriveChain`'s appended handover.md became the
+  // pending document, so `action: "close"` was unreachable for EVERY gating flow and this
+  // probe closed the initiative anyway, off the fallback, reporting nothing. An agent
+  // obeying that answer wrote a handover about an initiative that had not closed. The
+  // fallback stays for the shape of the next line; the claim about what the platform says
+  // is now made out loud.
+  // NOT A TOOL: `close` here is `next_move.action`, initiative_status's own verb vocabulary
+  // — the tool it names in its `why` is initiative_close.
+  record(nxt.next_move?.action === "close",
+    "with every gate recorded and no outcome, the next move names the close",
+    `next_move was ${JSON.stringify(nxt.next_move)}, expected the close action`);
+  // NOT A TOOL: `close` is the action word again — the same vocabulary, read a second time
+  // to pick the document out of it.
   const closing = nxt.next_move?.action === "close" ? nxt.next_move.document! : docs[docs.length - 1];
   console.log(`  (the flow closes on ${closing})`);
   const before = await call("document_read", { path: "_ledger.md" });
@@ -561,6 +608,21 @@ async function main(): Promise<number> {
   record(!sourced.trim().toUpperCase().startsWith("ERROR") && sourced.includes("chain-check source"),
     "source_list reads back what source_add just wrote", sourced);
 
+  // AND A SOURCE CANNOT BE REWRITTEN AFTERWARDS, which is what `source_add` promises in its
+  // own description and what nothing enforced. `document_write` into `sources/` has three
+  // path segments, so chainFor returns an empty chain and every documentGuards check
+  // short-circuits — the overwrite landed with a fresh envelope carrying no
+  // `contributed_by`, no `supports` and no `added_at`, which takes the source out of
+  // source_list's attribution and out of document_revise's owed-sources check. Evidence that
+  // can change after a document cited it makes every revision it justified unauditable.
+  const sourcePath = /(sources\/[^\s)]+\.md)/.exec(sourced)?.[1];
+  if (sourcePath) {
+    check("a registered source cannot be overwritten by document_write",
+      await writeDoc(`${INIT}/${sourcePath}`, "rewritten evidence"), true, /immutable/);
+  } else {
+    console.log("  skip  a registered source cannot be overwritten — source_list named no path");
+  }
+
   // THE SHELF — skills, the knowledge store and the evaluation door — is its own subject and
   // its own file, handed the same client and the same recorders so it walks the same door.
   await walkShelf({ call, check, record, eitherOr, INIT });
@@ -599,53 +661,8 @@ async function main(): Promise<number> {
                 "role is not offered it — nothing measured");
   }
 
-  // ── the plugin-eval surface: a plugin's release history, not this run's initiative ──
-  //
-  // Every tool here takes `plugin`/`version`/`eval_id` identifiers, and whether THIS
-  // deployment has ever released PLUGIN, run a judge round, or even holds a platform
-  // database at all is state this throwaway initiative does not create and this script does
-  // not control. So each call below is aimed at a REFUSAL these tools document for exactly
-  // that case — "no released version is recorded", "declares no ruler", "is not an
-  // evaluation" — rather than at manufacturing a real release, an approved rubric and a
-  // scored round, which the model-scoring half of this surface needs a live judge to run at
-  // all: round_judge is explicit that a real subject "takes about thirty seconds" each,
-  // which is the model cost and wall-clock time this whole file exists to not spend. Getting
-  // this far exercises the door, the schema and every refusal branch that runs before a
-  // model is ever reached — the part of "does the tool chain still work" that a rate-limited
-  // model provider cannot take down.
-  eitherOr("plugin_locate answers or refuses by a named cause",
-    await callEval("plugin_locate", { plugin: PLUGIN }),
-    /no platform database|no released version/);
-  eitherOr("plugin_conform reads this plugin's own catalog entry",
-    await callEval("plugin_conform", { plugin: PLUGIN, version: "0" }),
-    /is not in the catalog/);
-  eitherOr("plugin_profile answers or refuses by a named cause",
-    await callEval("plugin_profile", { plugin: PLUGIN, version: "0" }),
-    /no platform database/);
-  eitherOr("ruler_read answers or refuses by a named cause",
-    await callEval("ruler_read", { plugin: PLUGIN, version: "0" }),
-    /no platform database/);
-  eitherOr("ruler_affirm refuses a version this deployment never released",
-    await callEval("ruler_affirm", { plugin: PLUGIN, version: "0" }),
-    /no platform database|no released version/);
-  eitherOr("round_judge refuses a version that declares no ruler",
-    await callEval("round_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
-    /no platform database|declares no ruler/);
-  eitherOr("round_scores refuses an eval_id nothing minted",
-    await callEval("round_scores", { eval_id: randomUUID() }),
-    /no platform database|is not an evaluation/);
-  eitherOr("case_record refuses a result that is not JSON",
-    await callEval("case_record", { plugin: PLUGIN, version: "0", result: "not json" }),
-    /no platform database|that is not JSON/);
-  eitherOr("ruler_record refuses a quantitative dimension with no threshold",
-    await callEval("ruler_record", {
-      plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",
-      dimensions: [{ name: "chain-check probe", kind: "quantitative" }],
-    }), /no platform database|carries no threshold/);
-  eitherOr("finding_record refuses an eval_id nothing minted",
-    await callEval("finding_record", {
-      eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
-    }), /no platform database|no evaluation/);
+  // ── the plugin-eval surface, in chain-eval.ts ──
+  await walkEvalDoor({ callEval, eitherOr, PLUGIN });
 
   // MATCHED AS A CELL, NOT AS A SUBSTRING. This probe also opens `<INIT>-freeform`, whose name
   // CONTAINS INIT — so closing the freeform one first put a row in the ledger that

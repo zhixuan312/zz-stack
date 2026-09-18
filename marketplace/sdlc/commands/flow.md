@@ -2,15 +2,14 @@
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
 when_to_use: "The person typed /sdlc:flow. This is a command, not an auto-matched skill."
-version: "0.49.0"
+version: "0.50.0"
 disable-model-invocation: true
 ---
 
 # sdlc-flow
 
 The entry point. Starting an initiative, resuming one, or deciding what happens next all begin
-here. (You reached this as `/sdlc:flow` in Claude Code, or as the `sdlc-flow` skill in
-Codex. Same text; the door differs.)
+here. (You reached this as `/sdlc:flow` in Claude Code.)
 
 This file decides **which** stage. `sdlc-method` says **how** any stage is executed — who runs
 it, what a worker is handed, how to judge what comes back. **Load `sdlc-method` before running
@@ -103,8 +102,11 @@ Order, risk and scope are the person's judgement. Dispatch it and you get a plau
 nobody chose.
 
 **Ask for approval on `plan.md` before the plan audit runs**, the same way the spec is agreed
-before its audit — an audit round registers a source against `plan.md`, which is gated, so a round dispatched
-first has its document refused at the write. How they answer is entirely theirs —
+before its audit — an audit's findings are the input to the plan's next version, and a version the person has
+not agreed to yet is not a thing to audit. Nothing in the platform refuses it — `source_add`
+is ungated and immutable and may be called at any time, from any harness, including while
+the work is in flight — so this ordering is yours to keep, not a guardrail that keeps it
+for you. How they answer is entirely theirs —
 a yes, a yes with a change, or a standing "you do not need to ask me about these". Delegating
 it to you is an ordinary answer, not a loophole.
 
@@ -150,7 +152,7 @@ initiative closed and say the handover is what remains.
 ## The journal is the platform's, not a file
 
 `sdlc-recall` does not read or write anything local. It uses the ZZ knowledge base through
-zz-core, which arrives with the required `zz` plugin:
+zz-core, which arrives with the required `zz-core` plugin:
 
 | | Tool | |
 |---|---|---|

@@ -291,7 +291,7 @@ const SYSTEM_FILES = /(^|\/)(_?activity\.jsonl|_ledger\.md|_knowledge\/log\.md)$
  * than none, because it is still presented as evidence.
  *
  * One function, called by both, so a guard added later cannot land on one path only. */
-export function writeGuard(rawPath: string): string | null {
+export function writeGuard(rawPath: string, via: "source_add" | null = null): string | null {
   // NORMALISED FIRST. Every pattern below was matched against the path as the caller wrote
   // it, and one of them anchors at the start — so `a/../_knowledge/nodes/0001-x.md` slipped
   // past the journal guard, and safePath then resolved it to exactly the file the guard
@@ -330,6 +330,32 @@ export function writeGuard(rawPath: string): string | null {
     return "ERROR: _knowledge/ is the team's knowledge base, minted by knowledge_add and " +
       "knowledge_supersede — they number the nodes, require the evidence, and write the index " +
       "and the append-only log. A node written by hand has none of that.";
+  }
+  // AND sources/, WHICH WAS IMMUTABLE ONLY INSIDE THE TOOL THAT WRITES IT.
+  //
+  // `source_add` says so in its own description — "Ungated and immutable; add a new file
+  // rather than editing one" — and enforced it by being the only door anybody thought to
+  // use. `document_write("<initiative>/sources/<file>.md", …)` walked straight past it:
+  // three path segments, so `chainFor` returns an empty chain and every guard in
+  // documentGuards short-circuits on `parts.length !== 2`. The overwrite then lands with a
+  // fresh envelope carrying no `contributed_by`, no `supports` and no `added_at`, which
+  // takes the source out of `source_list`'s attribution, out of
+  // `initiative_status.sources_after_approval`, and out of `document_revise`'s owed-sources
+  // check — so the evidence a revision is obliged to cite stops obliging.
+  //
+  // Evidence is the one thing on this platform that must be what it was when it arrived: a
+  // document changes BECAUSE OF a source, and a source that can be edited afterwards makes
+  // every revision it justifies unauditable.
+  //
+  // `via` is how source_add reaches its own directory, the same shape ownershipCheck already
+  // uses for the acts that own their writes — the tool that mints a source is the one caller
+  // that may, and it passes the name rather than being recognised by the path it built.
+  if (!via && /(^|\/)sources\//.test(relPath)) {
+    return "ERROR: sources/ holds the material a document cites, and it is immutable — " +
+      "register one with source_add(initiative, title, content|path, supports), which stamps " +
+      "who contributed it, when, and which document it bears on. A source that changed after " +
+      "a document cited it is not evidence. If the material itself changed, add the new " +
+      "version as a new source and revise the document with document_revise.";
   }
   return null;
 }

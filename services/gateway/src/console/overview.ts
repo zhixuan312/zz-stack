@@ -27,6 +27,14 @@ export function mountOverview(app: Express): void {
     res.json({
       email: id.email, name: id.displayName, role: id.platformRole,
       mayRead: mayReadConsole(id), superadmin: isSuper(id), via: id.via,
+      // THE SENTENCE, not just the verdict. `ok()` names its refusals — "the console needs
+      // a browser sign-in — x@y authenticated by pat" — and that sentence is the whole
+      // diagnosis; it is what stops somebody checking a password that was already correct.
+      // This route answers 200, so the browser saw only `mayRead: false` and wrote its own
+      // generic line instead. Same wording as `ok()`, from the same two facts.
+      ...(mayReadConsole(id) ? {} : {
+        why: `the console needs a browser sign-in — ${id.email} authenticated by ${id.via}`,
+      }),
       // `id.teams` already carries `{ slug, role }` — mapping it down to slugs threw the
       // role away, so the browser could not tell a team admin from a member. Pass it through.
       teams: id.teams, activeTeam: id.activeTeam,
@@ -120,7 +128,11 @@ export function mountOverview(app: Express): void {
         // gap. Turns, tool calls made outside a team, and admin acts that belong to
         // a person are all teamless by design — see the activity endpoint.
         `select count(*) as events,
-                count(*) filter (where ok = false) as failures,
+                -- TOOL CALLS, because that is the word the reader is shown. This counted a
+                -- failure of ANY event kind and the sidebar rail labels it "Failing calls",
+                -- an inch from an Overview tile reading "191 of 2,050 calls refused" for the
+                -- selected window -- two labels, one word, different populations.
+                count(*) filter (where kind = 'tool_call' and ok = false) as failures,
                 count(*) filter (where team_id is null) as unattributed
            from zz.event
           where ($1::timestamptz is null or ts >= $1)`,
@@ -165,6 +177,16 @@ export function mountOverview(app: Express): void {
                 count(*) filter (where e.ok = false)                                                   as refused
            from slot left join zz.event e
              on date_trunc($2::text, e.ts at time zone $3::text) = slot.b and e.kind='tool_call'
+             -- AND INSIDE THE WINDOW, which the join condition never said.
+             --
+             -- generate_series starts at date_trunc(grain, since), which is EARLIER than
+             -- since -- that is what truncating does -- so the first bucket matched every
+             -- event in the part of that day, hour or week that falls before the window
+             -- opens. The panel this draws sits under a tile counting the same population,
+             -- and the two disagreed: measured on a 7-day window at day grain, the tile said
+             -- 269 refused and this summed to 272. The comment two hundred lines down says
+             -- the panel total "has to equal the tile's", and it could not.
+             and ($1::timestamptz is null or e.ts >= $1)
           group by 1 order by 1`,
         [since, grain, ZZ_TZ]),
       db.query<{ kind: string; n: string }>(
@@ -184,15 +206,22 @@ export function mountOverview(app: Express): void {
        * other: one tool refusing for nine reasons is a surface problem, and nine tools
        * refusing with one message is a single bug. The panel offers both. */
       db.query<{ tool: string; n: string }>(
-        `select subject as tool, count(*) as n
+        `-- THROUGH tool_key, NOT subject. The subject column is what the caller literally
+        -- invoked; tool_key is the alias-resolved name, and it exists so a RENAME folds onto
+        -- one series instead of drawing the same tool as two unrelated rows. Read raw, this
+        -- table showed core:patch_file 815 and core:document_patch 162 -- one tool,
+        -- split 83/17 -- and every "busiest tool" and refusal ranking built on it was wrong
+        -- by that much. coalesce covers rows written before migration 050 added the column;
+        -- those are backfilled, and the fallback keeps a fresh deployment honest.
+        select coalesce(tool_key, subject) as tool, count(*) as n
            from zz.event
-          where kind='tool_call' and ok = false and subject <> ''
+          where kind='tool_call' and ok = false and coalesce(tool_key, subject) <> ''
             and ($1::timestamptz is null or ts >= $1)
           group by 1 order by count(*) desc limit 12`,
         [since]),
       db.query<{ message: string; tool: string; tools: string; n: string }>(
-        `select refusal as message, min(subject) as tool,
-                count(distinct subject) as tools, count(*) as n
+        `select refusal as message, min(coalesce(tool_key, subject)) as tool,
+                count(distinct coalesce(tool_key, subject)) as tools, count(*) as n
            from zz.event
           where kind='tool_call' and ok = false and refusal is not null
             and ($1::timestamptz is null or ts >= $1)
@@ -260,15 +289,15 @@ export function mountOverview(app: Express): void {
           group by 1 order by count(*) desc`,
         [scope.slug, since]),
       db.query<{ tool: string; n: string }>(
-        `select e.subject as tool, count(*) as n
+        `select coalesce(e.tool_key, e.subject) as tool, count(*) as n
            from zz.event e join zz.team t on t.id = e.team_id
-          where e.kind='tool_call' and t.slug = $1 and e.ok = false and e.subject <> ''
+          where e.kind='tool_call' and t.slug = $1 and e.ok = false and coalesce(e.tool_key, e.subject) <> ''
             and ($2::timestamptz is null or e.ts >= $2)
           group by 1 order by count(*) desc limit 12`,
         [scope.slug, since]),
       db.query<{ message: string; tool: string; tools: string; n: string }>(
-        `select e.refusal as message, min(e.subject) as tool,
-                count(distinct e.subject) as tools, count(*) as n
+        `select e.refusal as message, min(coalesce(e.tool_key, e.subject)) as tool,
+                count(distinct coalesce(e.tool_key, e.subject)) as tools, count(*) as n
            from zz.event e join zz.team t on t.id = e.team_id
           where e.kind='tool_call' and t.slug = $1 and e.ok = false and e.refusal is not null
             and ($2::timestamptz is null or e.ts >= $2)

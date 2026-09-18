@@ -28,10 +28,10 @@ directly over several turns, and stopping it.
 **Claude Code has this.** Spawn with the `Agent` tool, `run_in_background: true`, addressed by
 `@name`, stopped with `TaskStop`.
 
-**Codex does not, at time of writing.** Say so rather than pretending: run the persona in-session
-as a bounded role instead — declare the role, hold the dialogue, and apply the same close-out
-contract. You lose the context isolation, which is the main thing the command is for, so keep it
-short.
+**A harness without it: say so rather than pretending.** Run the persona in-session as a
+bounded role instead — declare the role, hold the dialogue, and apply the same close-out
+contract. You lose the context isolation, which is the main thing the command is for, so keep
+it short.
 
 ## Intake — do not spawn without these
 

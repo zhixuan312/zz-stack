@@ -71,9 +71,14 @@ check("a team whose store is gone loses its index rows", () => {
     }
   }
   if (!all) bad.push("reindexAllTeams is gone — this check reads nothing");
-  else if (!/select distinct team_slug from zz\.doc/.test(all)) {
-    bad.push("reindexAllTeams iterates the teams/ directories alone, so a team whose store was " +
-             "removed is never visited and its rows are never cleaned");
+  // BOTH TABLES, because since migration 059 a team's knowledge is its own subject in its own
+  // table — and a team can hold nodes and no documents at all, which is exactly the team the
+  // union exists to reach. Pinned on the union rather than on one spelling of one query, so
+  // dropping either half fails here.
+  else if (!/select team_slug from zz\.doc/.test(all) || !/select team_slug from zz\.knowledge_node/.test(all)) {
+    bad.push("reindexAllTeams does not union both index tables, so a team whose store was " +
+             "removed — or one holding only knowledge nodes — is never visited and its rows " +
+             "are never cleaned");
   }
   return bad.length ? bad.join("; ") : null;
 });

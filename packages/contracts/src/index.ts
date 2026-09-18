@@ -110,6 +110,48 @@ const VARYING: [RegExp, string][] = [
   [/(?<!\b(?:code|status|http)\s)\b\d+\b/g, "<n>"],
 ];
 
+/** WHO A REFUSAL BELONGS TO, from the sentence it carries.
+ *
+ * FOUR OWNERS, because "a call came back not-ok" is four different facts and reading them as
+ * one made the console's lead tile wrong by a factor of four. Measured on production: of 285
+ * not-ok tool calls, only 69 began with `ERROR` — the platform's own sentence saying which
+ * rule was broken. 185 were ONE client sending a malformed enum argument over and over, and
+ * 29 were a client calling tools by their pre-rename names. A "refusal rate" that counts all
+ * of those answers the question "is the tool surface breaking" with 76% schema-validation
+ * noise, and the reader cannot tell which quarter is the real answer.
+ *
+ * HERE, beside refusalClass, because two readers need the same verdict and there is no third
+ * place both can reach: the gateway writes it onto every event as it happens, and
+ * packages/tools' step-score reads it back to score a step. It lived only in the second, so
+ * the instrument that WRITES the data had no idea the distinction existed.
+ *
+ *   guardrail  the platform said no, by name. Working as intended; never a defect.
+ *   ours       the CALL was malformed — a missing argument, an invalid enum, unparseable
+ *              JSON. A flow could have avoided it.
+ *   theirs     the tool answered with a status, a web page, or not at all.
+ *   other      not classifiable from the text, which is a real answer and not a bucket to
+ *              make small.
+ */
+type RefusalOwner = "guardrail" | "ours" | "theirs" | "other";
+
+/** A refusal the CALLER could have avoided: the shape of a call, not the health of a tool. */
+const REFUSAL_OURS = /Missing required argument|Invalid arguments|Input validation error|could not be parsed as JSON|validation error|not found|No such tool available/i;
+/** A refusal that belongs to the tool: it answered with a status, a web page, or not at all. */
+const REFUSAL_THEIRS = /status code \d{3}|http \d{3}|Error POSTing to endpoint|Unexpected content type|<html/i;
+/** The platform saying which rule was broken. */
+const REFUSAL_GUARDRAIL = /^ERROR[: ]/;
+
+export function refusalOwner(refusal: string): RefusalOwner {
+  const t = refusal.replace(/\s+/g, " ").trim();
+  if (!t) return "other";
+  if (REFUSAL_GUARDRAIL.test(t)) return "guardrail";
+  // BEFORE `ours`, because a transport failure often carries a message that mentions a
+  // status AND the word "error"; the tool's own answer is the more specific claim.
+  if (REFUSAL_THEIRS.test(t)) return "theirs";
+  if (REFUSAL_OURS.test(t)) return "ours";
+  return "other";
+}
+
 export function refusalClass(text: string): string {
   let one = text.replace(/\s+/g, " ").trim();
   // A function, like every other replacement in this repository: none of the VARYING

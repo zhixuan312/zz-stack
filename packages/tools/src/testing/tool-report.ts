@@ -22,13 +22,14 @@
  * Run it on the deployment host: it reads the platform database through the compose project,
  * the same way backup.sh and issue-first-pat.sh do. --psql overrides that for anywhere else.
  */
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { refusalClass, resolveStep, resolveToolKey } from "@zz/contracts";
 
 import { die, optional, parseArgs } from "../lib/cli.js";
+import { showLedger, showMovement } from "./tool-report-history.js";
 import { teachesTheRule } from "../lib/refusal.js";
 import { DEFAULT_PSQL, psqlRows } from "../lib/psql.js";
 import { localStamp } from "../lib/shell.js";
@@ -86,6 +87,15 @@ interface CallRow {
   tool_key: string | null;
   ok: boolean | null;
   refusal: string | null;
+  /** WHO THE REFUSAL BELONGS TO, stamped at ingest by @zz/contracts' refusalOwner().
+   *
+   * Four owners, because "not ok" was four different facts counted as one: `guardrail` is the
+   * platform saying no by name and is working as intended, `ours` is a malformed CALL,
+   * `theirs` is the tool failing, `other` is a sentence that says neither. A report that
+   * totals all four answers "is the surface breaking" with whatever share happens to be one
+   * client's argument bug — on this deployment, 185 of 285. Null on a call that worked, and
+   * on a row written before migration 061 that the backfill did not reach. */
+  refusal_owner: string | null;
   /** What the call cost. Null means not measured, never a guessed zero — a request that
    * failed before tool-telemetry.ts started timing it leaves these unset. `batched` is the
    * one column that is never null: the gateway always knows whether a request carried more
@@ -151,7 +161,7 @@ function rows(psql: string, since: string, surface: string | null, actor: string
     // in a joined array is a scope nothing can check.
     "select ts, subject, team_slug, initiative, flow, step, step_version, plugin, plugin_version," +
     " tool_key," +
-    " ok, refusal, duration_ms, request_bytes, response_bytes, batched, detail" +
+    " ok, refusal, refusal_owner, duration_ms, request_bytes, response_bytes, batched, detail" +
     " from zz.event where kind = 'tool_call'" +
     ` and ${where.join(" and ")} order by id`;
 
@@ -167,7 +177,7 @@ function percentile(values: number[], p: number): number {
   return ordered[Math.min(ordered.length - 1, Math.floor(ordered.length * p))];
 }
 
-interface Refusal {
+export interface Refusal {
   count: number;
   class: string;
   teaches: boolean;
@@ -198,7 +208,7 @@ interface NamedId {
   tools: string[];
 }
 
-interface ReportShape {
+export interface ReportShape {
   generated: string;
   since: string;
   actor: string | null;
@@ -216,6 +226,8 @@ interface ReportShape {
    * refused. Named software, never a person. */
   clients: ClientStat[];
   refusals: Refusal[];
+  /** How many refused calls belonged to each owner: guardrail, ours, theirs, other. */
+  refusalsByOwner: Record<string, number>;
   named: NamedId[];
 }
 
@@ -228,149 +240,9 @@ interface ClientStat { client: string; calls: number; refused: number; tools: nu
  * because `as ReportShape` on an arbitrary file is an assertion about a shape nobody checked,
  * and showMovement is written tolerantly enough that the comparison then ran against zeros and
  * reported the whole run as new. Both want the same question answered, so it is asked once. */
-function isReport(r: unknown): r is ReportShape {
+export function isReport(r: unknown): r is ReportShape {
   return typeof r === "object" && r !== null &&
     typeof (r as ReportShape).calls === "number" && Array.isArray((r as ReportShape).refusals);
-}
-
-/**
- * Every saved run, as one row per refusal class.
- *
- * The accepted RATE is the number everyone reaches for and it is the one that lies: it is
- * governed by which tools a run happened to call. One measured run was 93.8% accepted with
- * seven of its eight failures on a single tool — call that tool twice instead of nine times
- * and the rate jumps four points while nothing has been fixed.
- *
- * A refusal CLASS does not move like that. It is present or it is not, and when it stops
- * appearing something was closed. That is what a loop has to show to have earned its cost:
- * not a curve that drifts up, but a row that reaches zero and stays there.
- *
- * A row that never reaches zero across runs is not noise either — it is a defect nobody has
- * taken, which is worth seeing precisely because it is easy to stop noticing.
- */
-function showLedger(directory: string): void {
-  const files = readdirSync(directory).filter((f) => f.endsWith(".json")).map((f) => join(directory, f));
-  if (files.length === 0) die(`no saved reports in ${directory} — write some with --json first`);
-
-  // PARSED ONCE, AND WHAT WILL NOT PARSE IS NAMED. `taken()` below tolerated a file that is
-  // not a report — "fall through to the file's own timestamp" — and the very next expression
-  // parsed every file again with no such tolerance, so the tolerance was decorative: a stray
-  // `notes.json` beside the saved runs ended --ledger on a raw SyntaxError, which is exactly
-  // what lib/cli.ts exists to stop an operator seeing.
-  //
-  // Dropped files are COUNTED and listed rather than skipped quietly. This tool's own ledger
-  // is a claim about runs over time, and one that silently leaves runs out is the shape
-  // flow-compare names: a silently dropped denominator is how a comparison lies.
-  const parsed: { name: string; report: ReportShape; taken: string }[] = [];
-  const skipped: string[] = [];
-  for (const f of files) {
-    let report: unknown;
-    try {
-      report = JSON.parse(readFileSync(f, "utf8"));
-    } catch {
-      skipped.push(`${basename(f)} (not JSON)`);
-      continue;
-    }
-    if (!isReport(report)) {
-      skipped.push(`${basename(f)} (JSON, but not a report — no calls/refusals)`);
-      continue;
-    }
-    // Ordered by WHEN each report was taken, not by filename. Sorting by name put a report
-    // generated at 21:47 before a hand-named baseline from that morning, so the earlier run's
-    // refusal classes — the ones that had in fact CLOSED — were labelled NEW. A ledger that
-    // can print an improvement as a regression is worse than no ledger, and the only reason
-    // it did was that one of the two files had been named by a person.
-    parsed.push({ name: basename(f, ".json"), report, taken: report.generated || localStamp(statSync(f).mtime) });
-  }
-  if (skipped.length) console.log(`  not read: ${skipped.join(", ")}`);
-  if (parsed.length === 0) {
-    die(`no readable reports in ${directory} — ${files.length} .json file(s) there, none of ` +
-        "them written by --json or --save");
-  }
-  const loaded = parsed
-    .sort((a, b) => a.taken.localeCompare(b.taken))
-    .map((x) => [x.name, x.report] as const);
-
-  // One run is a baseline, not a trend, and every class in it would otherwise be marked NEW —
-  // which reads as "these just appeared" when it only means "nothing preceded this".
-  const solo = loaded.length === 1;
-  console.log(
-    `\n${loaded.length} run${solo ? "" : "s"} in ${directory}` +
-      (solo ? "  — a baseline. Improvement is what the NEXT run does to these rows." : "") +
-      "\n",
-  );
-  const width = Math.max(...loaded.map(([n]) => n.length)) + 2;
-  console.log("  " + loaded.map(([n]) => n.padEnd(width)).join(""));
-  console.log("  " + loaded.map(([, r]) => `${r.calls} calls`.padEnd(width)).join(""));
-  console.log("  " + loaded.map(([, r]) => `${r.accepted_rate}% ok`.padEnd(width)).join(""));
-  console.log();
-
-  const classes = new Map<string, number[]>();
-  loaded.forEach(([, r], i) => {
-    for (const entry of r.refusals ?? []) {
-      if (!classes.has(entry.class)) classes.set(entry.class, new Array<number>(loaded.length).fill(0));
-      classes.get(entry.class)![i] = entry.count;
-    }
-  });
-
-  if (classes.size === 0) {
-    console.log("  no refusals in any run");
-    return;
-  }
-
-  // Closed last, open first: what is still costing you belongs at the top.
-  //
-  // The first key was `counts[last] ? 1 : 0` and the sort is ascending, so a class that had
-  // reached zero sorted ABOVE one still costing you every run — the exact inversion of the
-  // sentence above it, in the one view whose purpose is to put the open rows where somebody
-  // will read them. Still-open sorts first now, and within each group the largest total
-  // leads.
-  const rank = (counts: number[]): [number, number] => [
-    counts[counts.length - 1] ? 0 : 1,
-    -counts.reduce((a, b) => a + b, 0),
-  ];
-  const ordered = [...classes].sort((a, b) => {
-    const [ra, sa] = rank(a[1]);
-    const [rb, sb] = rank(b[1]);
-    return ra - rb || sa - sb;
-  });
-  for (const [cls, counts] of ordered) {
-    const cells = counts.map((c) => (c ? String(c) : "·").padEnd(width)).join("");
-    const last = counts[counts.length - 1];
-    const state = solo ? "" : !last ? "CLOSED" : counts.slice(0, -1).every((c) => !c) ? "NEW" : "";
-    console.log(`  ${cells}${state}`);
-    console.log(`      ${cls.slice(0, 96)}\n`);
-  }
-}
-
-/**
- * What changed since a previous report.
- *
- * A single run says where a flow stalled. Whether the flow is getting BETTER is a comparison,
- * and nothing here was keeping one — each report was read once and lost, so "we ran it again
- * and it improved" stayed an impression. The two numbers that answer it are the accepted rate
- * and, more sharply, which refusal CLASSES appeared and which stopped: a class that is gone is
- * a fix, and a class that is new is a regression, whoever caused it.
- */
-function showMovement(now: ReportShape, before: Partial<ReportShape>): void {
-  const wasRate = before.accepted_rate ?? 0;
-  console.log(`\nsince the report you compared against (${before.calls ?? 0} calls, ${wasRate}% accepted)`);
-  console.log("-".repeat(69));
-  const delta = now.accepted_rate - wasRate;
-  console.log(`  accepted rate ${wasRate}% -> ${now.accepted_rate}% (${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`);
-
-  const was = new Map((before.refusals ?? []).map((r) => [r.class, r.count]));
-  const isNow = new Map(now.refusals.map((r) => [r.class, r.count]));
-  const fixed = [...was.keys()].filter((c) => !isNow.has(c)).sort();
-  const fresh = [...isNow.keys()].filter((c) => !was.has(c)).sort();
-  for (const cls of fresh) console.log(`  NEW      ${String(isNow.get(cls)).padStart(3)}x  ${cls.slice(0, 110)}`);
-  for (const cls of fixed) console.log(`  GONE     ${String(was.get(cls)).padStart(3)}x  ${cls.slice(0, 110)}`);
-  for (const cls of [...was.keys()].filter((c) => isNow.has(c)).sort()) {
-    if (was.get(cls) !== isNow.get(cls)) {
-      console.log(`  ${String(was.get(cls)).padStart(3)} -> ${String(isNow.get(cls)).padEnd(3)}      ${cls.slice(0, 100)}`);
-    }
-  }
-  if (fresh.length === 0 && fixed.length === 0) console.log("  the same refusal classes, in the same shape");
 }
 
 function main(argv: string[]): number {
@@ -439,6 +311,8 @@ function main(argv: string[]): number {
   // record, and folding it into either column would make the number a guess.
   const perTool = new Map<string, { calls: number; ok: number; refused: number; unreadable: number; ms: number[]; bytes: number[] }>();
   const refusals = new Map<string, number>();
+  /** Refused calls by who the refusal belongs to — see CallRow.refusal_owner. */
+  const byOwner: Record<string, number> = {};
   // What each call NAMED. Keyed by identifier-and-value so the same skill read twelve times
   // is one row of twelve, which is the shape the question needs: not how many calls a run
   // made, but which things it kept reaching for.
@@ -496,6 +370,11 @@ function main(argv: string[]): number {
     else {
       t.refused++;
       const reason = String(e.refusal ?? "").trim();
+      // COUNTED BY OWNER TOO. The class says which sentence; the owner says whose problem it
+      // is, and a reader acting on this table needs both — a rising `guardrail` class is a
+      // skill to edit, a rising `ours` is a client to fix, and totalling them hides whichever
+      // is smaller behind whichever is louder.
+      byOwner[e.refusal_owner ?? "other"] = (byOwner[e.refusal_owner ?? "other"] ?? 0) + 1;
       if (reason) {
         const cls = refusalClass(reason).slice(0, 160);
         refusals.set(cls, (refusals.get(cls) ?? 0) + 1);
@@ -540,6 +419,7 @@ function main(argv: string[]): number {
           },
         ]),
     ),
+    refusalsByOwner: byOwner,
     refusals: [...refusals]
       .sort((a, b) => b[1] - a[1])
       .map(([cls, n]) => ({ count: n, class: cls, teaches: teachesTheRule(example.get(cls)!.text), ...example.get(cls)! })),

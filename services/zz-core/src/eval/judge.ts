@@ -299,7 +299,12 @@ export async function traceOf(p: pg.Pool, runId: string): Promise<{ text: string
   const total = Number((await p.query<{ n: string }>(
     "select count(*) as n from zz.event where run_id = $1::uuid", [runId])).rows[0]?.n ?? 0);
   const { rows } = await p.query<{ at: string; subject: string; ok: boolean | null; refusal: string }>(`
-    select to_char(e.ts,'HH24:MI:SS') as at, e.subject, e.ok,
+    -- THE RESOLVED NAME. A judge reading this transcript is asked which tools a run used,
+    -- and a rename put one tool in it under two spellings -- so the same run read as though
+    -- it had reached for two different things. tool_key is the folded name; subject is only
+    -- the fallback for a row written before that column existed.
+    select to_char(e.ts,'HH24:MI:SS') as at,
+           coalesce(e.tool_key, e.subject) as subject, e.ok,
            coalesce(left(e.refusal, 160), '') as refusal
       from zz.event e where e.run_id = $1::uuid
      order by e.ts limit ${TRACE_CAP}`, [runId]);

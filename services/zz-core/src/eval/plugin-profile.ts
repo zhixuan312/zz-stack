@@ -48,6 +48,15 @@ interface PluginTraces {
    *  half of fit no static check can see: reachability is a property of the package, use is a
    *  property of the runs. */
   never_called: string[];
+  /** WHY THERE IS NO TRACE EVIDENCE, when there is none — said, not left to be inferred.
+   *
+   * A run belongs to a plugin version through the SKILL VERSIONS that version shipped, so a
+   * release that re-versioned every skill in a plugin starts its trace history at zero by
+   * construction. That is the honest answer and it looks exactly like a broken join: zz-core
+   * 0.50.0 reported `runs: 0` the day it shipped while its skills had been loaded all week,
+   * under their previous version numbers. The cases block already explains its own emptiness;
+   * this is the same courtesy for traces. Undefined whenever there are runs. */
+  reason?: string;
 }
 
 /** The runs belonging to one plugin version, through its recorded skill membership.
@@ -112,6 +121,14 @@ export async function pluginTraces(
               from zz.event e
              where e.run_id in (select r.id ${RUNS_OF})
                and e.initiative is not null and e.initiative <> ''
+               -- AND IT IS AN INITIATIVE NAME. This column holds whatever a call passed,
+               -- recorded verbatim before the platform answered, so a bad argument on a
+               -- failed call is in this column for good -- document paths and a free-text
+               -- sentence among them on this deployment. They are not initiatives and a
+               -- stage path through one is a path through nothing. The shape is the
+               -- platform's own: initiative_open composes the date and slug from its own
+               -- clock and safeName refuses a separator.
+               and e.initiative ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$'
                and e.step is not null and e.step <> '') x
      group by initiative, step, visit
      order by initiative, min(ts)`, [plugin, version])).rows;
@@ -144,14 +161,29 @@ export async function pluginTraces(
     }
   }
 
+  // THROUGH tool_key, THE ALIAS-RESOLVED NAME — never the raw subject.
+  //
+  // `subject` is what the caller literally typed; `tool_key` folds a RENAME onto one series.
+  // Read raw, this table showed one tool twice under two spellings -- core:skill_read 31 and
+  // core:skill_view 23, core:document_read 19 and core:read_file 4, core:add_source 9 and
+  // core:source_add 4 -- so every "busiest tool" reading was wrong by the split.
+  //
+  // `never_called` was worse than wrong, it was BACKWARDS: it is built from this set, so
+  // `knowledge_search` was reported as never called while `core:search_knowledge` -- the same
+  // tool under its pre-rename name -- had five calls. "A tool its skills name that was never
+  // called" is one of the two questions this whole flow exists to answer, and a ruler written
+  // from that list would have recommended removing a tool that is in daily use.
+  //
+  // coalesce covers rows written before migration 050 added the column; those are backfilled
+  // on this deployment, and the fallback keeps a fresh one honest.
   const useRows = (await pool.query<{ tool: string; calls: string; refusals: string }>(`
-    select e.subject as tool,
+    select coalesce(e.tool_key, e.subject) as tool,
            count(*)::text as calls,
            count(*) filter (where e.ok is false)::text as refusals
       from zz.event e
      where e.run_id in (select r.id ${RUNS_OF})
        and e.kind = 'tool_call'
-     group by e.subject
+     group by coalesce(e.tool_key, e.subject)
      order by count(*) desc`, [plugin, version])).rows;
   const use = useRows.map((r) => ({ tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals) }));
 
@@ -163,6 +195,12 @@ export async function pluginTraces(
     runs,
     usable_runs: usable,
     sufficient: usable >= USABLE_RUNS_FLOOR,
+    reason: runs > 0 ? undefined :
+      `no run is recorded against ${plugin} ${version}. A run belongs to a version through ` +
+      "the skill versions that version shipped, so a release that re-versioned this plugin's " +
+      "skills starts its trace history at zero — the runs made under the previous versions " +
+      "belong to those versions and are not lost. Cases need no history at all, so this is a " +
+      "fact to report rather than a reason to stop.",
     coverage: {
       events: Number(cov?.events ?? 0),
       with_step: Number(cov?.with_step ?? 0),

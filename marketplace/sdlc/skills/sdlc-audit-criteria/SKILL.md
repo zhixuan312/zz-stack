@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 1.2
+version: 1.3
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -31,7 +31,11 @@ to accept, and removes the evidence that anything was ever wrong.
 
 **Recording your round is not fixing it.** The one file you write is your own findings, to the
 document your stage produces — `spec-audit.md` for `sdlc-spec-audit`, `plan-audit.md` for
-`sdlc-plan-audit`. Write it with `document_write` before you return. The JSON block below is
+`sdlc-plan-audit`. Write it with `document_write` before you return.
+
+**ONE FILE, and it is also the source.** Do not call `source_add` with your findings as well:
+the document you just wrote IS what the revision cites (`document_revise(sources:
+["plan-audit.md"])`), and a second copy under `sources/` is the same round recorded twice. The JSON block below is
 still your FINAL text response and is still never written to a file: the report is how the main
 agent decides what happens next, and the document is how anyone reading the initiative later
 knows this round happened at all. Both, every round.

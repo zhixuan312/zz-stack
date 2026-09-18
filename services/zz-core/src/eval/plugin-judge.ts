@@ -124,8 +124,17 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
   const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages);
   const cases = await pluginCases(p, plugin, version);
   const { stage_paths, ...figures } = traces;
+  const named = toolsNamedBy(plugin);
   return JSON.stringify({
     plugin, version,
+    // THE DENOMINATOR, STATED. A threshold is routinely written as a share of "the tools this
+    // plugin's skills name" — and the sheet listed `never_called` and `use` but never that
+    // set, so the judge had to infer its size from the two and got it wrong: zz-core's ruler
+    // was read against 16 named tools on a plugin that names 15, because the one tool a run
+    // had called (`skill_read`) is not one this plugin's skills name and was added in anyway.
+    // A figure a threshold is measured against belongs on the sheet, not in the reader's head.
+    tools_named: named,
+    tools_named_count: named.length,
     traces: { ...figures, initiatives_with_a_path: stage_paths.length },
     cases,
   }, null, 2);

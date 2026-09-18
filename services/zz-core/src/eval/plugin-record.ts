@@ -98,17 +98,61 @@ export function registerPluginRecordTools(server: McpServer): void {
         on conflict (plugin_id, version) do update set subject = excluded.subject
         returning id::text as id`, [pv.plugin_id, rubric_version, subject])).rows[0].id;
 
-      // REPLACED, not merged. A ruler is one statement about what good means; leaving a
-      // dimension behind because a later draft stopped mentioning it would score the plugin
-      // against a line nobody currently holds.
-      await p.query("delete from zz.rubric_dimension where rubric_id = $1::uuid", [rubricId]);
+      // REPLACED, not merged — and BY NAME, because a score points at a dimension row.
+      //
+      // This deleted every dimension and re-inserted them, which is right about the ruler and
+      // wrong about the database: zz.eval_score carries a foreign key to rubric_dimension.id,
+      // so the moment a round has been scored the delete fails and the caller gets a raw
+      // Postgres constraint name instead of a sentence. It is not a rare corner either — it
+      // is what "reuse this plugin's existing ruler" runs into the first time it is tried,
+      // which is the path ruler_read itself tells the define stage to take.
+      //
+      // So a dimension that is still in the ruler is UPDATED IN PLACE and keeps its id, which
+      // is also the more honest record: a score taken against "document depth" stays attached
+      // to "document depth" rather than to a row that was deleted and replaced by one that
+      // happens to read the same.
+      //
+      // A dimension the new draft drops is deleted — leaving it behind would score the plugin
+      // against a line nobody currently holds — unless something has already been scored
+      // against it, and then the caller is told to move to a new rubric version rather than
+      // have history rewritten underneath them.
+      const existing = (await p.query<{ id: string; name: string; scored: string }>(`
+        select d.id::text as id, d.name,
+               (select count(*)::text from zz.eval_score s where s.dimension_id = d.id) as scored
+          from zz.rubric_dimension d where d.rubric_id = $1::uuid`, [rubricId])).rows;
+      const keep = new Set(dimensions.map((d) => d.name));
+      const orphaned = existing.filter((e) => !keep.has(e.name) && Number(e.scored) > 0);
+      if (orphaned.length) {
+        return text(
+          `REFUSED: ${orphaned.map((o) => `"${o.name}"`).join(", ")} ` +
+          `${orphaned.length === 1 ? "has" : "have"} already been scored under rubric ` +
+          `version ${rubric_version}, so dropping ${orphaned.length === 1 ? "it" : "them"} ` +
+          "would leave marks pointing at a line nobody holds. Record this as a NEW " +
+          "rubric_version instead — the old scale keeps its scores and the new one starts " +
+          "clean, which is what makes two rounds comparable or honestly incomparable.");
+      }
+      const byName = new Map(existing.map((e) => [e.name, e.id]));
+      for (const e of existing) if (!keep.has(e.name)) {
+        await p.query("delete from zz.rubric_dimension where id = $1::uuid", [e.id]);
+      }
       for (const [i, d] of dimensions.entries()) {
-        await p.query(`
-          insert into zz.rubric_dimension
-            (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason)
-          values ($1::uuid, $2, $3, $4, $5, $6, $7, $8)`,
-          [rubricId, d.name, d.five_means ?? "", d.one_means ?? "", i,
-           d.kind, d.threshold ?? "", d.threshold_reason ?? ""]);
+        const id = byName.get(d.name);
+        if (id) {
+          await p.query(`
+            update zz.rubric_dimension
+               set five_means = $2, one_means = $3, ordinal = $4, kind = $5,
+                   threshold = $6, threshold_reason = $7
+             where id = $1::uuid`,
+            [id, d.five_means ?? "", d.one_means ?? "", i,
+             d.kind, d.threshold ?? "", d.threshold_reason ?? ""]);
+        } else {
+          await p.query(`
+            insert into zz.rubric_dimension
+              (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason)
+            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8)`,
+            [rubricId, d.name, d.five_means ?? "", d.one_means ?? "", i,
+             d.kind, d.threshold ?? "", d.threshold_reason ?? ""]);
+        }
       }
 
       const who = parseCaller(requestHeaders()).email;

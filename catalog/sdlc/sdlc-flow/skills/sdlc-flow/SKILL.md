@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 1.6
+version: 1.7
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
 ---
@@ -124,9 +124,11 @@ is not yours.
 `sdlc-review` is the flow's last STAGE. There is no stage after it — you were present for
 the whole initiative, and closing it is yours to do directly, the way `zz-platform` describes
 every close: one `initiative_close()` call, never a block's own close. Say the one thing you know —
-`initiative_close(initiative, "finished", accepted_by: "<their name>")` when somebody accepted it,
-`initiative_close(initiative, "finished", no_signoff_reason: "<one line>")` when nobody signed off, or
-`initiative_close(initiative, "abandoned")` when the work stopped short — and the platform derives
+`initiative_close(initiative, "finished")` when it is done, which records YOU as the acceptor
+because closing it is saying so; `accepted_by: "<their name>"` when somebody else is the one who
+said it; `no_signoff_reason: "<one line>"` when nobody accepted it at all; or
+`initiative_close(initiative, "abandoned")` when the work stopped short, at whatever stage it
+stopped — the outcome goes on the furthest document it reached. The platform derives
 `outcome`, writes it into `review.md`, which this flow declares as its closing document, and
 appends the team's ledger row. An initiative you do not close this way stays open forever
 and never reaches the ledger.

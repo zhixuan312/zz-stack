@@ -53,16 +53,17 @@ Closing is an act, and the progress diagram now shows only what the record can e
 - **`/api/console/initiatives`**: `steps` carry `state` and `current` instead of `done`, include
   the two bookends, and gate `after` indexes that list; each initiative also reports `complete`,
   which is whether every gate was approved and every document required to close was present.
-
-- **The approval on the closing document IS the sign-off.** A gated closing document is approved
-  by a person, and that is the same act `accepted_by` describes — but the close asked for the name
-  again, so three initiatives closed `delivered` ("nobody signed it off") with their review
-  approved by name on the very document the close was written on. `initiative_close` reads the
-  acceptor off that approval when the caller names nobody. The three are corrected in the store.
-- **An audit round is recorded once.** `sdlc-plan` told the agent to paste the audit's findings
-  back as `source_content` on the revision, while the auditor had already written them to
-  `plan-audit.md` — the same round on the record twice. The revision cites the audit document
-  instead, and `source_content` stays for a cause that exists nowhere else.
+- **Closing is the sign-off.** Every call carries a person's authority — a token IS a person, and
+  an agent calls under the authority of whoever it works for — so `initiative_close(finished)`
+  records that person as the acceptor and the outcome is `accepted`. `accepted_by` now names
+  somebody ELSE; `no_signoff_reason` is the deliberate route to `delivered`, for work nobody
+  accepted. Three initiatives had closed `delivered` — "nobody signed it off" — with the closer's
+  own name on the close; they are corrected in the store.
+- **A revision cites what already explains it.** A flow declares which documents READ another
+  (`plan-audit.md` requires `plan.md`), so an audit round written after the version being replaced
+  is what the revision answers. `document_revise` refuses until it is cited, instead of leaving
+  the agent to paste the findings back as a second copy. `sdlc-plan` and `sdlc-audit-criteria`
+  say the same thing: one round leaves one file, and the revision cites it.
 
 ### Console 0.14.0
 

@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.40
+version: 3.41
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -36,7 +36,8 @@ read the table to know what you can do, read the prose to know what will stop yo
 | closed | — | nothing reopens it | a closed initiative is a finished record, and a record's value is that it is not edited afterwards |
 
 `outcome` is exactly `delivered`, `accepted` or `abandoned`, and `initiative_close` derives it
-from your disposition and from whether a person is named. You never write it.
+from your disposition: `finished` is `accepted`, because closing it is saying so, unless you send
+`no_signoff_reason` and it is `delivered`. You never write it.
 
 `flow` is decided at open and only at open. Pass it and the platform tells you what comes next;
 leave it out and it answers `next_move: null` with `next_move_absent` saying why — a freeform
@@ -248,10 +249,14 @@ the timing; getting this wrong costs a plan, not a refusal.
 - **A close is an ACT: zz-core's `initiative_close(initiative, disposition)`** — never a
   plugin's own close. You say the one thing you
   know — the work is `finished` or `abandoned` — and the platform derives the rest.
-  `finished` with somebody named in `accepted_by` is `accepted`; `finished` with
-  nobody named is `delivered` and owes `no_signoff_reason`, one line on why nobody
-  signed off; `abandoned` is `abandoned`. You never write `outcome` or `closed_by`,
-  and writing either by hand is refused.
+  **Closing IS the sign-off.** The call carries a person's authority — a session is
+  a principal, and an agent closes under the authority of whoever it works for — so
+  `finished` records `accepted` with the closer as the acceptor. Name somebody ELSE
+  in `accepted_by` when they are the one who said it; send `no_signoff_reason`, one
+  line, when nobody accepted it at all, and the outcome is `delivered`. `abandoned`
+  is `abandoned`, and it may be recorded at any stage — the outcome goes on the
+  furthest document the work reached. You never write `outcome` or `closed_by`, and
+  writing either by hand is refused.
 - **Every close names somebody, and the platform is what names them.** `closed_by`
   is stamped from your session on every close, whichever outcome it carries,
   because a close that names nobody reads exactly like one the agent decided for

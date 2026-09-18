@@ -1,13 +1,13 @@
 {
   "sdlc": {
     "version": "0.46.0",
-    "digest": "6df780e1",
+    "digest": "7142537e",
     "cases_digest": "ac009e81",
     "skills": {
       "sdlc-audit-criteria": "dd8d57f4c235",
       "sdlc-execute": "9a04bd96e3dd",
       "sdlc-explore": "9964d100ebd9",
-      "sdlc-flow": "89ded7450f8a",
+      "sdlc-flow": "43418d89f0fd",
       "sdlc-investigate": "c52bfb4eff39",
       "sdlc-method": "1611df40c3d5",
       "sdlc-plan": "cd3eb1b139dd",
@@ -33,14 +33,14 @@
   },
   "zz-core": {
     "version": "0.46.0",
-    "digest": "d4a63dee",
+    "digest": "a9115fcc",
     "cases_digest": "f64bba10",
     "skills": {
       "zz-authoring": "60f258ebec54",
       "zz-breakout": "130174886cc0",
       "zz-deck": "5ff1f1770bfc",
       "zz-handover": "4df05e9470ab",
-      "zz-platform": "282f09173b08",
+      "zz-platform": "2354d94bb08d",
       "zz-tldr": "66d6e9e95272"
     }
   },

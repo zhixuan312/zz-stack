@@ -30,8 +30,9 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         "Close an initiative, in one call. You say what you KNOW — the work `finished` or was " +
         "`abandoned`, and who accepted it if anyone did — and THE PLATFORM derives the outcome: " +
         "finished with an acceptor is `accepted`, finished without one is `delivered`, stopped " +
-        "is `abandoned`. An acceptor you do not name is READ OFF the closing document: whoever " +
-        "approved it said this is what they wanted, and naming them again is not asked of you. " +
+        "is `abandoned`. CLOSING IS THE SIGN-OFF: the close carries your authority, so you are " +
+        "the acceptor unless you name another in `accepted_by` — or say in `no_signoff_reason` " +
+        "that nobody accepted it, which is the deliberate route to `delivered`. " +
         "You never write `outcome` yourself and writing it by hand is refused. " +
         "Closing without an acceptor is a legitimate route and costs a sentence saying why " +
         "nobody signed off — an honest close is never the expensive one, but it is never free " +
@@ -45,15 +46,16 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         disposition: z.enum(["finished", OUTCOME_STOPPED]).describe(
           `\`finished\`: the work was completed. \`${OUTCOME_STOPPED}\`: it stopped before it was.`),
         accepted_by: z.string().optional().describe(
-          "The person who said this is what they wanted. Give it whenever somebody did — " +
-          "their name, or the address they wrote from. Omit only when nobody has."),
+          "Somebody OTHER than you who said this is what they wanted. Omit it and the close " +
+          "records you: calling this is the sign-off."),
         document: z.string().optional().describe(
           "Which document records the close. REQUIRED for a freeform initiative, where no " +
           "flow declares a closing document. Ignored where one does — except on an " +
           "`abandoned` close whose closing document was never written, which records on the " +
           "furthest document the work reached, or on this one when you name it."),
         no_signoff_reason: z.string().optional().describe(
-          "Required when `finished` carries no `accepted_by`: one line on why nobody signed off."),
+          "For a finished close that NOBODY accepted — one line on why. The outcome is then " +
+          "`delivered`. Leave it out unless that is true; closing is otherwise an acceptance."),
       },
     },
     async ({ initiative, disposition, accepted_by, no_signoff_reason, document }) => {
@@ -217,27 +219,21 @@ export function registerInitiativeCloseTool(server: McpServer): void {
           "wrong, record WHY as a journal node against this initiative — a correction somebody " +
           "can find beats an overwrite nobody can.");
       }
-      // THE APPROVAL ON THE CLOSING DOCUMENT IS THE SIGN-OFF, and it was being ignored.
+      // CLOSING IS THE SIGN-OFF, and the closer is the person who signed.
       //
-      // A gated closing document is approved by a PERSON — `document_approve` stamps who and
-      // when — and that is the same act `accepted_by` describes. Asking the closer to name
-      // them again made the two disagree: three initiatives closed `delivered` ("nobody signed
-      // it off") with their review approved by name on the document the close was written on.
+      // Every call carries a person's authority — a session is a principal, and an agent calls
+      // this under the authority of whoever it works for. So `initiative_close(finished)` IS
+      // somebody saying the work is what they wanted, and asking them to name themselves again
+      // was ceremony: three initiatives closed `delivered` — "nobody signed it off" — with the
+      // caller's own name on the close and on the approval of the very document it was written
+      // on. Silence means the closer accepted it, not that nobody did.
       //
-      // The caller may still name someone else — an acceptor who is not the approver is a real
-      // case — but silence is no longer read as "nobody".
-      const approver = (parseEnvelope(doc).approved_by ?? "").trim();
-      const gated = chain.documents.find((d) => d.name === closingDoc)?.gate === true;
-      const signedBy = acceptor || (gated && approver ? approver : "");
-      if (disposition === "finished" && !signedBy && !reason) {
-        return text(
-          `ERROR: finished with nobody named needs \`no_signoff_reason\` — one line on why ` +
-          "nobody signed off. If somebody DID say this is what they wanted, pass their name " +
-          "as `accepted_by` instead and the close records an acceptance. " +
-          (gated
-            ? `${closingDoc} carries a gate and no approval, so there is nobody to read one off.`
-            : `${closingDoc} carries no gate, so there is no approval to read one off.`));
-      }
+      // Two arguments still mean what they always did, and neither is required: `accepted_by`
+      // names somebody OTHER than the closer, and `no_signoff_reason` is the deliberate route
+      // for a close nobody accepted — automation finishing a queue, work shipped while the
+      // stakeholder is away. That close records `delivered`, which is now what it says rather
+      // than what a caller forgot to say.
+      const signedBy = reason ? "" : (acceptor || who.email);
       // Typed from OUTCOMES so the compiler holds this to the contract's vocabulary. It is the
       // one place the platform DERIVES an outcome, so it names all three words by necessity.
       const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
@@ -253,7 +249,7 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: signedBy || null });
       return text(
         `${initiative} closed as ${outcome}, recorded by ${who.email}.\n` +
-        (signedBy ? `Accepted by ${signedBy}${signedBy === approver && !acceptor ? " — read from their approval of " + closingDoc : ""}.\n`
+        (signedBy ? `Accepted by ${signedBy}${!acceptor ? " — closing it is saying so" : ""}.\n`
                   : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
         "Closed is not yet complete — one step remains, and it belongs to the platform rather " +

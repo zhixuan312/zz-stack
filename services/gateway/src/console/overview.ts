@@ -367,7 +367,11 @@ export function mountOverview(app: Express): void {
     const { rows } = scope.kind === "platform"
       ? await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
-              e.subject, e.initiative, e.step, e.ok, e.refusal
+              -- THE RESOLVED NAME, so one tool is one name in the feed. A rename put the
+              -- same tool in this list twice under two spellings, and a reader scanning
+              -- activity for "what did it call" read them as two different things.
+              coalesce(e.tool_key, e.subject) as subject,
+              e.initiative, e.step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
         where ($1::text is null or e.kind = $1)
@@ -376,7 +380,11 @@ export function mountOverview(app: Express): void {
       [kind, failedOnly, limit])
       : await db.query(
       `select to_char(e.ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as ts, e.actor, t.slug as team, e.kind,
-              e.subject, e.initiative, e.step, e.ok, e.refusal
+              -- THE RESOLVED NAME, so one tool is one name in the feed. A rename put the
+              -- same tool in this list twice under two spellings, and a reader scanning
+              -- activity for "what did it call" read them as two different things.
+              coalesce(e.tool_key, e.subject) as subject,
+              e.initiative, e.step, e.ok, e.refusal
          from zz.event e
          left join zz.team t on t.id = e.team_id
         where ($1::text is null or e.kind = $1)

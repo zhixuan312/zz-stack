@@ -33,6 +33,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.51.0] — 2026-09-19
+
+The evaluation instrument, fixed before it was used to evaluate anything.
+
+### Fixed
+
+- **`plugin_profile` reported a tool in daily use as never called.** `use` and `never_called`
+  grouped tool calls by the name the caller typed rather than the alias-resolved one, so a
+  renamed tool appeared as two unrelated rows — `core:skill_read` 31 beside `core:skill_view`
+  23, `core:document_read` 19 beside `core:read_file` 4 — and `never_called`, which is built by
+  subtracting the called set from the reachable set, listed `knowledge_search` while
+  `core:search_knowledge` had five calls against it. "A tool its skills name that was never
+  called" is one of the two questions this flow exists to answer, and a ruler written from that
+  list would have recommended deleting a tool somebody uses every day.
+
+- **`stage_paths` walked initiatives that do not exist.** It read the event log's initiative
+  column raw, and that column holds whatever a call passed before the platform answered — so a
+  document path recorded by a failed `document_read` came back as an initiative with a stage
+  path through it. Same shape rule as the reconciler now applies.
+
+- **The judge's own transcript named one tool twice.** `traceOf` builds the text a judge reads
+  from the raw subject, so a run that called one tool under two spellings read as though it had
+  reached for two different things.
+
+- **The activity feed did the same**, one console page over.
+
+### Changed
+
+- **A trace count of zero now says WHY.** A run belongs to a plugin version through the skill
+  versions that version shipped, so a release that re-versions a plugin's skills starts its
+  trace history at zero by construction. zz-core 0.50.0 reported `runs: 0` the day it shipped
+  while its skills had been loaded all week under their previous numbers — an honest zero that
+  reads exactly like a broken join. The cases block already explained its own emptiness; traces
+  now do too.
+
+- **`checks/tool-key-read.ts` covers every reader.** It pinned the rule to one file while four
+  other surfaces read the raw column. It now reads the SQL in each — template literals only,
+  comments stripped, output strings excluded — and was verified to FAIL with the defect
+  reintroduced before being trusted.
+
+### Upgrade notes
+
+- No migration. `plugin_profile` figures change for any plugin whose tools were renamed: counts
+  merge and `never_called` shrinks. That is the correction, not a regression.
+
 ## [0.50.0] — 2026-09-18 · console 0.16.0
 
 A full audit of both repositories, tool by tool, route by route, page by page. Six walks, every

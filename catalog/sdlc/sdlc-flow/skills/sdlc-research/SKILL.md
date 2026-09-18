@@ -1,6 +1,6 @@
 ---
 name: sdlc-research
-version: 1.0
+version: 1.1
 description: Answer one question about the world outside this system — prior art, a standard, how others solved the same shape of problem — with cited external sources and honest confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One external question needs answering: what the prior art is, what a standard says, what practitioners actually do, how an adjacent domain solves this. Dispatched by sdlc-explore as part of its fan-out. Not for questions about this system — that is sdlc-investigate."
 ---
@@ -31,7 +31,7 @@ have reached by searching the same sources themselves.
 ## How you get sources
 
 Use whatever search and fetch tools your runtime gives you. In Claude Code that is `WebSearch`
-and `WebFetch`; in Codex, the shell and whatever it can reach.
+and `WebFetch`.
 
 **If you have no way to reach the outside world, that is a real state and not an error.** Do not
 return an empty report. Say plainly in your first line that no sources could be fetched and the

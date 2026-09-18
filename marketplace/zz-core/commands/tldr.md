@@ -8,11 +8,11 @@ disable-model-invocation: true
 # /zz-core:tldr
 
 A command that makes a long or difficult source understandable in about three minutes —
-`/zz-core:tldr` on Claude Code, a matched skill on Codex. It runs entirely in your own context:
+`/zz-core:tldr` on Claude Code. It runs entirely in your own context:
 no platform tool is called and nothing is dispatched.
 
 It arrives with the `zz-core` plugin, which every account carries, as `/zz-core:tldr` on Claude
-Code and as a matched skill on Codex. No flow has to be installed for it to be there.
+Code. No flow has to be installed for it to be there.
 
 **The result always has two reading layers.** The TLDR comes first and gives the source's shape at
 a glance. The supporting detail follows, and carries the context, qualifications, key points,

@@ -65,7 +65,19 @@ export async function deactivatePerson(
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
   if (confirm !== email) return { ok: false, status: 400, error: `confirm must repeat the email exactly ('${email}')` };
   await platformDb().query("update principal set status='deactivated', updated_at=now() where email=$1", [email.toLowerCase()]);
-  auditAdmin(id, "deactivate_person", email, { ...extraDetail });
+  // AND THEIR TOKENS ARE REVOKED, not merely made unusable by a status this act can undo.
+  //
+  // Deactivation stopped a PAT working because `resolvePat` refuses a principal that is not
+  // active — true, and true only while the principal stays deactivated. `addPerson` is an
+  // upsert that sets `status='active'`, so re-adding somebody who had left silently brought
+  // every token they held before they left back to life, months later, with nobody choosing
+  // to. Credentials do not come back because a row was touched; they come back because
+  // somebody issues them.
+  const revoked = await platformDb().query(
+    `update pat set revoked_at = now()
+       where revoked_at is null
+         and principal_id = (select id from principal where email = $1)`, [email.toLowerCase()]);
+  auditAdmin(id, "deactivate_person", email, { ...extraDetail, patsRevoked: revoked.rowCount ?? 0 });
   // WHAT THIS DOES NOT DO, said where the act happens. Deactivation stops them
   // authenticating; it does not touch the building-block keys stored under their address,
   // which are live credentials at somebody else's service belonging to a person who has
@@ -74,7 +86,8 @@ export async function deactivatePerson(
   // different door, so the operator performing this act never read it. The tool that
   // removes one is on /manage, which is why this names the agent rather than the tool.
   return { ok: true, message:
-    `principal ${email} deactivated — their PATs stop working immediately.\n` +
+    `principal ${email} deactivated, and ${revoked.rowCount ?? 0} live token(s) revoked — ` +
+    "adding them back later will not bring any of them back.\n" +
     "NOT removed: any building-block keys stored under that address. They cannot be used " +
     "by anyone now (the person can no longer authenticate), but they are live credentials " +
     "at a third party for somebody who has left. Ask the ZZ Access agent to run " +

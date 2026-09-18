@@ -1,43 +1,43 @@
 {
   "sdlc-audit-criteria": {
-    "version": "2.0",
-    "sha": "762b4305ebbe"
+    "version": "2.1",
+    "sha": "d4588e9f25ec"
   },
   "sdlc-execute": {
-    "version": "1.0",
-    "sha": "9a04bd96e3dd"
+    "version": "1.1",
+    "sha": "d7cc2dfe5515"
   },
   "sdlc-explore": {
-    "version": "1.3",
-    "sha": "9964d100ebd9"
+    "version": "1.4",
+    "sha": "9c87b081e9aa"
   },
   "sdlc-flow": {
-    "version": "2.0",
-    "sha": "587dc27418f8"
+    "version": "2.1",
+    "sha": "ac3896ead04c"
   },
   "sdlc-investigate": {
     "version": "1.0",
     "sha": "c52bfb4eff39"
   },
   "sdlc-method": {
-    "version": "1.7",
-    "sha": "6300c802a9a4"
+    "version": "1.8",
+    "sha": "76465dc209ab"
   },
   "sdlc-plan-audit": {
     "version": "2.0",
     "sha": "6d0a05e5dbbb"
   },
   "sdlc-plan": {
-    "version": "1.7",
-    "sha": "4a60f403f832"
+    "version": "1.8",
+    "sha": "5d904c4bea4c"
   },
   "sdlc-recall": {
-    "version": "1.4",
-    "sha": "f4336b15795b"
+    "version": "1.5",
+    "sha": "c56c819f31d2"
   },
   "sdlc-research": {
-    "version": "1.0",
-    "sha": "356f31a674f0"
+    "version": "1.1",
+    "sha": "ed0837fbf25b"
   },
   "sdlc-review": {
     "version": "1.3",
@@ -48,16 +48,16 @@
     "sha": "02eea2b655f6"
   },
   "sdlc-spec": {
-    "version": "1.4",
-    "sha": "fbbd06be3b68"
+    "version": "1.5",
+    "sha": "2b4c93395a4c"
   },
   "zz-access": {
-    "version": "2.3",
-    "sha": "3db0bf653d83"
+    "version": "2.4",
+    "sha": "93a37af29c29"
   },
   "zz-admin": {
-    "version": "2.6",
-    "sha": "2271f697ca62"
+    "version": "2.7",
+    "sha": "c5e53a49db29"
   },
   "zz-doctor": {
     "version": "1.3",
@@ -76,12 +76,12 @@
     "sha": "bd839816ca4b"
   },
   "zz-plugin-eval": {
-    "version": "0.6",
-    "sha": "4f342db8a28b"
+    "version": "0.7",
+    "sha": "4d8fdcfa5956"
   },
   "zz-plugin-judge": {
-    "version": "0.2",
-    "sha": "7f0095f6e5c6"
+    "version": "0.3",
+    "sha": "efd2664c0e10"
   },
   "zz-plugin-locate": {
     "version": "0.1",
@@ -100,23 +100,23 @@
     "sha": "60f258ebec54"
   },
   "zz-breakout": {
-    "version": "1.4",
-    "sha": "130174886cc0"
+    "version": "1.5",
+    "sha": "44950226bab5"
   },
   "zz-deck": {
-    "version": "2.1",
-    "sha": "5ff1f1770bfc"
+    "version": "2.2",
+    "sha": "564cc938a102"
   },
   "zz-handover": {
-    "version": "2.7",
-    "sha": "4df05e9470ab"
+    "version": "2.8",
+    "sha": "5a5e750ecabf"
   },
   "zz-platform": {
-    "version": "3.42",
-    "sha": "5496502457f7"
+    "version": "3.43",
+    "sha": "d0c6ac8bff66"
   },
   "zz-tldr": {
-    "version": "1.1",
-    "sha": "66d6e9e95272"
+    "version": "1.2",
+    "sha": "ac9890b7fffb"
   }
 }

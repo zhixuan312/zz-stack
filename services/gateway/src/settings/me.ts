@@ -110,6 +110,17 @@ export function mountMySettings(app: Express, deps: SettingsDeps): void {
       const id = req.zzIdentity;
       if (!id) { res.status(401).json({ error: "authentication required" }); return; }
       if (!platformDbReady()) { res.status(503).json({ error: "platform database unavailable" }); return; }
+      // THE SAME RULE `pat_issue` KEEPS: a bound token cannot mint a wider one. This route
+      // issues an UNBOUND token — credentials.ts's insert has no team column — so without this
+      // it is the HTTP way round the binding, beside a route twenty lines up that refuses the
+      // same token for a smaller act.
+      if (id.patTeam) {
+        res.status(403).json({
+          error: `your token is bound to team '${id.patTeam}', so it cannot issue a token that ` +
+                 "reaches further than it does. Sign in at the console, or use an unbound token.",
+        });
+        return;
+      }
       const { label } = (req.body ?? {}) as Record<string, unknown>;
       const result = await deps.issueMyAccessTokenFor(id.email, typeof label === "string" ? label : undefined, { via: "web" });
       if (!result.ok) { res.status(400).json({ error: result.error }); return; }

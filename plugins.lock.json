@@ -1,57 +1,57 @@
 {
   "sdlc": {
-    "version": "0.49.0",
-    "digest": "5c503c69",
+    "version": "0.50.0",
+    "digest": "cc96c064",
     "cases_digest": "ac009e81",
     "skills": {
-      "sdlc-audit-criteria": "762b4305ebbe",
-      "sdlc-execute": "9a04bd96e3dd",
-      "sdlc-explore": "9964d100ebd9",
-      "sdlc-flow": "587dc27418f8",
+      "sdlc-audit-criteria": "d4588e9f25ec",
+      "sdlc-execute": "d7cc2dfe5515",
+      "sdlc-explore": "9c87b081e9aa",
+      "sdlc-flow": "ac3896ead04c",
       "sdlc-investigate": "c52bfb4eff39",
-      "sdlc-method": "6300c802a9a4",
-      "sdlc-plan": "4a60f403f832",
+      "sdlc-method": "76465dc209ab",
+      "sdlc-plan": "5d904c4bea4c",
       "sdlc-plan-audit": "6d0a05e5dbbb",
-      "sdlc-recall": "f4336b15795b",
-      "sdlc-research": "356f31a674f0",
+      "sdlc-recall": "c56c819f31d2",
+      "sdlc-research": "ed0837fbf25b",
       "sdlc-review": "afe2f28aeb27",
-      "sdlc-spec": "fbbd06be3b68",
+      "sdlc-spec": "2b4c93395a4c",
       "sdlc-spec-audit": "02eea2b655f6"
     }
   },
   "zz-access": {
-    "version": "0.49.0",
-    "digest": "b207c265",
+    "version": "0.50.0",
+    "digest": "63eda8ee",
     "cases_digest": "a0ba2ff9",
     "skills": {
-      "zz-access": "3db0bf653d83",
-      "zz-admin": "2271f697ca62",
+      "zz-access": "93a37af29c29",
+      "zz-admin": "c5e53a49db29",
       "zz-doctor": "b3960436e687",
       "zz-migrate": "2ccb1e0161d2",
       "zz-update": "a5d73e2d40eb"
     }
   },
   "zz-core": {
-    "version": "0.49.0",
-    "digest": "ca0e464d",
+    "version": "0.50.0",
+    "digest": "6ce29c68",
     "cases_digest": "f64bba10",
     "skills": {
       "zz-authoring": "60f258ebec54",
-      "zz-breakout": "130174886cc0",
-      "zz-deck": "5ff1f1770bfc",
-      "zz-handover": "4df05e9470ab",
-      "zz-platform": "5496502457f7",
-      "zz-tldr": "66d6e9e95272"
+      "zz-breakout": "44950226bab5",
+      "zz-deck": "564cc938a102",
+      "zz-handover": "5a5e750ecabf",
+      "zz-platform": "d0c6ac8bff66",
+      "zz-tldr": "ac9890b7fffb"
     }
   },
   "zz-plugin-eval": {
-    "version": "0.49.0",
-    "digest": "de3a886a",
+    "version": "0.50.0",
+    "digest": "fac8ffcf",
     "cases_digest": "cfa54fb8",
     "skills": {
       "zz-plugin-define": "bd839816ca4b",
-      "zz-plugin-eval": "4f342db8a28b",
-      "zz-plugin-judge": "7f0095f6e5c6",
+      "zz-plugin-eval": "4d8fdcfa5956",
+      "zz-plugin-judge": "efd2664c0e10",
       "zz-plugin-locate": "641a2d2e8a99",
       "zz-plugin-profile": "327db77c93b6",
       "zz-plugin-report": "fd7f1f5bf8d7"

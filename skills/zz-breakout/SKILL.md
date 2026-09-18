@@ -1,8 +1,8 @@
 ---
 name: zz-breakout
-version: 1.4
+version: 1.5
 description: Spin up one named expert teammate for a bounded deep dialogue, keep that conversation out of the main thread, and close by writing the confirmed insights to the ZZ knowledge base. Widens a thin option space before a decision is made.
-when_to_use: "A decision needs a perspective the main thread cannot hold — a domain expert, an adversary, a specialist lens — and the exchange will be long enough to pollute the main context. The sdlc-flow spec stage leans on this when the options are thin, and so may any other flow. Typed on purpose as /zz-core:breakout in Claude Code, or matched as a skill in Codex. Standalone — no initiative, no gate, no place in the sequence."
+when_to_use: "A decision needs a perspective the main thread cannot hold — a domain expert, an adversary, a specialist lens — and the exchange will be long enough to pollute the main context. The sdlc-flow spec stage leans on this when the options are thin, and so may any other flow. Typed on purpose as /zz-core:breakout in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
 
 <!-- Design note: the close-out writes to the ZZ knowledge base with knowledge_add, so an
@@ -28,10 +28,10 @@ directly over several turns, and stopping it.
 **Claude Code has this.** Spawn with the `Agent` tool, `run_in_background: true`, addressed by
 `@name`, stopped with `TaskStop`.
 
-**Codex does not, at time of writing.** Say so rather than pretending: run the persona in-session
-as a bounded role instead — declare the role, hold the dialogue, and apply the same close-out
-contract. You lose the context isolation, which is the main thing the command is for, so keep it
-short.
+**A harness without it: say so rather than pretending.** Run the persona in-session as a
+bounded role instead — declare the role, hold the dialogue, and apply the same close-out
+contract. You lose the context isolation, which is the main thing the command is for, so keep
+it short.
 
 ## Intake — do not spawn without these
 

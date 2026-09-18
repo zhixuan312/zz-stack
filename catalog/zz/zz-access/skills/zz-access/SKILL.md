@@ -1,7 +1,7 @@
 ---
 name: zz-access
-version: 2.3
-description: "Getting a person connected and keeping them connected: their platform access token, and the setup for whichever client they work in (Claude Code, Codex, Hermes). Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
+version: 2.4
+description: "Getting a person connected and keeping them connected: their platform access token, and the setup for whichever client they work in (Claude Code). Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
 when_to_use: "Someone asks how to connect a tool to the platform, wants a token, lost a token, suspects one leaked, or asks what access they have."
 ---
 
@@ -81,10 +81,11 @@ ignored, check whether they are using one.
 
 ## Their client setup
 
-`client_setup(client)` prints the install for `claude-code`, `codex` or
-`hermes`: a few commands that fetch a small package built for that person —
-their MCP endpoints, one router skill, and (on Claude Code) one command per
-flow they have. It carries only the servers their installed flows declare.
+`client_setup()` prints the install for Claude Code, which is the one client this
+platform packages: a few commands that fetch a small package built for that person —
+their MCP endpoints, the required plugins, and one command per flow. It takes NO
+`client` argument; the only argument it has is an optional `email`, and passing one
+prints the setup for that person instead of for you.
 
 Pair it with `pat_issue`: the token is exported once as
 `ZZ_TOKEN` and the install writes it to `~/.zz/token`, mode 600. On Claude
@@ -94,15 +95,12 @@ out a config with the token typed into it.
 
 Three things to be clear about when they ask:
 
-- **Whether a fix reaches them by itself depends on the flow, and the setup
-  they printed says which.** A flow their team also runs in the browser
-  travels as pointers — stages, gates and document shapes fetched from the
-  platform while it runs — so a fix here is live on their next message. A
-  flow their team runs ONLY in a terminal ships its skills as files, and a
-  fix reaches them when they update that plugin and not before; nothing
-  warns them, because the old files go on working. `client_setup` names
-  which of their flows are which and prints the update command for the ones
-  that need it. Read it back to them rather than promising either one.
+- **A FIX NEVER REACHES THEM BY ITSELF.** Every flow travels as FILES — with the
+  browser front end gone and Claude Code the only client, there is no served half
+  left — so a fix reaches them when they update the plugin and not before, and
+  nothing warns them, because the old files go on working. `client_setup` prints
+  the update command. Say that plainly rather than promising anything live: the
+  pointer-versus-file distinction this used to describe no longer exists.
 - **`CLAUDE.md`, `AGENTS.md` and `SOUL.md` are not touched.** Those change
   how their engine behaves for every task they ever do. Outside the flow
   they keep exactly the assistant they had.

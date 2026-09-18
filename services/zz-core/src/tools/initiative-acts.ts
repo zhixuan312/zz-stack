@@ -152,7 +152,16 @@ export function registerInitiativeActTools(server: McpServer): void {
             "\"approve without checking with me\" waives their REVIEW, not the fetch, because " +
             "the fetch is the part that reaches the record.\n"
           : "") +
-        "The approved copy is frozen in _versions/. Downstream documents may now be written.",
+        // TRUE ONLY OF THE FLIP. A snapshot is written when a document goes draft ->
+        // approved and on no other write (persist.ts), so re-approving an already-approved
+        // document — a second signer, a corrected name — froze nothing, while this sentence
+        // said the copy in `_versions/` was theirs. It still carries the PREVIOUS signer's
+        // verdict, which is the opposite of what a reader would take from it.
+        (already
+          ? "No new frozen copy was taken: the document was already approved, so the copy in " +
+            "_versions/ is the one filed at the first approval. Downstream documents may now be " +
+            "written."
+          : "The approved copy is frozen in _versions/. Downstream documents may now be written."),
       );
     },
   );
@@ -272,6 +281,14 @@ export function registerInitiativeActTools(server: McpServer): void {
       const prevVersion = parseInt(prevEnv.version || "1", 10) || 1;
       const nextVersion = prevVersion + 1;
       const wasApproved = prevEnv.status === "approved";
+      // DOES THE FROZEN COPY ACTUALLY EXIST? The messages below name a `_versions/` file as
+      // the text a person signed, and a snapshot is taken only on the draft -> approved FLIP
+      // (persist.ts). A document revised twice while closed goes approved -> approved both
+      // times, so the second revision reported "The text a person signed is frozen as
+      // …v2.md" about a file nothing had ever written — the platform pointing a reader at
+      // provenance that is not there, which is worse than saying nothing.
+      const frozenRel = `${parts[0]}/_versions/${parts[1].replace(/\.md$/, "")}.v${prevVersion}.md`;
+      const frozenExists = existsSync(join(root, frozenRel));
 
       // The body, and only the body. This used to merge the caller's own frontmatter over
       // the previous envelope and then override the owned fields, which left `stakeholder`,
@@ -393,7 +410,17 @@ export function registerInitiativeActTools(server: McpServer): void {
       // exactly the state those two exist to prevent, on real work, and the doctor probe that
       // watches for it rolled a release back rather than let it stand.
       const gatedHere = chain.documents.find((d) => d.name === parts[1])?.gate === true;
-      if (closedOutcome) {
+      // AND THE CLOSED BRANCH IS INSIDE THE GATE RULE, not above it.
+      //
+      // `if (closedOutcome) env.status = "approved"` ran first and unconditionally, so a
+      // revision of a document that an initiative CLOSED ON but that no manifest gates wrote
+      // `status: approved` with no `approved_by` and no `approved_at` — an approval verdict
+      // on a document nobody can approve, which `document_approve` itself refuses to
+      // produce. That is exactly the state 0.44 removed and the doctor probe rolled a
+      // release back over, reached through a fourth writer. It is not a rare shape either:
+      // an abandoned close lands on the furthest document that exists, and on sdlc-flow that
+      // is usually the ungated explore.md.
+      if (closedOutcome && gatedHere) {
         env.status = "approved";
       } else if (gatedHere) {
         delete env.approved_by; delete env.approved_at;
@@ -473,21 +500,39 @@ export function registerInitiativeActTools(server: McpServer): void {
         // SAY WHAT ACTUALLY HAPPENED. This announced "status draft" unconditionally, and on
         // a closed record the status stays approved — so the one message a caller reads
         // described the opposite of what was written.
-        `${relPath} revised: v${prevVersion} -> v${nextVersion}, status ${env.status}.\n` +
+        // AND SAY IT ONLY WHERE THERE IS ONE TO SAY. An ungated document carries no status,
+        // so this printed the literal "status undefined" on every revision of every ungated
+        // or freeform document — the platform reporting a field it had just deliberately
+        // removed.
+        `${relPath} revised: v${prevVersion} -> v${nextVersion}` +
+        (env.status ? `, status ${env.status}` : "") + ".\n" +
         (fixed.renamed.length
           ? `Renamed to the heading this flow declares: ${fixed.renamed.join(", ")}.\n` : "") +
         (closedOutcome
           ? `This initiative is CLOSED as \`${closedOutcome}\`, and the close is untouched: the ` +
-            `ledger row stands and no second one can be written. The text a person signed is ` +
-            `frozen as ${parts[0]}/_versions/${parts[1].replace(/\.md$/, "")}.v${prevVersion}.md. ` +
+            `ledger row stands and no second one can be written. ` +
+            (frozenExists
+              ? `The text a person signed is frozen as ${frozenRel}. `
+              : `No frozen copy of v${prevVersion} exists — a snapshot is taken when a document is ` +
+                `approved, and this one was already approved when it was last revised, so the ` +
+                `superseded text is in the store's git history rather than in _versions/. `) +
             `What changed here is what the report SAYS, not what it concluded — if the verdict ` +
             `itself was wrong, that is a journal node, not a revision.\n`
           : wasApproved
-          ? `The v${prevVersion} approval is preserved in ${parts[0]}/_versions/ and no longer applies.\n`
+          ? `The v${prevVersion} approval is preserved in ${frozenRel} and no longer applies.\n`
           : "") +
         (capturedSource ? `The input behind it is stored as ${parts[0]}/${capturedSource}.\n` : "") +
         (linked.size ? `Linked sources: ${[...linked].join(", ")}\n` : "") +
-        "Nothing downstream may be written until this document is approved again.",
+        // AND THE LAST LINE IS TRUE ONLY WHERE A GATE EXISTS TO BE PASSED AGAIN. On an
+        // ungated document nothing downstream is blocked — gateCheck treats an ungated
+        // prerequisite as satisfied by existing — and `document_approve` refuses that
+        // document outright, so the single instruction the caller was left with was one the
+        // platform would reject.
+        (closedOutcome
+          ? "This initiative is closed, so nothing downstream is waiting on this document."
+          : gatedHere
+          ? "Nothing downstream may be written until this document is approved again."
+          : "This document carries no gate, so nothing downstream is waiting on it."),
       );
     },
   );

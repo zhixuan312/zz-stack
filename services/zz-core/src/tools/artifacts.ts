@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { join, resolve, sep } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller, parseEnvelope } from "@zz/contracts";
+import { parseCaller, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 import { indexDoc, walk } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
@@ -86,7 +86,20 @@ export function registerArtifactTools(server: McpServer): void {
       // from the record written there — which is also what covers the window this argument
       // used to cover, an initiative whose first document is not yet on disk.
       const chain = chainFor(root, path, content);
-      content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields });
+      // THE DOCUMENT ALREADY THERE IS READ BEFORE IT IS OVERWRITTEN. `document_write` is
+      // "create or overwrite", and the overwrite half has to preserve the fields the
+      // platform wrote on the previous copy — see envelopeFor's `carry`.
+      // EXACTLY the fields the platform owns, plus `version`. Named here, against
+      // PLATFORM_OWNED, so envelopeFor renders what it is handed rather than holding a
+      // second copy of the list — and so a field added to the platform's set is carried
+      // without anybody remembering this line.
+      const onDisk = existsSync(target) && statSync(target).isFile()
+        ? parseEnvelope(readFileSync(target, "utf8")) : {};
+      const carry: Record<string, string> = {};
+      for (const k of [...PLATFORM_OWNED, "version"]) {
+        if (onDisk[k]) carry[k] = onDisk[k];
+      }
+      content = envelopeFor(chain, path, content, { stakeholder, tags, title, fields, carry });
       const fixed = normalizeSections(chain, path, content);
       const gate = documentGuards(chain, root, path, fixed.content, team);
       if (gate) return text(gate);
@@ -402,7 +415,7 @@ export function registerArtifactTools(server: McpServer): void {
       const rel = `${initiative}/sources/${date}-${slug}.md`;
       // `initiative` is caller-supplied, so the assembled path is too. Cheap to check,
       // and it is what stops a tool added later from being the exception.
-      const blocked = writeGuard(rel);
+      const blocked = writeGuard(rel, "source_add");
       if (blocked) return text(blocked);
       // THE SECOND CREATION PATH, and it is easy to miss. `mkdirSync(..., {recursive:true})`
       // below builds `<initiative>/sources/` for an initiative that does not exist, so

@@ -117,8 +117,29 @@ export function mountKnowledge(app: Express): void {
     const { rows } = await db.query(
       `select team_slug as team, path, kind as type, lifecycle as status, title, tags, body,
               evidence, superseded_by,
-              to_char(updated_at,'YYYY-MM-DD') as updated
-         from zz.knowledge_node where team_slug = $1 and path = $2`,
+              -- WHICH TEAM EACH PIECE OF EVIDENCE LIVES IN, resolved rather than assumed.
+              -- The console linked every entry to the NODE's team, and knowledge_add
+              -- deliberately accepts evidence naming an initiative in any team the author
+              -- belongs to -- a platform-shelf node citing a tenant initiative therefore
+              -- linked to /initiatives/zz-platform/<slug>, which answers "not found". Null
+              -- when no team on this deployment has an initiative by that name, and the
+              -- console then renders the name as text instead of as a dead link. The node's
+              -- own team wins a tie, because that is the likeliest author.
+              (select coalesce(jsonb_agg(jsonb_build_object(
+                        \'name\', ev.name,
+                        \'team\', (select t2.slug from zz.initiative i2
+                                    join zz.team t2 on t2.id = i2.team_id
+                                   where i2.slug = ev.name
+                                   order by (t2.slug = n.team_slug) desc, t2.slug
+                                   limit 1))), \'[]\'::jsonb)
+                 from unnest(coalesce(evidence, array[]::text[])) as ev(name)) as evidence_in,
+              -- AN INSTANT, like the list two routes up. This sent a bare date, and the
+              -- console renders the value through its Time component, which parses a bare
+              -- date as UTC midnight and formats it in the deployment zone: the same node
+              -- read 2026-09-17 08:00 here and 2026-09-17 14:32 in the list beside it. One
+              -- value, one format, whichever route answers.
+              to_char(updated_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated
+         from zz.knowledge_node n where n.team_slug = $1 and n.path = $2`,
       [req.params.team, path]);
     if (!rows.length) { res.status(404).json({ error: `no node ${path}` }); return; }
     res.json(rows[0]);

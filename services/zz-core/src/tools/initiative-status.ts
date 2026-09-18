@@ -51,6 +51,63 @@ function envelopeOf(file: string): Record<string, string> {
   return parseEnvelope(readFileSync(file, "utf8"));
 }
 
+/** The initiative's registered sources, and which of them landed after the document they
+ *  support was approved.
+ *
+ * A FUNCTION, and reached from BOTH returns of initiativeState. This was written inline on
+ * the governed path only, so a freeform initiative reported neither `sources` nor
+ * `sources_after_approval` — ever — while `source_add` tells the caller in its own
+ * description that "initiative_status reports this under sources_after_approval". Freeform is
+ * the shape where a source is most likely to be the only structure there is.
+ *
+ * Compares FILE TIMES, not the dates people type: `approved_at` is day-granular and
+ * hand-written, while the approval snapshot in _versions/ and the source file both carry a
+ * real mtime the platform wrote itself. */
+function sourceReport(dir: string, statusOf: (docName: string) => string | null): {
+  sourceFiles: string[];
+  needsRefinement: Array<{ document: string; source: string; title: string }>;
+} {
+  const srcDir = join(dir, "sources");
+  const sourceFiles = existsSync(srcDir) ? readdirSync(srcDir).filter((f) => f.endsWith(".md")) : [];
+  const approvalTime = (docName: string): number => {
+    const vdir = join(dir, "_versions");
+    let latest = 0;
+    if (existsSync(vdir)) {
+      const stem = docName.replace(/\.md$/, "") + ".v";
+      for (const v of readdirSync(vdir)) {
+        if (!v.startsWith(stem)) continue;
+        latest = Math.max(latest, statSync(join(vdir, v)).mtimeMs);
+      }
+    }
+    // no snapshot (approved before snapshots, or written in one go) -> the
+    // document's own mtime is when it last changed, approval included
+    return latest || (existsSync(join(dir, docName)) ? statSync(join(dir, docName)).mtimeMs : 0);
+  };
+  const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
+  for (const f of sourceFiles) {
+    const env = parseEnvelope(readFileSync(join(srcDir, f), "utf8"));
+    const sourceTime = statSync(join(srcDir, f)).mtimeMs;
+    for (const d of (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean)) {
+      if (statusOf(d) !== "approved") continue;
+      if (sourceTime > approvalTime(d)) {
+        needsRefinement.push({ document: d, source: `sources/${f}`, title: env.title || f });
+      }
+    }
+  }
+  return { sourceFiles, needsRefinement };
+}
+
+/** THE PLATFORM'S OWN CLOSING STEP, told apart from the flow's own documents.
+ *
+ * `deriveChain` appends it with `role: "handover"`; a flow that declares its own is matched
+ * by name, because that manifest's author need not have known to write the role. Both halves
+ * matter: one branch here must SKIP it (the flow is not finished by writing a handover) and
+ * another must find it (the initiative is not complete until it is signed), and keying those
+ * two on different tests is how they drifted apart. */
+function isHandover(d: { name: string; role?: string }): boolean {
+  return d.role === "handover" || d.name === "handover.md";
+}
+
 /** What state an initiative is in, and what the next move is — the one computation both
  * `initiative_status` and `initiative_open` answer from.
  *
@@ -104,10 +161,17 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const envs: Array<{ name: string } & Record<string, string>> =
       files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) }));
     const closer = envs.find((e) => e.outcome);
+    // THE SAME TWO SOURCE FIELDS THE GOVERNED RETURN CARRIES. Freeform has no manifest; it
+    // still has a `sources/` directory, `source_add` still writes into it, and
+    // `document_revise` still refuses a revision that cites nothing — so an agent here met
+    // the owed-sources rule as an unexplained refusal instead of as reported state.
+    const freeSources = sourceReport(dir, (d) => envs.find((e) => e.name === d)?.status ?? null);
     return {
       initiative: name,
       flow: null,
       documents: envs,
+      sources: freeSources.sourceFiles.length,
+      sources_after_approval: freeSources.needsRefinement,
       outcome: closer?.outcome ?? null,
       closed_by: closer?.closed_by ?? null,
       next_move: closer
@@ -196,8 +260,19 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // itself, gated like every other document deriveChain appends. Read through the same
     // `states` machinery every other gated document already goes through here, not a
     // second bespoke path.
-    const handoverState = states.find((d) => d.name === "handover.md");
-    next = !handoverState || !handoverState.exists
+    // BY ROLE, and a flow that has no handover at all is CLOSED rather than stuck.
+    //
+    // `deriveChain` appends handover.md only to a flow that gates something, so a flow
+    // gating nothing reached here with no such document, `handoverState` undefined, and the
+    // first branch below telling the agent forever to write a document `document_approve`
+    // would then refuse as undeclared. Nothing on this platform is that shape today, which
+    // is the only reason it has not been hit — a closed initiative on such a flow would
+    // never have been counted as closed.
+    const handoverState = states.find(isHandover);
+    next = !chain.documents.some(isHandover)
+      ? { action: "closed", waiting_on: "nobody",
+          why: `closed with outcome: ${outcome}; this flow gates nothing, so it owes no handover` }
+      : !handoverState || !handoverState.exists
       ? {
           action: "handover", waiting_on: "agent",
           why: `closed with outcome: ${outcome}; the platform's closing step is the ` +
@@ -285,8 +360,25 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
       if (!t) return false;
       return t.gate ? t.status === "approved" : t.exists;
     };
-    const pending = states.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
-    const awaiting = states.find((d) => d.exists && d.gate && d.status !== "approved");
+    // THE HANDOVER IS NOT ONE OF THE FLOW'S DOCUMENTS, and this branch is the flow.
+    //
+    // `deriveChain` appends handover.md to every gating flow and gives it `requires: <the
+    // closing document>` — which is satisfied the moment that document's gate is recorded.
+    // So `pending` selected it BEFORE the close was ever considered, and because
+    // `closeRequires` is a subset of the declared documents, the `missing` branch below
+    // could not be reached either: for every gating flow on this platform,
+    // `action: "close"` was unreachable and the answer after an approved review.md was
+    // "write handover.md". An agent that obeyed wrote a handover about an initiative that
+    // had not closed, then had the close refused until somebody approved it — while
+    // zz-handover's own first line requires the outcome to exist already.
+    //
+    // Excluded by ROLE, not by name: `deriveChain` stamps `role: "handover"`, and a flow
+    // that declares its own handover document gets the same treatment. The closed branch
+    // above owns this document entirely — it is the only place that can know the outcome
+    // it reports on.
+    const flowDocs = states.filter((d) => !isHandover(d));
+    const pending = flowDocs.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
+    const awaiting = flowDocs.find((d) => d.exists && d.gate && d.status !== "approved");
     if (awaiting) {
       next = {
         action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
@@ -322,39 +414,8 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
                  "is outstanding, not this call" };
     }
   }
-  // A source attached AFTER a document was approved means that document may
-  // no longer say what the team knows. Compare FILE TIMES, not the dates
-  // people type: `approved_at` is day-granular and hand-written, while the
-  // approval snapshot in _versions/ and the source file both carry a real
-  // mtime the platform wrote itself.
-  const srcDir = join(dir, "sources");
-  const sourceFiles = existsSync(srcDir) ? readdirSync(srcDir).filter((f) => f.endsWith(".md")) : [];
-  const approvalTime = (docName: string): number => {
-    const vdir = join(dir, "_versions");
-    let latest = 0;
-    if (existsSync(vdir)) {
-      const stem = docName.replace(/\.md$/, "") + ".v";
-      for (const v of readdirSync(vdir)) {
-        if (!v.startsWith(stem)) continue;
-        latest = Math.max(latest, statSync(join(vdir, v)).mtimeMs);
-      }
-    }
-    // no snapshot (approved before snapshots, or written in one go) -> the
-    // document's own mtime is when it last changed, approval included
-    return latest || (existsSync(join(dir, docName)) ? statSync(join(dir, docName)).mtimeMs : 0);
-  };
-  const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
-  for (const f of sourceFiles) {
-    const env = parseEnvelope(readFileSync(join(srcDir, f), "utf8"));
-    const sourceTime = statSync(join(srcDir, f)).mtimeMs;
-    for (const d of (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean)) {
-      const st = states.find((x) => x.name === d);
-      if (!st || st.status !== "approved") continue;
-      if (sourceTime > approvalTime(d)) {
-        needsRefinement.push({ document: d, source: `sources/${f}`, title: env.title || f });
-      }
-    }
-  }
+  const { sourceFiles, needsRefinement } =
+    sourceReport(dir, (d) => states.find((x) => x.name === d)?.status ?? null);
   return { initiative: name,
            // The chain already knows which flow governs this initiative — it was
            // resolved to build `docs`. Reading the envelope of the FIRST DECLARED

@@ -22,6 +22,8 @@
  */
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 
+import { refusalOwner } from "@zz/contracts";
+
 import { platformDb, platformDbReady } from "./db.js";
 
 const STRANDED_PATH = "/data/events-unwritten.jsonl";
@@ -105,6 +107,11 @@ export function logEvent(e: {
   stepVersion?: string;
   ok?: boolean;
   refusal?: string;
+  /** WHO THE REFUSAL BELONGS TO — guardrail, ours, theirs or other, from
+   *  @zz/contracts' refusalOwner(). Derived here rather than asked of the caller: every
+   *  writer would otherwise classify its own refusals, which is how one table ends up
+   *  holding four vocabularies. Null whenever `ok` is not false. */
+  refusalOwner?: string;
 
   /* ── what a tool call cost (AC-2.2) ────────────────────────────────────────
    *
@@ -172,14 +179,15 @@ export function logEvent(e: {
   void platformDb()
     .query(
       `insert into event (actor, team_slug, team_id, kind, subject, detail,
-                          initiative, flow, step, step_version, ok, refusal,
+                          initiative, flow, step, step_version, ok, refusal, refusal_owner,
                           plugin, plugin_version, tool_key,
                           duration_ms, request_bytes, response_bytes, batched)
-       values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,
-               $12,$13,$14,$15,$16,$17,$18)`,
+       values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+               $13,$14,$15,$16,$17,$18,$19)`,
       [actor, e.teamSlug ?? null, e.kind, e.subject ?? "", JSON.stringify(e.detail ?? {}),
        e.initiative ?? null, e.flow ?? null, e.step ?? null, e.stepVersion ?? null,
        e.ok ?? null, e.refusal ?? null,
+       e.ok === false ? refusalOwner(e.refusal ?? "") : null,
        e.plugin ?? null, e.pluginVersion ?? null, e.toolKey ?? null,
        e.durationMs ?? null, e.requestBytes ?? null, e.responseBytes ?? null, e.batched ?? false],
     )

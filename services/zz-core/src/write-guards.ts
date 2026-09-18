@@ -283,7 +283,7 @@ export function isoToday(): string {
 export function envelopeFor(
   chain: Chain, relPath: string, body: string,
   opts: { flow?: string; stakeholder?: string; tags?: string[]; title?: string;
-          fields?: Record<string, unknown> },
+          fields?: Record<string, unknown>; carry?: Record<string, string> },
 ): string {
   const parts = relPath.replace(/^\/+/, "").split("/");
   // THROUGH renderEnvelope, whose own docblock calls itself "the one place an envelope is
@@ -305,6 +305,37 @@ export function envelopeFor(
   // the next field added to it just as raw. Rendering in one place is what makes the
   // docblock's claim true.
   const env: Record<string, string> = {};
+  // WHAT THE PLATFORM ALREADY WROTE ON THIS DOCUMENT SURVIVES THE REWRITE.
+  //
+  // This built the envelope from the arguments alone, which is right for a new document and
+  // wrong for the overwrite half of "create or overwrite": the copy on disk carries
+  // `status`, `version` and — once somebody has signed — `approved_by`/`approved_at`, and a
+  // fresh envelope omitting them is a write that REMOVES five platform-owned fields.
+  // ownershipCheck compares the two and refuses, so NO gated document could be overwritten
+  // at all, draft included: an agent asked to rewrite a spec nobody had approved yet was
+  // told "status is written by the platform … this write would change it from `draft` to
+  // `(removed)`. Use document_approve(path) the moment the person agrees" — advice that
+  // would approve the document it had just refused to update. It also made
+  // approvedDocumentGuard unreachable from this path, so the one guard written for the
+  // approved case only ever ran for document_patch.
+  //
+  // `version` is carried for the same reason and a second one: it is not in PLATFORM_OWNED,
+  // so nothing refused its loss, and a rewrite silently reset a document at v3 to v1 — the
+  // next revise then wrote `_versions/<doc>.v2.md` over a snapshot that already existed,
+  // with different content.
+  //
+  // WHAT may be carried is the CALLER's to decide and is never the caller's words: document_write
+  // reads the previous copy off disk and hands over exactly the platform-owned fields plus
+  // `version`. This function only renders what it is given, which is why the set is named
+  // there — beside PLATFORM_OWNED — rather than repeated here as a second list.
+  //
+  // Carrying them does not weaken anything: an approved document rewritten here now reaches
+  // approvedDocumentGuard, which refuses it by name and says document_revise. The refusal
+  // moves from the wrong guard with the wrong advice to the right guard with the right
+  // advice.
+  for (const [k, v] of Object.entries(opts.carry ?? {})) {
+    if (v.trim()) env[k] = v;
+  }
   const flow = opts.flow?.trim() || chain.name;
   if (flow) env.flow = flow;
   const role = parts.length === 2 ? chain.roles[parts[1]] : undefined;

@@ -118,8 +118,15 @@ check("the team a person acts for is stored, not asserted", () => {
     }
   }
   // Switching is a state change on who did what, and this platform records those.
+  //
+  // TO THE NEXT REGISTRATION, not to a byte count. This read a fixed 3,000-character window
+  // after the registration and failed the moment `team_switch` grew a refusal for a
+  // team-bound token — the event was still logged, 3,155 characters in. A window measured in
+  // bytes asks "did this handler stay short", which is not the rule; the rule is that THIS
+  // handler records the switch, and the handler ends where the next `registerTool` begins.
   const zone = srv.slice(srv.indexOf('"team_switch"'));
-  if (!/team\.switch/.test(zone.slice(0, 3000))) {
+  const next = zone.indexOf("registerTool", 1);
+  if (!/team\.switch/.test(next > 0 ? zone.slice(0, next) : zone)) {
     bad.push("switching team is not recorded as an event");
   }
   return bad.length ? bad.join("; ") : null;

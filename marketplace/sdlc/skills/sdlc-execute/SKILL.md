@@ -1,8 +1,8 @@
 ---
 name: sdlc-execute
-version: 1.0
+version: 1.1
 description: Build what the approved plan describes — one subagent per task, in plan order, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
-when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Local runtimes only (Claude Code, Codex)."
+when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Local runtimes only (Claude Code)."
 ---
 
 # sdlc-execute

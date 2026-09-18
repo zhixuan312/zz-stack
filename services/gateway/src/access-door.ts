@@ -155,6 +155,20 @@ export async function buildAccessServer(): Promise<McpServer> {
     async ({ team }) => {
       const email = caller().email;
       if (!email) return text("ERROR: no user identity on this request");
+      // A BOUND TOKEN CANNOT MOVE ANYBODY, INCLUDING ITSELF. `actingTeam` reads a bound token's
+      // own team whatever this column says, so the caller saw "you are now acting for X" and
+      // nothing changed for it — while `active_team_id` is where every OTHER credential that
+      // person holds reads their team from. A left-running automation could silently move its
+      // owner's browser session and every unbound agent token to a different team. The console
+      // route beside this one has refused it since it was written.
+      const bound = (await callerIdentity())?.patTeam;
+      if (bound) {
+        return text(
+          `ERROR: this token is bound to team '${bound}', so it cannot switch teams — not its ` +
+          "own (it always acts for that team) and not yours, which is what this would actually " +
+          "change: `active_team_id` is read by every other credential you hold. Switch from an " +
+          "unbound session.");
+      }
       const slug = team.trim();
       const db = platformDb();
       // Only a team they are actually in, and only a live one. Checked in the same statement

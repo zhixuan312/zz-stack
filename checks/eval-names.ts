@@ -1,5 +1,5 @@
 // Seven rename, three do not, and the skills follow.
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { EVAL_ALIAS } from "../packages/contracts/dist/index.js";
 const fail = [];
@@ -106,9 +106,21 @@ if (patternsSeen === 0) fail.push(`no \`pattern:\` line was found under ${evalsD
 if (namedARegisteredTool === 0) fail.push(`no grader under ${evalsDir} names a tool this door registers — the tool-name clause was never exercised`);
 
 // The chain check. Its first argument IS the tool name sent over the wire.
-const CHAIN = "packages/tools/src/testing/chain-check.ts";
+//
+// THE WALK, NOT ONE FILE. chain-check.ts is split by subject — chain-bugs, chain-shelf,
+// chain-freeform, chain-eval — and the eval door's calls moved into chain-eval.ts when
+// chain-check hit the 700-line ceiling. Reading the entry file alone then found no
+// `callEval` at all and reported every eval tool as unexercised, which is this check
+// failing because the code was tidied rather than because anything stopped being tested.
+// Every chain-*.ts file is part of one walk, so the subject is the directory.
+const CHAIN_DIR = "packages/tools/src/testing";
+const CHAIN_FILES = readdirSync(CHAIN_DIR).filter((f) => /^chain-.*\.ts$/.test(f));
+const CHAIN = `${CHAIN_DIR}/chain-*.ts`;
 const called = new Set();
-for (const m of readFileSync(CHAIN, "utf8").matchAll(/callEval\(\s*"([a-z0-9_]+)"/g)) called.add(m[1]);
+for (const f of CHAIN_FILES) {
+  for (const m of readFileSync(`${CHAIN_DIR}/${f}`, "utf8").matchAll(/callEval\(\s*"([a-z0-9_]+)"/g)) called.add(m[1]);
+}
+if (!CHAIN_FILES.length) fail.push(`${CHAIN_DIR} holds no chain-*.ts file — the release check is gone`);
 if (!called.size) fail.push(`${CHAIN} makes no callEval("…") call this check can read — the release check's names are unverified`);
 for (const t of called) {
   if (!registered.has(t)) fail.push(`${CHAIN} calls \`${t}\` on the evaluation door, which registers no such tool`);

@@ -1,6 +1,6 @@
 ---
 name: sdlc-recall
-version: 1.4
+version: 1.5
 description: Search the ZZ knowledge base for what earlier work already decided or learned about a question, read the nodes that matter, and report what it means for the decision in front of someone. Read-only. Dispatched by sdlc-explore, one topic per worker.
 when_to_use: "Before designing, attempting or deciding something, to find out what this team already settled — decisions, design rationale, observed behaviour, process learnings, conventions. Dispatched by sdlc-explore as part of its fan-out. Searches the platform's knowledge base, which is shared across the team and across initiatives."
 ---
@@ -45,8 +45,8 @@ Filters: `query`, `type`, `status`, `initiative`, `flow`, `tags`, `include_super
 `type` is one of `decision`, `design`, `behavior`, `process`, `knowledge`, `style`.
 
 Each result carries `title`, `snippet` (matched terms in **bold**), `score`, `via` (which
-signals matched — `lexical`, `tag`, `evidence`), `status`, `superseded_by`, `tags` and
-`evidence`. A result found only `via: ["evidence"]` shares no vocabulary with your query and was
+signals matched — `lexical`, `tag`, `evidence`), `status`, `superseded_by`, `tags`,
+`evidence` and **`shelf`** — `team` or `platform`, which decides how you open it. A result found only `via: ["evidence"]` shares no vocabulary with your query and was
 reached because it cites the same initiative as a strong hit — often the most interesting one in
 the set, and never one you would have found by searching harder.
 
@@ -56,6 +56,13 @@ journal node that is `document_read("_knowledge/nodes/0010-….md")`. Passing `p
 not exist". A snippet is two fragments; it tells you the node is about your topic, not what it
 concluded.
 
+**AND `shelf: "platform"` NEEDS `scope: "platform"` ON THE READ.** The shared shelf is a
+different store from your team's, so `document_read("_knowledge/nodes/0042-….md")` on a
+platform node answers "does not exist" — the read has to be
+`document_read("_knowledge/nodes/0042-….md", scope: "platform")`. This exact failure is on
+the record twice: an agent searched, found the two nodes describing the refusal it was about
+to hit, could not open either, and hit it.
+
 **Mind what was withheld.** The response reports `ranked_total`, `returned` and `withheld`. If
 `withheld` is non-zero, say so — a trimmed set presented as the complete match is how someone
 concludes the team never decided something.
@@ -63,7 +70,9 @@ concludes the team never decided something.
 ## Superseded nodes are the point, not noise
 
 A node carries `status: adopted` or `status: superseded`, and a superseded one carries
-`supersededBy`. **A superseded decision is the single most valuable thing this stage can find** —
+`superseded_by` — the same spelling the result list uses above. (`supersededBy` is the key in
+the node FILE's own frontmatter, not a field of a search result; parsing for it here finds
+nothing and reports every superseded node as current.) **A superseded decision is the single most valuable thing this stage can find** —
 it means the team already went down this road and came back.
 
 Report it, clearly marked, rather than filtering it out: *"we tried this and moved on, because

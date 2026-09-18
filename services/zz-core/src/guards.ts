@@ -162,16 +162,64 @@ function approvedDocumentGuard(chain: Chain, root: string, relPath: string,
   if (via) return null;                       // document_approve(), initiative_close() and document_revise own their writes
   const parts = relPath.replace(/^\/+/, "").split("/");
   if (parts.length !== 2) return null;
-  if (!chain.documents.some((d) => d.name === parts[1] && d.gate)) return null;
   const f = join(root, parts[0], parts[1]);
   if (!existsSync(f) || frontmatterStatus(f) !== "approved") return null;
+  // A SIGNATURE ON DISK, NOT A LINE IN A MANIFEST.
+  //
+  // This required `chain.documents.some(d => d.name === parts[1] && d.gate)`, so it abstained
+  // for every document of a FREEFORM initiative — where `document_approve` deliberately
+  // accepts any document in the folder, because "a gate is a person saying yes, not a
+  // manifest". Approve a freeform decision.md, then patch a paragraph of it: ownershipCheck
+  // sees no envelope change, this guard sees no manifest, and the approver's name is left
+  // standing on bytes they never read, which is the one thing this function exists to stop.
+  //
+  // The narrowing it replaces was written for a different platform: an ungated document
+  // "marked approved as a working state" cannot exist any more — stampEnvelope writes a
+  // status only where a gate is declared, and document_approve refuses a declared document
+  // that carries none — so for a governed chain this reads exactly as the old test did. What
+  // changes is the case the old test could not see.
+  if (!parseEnvelope(readFileSync(f, "utf8")).approved_by) return null;
+  const gated = chain.documents.some((d) => d.name === parts[1] && d.gate);
   return (
-    `ERROR: ${relPath} is approved and carries a gate, so it changes through ` +
+    `ERROR: ${relPath} is approved${gated ? " and carries a gate" : ""}, so it changes through ` +
     `document_revise(path: "${relPath}", content: …) — not document_write or document_patch. ` +
     "That call bumps the version, returns the document to draft, clears the approval and " +
     "keeps the approved copy in _versions/. Writing over it here would leave the approver's " +
     "name standing on bytes they never read. If somebody's words are what changed it, pass " +
     "them as `source_content` in the same call and the record explains itself."
+  );
+}
+/** A document an initiative CLOSED ON changes only through `document_revise`.
+ *
+ * WHY IT IS ITS OWN GUARD. `ownershipCheck` used to refuse this by accident: `document_write`
+ * built a fresh envelope with no `outcome`, and removing a platform-owned field is refused —
+ * so the rule held for a reason that had nothing to do with closing. The envelope is now
+ * carried forward (a gated DRAFT has to be rewritable), `outcome` matches, and that accident
+ * is gone. `approvedDocumentGuard` does not cover the gap: an ABANDONED close lands on the
+ * furthest document that exists, which on sdlc-flow is usually the ungated `explore.md` —
+ * approved by nobody, so that guard abstains.
+ *
+ * What is left is the rule the platform actually means: a closed record may be corrected, and
+ * a correction says what caused it. `document_revise` freezes the signed text, bumps the
+ * version, carries the outcome forward and REQUIRES a source or `source_content`;
+ * `document_write` does none of that. A document does not change without evidence. */
+function closedDocumentGuard(root: string, relPath: string, via: string | null): string | null {
+  if (via) return null;                       // initiative_close and document_revise own their writes
+  const parts = relPath.replace(/^\/+/, "").split("/");
+  if (parts.length !== 2) return null;
+  const f = join(root, parts[0], parts[1]);
+  if (!existsSync(f)) return null;
+  const outcome = parseEnvelope(readFileSync(f, "utf8")).outcome;
+  if (!outcome) return null;
+  return (
+    `ERROR: ${relPath} is the document this initiative CLOSED on (outcome: ${outcome}), so it ` +
+    `changes through document_revise(path: "${relPath}", content: …) — not document_write or ` +
+    "document_patch. The close itself is untouched either way: the platform carries the " +
+    "outcome forward and the ledger row stands. What document_revise adds is the part that " +
+    "matters here — it " +
+    "freezes the text somebody signed in _versions/, bumps the version, and requires you to " +
+    "say what caused the change, as `sources` or `source_content`. A closed record may be " +
+    "corrected; it may not be quietly overwritten."
   );
 }
 function gateCheck(chain: Chain, root: string, relPath: string): string | null {
@@ -286,6 +334,7 @@ function ownershipCheck(root: string, relPath: string, content: string,
 export function documentGuards(chain: Chain, root: string, relPath: string, content: string,
                         team: string | null, via: string | null = null): string | null {
   return ownershipCheck(root, relPath, content, via)
+    ?? closedDocumentGuard(root, relPath, via)
     ?? approvedDocumentGuard(chain, root, relPath, via)
     ?? gateCheck(chain, root, relPath)
     ?? closeCheck(chain, root, relPath, content)

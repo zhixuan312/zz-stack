@@ -194,8 +194,11 @@ export function mountInitiatives(app: Express): void {
         };
       }),
       decisions: decisions.rows.map(claimRow),
-      // What the ledger actually holds, so a column of blanks is readable as a fact
-      // about the documents rather than as a fault in the derivation.
+      // What the ledger actually holds, so a column of blanks is readable as a fact about the
+      // documents rather than as a fault in the derivation. READ, now: the panel prints it as
+      // its aside. It was sent and dropped, which is the same gap one layer along — the
+      // reader still could not tell "these rows carry no verdict" from "the derivation
+      // stopped running", because nothing on screen said which.
       decisionCounts: {
         rows: decisions.rows.length,
         withVerdict: decisions.rows.filter((d) => (d as { verdict: string }).verdict).length,
@@ -288,8 +291,11 @@ export function mountInitiatives(app: Express): void {
       closing: rule?.closing ?? false,
       requiredForClose: rule?.requiredForClose ?? false,
       decisions: decisions.rows.map(claimRow),
-      // What the ledger actually holds, so a column of blanks is readable as a fact
-      // about the documents rather than as a fault in the derivation.
+      // What the ledger actually holds, so a column of blanks is readable as a fact about the
+      // documents rather than as a fault in the derivation. READ, now: the panel prints it as
+      // its aside. It was sent and dropped, which is the same gap one layer along — the
+      // reader still could not tell "these rows carry no verdict" from "the derivation
+      // stopped running", because nothing on screen said which.
       decisionCounts: {
         rows: decisions.rows.length,
         withVerdict: decisions.rows.filter((d) => (d as { verdict: string }).verdict).length,

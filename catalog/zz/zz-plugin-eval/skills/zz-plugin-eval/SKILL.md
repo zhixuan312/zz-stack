@@ -1,8 +1,8 @@
 ---
 name: zz-plugin-eval
-version: 0.6
+version: 0.7
 description: The front door to plugin evaluation. Five stages — locate, profile, define, judge, report — over one plugin at one released version. Two kinds of evidence, two gates, evidence about whether a plugin does the job it claims; never a change.
-when_to_use: "Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code, Codex)."
+when_to_use: "Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
 
 # zz-plugin-eval

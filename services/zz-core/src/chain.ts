@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { type FlowDoc, parseEnvelope } from "@zz/contracts";
-import { catalogManifest, isFlow } from "@zz/catalog";
+import { catalogManifest, isFlow, withHandover } from "@zz/catalog";
 
 import { openRecord } from "./initiative-record.js";
 import { type Chain } from "./write-guards.js";
@@ -24,24 +24,15 @@ function deriveChain(list: FlowDoc[], name: string | null = null): Chain {
   // would become the closing document — silently, and only for a flow that marks no
   // `closing` — because the fallback is positional (`list[list.length - 1]`). Idempotent:
   // a manifest that already declares the entry below is left untouched.
-  const documents: FlowDoc[] =
-    list.some((d) => d.gate) && !list.some((d) => d.name === "handover.md")
-      ? [
-          ...list,
-          {
-            name: "handover.md",
-            role: "handover",
-            stage: "zz-handover",
-            // Gated so somebody signs it, but never `closing` or `requiredForClose`: the
-            // flow's own closing document still closes the flow, and documentGuards skips a
-            // gated document that does not exist yet, which is what lets handover.md be
-            // written AFTER that close.
-            gate: true,
-            requires: list.find((d) => d.closing)?.name ?? list[list.length - 1]?.name ?? "",
-            sections: ["What this initiative taught", "Recorded for the platform", "Proposed for the team"],
-          },
-        ]
-      : list;
+  // DERIVED IN @zz/catalog, so zz-core and the console read one answer. It used to be
+  // written out here, which is why the console — which has no access to this file — drew a
+  // flow the platform does not enforce.
+  //
+  // Appended into a SEPARATE array, never into `list` itself: `closingDoc` below reads
+  // `list` directly, and if it instead read this augmented array the append would become the
+  // closing document — silently, and only for a flow that marks no `closing` — because the
+  // fallback is positional (`list[list.length - 1]`).
+  const documents: FlowDoc[] = withHandover(list);
   return {
     name,
     documents,

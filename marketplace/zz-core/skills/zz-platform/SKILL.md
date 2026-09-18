@@ -1,13 +1,13 @@
 ---
 name: zz-platform
-version: 3.42
+version: 3.43
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
 
 # zz-platform
 
-These rules hold for every flow on this platform — sdlc, sm, and every flow
+These rules hold for every flow on this platform — sdlc-flow, zz-plugin-eval, and every flow
 written after them. A flow's skills add its method on top and do not restate
 what is here; two copies of one rule drift, and then nobody knows which is
 current. A flow may depart from a rule here only by saying so in its own skill,
@@ -48,7 +48,7 @@ afterwards, deliberately: the gates it declares would land on documents already 
 
 | From | The act | To | Who writes the envelope |
 |---|---|---|---|
-| nothing | `document_write` | `status: draft` | the platform |
+| nothing | `document_write` | `status: draft` — ONLY where the flow gates the document | the platform |
 | draft | `document_patch`, `document_write` | draft | the platform |
 | draft | `document_approve(path)` | `status: approved`, plus `approved_by` and `approved_at` | the platform, from your session |
 | approved | `document_patch`, `document_write` | **refused**, pointing you at `document_revise` | — |
@@ -56,8 +56,14 @@ afterwards, deliberately: the gates it declares would land on documents already 
 | any | `document_present(path)` | unchanged — a `shown` entry is appended to the activity log | the platform |
 | approved | `source_add(..., supports: <path>)` | approved, and flagged for refinement | the platform |
 
-`status` is exactly `draft` or `approved`. **You write neither it nor any other envelope field
-by hand; every one of them is refused.** The body is yours, the envelope is the platform's.
+`status` is exactly `draft` or `approved` — **and it exists only where the flow's manifest
+declares a GATE on that document.** A status records a gate verdict: it says a person was
+asked and answered. An ungated document is finished by being written, there is nobody to ask,
+so it carries no `status` at all and `document_approve` refuses it by name. Reading a fresh
+`explore.md` and finding no status means the platform did its job, not that the write failed.
+
+**You write neither it nor any other envelope field by hand; every one of them is refused.**
+The body is yours, the envelope is the platform's.
 
 **What comes next is computed, never guessed.** `initiative_status(initiative)` answers a
 `next_move` carrying four things: an action, the document it is about, who it is waiting on,
@@ -124,8 +130,8 @@ the timing; getting this wrong costs a plan, not a refusal.
 - The store is on the PLATFORM, not on any machine you can reach. The
   artifact tools are the only way in: `document_list`, `document_read`,
   `document_write`, `document_patch`. Paths are relative to your team's store, e.g.
-  `2026-08-19-sample-intake/spec.md`. This skill is loaded in the browser and in
-  Claude Code, Codex and Hermes alike — where you do have a shell, it reaches
+  `2026-08-19-sample-intake/spec.md`. This skill is loaded in Claude Code, which is the one client this platform
+  packages — where you do have a shell, it reaches
   your own disk and never the team's store, so the rule is the same one.
 - The store is shared with your whole team — you will see teammates'
   initiatives. **The platform scopes you to the team and no further.** It
@@ -223,9 +229,11 @@ the timing; getting this wrong costs a plan, not a refusal.
   `initiative_status`. A model guessing something a command would have answered
   is the most common way this platform gets a wrong fact written into a
   document that outlives the conversation.
-- **WORK STARTS WITH `initiative_open(slug)`, and nothing else creates an initiative.**
+- **WORK STARTS WITH `initiative_open(slug)`.**
   Writing a document into a name nobody opened is refused, and so is attaching a
-  source to one. Send the SLUG alone — a few words in the stakeholder's own
+  source to one. (One tool opens one for you: `case_record` on `/eval/mcp` takes
+  `initiative` optionally, and omitting it opens one named for what was measured.
+  Look for that folder rather than opening a second beside it.) Send the SLUG alone — a few words in the stakeholder's own
   language, hyphenated — and use the name the tool hands back: **the platform
   prepends today's date from its own clock, and you never type a date into a
   folder name.** An agent that reasoned "latest stored activity is 27-08 and the
@@ -243,8 +251,9 @@ the timing; getting this wrong costs a plan, not a refusal.
   Not the newest row in the store, not a number inside a run tag, not the date
   on the last document somebody wrote. You have no clock, so read it before you
   write a date anywhere. The platform overwrites `updated_at` for you.
-- Every document carries the envelope: `flow`, `type`, `status`, approvals
-  when gated, and on close `outcome` with `accepted_by` naming who accepted.
+- Every document carries the envelope: `flow`, `type`, `version`, `updated_at` — plus
+  `status` and the approvals WHERE THE FLOW GATES IT, and on close `outcome` with
+  `accepted_by` naming who accepted.
   The platform's telemetry, index and audits read only these.
 - **A close is an ACT: zz-core's `initiative_close(initiative, disposition)`** — never a
   plugin's own close. You say the one thing you
@@ -273,13 +282,16 @@ the timing; getting this wrong costs a plan, not a refusal.
   name, use it: never tell a person you are unable to write their decision for
   them, because writing down what they decided IS writing it on their authority,
   which is the only kind there is.
-- **An initiative closes ONCE, and a close is not editable afterwards.** A second
-  `initiative_close` is refused, and so is revising the document that records one — the ledger row
-  was appended at that close and is what the team's counts read, so changing the document
-  now would leave the two disagreeing. If a close was wrong, that is a fact about the
-  record worth writing down: `knowledge_add` it against the initiative, `scope: "team"`
-  unless the mistake is itself a fact about a registry entry, in which case
-  `scope: "platform"`. A correction somebody can find beats an overwrite nobody can.
+- **An initiative closes ONCE. A CLOSED RECORD MAY BE CORRECTED; WHAT CLOSED IT MAY
+  NOT.** A second `initiative_close` is refused, and the `outcome`, `closed_by` and the
+  ledger row that went with it are fixed for good. The document itself is not:
+  `document_revise` works on a closed document, carries the outcome forward, freezes
+  the signed text in `_versions/` and records what caused the change — so a wrong
+  number in a closed `review.md` is corrected where somebody reading the report will
+  see it. What changed is what the report SAYS, not what it concluded. If the VERDICT
+  was wrong, that is a different thing and not a revision: `knowledge_add` it against
+  the initiative, `scope: "team"` unless the mistake is itself a fact about a registry
+  entry, in which case `scope: "platform"`.
 - **After the close comes the handover, and it belongs to the platform.**
   Every flow ends the same way, whatever its manifest says: once the outcome
   is recorded, load `zz-handover` with `skill_read` and run it now — it
@@ -303,12 +315,13 @@ the timing; getting this wrong costs a plan, not a refusal.
   document you wrote that carries a gate must be approved before the initiative
   can close — whatever order it came in, whether or not anything else depended on
   it. A gate left open is not a gate passed.
-- **`flow:` is the one that must be right.** It says which manifest's gates
-  govern this initiative. Write it on the FIRST document — the platform stamps
-  it onto later ones, but it can only stamp a flow it has been told, and a first
-  document without it is refused. Every team has more than one flow to choose
-  from: the platform flows ship to everyone alongside whatever the team installed,
-  so nothing but this line can say which one applies.
+- **`flow:` is the one that must be right, and you never type it.** It says which
+  manifest's gates govern this initiative, and it is declared ONCE, to
+  `initiative_open(slug, flow)` — the one moment the choice is meaningful. The
+  platform stamps it onto every document afterwards. `document_write` has no
+  `flow` argument, and a body that opens with frontmatter of any kind is refused
+  outright, so writing `flow:` yourself is the refusal, not the cure. There is no
+  way to adopt a flow after an initiative exists.
 - **Every date this platform writes is `YYYY-MM-DD`** — in frontmatter and in the
   initiative's folder name, which are the same date and must not disagree. The
   index normalises either form, which is exactly why both drifted into the store
@@ -349,7 +362,7 @@ it took.
 
 Work does not belong to a conversation. The same initiative is picked up in
 a different chat, by a different person, on a different harness — Claude Code,
-Codex, Hermes — and it must continue from exactly where it
+and it must continue from exactly where it
 stopped, not from what anyone remembers.
 
 **Identify it once per conversation, then hold on to it.** Work out which
@@ -430,18 +443,24 @@ The knowledge store is the team's, not one agent's session:
 
 **If someone's input changes a required document, that input becomes a
 source and the document goes to the next version.** The same knowledge model
-on every harness — Claude Code, Codex, Hermes — because the
+on every harness — because the
 knowledge is the same knowledge.
 
 **Half of that the platform enforces and half of it is yours.** Once a gated
 document is approved, `document_write` and `document_patch` are refused on it outright
 and `document_revise` is the only way through, so on an approved document the
-version bump cannot be skipped. The rest is not checked: a draft or an ungated
-document is overwritten freely, and a revision with no source attached is
-accepted — see *Capture is the goal, not a toll* below for why that is
-deliberate. Nothing stops you changing a document because of something someone
-said and recording no cause. Attaching it is what makes the record explain
-itself.
+version bump cannot be skipped.
+
+**A REVISION WITHOUT A CAUSE IS REFUSED.** `document_revise` takes `sources` (files
+already registered) or `source_content` (the material itself, captured in the same
+call), and a revision supplying neither is refused by name: *nothing says what caused
+this version*. A document changes because of evidence or it does not change — that is
+the rule, and it holds for a draft, an ungated document and a freeform one alike. If a
+source you registered says it supports this document and you do not cite it, that is
+refused too.
+
+What is NOT checked is whether the cause you gave is a good one. Attaching it is what
+makes the record explain itself.
 
 The commonest case is not a meeting note; it is the second brain dump. A
 person describes what they want, you write `intent.md`, and then they say
@@ -497,12 +516,13 @@ reading later can see one caused the other.
 
 ## The platform's own tools, and every other plugin's
 
-- **THE PLATFORM'S TOOLS ARE THESE, AND NOTHING ELSE IS ONE.** Nearly all of
-  them are served by `zz-core`, across its two doors; two are served by the
-  gateway on `/manage/mcp`, and they are platform tools exactly like the rest.
-  Whenever this skill or a flow's skill names a tool without saying where it
-  lives, it means the one on this list — and the middle column is the door it
-  is on, which decides whether YOU have it:
+- **THE PLATFORM'S TOOLS ARE THESE, AND NOTHING ELSE IS ONE.** Most are served by
+  `zz-core` on its two doors; the rest are served by the gateway on `/manage/mcp`,
+  and they are platform tools exactly like the rest. Whenever this skill or a flow's
+  skill names a tool without saying where it lives, it means the one on this list —
+  and the middle column is the door it is on, which decides whether YOU have it.
+  `/manage/mcp` is cut by ROLE: the tools registered for you are the ones your role
+  carries, so a tool you cannot find there is a fact about your access:
 
   | | door | |
   |---|---|---|
@@ -515,6 +535,8 @@ reading later can see one caused the other.
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `case_record` `finding_record` |
+  | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
+  | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 
 **THE DOOR IS DECIDED BY THE SUBJECT, AND YOUR ROLE DECIDES WHAT YOU SEE ON IT.** Those are
 two different cuts and they used to be confused: filing a bug was on `/core` and answering one
@@ -543,8 +565,11 @@ writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Most only read; the four that write — `case_record`, `ruler_record`, `ruler_affirm` and
-`finding_record` — record a fact or a decision and never a score.
+Five of the ten write. Four of those — `case_record`, `ruler_record`, `ruler_affirm` and
+`finding_record` — record a fact or a decision and never a score. The fifth, `round_judge`,
+is the one tool on that door that DOES score: it marks one subject per call against the
+ruler in force and stores every mark. Running it again to "check" appends to a stored
+series rather than re-reading one.
 
 **The judge is not the agent.** `round_judge` takes identifiers and nothing else: it cannot be
 handed a ruler, an artifact or a model. The ruler comes from the registry, the artifacts from
@@ -585,7 +610,7 @@ make every number incomparable with every other number.
   what you CAN settle — a third identical refusal has never once been the call that worked.
 - **Access is not your job.** Platform tokens, installs and client setup all belong to the **ZZ
   Access** agent — one place, so a person always knows where to go. If someone asks how to
-  install a plugin, or how to connect Claude Code, Codex or Hermes, name that agent and hold
+  install a plugin, or how to connect Claude Code, name that agent and hold
   your position. Never ask anyone to paste a credential to you: you cannot store it, and a
   credential in a transcript is a leaked credential.
 
@@ -606,7 +631,7 @@ the document moving.
 
 Your team can add to any skill of the flow it runs, without forking it and without asking
 anybody. Put the addition in your own store at `overlays/<skill-name>/SKILL.md` — for
-example `overlays/ops-select/SKILL.md` — and it is appended whenever anyone on the team loads
+example `overlays/sdlc-plan/SKILL.md` — and it is appended whenever anyone on the team loads
 that skill, under a heading saying it is yours.
 
 - **It adds; it never replaces.** The shelf's skill arrives first and entire, yours follows.

@@ -1,8 +1,8 @@
 ---
 name: zz-deck
-version: 2.1
+version: 2.2
 description: Turn something already written — a spec, a report, a changelog, a thread — into a slide deck that makes an argument, built on the house visual system. Not an outline of the source: a conclusion, the claims that carry it, and one composition per claim.
-when_to_use: "Someone needs to present something that already exists in prose. Typed on purpose as /zz-core:deck in Claude Code, or matched as a skill in Codex. Standalone — no initiative, no gate, no place in the sequence."
+when_to_use: "Someone needs to present something that already exists in prose. Typed on purpose as /zz-core:deck in Claude Code, or matched as a skill. Standalone — no initiative, no gate, no place in the sequence."
 ---
 
 <!-- Design note: deck-chassis.html ships inside the plugin at skills/zz-deck/, which is
@@ -16,7 +16,7 @@ when_to_use: "Someone needs to present something that already exists in prose. T
 
 A command that turns something already written — a changelog, a spec, a design doc, a report,
 the previous message — into a slide deck built on the house visual system. `/zz-core:deck` on
-Claude Code, a matched skill on Codex.
+Claude Code.
 
 It runs entirely in your own context: no platform tool is called, nothing is dispatched, and the
 only output is one HTML file on disk.
@@ -152,7 +152,6 @@ reading from is not:
 
 | Client | You are reading | The chassis asset is |
 |---|---|---|
-| Codex | `skills/zz-deck/SKILL.md` | beside you |
 | Claude Code | `commands/deck.md` | `../skills/zz-deck/deck-chassis.html` |
 
 On Claude Code this file is installed as a command, because a deck is something a person asks

@@ -48,6 +48,10 @@ interface PluginTraces {
    *  half of fit no static check can see: reachability is a property of the package, use is a
    *  property of the runs. */
   never_called: string[];
+  /** Which window `use` and `never_called` were counted over — a door plugin's whole recorded
+   *  history, or this version's own runs. They answer different questions and the figures are
+   *  not comparable between them. */
+  use_window: string;
   /** WHY THERE IS NO TRACE EVIDENCE, when there is none — said, not left to be inferred.
    *
    * A run belongs to a plugin version through the SKILL VERSIONS that version shipped, so a
@@ -207,8 +211,20 @@ export async function pluginTraces(
   // WHAT THE DOOR SERVED, for a plugin that has one — counted from the door directly and not
   // through a run, because a call that reached the door is use of this plugin whether or not
   // the reconciler has since tied it to a run.
+  // ACROSS EVERY VERSION OF THIS PLUGIN, and that is the point of the question.
+  //
+  // "Is this tool ever actually called" is a property of the SURFACE, and a plugin's tool
+  // surface barely moves between releases — so scoping it to one version asks whether a tool
+  // was called since the last release, which for a plugin released four minutes ago is a
+  // question about four minutes. Measured: zz-core's door has taken 627 calls across its life
+  // and 1 since 0.52.0 shipped, and a `never_called` list built on the second reports fourteen
+  // tools in daily use as dead surface.
+  //
+  // The run-shaped figures above stay version-scoped, because those ARE about the version:
+  // what its stages did, where it went back. What a plugin OFFERS and whether anybody takes it
+  // up is the plugin's question, and `use_window` says which was asked.
   const useSource = servesOwnDoor
-    ? `from zz.event e where e.plugin = $1 and e.plugin_version = $2 and e.kind = 'tool_call'`
+    ? `from zz.event e where e.plugin = $1 and e.kind = 'tool_call'`
     : `from zz.event e
         where e.run_id in (select r.id ${RUNS_BY_SKILL})
           and e.kind = 'tool_call'`;
@@ -246,5 +262,8 @@ export async function pluginTraces(
     unplaced: [...unplacedCount].map(([step, count]) => ({ step, count })).sort((a, b) => b.count - a.count),
     use,
     never_called: reachable.filter((t) => !called.has(t)).sort(),
+    use_window: servesOwnDoor
+      ? `every call recorded on this plugin's own door, across all its versions`
+      : `the tool calls inside runs of this version's own skills`,
   };
 }

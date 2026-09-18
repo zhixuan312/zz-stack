@@ -384,11 +384,23 @@ export function registerInitiativeActTools(server: McpServer): void {
       // in `_versions/` before writing, bumps the version, and records a revision_note saying
       // what changed — so the text a person actually signed stays retrievable, and the
       // correction is discoverable beside it rather than pretending to be the original.
+      // A STATUS EXISTS ONLY WHERE THE FLOW GATES THE DOCUMENT, and this was the third writer
+      // of that rule and the one that missed it.
+      //
+      // 0.44 made `status` a gate verdict: stampEnvelope writes one only where the manifest
+      // declares a gate, and document_approve refuses a document that carries none. This line
+      // put every revision back to `draft` regardless — so revising an ungated document minted
+      // exactly the state those two exist to prevent, on real work, and the doctor probe that
+      // watches for it rolled a release back rather than let it stand.
+      const gatedHere = chain.documents.find((d) => d.name === parts[1])?.gate === true;
       if (closedOutcome) {
         env.status = "approved";
-      } else {
+      } else if (gatedHere) {
         delete env.approved_by; delete env.approved_at;
         env.status = "draft";
+      } else {
+        // Ungated: finished by being written, and there is nothing for a person to answer.
+        delete env.approved_by; delete env.approved_at; delete env.status;
       }
       env.updated_at = isoToday();
       // `flow` and `type` are manifest facts, and stampEnvelope only ever ADDS them — it

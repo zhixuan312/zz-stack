@@ -33,7 +33,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [0.47.0] — 2026-09-18 · console 0.15.0
+## [0.48.0] — 2026-09-18 · console 0.15.0
+
+0.47.0's content, plus the defect its own verification found.
+
+### Fixed
+
+- **A revision minted a status on a document its flow does not gate.** 0.44 made `status` a gate
+  verdict — stampEnvelope writes one only where the manifest declares a gate, `document_approve`
+  refuses a document that carries none — and `document_revise` was the third writer of that rule
+  and the one that missed it: every revision went back to `draft` regardless. It reached real
+  work (`quan/2026-09-18-daily-collectors-running-correctly/explore.md`), and the doctor probe
+  that watches for exactly this rolled 0.47.0 back rather than let it stand. That document is
+  corrected in the store. The chain check now revises an ungated document and asserts no status
+  appears, so the next writer to miss the rule fails in the dry run.
+
+## [0.47.0] — 2026-09-18 · console 0.15.0 — NEVER SHIPPED
+
+Deployed, failed verification on the defect above, and was rolled back. Its content ships in
+0.48.0.
 
 How a flow defines a step, said once and enforced everywhere: what it leaves behind, whether
 that is a deliverable or evidence, and whether a person has to agree to it. Plus the reason

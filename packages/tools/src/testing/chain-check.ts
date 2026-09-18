@@ -342,6 +342,24 @@ async function main(): Promise<number> {
            : `${OPENS_ON} carries no gate, so the platform stamps it no status`,
          opened);
 
+  // AND IT STAYS WITHOUT ONE THROUGH A REVISION, which is the writer that missed the rule.
+  //
+  // stampEnvelope and document_approve both learned in 0.44 that a status is a gate verdict;
+  // document_revise went on putting every revision back to `draft` regardless, so revising an
+  // ungated document minted the state the other two refuse. It reached real work before a
+  // doctor probe caught it — on a deployment, after a release, which is the long way round.
+  if (!opensGated) {
+    check(`revising ${OPENS_ON} is accepted`,
+      await call("document_revise", {
+        path: `${INIT}/${OPENS_ON}`, content: doc("revised", OPENS_ON),
+        source_content: "chain-check revised the opening document to prove an ungated one stays ungated.",
+        source_title: "chain-check: revising an ungated document",
+      }), false);
+    const revised = await call("document_read", { path: `${INIT}/${OPENS_ON}` });
+    record(!/^status:/m.test(revised),
+           `${OPENS_ON} carries no gate, so a revision leaves it no status`, revised);
+  }
+
   // ON A DRAFT, while `status: draft` is still in the file. Run after the approve loop below
   // this found nothing to replace and passed on document_patch's arity error instead of on the
   // rule — the quietest way for a suite to stop measuring what it says it measures, which is

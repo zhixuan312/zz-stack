@@ -26,6 +26,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { manifestAt, pluginName } from "@zz/catalog";
+import { parseEnvelope } from "@zz/contracts";
 import { Mcp } from "@zz/mcp-client";
 
 import { walkBugs } from "./chain-bugs.js";
@@ -356,7 +357,10 @@ async function main(): Promise<number> {
         source_title: "chain-check: revising an ungated document",
       }), false);
     const revised = await call("document_read", { path: `${INIT}/${OPENS_ON}` });
-    record(!/^status:/m.test(revised),
+    // THROUGH parseEnvelope, which is the one reader of an envelope: a regex here would be a
+    // second one, and the two disagree the first time a value repeats or a body line starts
+    // with the same word.
+    record(parseEnvelope(revised).status === undefined,
            `${OPENS_ON} carries no gate, so a revision leaves it no status`, revised);
   }
 

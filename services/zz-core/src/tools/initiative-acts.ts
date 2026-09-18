@@ -1,5 +1,6 @@
 /**
- * The three acts: approving a document, closing an initiative, and revising an approved one.
+ * The acts: approving a document and revising an approved one. Opening and closing an
+ * initiative are their own files, registered from here so the acts stay one registration.
  *
  * AN ACT IS THE ONLY THING THAT MAY MOVE THE FIELDS THE PLATFORM OWNS. `status`,
  * `approved_by`, `approved_at`, `outcome`, `closed_by` are stamped from the session and the
@@ -14,21 +15,22 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OUTCOMES, OUTCOME_STOPPED, parseCaller, parseEnvelope } from "@zz/contracts";
+import { parseCaller, parseEnvelope } from "@zz/contracts";
 import { indexDoc } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { shownSinceLastChange } from "../attest.js";
-import { chainFor, frontmatterStatus } from "../chain.js";
+import { chainFor } from "../chain.js";
 import { fieldRefusal, frontmatterRefusal, oneLine, renderEnvelope } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
 import { sourceDocument } from "../indexing.js";
-import { DOC_REF, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
+import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
 import { isoToday, normalizeSections } from "../write-guards.js";
 
+import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
 
 export function registerInitiativeActTools(server: McpServer): void {
@@ -38,6 +40,9 @@ export function registerInitiativeActTools(server: McpServer): void {
   // the acts stay one registration to the door — see initiative-open.ts for why the date is
   // the platform's and why a missing flow is a choice.
   registerInitiativeOpenTool(server);
+  // CLOSING IS THE FIFTH, in its own file for the same reason: it is one subject — the act
+  // that writes the outcome a team's counts are read from — and this file is at the ceiling.
+  registerInitiativeCloseTool(server);
 
   server.registerTool(
     "document_approve",
@@ -148,202 +153,6 @@ export function registerInitiativeActTools(server: McpServer): void {
             "the fetch is the part that reaches the record.\n"
           : "") +
         "The approved copy is frozen in _versions/. Downstream documents may now be written.",
-      );
-    },
-  );
-
-  server.registerTool(
-    "initiative_close",
-    {
-      description:
-        "Close an initiative, in one call. You say what you KNOW — the work `finished` or was " +
-        "`abandoned`, and who accepted it if anyone did — and THE PLATFORM derives the outcome: " +
-        "finished with an acceptor is `accepted`, finished without one is `delivered`, stopped " +
-        "is `abandoned`. You never write `outcome` yourself and writing it by hand is refused. " +
-        "Closing without an acceptor is a legitimate route and costs a sentence saying why " +
-        "nobody signed off — an honest close is never the expensive one, but it is never free " +
-        "either.",
-      inputSchema: {
-        initiative: z.string().describe("The initiative folder, e.g. '2026-08-23-sample-queue'"),
-        // The stop word is the OUTCOME's, deliberately: what the caller says and what the
-        // ledger records are the same word for the same thing, and coupling them here means a
-        // rename cannot leave one behind. `finished` is this tool's own — the platform
-        // derives `delivered` or `accepted` from it and whether anybody signed off.
-        disposition: z.enum(["finished", OUTCOME_STOPPED]).describe(
-          `\`finished\`: the work was completed. \`${OUTCOME_STOPPED}\`: it stopped before it was.`),
-        accepted_by: z.string().optional().describe(
-          "The person who said this is what they wanted. Give it whenever somebody did — " +
-          "their name, or the address they wrote from. Omit only when nobody has."),
-        document: z.string().optional().describe(
-          "Which document records the close. REQUIRED for a freeform initiative, where no " +
-          "flow declares a closing document; ignored where one does, because the flow has " +
-          "already answered."),
-        no_signoff_reason: z.string().optional().describe(
-          "Required when `finished` carries no `accepted_by`: one line on why nobody signed off."),
-      },
-    },
-    async ({ initiative, disposition, accepted_by, no_signoff_reason, document }) => {
-      const who = parseCaller(requestHeaders());
-      const root = await userRoot();
-      const team = await teamFor(who.email);
-      const badName = safeName(initiative, "initiative");
-      if (badName) return text(badName);
-      const acceptor = (accepted_by ?? "").trim();
-      const reason = (no_signoff_reason ?? "").trim();
-      // A CLOSE CANNOT NAME AN ACCEPTOR AND ALSO SAY NOBODY SIGNED OFF.
-      //
-      // Supplying both used to silently prefer the acceptor: the reason reached neither the
-      // document, the activity log, nor the response. Refused instead, and before the
-      // neither-supplied check below, so both forced-choice defects sit next to each other.
-      // Scoped to `finished`, like the check below it: `accepted_by`/`no_signoff_reason` exist
-      // to disambiguate a FINISHED close into `accepted` or `delivered`, and an `abandoned`
-      // close's outcome does not turn on either of them.
-      if (disposition === "finished" && acceptor && reason) {
-        return text(
-          "ERROR: `accepted_by` and `no_signoff_reason` are contradictory — one says who " +
-          "accepted this, the other says nobody did. You supplied both (`" + acceptor +
-          "` / `" + reason + "`). Send the one that is true; a close that names an acceptor " +
-          "needs no reason.");
-      }
-      if (disposition === "finished" && !acceptor && !reason) {
-        return text(
-          "ERROR: finished with nobody named needs `no_signoff_reason` — one line on why " +
-          "nobody signed off. If somebody DID say this is what they wanted, pass their name " +
-          "as `accepted_by` instead and the close records an acceptance.");
-      }
-      // AN ABANDON MUST NOT CONTRADICT THE RECORD.
-      //
-      // `abandoned` says the work stopped before it was done. When every gate the flow
-      // declares is approved AND every document it requires to close exists, that sentence is
-      // false, and the platform was writing it down anyway. Six initiatives on 2026-09-06
-      // carry it with all six stages ticked, three of three gates approved and a verification
-      // guide delivered — a page that reads "closed without finishing" above a row of green
-      // ticks, which is the platform contradicting itself in one screen.
-      //
-      // What produced them was a harness that offered every run the same exit on the same
-      // cycle after a transient block failure. That is our fault and not the platform's. But
-      // a record the platform cannot tell is wrong is a record it will keep taking, so the
-      // check belongs here rather than in whatever is driving.
-      //
-      // Refused, not silently corrected. `delivered` is a claim about the work and only the
-      // caller can make it — the platform's job is to say the two do not agree.
-      if (disposition === OUTCOME_STOPPED) {
-        const chain = chainFor(root, join(initiative, "probe.md"));
-        const dir = join(root, initiative);
-        // THE HANDOVER IS EXCLUDED, and leaving it in silently disabled this whole refusal.
-        //
-        // `chain.documents` now carries a derived `handover.md` for every flow that gates a
-        // document, and that document CANNOT exist at close time — zz-handover writes it
-        // after the close. So `frontmatterStatus` returned null for it, `every(...)` was
-        // permanently false, `gatesPassed` could never be true, and the refusal below could
-        // never fire — for all five qualifying flows. That is exactly the false-abandon
-        // defect the comment above records six initiatives hitting on 2026-09-06, reopened
-        // by the derivation that was supposed to be additive.
-        //
-        // documentGuards solves the same problem 4,200 lines up by skipping a gated document
-        // that is not on disk yet (`if (!existsSync(f)) continue`); this site was never given
-        // that guard. Skipping absent documents would also work, but naming the handover is
-        // the more honest fix: it is not a gate the flow's own work has to pass to be
-        // finished, it is what the platform asks for afterwards, so it does not belong in a
-        // question about whether the delivery was complete.
-        const gates = chain.documents.filter((d) => d.gate === true && d.name !== "handover.md");
-        const gatesPassed = gates.length > 0 && gates.every(
-          (d) => frontmatterStatus(join(dir, d.name)) === "approved");
-        const requiredPresent = chain.closeRequires.length > 0
-          && chain.closeRequires.every((n) => existsSync(join(dir, n)));
-        if (gatesPassed && requiredPresent) {
-          return text(
-            `ERROR: ${initiative} does not look abandoned. Every gate this flow declares is ` +
-            `approved (${gates.map((d) => d.name).join(", ")}) and everything it requires to ` +
-            `close exists (${chain.closeRequires.join(", ")}). \`${OUTCOME_STOPPED}\` says the ` +
-            "work stopped before it was done, and the record says it was done — a reader would " +
-            "meet \"closed without finishing\" above a row of ticks.\n\n" +
-            "If it IS finished, close it as `finished`: with `accepted_by` when somebody said " +
-            "it is what they wanted, or with `no_signoff_reason` when nobody has. If it is " +
-            "genuinely abandoned, say what is missing — a gate left open or a required " +
-            "document never written is what makes that word true, and neither is the case here."
-          );
-        }
-      }
-
-      // Typed from OUTCOMES so the compiler holds this to the contract's vocabulary. It is
-      // the one place the platform DERIVES an outcome, so it names all three words by
-      // necessity — but naming them and being checked against them are different things, and
-      // without the annotation a typo here would have shipped a word nothing else accepts.
-      const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
-        : acceptor ? "accepted" : "delivered";
-      const probe = join(initiative, "probe.md");
-      const chain = chainFor(root, probe);
-      // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
-      //
-      // This refused outright when `chain.closingDoc` was empty — "the flow governing '<x>'
-      // declares no closing document" — and EMPTY_CHAIN's closingDoc is `""`, so no freeform
-      // initiative could ever be closed. The sentence also named a flow that does not exist.
-      //
-      // ASKED, NOT DERIVED. There is no manifest to read a closing document off, and the
-      // alternatives are all guesses: the newest file, the only file, a document the platform
-      // invents. The outcome is the row a team's counts are built from, so the one thing it
-      // cannot sit on is a document nobody chose. A flow that DOES declare one keeps
-      // answering for itself — `document` is ignored there rather than fought with, because
-      // the flow's declaration is the more authoritative of the two.
-      const closingDoc = chain.closingDoc || (document ?? "").trim();
-      if (!closingDoc) {
-        return text(
-          `ERROR: no flow governs '${initiative}', so nothing declares which document records ` +
-          "the close — name it: `document: \"<name>.md\"`. That is not a limitation of " +
-          "freeform work, it is the one question a manifest would have answered. The outcome " +
-          "is what the team's counts read, and it must not sit on a document the platform " +
-          "picked for you.");
-      }
-      const badDoc = safeName(closingDoc, "document");
-      if (badDoc) return text(badDoc);
-      const relPath = `${initiative}/${closingDoc}`;
-      const blocked = writeGuard(relPath);
-      if (blocked) return text(blocked);
-      const target = await safePath(relPath);
-      if (!existsSync(target)) {
-        return text(`ERROR: ${relPath} does not exist — a close is recorded ON a document, so it must be written first.`);
-      }
-      let doc = readFileSync(target, "utf8");
-      // AN INITIATIVE CLOSES ONCE.
-      //
-      // A second close overwrote `outcome` on the document, and ledgerOnClose returns early
-      // when one is already there — so the document said the new word and the team's ledger
-      // went on saying the first. The ledger is what the OKR grading and the cross-flow
-      // comparison COUNT, so "how many were accepted this quarter" and what the closing
-      // document says would disagree, with nothing to notice.
-      //
-      // Refused rather than reconciled: a record's value is that it is not edited afterwards,
-      // and an outcome that can be revised months later is one nobody can rely on having read.
-      // If a close was genuinely wrong, that is a fact about the record worth writing down —
-      // a journal node saying so, not a quiet overwrite.
-      const already = parseEnvelope(doc).outcome;
-      if (already) {
-        return text(
-          `ERROR: ${initiative} is already closed as \`${already}\`, and an initiative closes ` +
-          "once. The ledger row was appended at that close and is what the team's counts read, " +
-          "so changing the document now would leave the two disagreeing. If that close was " +
-          "wrong, record WHY as a journal node against this initiative — a correction somebody " +
-          "can find beats an overwrite nobody can.");
-      }
-      doc = putEnvelopeField(doc, "outcome", outcome);
-      doc = putEnvelopeField(doc, "closed_by", who.email);
-      if (acceptor) doc = putEnvelopeField(doc, "accepted_by", acceptor);
-      if (!acceptor && reason) doc = putEnvelopeField(doc, "no_signoff_reason", reason);
-      const bad = documentGuards(chain, root, relPath, doc, team, "initiative_close");
-      if (bad) return text(bad);
-      persistDocument(chain, root, relPath, target, doc, `close ${outcome}`);
-      logActivity(root, relPath,
-        { user: who.email, action: "initiative_close", initiative, outcome, accepted_by: acceptor || null });
-      return text(
-        `${initiative} closed as ${outcome}, recorded by ${who.email}.\n` +
-        (acceptor ? `Accepted by ${acceptor}.\n`
-                  : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
-        "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
-        "Closed is not yet complete — one step remains, and it belongs to the platform rather " +
-        "than to this flow. Run `skill_read(\"zz-handover\")` next: it mints whatever " +
-        "generalises from this cycle and writes handover.md. That document is gated — a team " +
-        "member approves it, and only then does `initiative_status` read `action: \"closed\"`.",
       );
     },
   );

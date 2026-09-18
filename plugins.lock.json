@@ -33,14 +33,14 @@
   },
   "zz-core": {
     "version": "0.47.0",
-    "digest": "a9115fcc",
+    "digest": "ca0e464d",
     "cases_digest": "f64bba10",
     "skills": {
       "zz-authoring": "60f258ebec54",
       "zz-breakout": "130174886cc0",
       "zz-deck": "5ff1f1770bfc",
       "zz-handover": "4df05e9470ab",
-      "zz-platform": "2354d94bb08d",
+      "zz-platform": "5496502457f7",
       "zz-tldr": "66d6e9e95272"
     }
   },

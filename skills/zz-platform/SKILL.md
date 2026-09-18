@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.41
+version: 3.42
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -472,22 +472,19 @@ reading later can see one caused the other.
   `source_content` and never saw what the person actually said, so it cannot
   tell a quotation from a summary of one. A paraphrase filed as a source is a
   record that looks like evidence and is not.
-- **Capture is the goal, not a toll.** A person may edit their own document
-  and owes nobody a reason, and a revision with nothing attached is still
-  accepted — that guarantee is not going anywhere. But it no longer "simply
-  records no cause", and that sentence was wrong from the day `self_edit`
-  shipped. **Silence now means two things and the record cannot tell them
-  apart**: there was no external cause, or there was one and nobody captured
-  it. Only the second is a gap anybody can close, and it is the one worth
-  counting.
-  So say which it was. `document_revise(..., source_content: "<their words>")`
-  when something someone said caused the change; `document_revise(...,
-  self_edit: "<what you edited>")` when nothing did — a short declaration of
-  WHAT you changed, never a justification for changing it, because you still
-  owe nobody that. Supplying both is refused: they are contradictory claims.
-  Supplying neither is allowed and always will be, and the response will tell
-  you plainly that the record now cannot distinguish your case from the other
-  one.
+- **A version names the material behind it, and a revision that names none is
+  refused.** `document_revise(..., sources: ["sources/<file>.md"])` cites what
+  is already on the record — an audit round, a decision written down;
+  `document_revise(..., source_content: "<their words>")` passes material that
+  is not, and the platform stores it as a source and links it. A revision that
+  ignores what already explains it is refused too: any source declaring
+  `supports: <this document>` and added after the version being replaced has to
+  be cited.
+  **Even a wording fix has a cause worth one line**, and that line IS the
+  material — there is no route that records a content change with the reason
+  left off, because the next reader cannot then tell a decision taken elsewhere
+  from a second thought. The ENVELOPE is untouched by this: approving, closing
+  and presenting change no content and name no source.
 - `source_list(initiative)` shows what evidence exists and what each piece
   supports. Read it before judging any document.
 - **Feedback is material too.** A reviewer's objection, an auditor's note, a

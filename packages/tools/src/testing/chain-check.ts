@@ -510,12 +510,16 @@ async function main(): Promise<number> {
   // has been improved on, and would fail against a platform doing the better thing.
   //
   // So the probe does what the attack did — revise the closing document — and then asserts the
-  // property that actually matters: a second close is still refused. `self_edit` names what was
-  // changed; document_revise requires a cause and `because` is not one of its fields.
+  // property that actually matters: a second close is still refused.
+  //
+  // WITH MATERIAL, because every content change names some. `self_edit` used to be the route for
+  // a version nothing caused and is gone: the platform refuses a revision that cites nothing,
+  // whatever the edit was, so the probe passes the words that caused it like any other caller.
   check("a closed document may be revised, and the outcome survives it",
     await call("document_revise", {
       path: `${INIT}/${closing}`, content: doc("reopened", closing),
-      self_edit: "chain-check rewriting its own closing document",
+      source_content: "chain-check rewrote its own closing document to prove the outcome survives a revision.",
+      source_title: "chain-check: revising a closed document",
     }), false);
   check("revising the closing document does not let the initiative close twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),

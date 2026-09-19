@@ -188,7 +188,23 @@ export async function indexDoc(root: string, relPath: string, content: string, s
       // consequential act on the platform — and stored it nowhere, so "who closed this" could
       // only be answered by opening the document.
       env.closed_by ?? null,
-      body, title, list(env.tags), list(env.evidence),
+      body, title, list(env.tags),
+      // WHAT CAUSED THIS VERSION, ON THE DOCUMENT AND NOT ONLY BESIDE IT.
+      //
+      // `evidence` read an `evidence:` frontmatter field that no write path has ever set, so
+      // the column was declared on every row and populated on NONE -- 0 of 365 on this
+      // deployment, measured -- while `knowledge_add`, which refuses a node that cites nothing,
+      // carried it on 867 of 867. A column nothing fills is worse than an absent one: every
+      // query over it answers "no document has evidence", which is false.
+      //
+      // The cause is recorded. `document_revise` REFUSES a version that names none and writes
+      // what it was told into the envelope's `sources` -- so the fact existed the whole time
+      // and landed in a field the index did not read. Falling back to it is what makes the
+      // column true, rather than adding a second place for callers to say the same thing.
+      //
+      // `evidence` still wins where it is set, because a document that names its evidence
+      // explicitly is making a stronger claim than one whose sources happen to be listed.
+      list(env.evidence || env.sources),
       superseded && superseded !== "null" ? superseded : null];
     // The decision rows are part of what this function WRITES, so they belong in the hash.
     //

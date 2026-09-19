@@ -34,8 +34,8 @@ import { z } from "zod";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
-import { ask, configured, NOT_CONFIGURED, type ChoiceQuestion, type ScoreQuestion } from "./typesafe.js";
-import { effectiveness, headroom } from "./judge-score.js";
+import { ask, configured, NOT_CONFIGURED, type ScoreQuestion } from "./typesafe.js";
+import { effectiveness, headroom, headroomNote } from "./judge-score.js";
 import { factObject, readsRefusal } from "./plugin-facts.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -372,21 +372,23 @@ export function registerPluginRecordTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "round_recommend",
+    "round_score",
     {
       description:
-        "WHEN a round's marks and findings are in and the report needs its one-word verdict. " +
-        "It assembles what this round actually established — the dimension means, the judge's " +
-        "own control gap, every threshold and whether it was met, the case delta and the trace " +
-        "window — and puts them to the TYPED judgement service as a closed choice, then " +
-        "records what came back. RETURNS the recommendation, the probability of every option " +
-        "and the confidence, which is the shape of that distribution and not the model's " +
-        "opinion of itself. YOU DO NOT CHOOSE THE WORD: the enum is `keep`, `keep-and-change`, " +
-        "`re-run`, `not-evaluable`, `retire`, and which one this evidence supports is the " +
-        "judgement being outsourced. Writing the paragraph that explains it is yours. REFUSES " +
-        "an eval_id nothing minted, and an eval_id no control run names — a round whose ruler " +
-        "was never tried against another plugin's work establishes nothing, so there is no " +
-        "verdict to give. Reports the judgement as ABSENT, without failing, when the " +
+        "WHEN a round's marks and findings are in and the report needs its numbers. It " +
+        "computes the TWO AXES from figures no model touched — effectiveness out of 10 with " +
+        "the band it falls in, and headroom: the distance from 10, the count of named changes " +
+        "still open on this plugin, and which of four states that puts it in. It records both " +
+        "and RETURNS them, with the open changes enumerated so the count can be checked. It " +
+        "also asks the typed service one thing the marks cannot answer — how strong this body " +
+        "of evidence is. IT RECOMMENDS NOTHING: it used to choose `keep` / `keep-and-change` / " +
+        "`retire`, and that question has one permanent answer, because a plugin somebody " +
+        "installed on purpose is one they keep. The headroom state is what replaced it and it " +
+        "reports the evidence rather than prescribing an action: `no change needed`, `change " +
+        "identified`, `unexplained gap`, `not measured`. REFUSES an eval_id nothing minted, " +
+        "the CONTROL run's eval_id, and an eval_id no control run names — a round whose ruler " +
+        "was never tried against another plugin's work establishes nothing. Reports evidence " +
+        "strength as ABSENT, without failing and without withholding the axes, when the " +
         "deployment has no key for the service.",
       inputSchema: { eval_id: z.string() },
     },
@@ -515,7 +517,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         effective.score === null
           ? `Effectiveness: NOT MEASURABLE. ${effective.basis}`
           : `Effectiveness: ${effective.score} out of 10 — "${effective.band}". ${effective.basis}.`,
-        `Room for improvement: ${room.verdict}.`,
+        `Room to improve: ${room.state} — ${headroomNote(room)}.`,
         dims.length
           ? "Dimension results: " + dims.map((d) => `${d.dimension} (${d.kind}) mean ${d.mean} ` +
               `over ${d.n} mark(s)` + (d.confidence ? `, judge confidence ${d.confidence}` : "")).join("; ") + "."
@@ -548,41 +550,39 @@ export function registerPluginRecordTools(server: McpServer): void {
       if (!configured()) {
         return json({
           eval_id, plugin: round.plugin, version: round.version,
-          recommendation: null, absent: NOT_CONFIGURED,
+          effectiveness: effective, headroom: { ...room, note: headroomNote(room) },
+          evidence_strength: null, absent: NOT_CONFIGURED,
           state_that_would_have_been_asked: state,
-          next: "Write the report without a recommendation and say in section 1 that the typed " +
-                "judgement was not taken, and why. Do not substitute your own word for it — " +
-                "an enum chosen in prose is the thing this tool exists to stop.",
+          next: "BOTH AXES ARE STILL GOOD — they are computed from figures no model touched, " +
+                "and they are above. What is absent is only how strong the typed judge would " +
+                "have called this body of evidence. Write the report, carry both axes, and say " +
+                "in section 1 that evidence strength was not taken and why.",
         });
       }
 
-      const questions: Record<string, ChoiceQuestion | ScoreQuestion> = {
-        recommendation: {
-          type: "choice",
-          instructions: "A plugin evaluation has finished. Choose the single recommendation this evidence supports.",
-          criteria: {
-            "keep": "Working as intended; the evidence supports leaving it exactly as it is.",
-            "keep-and-change": "Valuable and worth keeping, but the evidence identifies specific defects to fix.",
-            "re-run": "The evidence exists but THIS round is not usable — a void control, or a round taken on evidence since corrected — so the measurement should be taken again before any verdict.",
-            "not-evaluable": "The evidence needed to judge this plugin does not exist at all, so no verdict about the plugin can honestly be given.",
-            "retire": "It costs more than it returns; remove it.",
-          },
-        },
+      // NO RECOMMENDATION IS ASKED FOR ANY MORE, and the reason is that the question had one
+      // permanent answer. `keep`, `keep-and-change`, `re-run`, `not-evaluable`, `retire` asked
+      // what to DO about a plugin somebody installed on purpose and is going to keep — so
+      // `retire` was advice nobody takes, `keep` was information nobody needed, and the middle
+      // three were the headroom axis wearing a decision's clothes. Both axes are computed from
+      // figures no model touched; there is nothing left for a choice to add.
+      //
+      // WHAT IS STILL WORTH ASKING is how strong the body of evidence is: a judgement about the
+      // ROUND rather than about the plugin, not derivable from the marks, and the one number
+      // here that says how much weight the other two will bear.
+      const questions: Record<string, ScoreQuestion> = {
         evidence_strength: {
           type: "score",
           instructions: "How strong is the body of evidence behind this verdict?",
           criteria: ["No usable evidence", "Thin — one source only", "Adequate", "Strong across two independent sources"],
         },
       };
-      let rec, strength;
+      let strength;
       try {
-        const answers = await ask(state, questions);
-        rec = answers.recommendation;
-        strength = answers.evidence_strength;
+        strength = (await ask(state, questions)).evidence_strength;
       } catch (err) {
         return text(String((err as Error).message));
       }
-      if (rec?.type !== "choice") return text("ERROR: the typed judgement service did not answer a choice");
 
       // THE NUMBER IS STORED, NOT ONLY RETURNED.
       //
@@ -595,26 +595,27 @@ export function registerPluginRecordTools(server: McpServer): void {
       // arithmetic and a second copy of it in the console's API would drift the first time a
       // weight changed — the console would then print a different score from the report, with
       // nothing on screen saying which of the two to believe.
+      // THE BAND IS NOT STORED, which is the lesson of the release before this one: it is
+      // `band(score)`, arithmetic over a column in the same row, so storing it was storing a
+      // cache — and the day the words changed every stored caption was wrong while every
+      // stored score stayed right. The rule lives in @zz/contracts; both services call it.
       await p.query(`
-        update zz.eval set recommendation = $2, recommendation_confidence = $3,
-                           recommendation_probabilities = $4::jsonb,
-                           effectiveness = $5, effectiveness_band = $6,
-                           headroom_points = $7, headroom_named = $8
+        update zz.eval set effectiveness = $2, headroom_points = $3,
+                           headroom_named = $4, headroom_state = $5
          where id = $1::uuid`,
-        [eval_id, rec.choice, rec.confidence, JSON.stringify(rec.probabilities),
-         effective.score, effective.band, room.points, room.named_changes]);
+        [eval_id, effective.score, room.points, room.named_changes, room.state]);
 
       const who = parseCaller(requestHeaders()).email;
       logActivity(await userRoot(), null,
-        { user: who, action: "round_recommend", eval_id, plugin: round.plugin,
-          version: round.version, recommendation: rec.choice, confidence: rec.confidence });
+        { user: who, action: "round_score", eval_id, plugin: round.plugin,
+          version: round.version, effectiveness: effective.score, headroom: room.state });
 
       return json({
         eval_id, plugin: round.plugin, version: round.version,
-        // THE NUMBER FIRST, THEN THE WORD. A reader asking "how good is it" gets an answer
-        // before a verb they would otherwise have to interpret.
+        // TWO AXES AND NOTHING ELSE. They answer different questions — how well it performs,
+        // and whether anything is left to do — and neither is derivable from the other.
         effectiveness: effective,
-        headroom: room,
+        headroom: { ...room, note: headroomNote(room) },
         // WHAT THE HEADROOM IS MADE OF, with the handle needed to close each one. A count of
         // named changes that a reader cannot enumerate is a number they have to trust; these
         // are the rows it was computed from, including the ones earlier rounds named and
@@ -624,16 +625,14 @@ export function registerPluginRecordTools(server: McpServer): void {
           pattern: f.pattern, proposed_change: f.change,
           carried_over: f.round !== round.version,
         })),
-        recommendation: rec.choice,
-        confidence: rec.confidence,
-        probabilities: rec.probabilities,
         evidence_strength: strength?.type === "score"
           ? { score: strength.score, legend: strength.legend, confidence: strength.confidence }
           : null,
         judge_on_trial_gap: gap,
-        next: "The word and its confidence are recorded. Section 1 of findings.md carries them " +
-              "verbatim; the paragraph underneath is yours to write, from these numbers and " +
-              "from reading the artifacts — never a different verdict reached in prose.",
+        next: "Both axes are recorded. Section 1 of findings.md carries them verbatim — the " +
+              "score with its band, and the headroom state with its count; the paragraphs " +
+              "underneath are yours to write, from these numbers and from reading the " +
+              "artifacts, never a different conclusion reached in prose.",
       });
     },
   );

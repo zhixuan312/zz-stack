@@ -62,7 +62,7 @@ worked. The strongest result the suite ever produced came from a prompt that typ
 own command, which is a way of asking whether text helps once you have already handed it over.
 
 **So a thin trace block is now a real constraint, not a fact to report and route around.** A
-plugin nobody has used cannot be judged on its runs. That is an honest `not-evaluable`, and the
+plugin nobody has used cannot be judged on its runs. That is an honest `not measured`, and the
 enum carries that word for exactly this. Two things soften it: a ruler whose subject is the
 **document** or the **initiative** reads artifacts rather than runs, and may have subjects when
 the trace history is thin; and `plugin_conform` answers from the catalog entry alone.

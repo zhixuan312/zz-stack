@@ -19,7 +19,11 @@ size("TOOL_ALIAS", TOOL_ALIAS, 17);
 // door. An alias pointing at a name that 404s is worse than an absent one: it turns "no such
 // tool" into a tool the client accepts and the gateway refuses.
 size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
-size("EVAL_ALIAS", EVAL_ALIAS, 6);
+// 7, was 6. `round_recommend` -> `round_score` joined in 0.60.0, when the tool stopped
+// choosing a recommendation: the question it asked — keep, keep-and-change, retire — has one
+// permanent answer, because somebody installs a plugin for a reason and keeps it. The entry
+// exists so a caller working from the old name still reaches the tool that replaced it.
+size("EVAL_ALIAS", EVAL_ALIAS, 7);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 
 const resolves: [Record<string, string>, string, string][] = [

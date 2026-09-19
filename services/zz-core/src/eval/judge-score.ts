@@ -23,6 +23,8 @@
  * one-line change and not an argument.
  */
 
+import { HEADROOM, NOT_MEASURABLE, band, headroomState } from "@zz/contracts";
+
 /** The qualitative half against the quantitative half.
  *
  *  Quality leads because it is read from the artifacts themselves across every subject, while
@@ -37,17 +39,11 @@ const QUANTITATIVE_WEIGHT = 0.4;
  *  once, here, so the score and the note cannot drift apart. */
 const COLLAPSE_GAP = 1.5;
 
-/** What a score MEANS, fixed before any round is read.
- *
- *  Bands drawn after seeing a number are bands fitted to it. These are the boundaries every
- *  report prints beside its own score, so a reader can check the label against the figure
- *  rather than take it. */
-const BANDS = [
-  { at: 8, label: "working well" },
-  { at: 6, label: "working, with a defect worth fixing" },
-  { at: 4, label: "underperforming, improvement available" },
-  { at: 0, label: "not effective" },
-] as const;
+// THE BANDS ARE THE PLATFORM'S, NOT THIS FILE'S. They moved to @zz/contracts when the
+// console needed to name the same band the reports do: one rule, or the two drift and a
+// reader gets a different word from each. `band()` is also why nothing stores the label any
+// more — it is arithmetic over a number in the same row, which is a cache, and the day the
+// words changed every stored caption was wrong while every stored score stayed right.
 
 interface Effectiveness {
   /** 0-10, or null when the round is void. Never a number over a void round: a mean below a
@@ -68,11 +64,15 @@ interface Headroom {
    *  threshold names a figure and a line, a generic finding names a change by construction
    *  (finding_record refuses one that proposes none). */
   named_changes: number;
-  verdict: string;
+  /** One of the four, from @zz/contracts. A CLOSED SET, not a sentence.
+   *
+   *  This was a paragraph of prose the caller pasted into a report, which made the second axis
+   *  unreadable anywhere a paragraph does not fit — a table cell, a tile — and unqueryable
+   *  everywhere. Worse, the prose editorialised: it told the reader what to do about the gap,
+   *  which is not something the figures establish. The state says which of four situations the
+   *  round is in and leaves the explaining to the report. */
+  state: string;
 }
-
-const band = (score: number): string =>
-  BANDS.find((b) => score >= b.at)?.label ?? BANDS[BANDS.length - 1].label;
 
 /** The effectiveness score, from figures the round already carries.
  *
@@ -84,7 +84,7 @@ export function effectiveness(
 ): Effectiveness {
   if (gap !== null && gap < COLLAPSE_GAP) {
     return {
-      score: null, band: "not measurable", qualitative: null, quantitative: null,
+      score: null, band: NOT_MEASURABLE, qualitative: null, quantitative: null,
       basis: `the judge-on-trial gap is ${gap}, below the ${COLLAPSE_GAP} line — the ruler could ` +
              "not tell this plugin's work from another's, so every qualitative mean in this " +
              "round is noise and no score is computed from them",
@@ -99,7 +99,7 @@ export function effectiveness(
     ? Math.round((QUALITATIVE_WEIGHT * qual + QUANTITATIVE_WEIGHT * quant) * 100) / 100
     : qual ?? quant;
   if (score === null) {
-    return { score: null, band: "not measurable", qualitative: null, quantitative: null,
+    return { score: null, band: NOT_MEASURABLE, qualitative: null, quantitative: null,
              basis: "the round produced neither a qualitative mark nor a threshold" };
   }
   const parts = [
@@ -127,29 +127,25 @@ export function effectiveness(
  *  move is to find out why rather than to change anything. */
 export function headroom(score: number | null, unmetThresholds: number, genericFindings: number): Headroom {
   const named = unmetThresholds + genericFindings;
-  if (score === null) {
-    return { points: null, named_changes: named,
-             verdict: "no score, so no distance from one — the round could not measure this plugin" };
+  const points = score === null ? null : Math.round((10 - score) * 100) / 100;
+  return { points, named_changes: named, state: headroomState(points, named) };
+}
+
+/** The one line of prose the second axis is worth, for a tool response that has room for it.
+ *
+ *  SEPARATE FROM THE STATE, because they are read by different things. The state is a closed
+ *  value a table can print and a query can group by; this is the sentence a person reads once.
+ *  Keeping them in one field is what made the state unusable. */
+export function headroomNote(h: Headroom): string {
+  if (h.state === HEADROOM.ABSENT) {
+    return "no score, so no distance from one — the round could not measure this plugin";
   }
-  const points = Math.round((10 - score) * 100) / 100;
-  // AT THE CEILING IS A REAL ANSWER. Zero actions is the correct outcome for a plugin that is
-  // working, and a flow that cannot say so pads its own report.
-  if (points <= 1 && named === 0) {
-    return { points, named_changes: 0, verdict: "at the ceiling — nothing identified to improve" };
+  if (h.state === HEADROOM.NONE) return `at the ceiling — ${h.points} points short, nothing named`;
+  if (h.state === HEADROOM.UNEXPLAINED) {
+    return `${h.points} points below the ceiling and nothing named. Nobody has said why this ` +
+           "scored short, so whether a change is needed is not established — the next move is " +
+           "to find out, not to change something";
   }
-  if (named === 0) {
-    return {
-      points, named_changes: 0,
-      verdict: `${points} points below the ceiling and NOTHING IDENTIFIED — this is not a ` +
-               "plugin to change, it is a measurement nobody has explained. The next move is " +
-               "to find out where those points went, not to fix something",
-    };
-  }
-  return {
-    points, named_changes: named,
-    verdict: `${points} points below the ceiling, with ${named} named change` +
-             `${named === 1 ? "" : "s"} available (${unmetThresholds} unmet threshold` +
-             `${unmetThresholds === 1 ? "" : "s"}, ${genericFindings} recorded finding` +
-             `${genericFindings === 1 ? "" : "s"})`,
-  };
+  return `${h.points} points below the ceiling, with ${h.named_changes} named change` +
+         `${h.named_changes === 1 ? "" : "s"} on the record`;
 }

@@ -79,6 +79,10 @@ export const EVAL_ALIAS: Record<string, string> = Object.freeze({
   plugin_judge: "round_judge",
   plugin_scores: "round_scores",
   plugin_finding_record: "finding_record",
+  // It recommended a verb from a closed set until 0.60.0, and the verb had one
+  // permanent answer — somebody installs a plugin on purpose and keeps it. What it
+  // does now is compute two axes and store them, so it is named for that.
+  round_recommend: "round_score",
 });
 /** The two skill renames (FR-37a). A different mechanism from the tool maps above — this one
  * is consumed wherever a `zz.event.step` value is resolved against a skill name, because that

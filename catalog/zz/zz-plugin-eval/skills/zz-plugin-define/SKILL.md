@@ -139,7 +139,7 @@ recorded **after** it. At the instant the line is applied, this round's control 
 so the line is false by construction whatever the truth is. Computing the figure would not have
 helped.
 
-The answer was not a better threshold. It was `round_recommend` refusing a round no control
+The answer was not a better threshold. It was `round_score` refusing a round no control
 names. **A rule enforced at the door needs no line, no figure and no judge — it is true by
 construction, and the ruler is shorter.** Before writing a threshold, ask whether the thing you
 want is a measurement or a rule. If a round could violate it and still finish, it is a

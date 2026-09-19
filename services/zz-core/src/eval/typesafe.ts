@@ -58,7 +58,12 @@ const BUDGET_MS = Number(process.env.TYPESAFE_BUDGET_MS || 100_000);
 const MAX_ATTEMPTS = Number(process.env.TYPESAFE_ATTEMPTS || 3);
 const BACKOFF_MS = 400;
 
-export interface ChoiceQuestion {
+// NOT EXPORTED ANY MORE, and kept rather than deleted. `choice` is one of the three primitives
+// the typed service offers and `ask()` still speaks it — what changed is that no tool on this
+// platform constructs one: round_score stopped asking for a recommendation when that question
+// turned out to have one permanent answer. The shape stays because it describes the SERVICE,
+// which did not change; the export goes because nothing builds one here.
+interface ChoiceQuestion {
   type: "choice";
   instructions: string;
   /** option -> what that option means. The model cannot answer outside these keys. */

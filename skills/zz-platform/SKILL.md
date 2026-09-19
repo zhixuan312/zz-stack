@@ -536,7 +536,7 @@ reading later can see one caused the other.
   | skills | `/core/mcp` | `skill_list` `skill_read` |
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `round_recommend` `finding_record` `finding_decide` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 

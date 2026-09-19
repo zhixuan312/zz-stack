@@ -62,7 +62,8 @@ const EVAL_INSTRUCTIONS =
   "read it against the building-block contract\n" +
   "  ruler_*    the three-step gate, in this order: read what a ruler is written from, record " +
   "the ruler, record the stakeholder's approval of it\n" +
-  "  round_*    score one version against the ruler in force, and read one round's marks back\n" +
+  "  round_*    score one version against the ruler in force, read one round's marks back, " +
+  "and conclude it: two axes, and no recommendation\n" +
   "  finding_*  record what a round concluded, and close each one when somebody applies " +
   "or rejects it\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +

@@ -27,6 +27,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { catalogEntries, isFlow, pluginName } from "@zz/catalog";
+import { band } from "@zz/contracts";
 import type { Express } from "express";
 
 import { PLATFORM_VERSION } from "../client-package.js";
@@ -214,34 +215,33 @@ export function mountCatalog(app: Express): void {
       // no reader of this page wants it on the wire.
       db.query(`select distinct on (pv.plugin_id)
                        p.name as plugin, pv.version,
-                       e.effectiveness, e.effectiveness_band,
-                       e.headroom_points, e.headroom_named,
-                       e.recommendation, e.recommendation_confidence,
+                       e.effectiveness, e.headroom_points, e.headroom_named, e.headroom_state,
                        e.initiative, e.team_slug,
                        to_char(e.started_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
                   from zz.eval e
                   join zz.plugin_version pv on pv.id = e.plugin_version_id
                   join zz.plugin p on p.id = pv.plugin_id
-                 where e.is_control is false and e.recommendation is not null
+                 where e.is_control is false and e.headroom_state is not null
                  order by pv.plugin_id, e.started_at desc`),
     ]);
 
-    /** The newest verdict per plugin, by name.
+    /** The newest scored round per plugin, by name.
      *
-     *  EVERY FIGURE IS NULLABLE AND THAT IS THE POINT. Migration 067 added the two axes and the
-     *  initiative link; every round taken before it has a recommendation and none of the rest,
-     *  and there is no backfill — inferring which initiative produced a round from its plugin
-     *  name and a date window is the attribution-through-an-absent-link that journal 0116 was
-     *  minted for. So an older round reads as "keep-and-change, score not recorded", which is
-     *  exactly what it is. */
+     *  THE INITIATIVE IS NULLABLE AND THAT IS THE POINT. Migration 067 added the link; rounds
+     *  taken before it have none, and there is no backfill — inferring which initiative
+     *  produced a round from its plugin name and a date window is the
+     *  attribution-through-an-absent-link that journal 0116 was minted for. Such a round reads
+     *  as a date with no report, which is exactly what it is. */
     const verdict = new Map(evaluated.rows.map((r) => [r.plugin as string, {
       version: r.version as string,
       effectiveness: r.effectiveness === null ? null : Number(r.effectiveness),
-      band: (r.effectiveness_band as string | null) || null,
+      // NAMED HERE, NOT READ FROM A COLUMN. The band is `band(score)` and the rule is in
+      // @zz/contracts, so the console and the report cannot print different words for one
+      // number — which is exactly what happened for one release while it was stored.
+      band: band(r.effectiveness === null ? null : Number(r.effectiveness)),
       headroomPoints: r.headroom_points === null ? null : Number(r.headroom_points),
       headroomNamed: r.headroom_named === null ? null : Number(r.headroom_named),
-      recommendation: r.recommendation as string,
-      confidence: r.recommendation_confidence === null ? null : Number(r.recommendation_confidence),
+      headroomState: r.headroom_state as string,
       // BOTH, OR NEITHER. zz.doc is keyed (team_slug, initiative): a slug with no team cannot
       // be addressed, and a link built from half of a key is a 404 waiting for a reader.
       initiative: r.initiative && r.team_slug

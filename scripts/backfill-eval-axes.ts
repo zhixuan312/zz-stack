@@ -1,5 +1,5 @@
 /**
- * Give the rounds that were scored before migration 067 the two axes they always implied.
+ * Give the rounds scored before the axes existed the two axes they always implied.
  *
  * WHAT IS BEING RECOVERED AND WHAT IS NOT. `round_recommend` has always computed effectiveness
  * and headroom from marks the round already stored, put them in front of the typed judge, and
@@ -35,15 +35,15 @@ if (!url) {
 const db = new pg.Pool({ connectionString: url });
 
 /** Every round that reached a verdict and has no score stored beside it. */
-const rounds = (await db.query<{ id: string; plugin: string; version: string; rec: string }>(`
-  select e.id::text as id, p.name as plugin, pv.version, e.recommendation as rec
+const rounds = (await db.query<{ id: string; plugin: string; version: string }>(`
+  select e.id::text as id, p.name as plugin, pv.version
     from zz.eval e
     join zz.plugin_version pv on pv.id = e.plugin_version_id
     join zz.plugin p on p.id = pv.plugin_id
-   where e.is_control is false and e.recommendation is not null and e.effectiveness is null
+   where e.is_control is false and e.headroom_state is null
    order by e.started_at`)).rows;
 
-console.log(`${rounds.length} round(s) with a verdict and no stored score\n`);
+console.log(`${rounds.length} round(s) with no stored axes\n`);
 
 for (const r of rounds) {
   // THE SAME THREE READS round_recommend makes, in the same shapes. Quantitative dimensions
@@ -100,17 +100,17 @@ for (const r of rounds) {
   const score = effectiveness(qualMean, met, quant.length, gap);
   const room = headroom(score.score, quant.length - met, Number(openFindings.n));
 
-  console.log(`${r.plugin} ${r.version}  ${r.rec}`);
+  console.log(`${r.plugin} ${r.version}`);
   console.log(`  effectiveness ${score.score ?? "—"}  (${score.band})`);
-  console.log(`  headroom      ${room.points ?? "—"} pts, ${room.named_changes} named`);
+  console.log(`  headroom      ${room.state} — ${room.points ?? "—"} pts, ${room.named_changes} named`);
   console.log(`  gap ${gap ?? "—"}${ctl ? "" : "  [pooled — no control names this round]"}`);
 
   if (WRITE) {
     await db.query(`
-      update zz.eval set effectiveness = $2, effectiveness_band = $3,
-                         headroom_points = $4, headroom_named = $5
+      update zz.eval set effectiveness = $2, headroom_points = $3,
+                         headroom_named = $4, headroom_state = $5
        where id = $1::uuid`,
-      [r.id, score.score, score.band, room.points, room.named_changes]);
+      [r.id, score.score, room.points, room.named_changes, room.state]);
   }
 }
 

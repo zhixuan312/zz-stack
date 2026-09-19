@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 0.9
+version: 1.0
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -61,7 +61,7 @@ worked. The strongest result the suite ever produced came from a prompt that typ
 own command, which is a way of asking whether text helps once you have already handed it over.
 
 **So a thin trace block is now a real constraint, not a fact to report and route around.** A
-plugin nobody has used cannot be judged on its runs. That is an honest `not-evaluable`, and the
+plugin nobody has used cannot be judged on its runs. That is an honest `not measured`, and the
 enum carries that word for exactly this. Two things soften it: a ruler whose subject is the
 **document** or the **initiative** reads artifacts rather than runs, and may have subjects when
 the trace history is thin; and `plugin_conform` answers from the catalog entry alone.

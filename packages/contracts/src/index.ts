@@ -18,6 +18,12 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
          FIXED_DOORS, DOORS_PRINTED, isDoor, NO_TOKEN_ONBOARDING, PLUGIN_ALIAS,
          resolveTool, resolveToolKey, resolveStep } from "./alias.js";
 
+// WHAT A SCORE MEANS, through the same one door. zz-core names the band when it recommends a
+// round and the gateway names it when the console asks — one rule, or the two drift and a
+// reader gets a different word from each.
+export { BANDS, NOT_MEASURABLE, band,
+         HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
+
 /**
  * The frontmatter block at the head of a document: `[0]` is the whole block including both
  * fences, `[1]` the lines between them.

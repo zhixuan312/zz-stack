@@ -33,6 +33,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.3] — 2026-09-19
+
+An initiative pair is shortened rather than lost, and a round names the judge that marked it.
+
+### Fixed
+
+- **An initiative subject scored nothing when both its documents were real.** The `initiative`
+  ruler subject hands a judge the beginning and the end of one initiative at once, and an
+  untruncated pair overran the typed judgement service's input window — it answered
+  `max_tokens_exceeded` and the subject was skipped, losing it rather than shortening it. Each
+  end now gets half of `ZZ_JUDGE_PAIR_CAP`, and a cut is announced in the text the judge reads
+  as well as counted in the stored `truncated`. Truncating the concatenation from the end would
+  have fed the whole beginning and none of the conclusion, which is the one comparison that
+  subject exists to make.
+- **A round marked by the typed judge reported the reading model's name.** `round_judge`
+  returned `judge: JUDGE_MODEL` unconditionally. Marks from two judges are two scales, and a
+  round that misreports which one produced it makes that distinction unreadable from the record.
+
+### Upgrade notes
+
+- `ZZ_JUDGE_PAIR_CAP` is new and optional; it defaults to 24000 characters and only affects
+  rounds whose ruler takes `initiative` as its subject. A judgement service with a larger window
+  is the same contract with a different number.
+
 ## [0.52.2] — 2026-09-19
 
 A parameter the statement stopped naming, and the check that now watches for it.

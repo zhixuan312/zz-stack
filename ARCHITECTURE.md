@@ -118,9 +118,14 @@ where programs are compiled. That was `ladder-stats`, `ladder-compare` and `ladd
 
 No source file in either repository is over 700 lines, and the gate refuses one that is. The
 number is measured rather than chosen: 700 is the line above which every file here held a
-whole second subject, while `judge.ts` at 627 lines with three exports is genuinely one. There
-is **no exemption list** — a list of files allowed to be large is a list nobody prunes, so a
-file that cannot come down under 700 is a signal about that file, not a case to be excused.
+whole second subject. `judge.ts` has twice been the test of that. It crossed the line when a
+second subject kind arrived and again when an initiative pair had to be truncated, and both
+times the thing that came out was a whole separate question — what a plugin's subjects ARE
+(`plugin-judge.ts`), and what a run looks like to somebody marking it (`judge-trace.ts`).
+What stays is the round: the pinned judge, the prompt, the loop that marks one subject and
+stores what came back. There is **no exemption list** — a list of files allowed to be large is
+a list nobody prunes, so a file that cannot come down under 700 is a signal about that file,
+not a case to be excused.
 
 The ceiling says a file is too big. It does not say where to cut, and a cut made to hit a
 number produces fragments. Every subtree below therefore has a stated boundary rule, and the

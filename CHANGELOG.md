@@ -33,6 +33,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.60.0] — 2026-09-19
+
+**An evaluation stops telling you what to do, and says what it found.**
+
+A round used to end in a word from a closed set — `keep`, `keep-and-change`, `re-run`,
+`not-evaluable`, `retire`. That question has one permanent answer: somebody installs a plugin
+for a reason and they keep it. `retire` was advice nobody takes, `keep` was information
+nobody needed, and the middle three were the second axis wearing a decision's clothes — which
+is how a report came to carry a verb in the place a reader was looking for a measurement. The
+recommendation is gone. What `re-run` and `not-evaluable` really carried, "this round
+produced no usable measurement", was always `effectiveness is null` and still is.
+
+**The bands were asserting things a score cannot establish.** "Working, with a defect worth
+fixing" claims a defect exists; "underperforming, improvement available" claims a remedy
+does. A 7.06 says the marks came in below the top of the scale and says nothing about why —
+the cause might be a defect, a harsh ruler, or something nobody can do anything about.
+Whether there is anything to DO is the other axis, which is independent by design and has a
+whole branch for scoring low with nothing identified. The bands now describe the measurement
+and stop:
+
+> `working well` · `working` · `working poorly` · `not working` · `not measurable`
+
+**The second axis gets the vocabulary it never had.** It reported a distance and a count and
+a paragraph of prose. It now reports one of four states, and promises nothing about
+fixability:
+
+> `no change needed` · `change identified` · `unexplained gap` · `not measured`
+
+The spine is a boolean — a change is needed or it is not. The other two are the cases where
+that question has no answer yet, and folding either into the boolean would report "we do not
+know" as "nothing is needed". `no change needed` is affirmative on purpose: it says the
+plugin needs nothing, which is a finding rather than an absence.
+
+**`effectiveness_band` is no longer stored.** It lasted one release, and that release proved
+why it should not exist: the moment the vocabulary changed, every stored caption was wrong
+while every stored score was still right. A label computed from a column in the same row is a
+cache, not a fact. Both vocabularies now live in one place that zz-core and the gateway share,
+so the console and the report cannot print different words for the same number.
+
+**`round_recommend` is now `round_score`,** because it recommends nothing. It computes both
+axes, records them, and asks the typed judge the one thing the marks cannot answer — how
+strong the body of evidence is. The old name still resolves.
+
+**Reports approved before this release keep their own words.** They say "Recommendation —
+`keep-and-change`" and carry the band vocabulary of the day they were written. They were true
+under the rule in force when somebody signed them, and a closed report is not rewritten to
+match a renamed constant.
+
 ## [0.59.0] — 2026-09-19
 
 **A score is now a thing the platform keeps, and it says which initiative produced it.**

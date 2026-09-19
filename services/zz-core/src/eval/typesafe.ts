@@ -29,6 +29,7 @@
  * produce a REPORT because a third party is down is a dependency nobody agreed to.
  */
 import { Refusal } from "../refusal.js";
+import { db } from "../platform-db.js";
 
 /** Where the service lives. Overridable, because a self-hosted endpoint is the same contract. */
 const BASE = (process.env.TYPESAFE_BASE_URL || "https://api.typesafe.ai").replace(/\/+$/, "");
@@ -40,6 +41,22 @@ const MODEL = () => (process.env.TYPESAFE_MODEL || "jev-latest").trim();
  *  "adding questions barely changes the response time", so a per-dimension call would pay the
  *  round trip N times for nothing. */
 const TIMEOUT_MS = Number(process.env.TYPESAFE_TIMEOUT_MS || 60_000);
+/** HOW LONG THE WHOLE ASK MAY TAKE, retries included.
+ *
+ *  A TIMEOUT MUST NOT LOSE AN ANSWER, which is what one attempt with a hard deadline does. A
+ *  slow call and a dead endpoint are different facts and a single `AbortError` reported them
+ *  identically: the subject was skipped, and a round paid for the prompt twice to learn the
+ *  same thing. Retries make a transient slow call cost latency instead of a subject.
+ *
+ *  BOUNDED, BECAUSE THE REQUEST CARRYING IT IS. Something between this tool and its caller
+ *  closes an MCP request at about two minutes, so an unbounded wait does not become patience —
+ *  it becomes a tool that returns nothing at all, which is strictly worse than one that says it
+ *  ran out of time. 100 seconds leaves room for the caller to report what happened. */
+const BUDGET_MS = Number(process.env.TYPESAFE_BUDGET_MS || 100_000);
+/** Attempts, and why backoff is short. A timeout here is a slow model rather than a rate limit,
+ *  and the budget above is the real constraint — a long sleep spends it without asking anything. */
+const MAX_ATTEMPTS = Number(process.env.TYPESAFE_ATTEMPTS || 3);
+const BACKOFF_MS = 400;
 
 export interface ChoiceQuestion {
   type: "choice";
@@ -98,44 +115,123 @@ export async function ask(
   state: string, questions: Record<string, Question>,
 ): Promise<Record<string, Answer>> {
   if (!configured()) throw new Refusal(`ERROR: ${NOT_CONFIGURED}`);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(`${BASE}/v1/systemone`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${KEY()}` },
-      body: JSON.stringify({ model: MODEL(), state, questions }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      // The status and the first of the body, which is where this service puts its reason.
-      // NOT the whole body: an error page is megabytes and this text reaches a document.
-      const detail = (await res.text().catch(() => "")).slice(0, 300).replace(/\s+/g, " ").trim();
+  const began = Date.now();
+  let attempt = 0;
+  let lastWhy = "";
+  // RETRY ONLY WHAT RETRYING CAN FIX. A timeout, a transport failure and a 5xx are the endpoint
+  // having a bad moment; a 4xx is this caller sending something wrong, and asking again with the
+  // same body spends the budget to be told the same thing. A partial answer set is the same
+  // class -- the questions did not change between attempts.
+  for (;;) {
+    attempt += 1;
+    const left = BUDGET_MS - (Date.now() - began);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(TIMEOUT_MS, Math.max(left, 1)));
+    const started = Date.now();
+    try {
+      const res = await fetch(`${BASE}/v1/systemone`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${KEY()}` },
+        body: JSON.stringify({ model: MODEL(), state, questions }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        // The status and the first of the body, which is where this service puts its reason.
+        // NOT the whole body: an error page is megabytes and this text reaches a document.
+        const detail = (await res.text().catch(() => "")).slice(0, 300).replace(/\s+/g, " ").trim();
+        lastWhy = `answered ${res.status}${detail ? ` — ${detail}` : ""}`;
+        if (res.status >= 500 && attempt < MAX_ATTEMPTS && BUDGET_MS - (Date.now() - began) > TIMEOUT_MS / 2) {
+          await new Promise((r) => setTimeout(r, BACKOFF_MS * attempt));
+          continue;
+        }
+        await record(attempt, Date.now() - started, false, null, lastWhy);
+        throw new Refusal(
+          `ERROR: the typed-judgement service ${lastWhy}. Nothing was scored from it.`);
+      }
+      const body = await res.json() as { answers?: Record<string, Answer>; usage?: TypedUsage };
+      const answers = body.answers ?? {};
+      // EVERY QUESTION ANSWERED, or the set is not usable. A partial answer would silently drop
+      // a dimension and leave a round that looks complete and is one mark short.
+      const missing = Object.keys(questions).filter((k) => !answers[k]);
+      if (missing.length) {
+        lastWhy = `answered ${Object.keys(answers).length} of ${Object.keys(questions).length} ` +
+                  `questions — missing ${missing.join(", ")}`;
+        await record(attempt, Date.now() - started, false, null, lastWhy);
+        throw new Refusal(
+          `ERROR: the typed-judgement service ${lastWhy}. A partial set would leave a round one ` +
+          "mark short and looking complete.");
+      }
+      await record(attempt, Date.now() - started, true, meanConfidence(answers), null, body.usage);
+      return answers;
+    } catch (err) {
+      clearTimeout(timer);
+      if (err instanceof Refusal) throw err;
+      const aborted = err instanceof Error && err.name === "AbortError";
+      lastWhy = aborted
+        ? `did not answer within ${Math.round(Math.min(TIMEOUT_MS, BUDGET_MS) / 1000)}s`
+        : `could not be reached — ${err instanceof Error ? err.message : String(err)}`;
+      const budgetLeft = BUDGET_MS - (Date.now() - began);
+      if (attempt < MAX_ATTEMPTS && budgetLeft > TIMEOUT_MS / 2) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS * attempt));
+        continue;
+      }
+      await record(attempt, Date.now() - started, false, null, lastWhy);
       throw new Refusal(
-        `ERROR: the typed-judgement service answered ${res.status}` +
-        `${detail ? ` — ${detail}` : ""}. Nothing was scored from it.`);
+        `ERROR: the typed-judgement service ${lastWhy}, after ${attempt} attempt` +
+        `${attempt === 1 ? "" : "s"} in ${Math.round((Date.now() - began) / 1000)}s. ` +
+        "Nothing was scored from it.");
+    } finally {
+      clearTimeout(timer);
     }
-    const body = await res.json() as { answers?: Record<string, Answer> };
-    const answers = body.answers ?? {};
-    // EVERY QUESTION ANSWERED, or the set is not usable. A partial answer would silently drop
-    // a dimension and leave a round that looks complete and is one mark short.
-    const missing = Object.keys(questions).filter((k) => !answers[k]);
-    if (missing.length) {
-      throw new Refusal(
-        `ERROR: the typed-judgement service answered ${Object.keys(answers).length} of ` +
-        `${Object.keys(questions).length} questions — missing ${missing.join(", ")}. ` +
-        "A partial set would leave a round one mark short and looking complete.");
-    }
-    return answers;
-  } catch (err) {
-    if (err instanceof Refusal) throw err;
-    const why = err instanceof Error && err.name === "AbortError"
-      ? `did not answer within ${Math.round(TIMEOUT_MS / 1000)}s`
-      : `could not be reached — ${err instanceof Error ? err.message : String(err)}`;
-    throw new Refusal(`ERROR: the typed-judgement service ${why}. Nothing was scored from it.`);
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+interface TypedUsage { input_tokens?: unknown; output_tokens?: unknown }
+
+/** HOW SURE THE SERVICE WAS, averaged across the answers in one call.
+ *
+ *  CONFUSION IS A MEASUREMENT, NOT AN ERROR. A set of answers at 0.96 and one at 0.11 are
+ *  different evidence wearing the same shape, and until this was recorded the difference was
+ *  visible only to whoever happened to read that one report. A run of low-confidence calls is a
+ *  ruler that has stopped discriminating, and it should be readable as a trend.
+ *
+ *  `noul` carries no confidence of its own -- for a yes/no the probability IS the shape of the
+ *  distribution -- so its distance from the 0.5 cut, doubled, stands in for one on the same
+ *  scale the other primitives report. */
+function meanConfidence(answers: Record<string, Answer>): number | null {
+  const vals = Object.values(answers).map((a) =>
+    a.type === "noul" ? Math.abs(a.noul - 0.5) * 2 : a.confidence);
+  const real = vals.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  return real.length ? Math.round((real.reduce((x, y) => x + y, 0) / real.length) * 100) / 100 : null;
+}
+
+/** One row per call, in the table the reading judge already writes to.
+ *
+ *  THE TYPED SERVICE WROTE NOTHING UNTIL NOW, while making every typed decision on this
+ *  platform. Twelve rounds of evidence existed with no record that the calls behind them
+ *  happened, how long they took, or whether any had to be retried.
+ *
+ *  NEVER THROWS. This is bookkeeping beside an answer that is already in hand; a database
+ *  hiccup must not turn a successful judgement into a lost one. That is the opposite of the
+ *  rule next door in judge.ts, where the insert shares a pool the round needs anyway -- here
+ *  the round has its answer and losing it to record-keeping would be the worse trade. */
+async function record(
+  attempts: number, durationMs: number, ok: boolean,
+  confidence: number | null, note: string | null, usage?: TypedUsage,
+): Promise<void> {
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  try {
+    const p = db();
+    if (!p) return;
+    await p.query(`
+      insert into zz.model_call
+        (plugin, purpose, model, input_tokens, output_tokens, duration_ms, ok, attempts,
+         confidence, note)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [null, "typed-judge", `typesafe/${MODEL()}`, num(usage?.input_tokens),
+       num(usage?.output_tokens), durationMs, ok, attempts, confidence,
+       note ? note.slice(0, 500) : null]);
+  } catch { /* bookkeeping never costs an answer — see above */ }
 }
 
 /** A score's position expressed on the platform's own 1-N scale.

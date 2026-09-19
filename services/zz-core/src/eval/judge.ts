@@ -158,6 +158,13 @@ export async function ask(p: pg.Pool, plugin: string | null,
       // longer than the answer could be delivered — and no point stopping earlier either,
       // which 95 seconds did: a control that needed a hundred was abandoned three times with
       // twenty-five seconds of the window unused.
+      //
+      // NO RETRY HERE, unlike the typed client next door, and the asymmetry is deliberate. This
+      // path answers one subject per call and a subject that times out is reported skipped:
+      // `remaining` does not move and the caller's next call retries it with a FRESH budget,
+      // which is a better retry than one squeezed inside a window already nearly spent. The
+      // typed client has no such resume -- its whole ruler rides in one request -- so it retries
+      // internally.
       signal: AbortSignal.timeout(110_000),
       body: JSON.stringify({
         // The model as the ENDPOINT knows it. JUDGE_MODEL carries the mode as well, because a

@@ -65,7 +65,8 @@ interface PluginTraces {
    *  Without it the question had to be put to a judge reading markdown, which answered a
    *  different question confidently: a fix that took `evidence` from 0 documents to 64 moved
    *  the mark DOWN, because the judge never sees a column. */
-  record: { documents: number; revised: number; revised_with_evidence: number } | null;
+  record: { documents: number; revised: number; revised_with_evidence: number;
+            patched: number; patched_with_evidence: number } | null;
   /** Which window `use` and `never_called` were counted over — a door plugin's whole recorded
    *  history, or this version's own runs. They answer different questions and the figures are
    *  not comparable between them. */
@@ -282,20 +283,36 @@ export async function pluginTraces(
   // question is about. A document written once has no version change to justify and counting it
   // would bury the ones that do.
   const rec = servesOwnDoor
-    ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string }>(`
+    ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string;
+                          patched: string; patched_with_evidence: string }>(`
         with live as (select * from zz.doc d where d.path not like '\\_versions/%'),
         rev as (select l.evidence,
                        exists (select 1 from zz.doc v
                                 where v.team_slug = l.team_slug and v.initiative = l.initiative
-                                  and v.path like '\\_versions/%' || replace(l.path, '.md', '') || '.v%') as revised
+                                  and v.path like '\\_versions/%' || replace(l.path, '.md', '') || '.v%') as revised,
+                       exists (select 1 from zz.event e
+                                where e.kind = 'tool_call' and e.ok is not false
+                                  and split_part(coalesce(e.tool_key, e.subject), ':', 2) = 'document_patch'
+                                  and e.initiative = l.initiative and e.team_slug = l.team_slug) as patched
                   from live l)
         select count(*)::text as documents,
                count(*) filter (where revised)::text as revised,
                count(*) filter (where revised and coalesce(array_length(evidence,1),0) > 0)::text
-                 as revised_with_evidence
+                 as revised_with_evidence,
+               -- WHICH TOOL LAST TOUCHED IT, because the two carry different obligations.
+               -- document_revise REFUSES a version naming no cause; document_patch edits the
+               -- body and requires none. If the documents without evidence are the patched
+               -- ones, the gap is a missing obligation on one tool rather than a rule nobody
+               -- follows -- and those are different fixes.
+               count(*) filter (where revised and patched)::text as patched,
+               count(*) filter (where revised and patched
+                                  and coalesce(array_length(evidence,1),0) > 0)::text
+                 as patched_with_evidence
           from rev`)).rows.map((r) => ({
             documents: Number(r.documents), revised: Number(r.revised),
-            revised_with_evidence: Number(r.revised_with_evidence) }))[0] ?? null
+            revised_with_evidence: Number(r.revised_with_evidence),
+            patched: Number(r.patched),
+            patched_with_evidence: Number(r.patched_with_evidence) }))[0] ?? null
     : null;
 
   return {

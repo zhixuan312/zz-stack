@@ -30,7 +30,7 @@ exactly — they are the method; this file is only the door.
 
 ### zz-plugin-eval (v0.52.15)
 
-**When:** Someone asks whether a plugin is any good, whether installing it beats not installing it, whether a flow recovers when a stage goes wrong, or whether a tool its skills name is ever actually called — and whenever a plugin is up for keeping, changing or retiring. This is the entry point: start here...
+**When:** Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exi...
 
 **Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its
 `name` argument; then call it again passing `zz-plugin-eval`. Both are MCP tools

@@ -1,8 +1,8 @@
 ---
 name: zz-access
-version: 2.4
-description: "Getting a person connected and keeping them connected: their platform access token, and the setup for whichever client they work in (Claude Code). Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
-when_to_use: "Someone asks how to connect a tool to the platform, wants a token, lost a token, suspects one leaked, or asks what access they have."
+version: 2.5
+description: "Your platform access token and your client setup — issuing one, replacing one, and revoking one fast when it is exposed. Reach for this whenever a credential has leaked, been shown on a screen share or in a recording, been committed, or is suspected compromised and needs killing before anything else; also when a tool will not authenticate, a call returns 401, or somebody asks what access they have. Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
+when_to_use: "A credential is exposed, leaked, committed or visible in a recording and has to be revoked. A tool will not connect or answers 401. Someone wants a token, lost one, or asks what access they have. Load it on the INCIDENT, not only when somebody names the platform — a person whose key just leaked describes what happened to them, not which tool they need."
 ---
 
 # zz-access

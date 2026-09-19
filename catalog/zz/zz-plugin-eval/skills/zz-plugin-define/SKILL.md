@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 1.0
+version: 1.1
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into rulers.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.md, which is gated — judging does not start until somebody approves it."
 ---
@@ -66,6 +66,45 @@ the whole design: **facts from the tool, the line from you.**
 later to make a result come out differently, and nobody would be able to tell. `ruler_affirm`
 refuses a quantitative dimension whose threshold is empty; nothing but this document refuses one
 whose reason is empty, so refuse it yourself.
+
+## THE JUDGE IS HANDED THE ARTIFACT'S TEXT, AND NOTHING ELSE
+
+Before you write a qualitative dimension, name the artifact the judge will read — a document's
+markdown, a run's transcript, both ends of an initiative — and then ask: **is the answer IN
+that text?**
+
+If the answer lives in a row, a count, a status or a timestamp, **the dimension is quantitative**
+and a qualitative one will measure something other than its own name.
+
+This was paid for. A ruler carried "a version change was caused by evidence" as a qualitative
+dimension and it scored 3.14. The report proposed one change — make `zz.doc.evidence` carry the
+document's cause — and said it expected the mark to rise. The change shipped and worked: 0
+documents to 64, verified by query. **The mark went DOWN, to 2.85.** The judge reads markdown
+and never sees a column, so no change to the record could have moved it. Rewritten as a
+threshold over the same figure, the question became answerable and returned a real finding.
+
+Removing it also raised **both** remaining qualitative dimensions and widened the judge-on-trial
+gap, with no change to the plugin. A dimension the judge cannot answer does not merely fail to
+measure — its noise spreads into the ones beside it.
+
+## STATE THE ARITHMETIC, DO NOT MAKE THE JUDGE DO IT
+
+A threshold is read by a judgement service that answers a probability. Give it a comparison it
+can make directly.
+
+❌ `at most one third of the tools this plugin's skills name appear in never_called, counted
+over every call recorded on its own door, across all versions`
+✅ `the count of never_called is at most a third of tools_named_count`
+
+Both describe the same line. The first came back at **80% with confidence 0.60** — the service
+reporting that it was not sure, because clearing it means working a fraction of a count out of
+a sentence. The two sharp lines in the same round answered **3%** and **96%**. **A vague
+threshold reports its own vagueness**, which is useful, and is not what you want the round to
+spend its certainty on.
+
+Name the two fields the comparison is between, and let the sheet supply both numbers. Do not
+write either figure into the threshold itself — a ruler carrying today's count is a ruler that
+is wrong after the next release.
 
 ## The threshold is written before any artifact is scored
 

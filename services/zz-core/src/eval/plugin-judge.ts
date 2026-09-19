@@ -116,6 +116,9 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
       ? { ...figures.record,
           revised_with_evidence_pct: figures.record.revised
             ? Math.round(1000 * Number(figures.record.revised_with_evidence) / Number(figures.record.revised)) / 10
+            : null,
+          patched_with_evidence_pct: figures.record.patched
+            ? Math.round(1000 * Number(figures.record.patched_with_evidence) / Number(figures.record.patched)) / 10
             : null }
       : null,
     traces: { ...figures, initiatives_with_a_path: stage_paths.length },

@@ -1,6 +1,6 @@
 ---
 name: "connect"
-description: "Getting a person connected and keeping them connected: their platform access token, and the setup for whichever client they work in (Claude Code). Everything here is about the person in front of you; administering other people is the zz-admin skill, on the same door."
+description: "Your platform access token and your client setup — issuing one, replacing one, and revoking one fast when it is exposed. Reach for this whenever a credential has leaked, been shown on a screen share or in a recording, been committed, or is suspected compromised and needs killing before anything e..."
 when_to_use: "The person typed /zz-access:connect."
 disable-model-invocation: true
 ---

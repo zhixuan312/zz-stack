@@ -56,6 +56,16 @@ interface PluginTraces {
    *  half of fit no static check can see: reachability is a property of the package, use is a
    *  property of the runs. */
   never_called: string[];
+  /** THE RECORD THIS DOOR KEEPS, for a plugin that owns one. Null for a flow, which keeps no
+   *  record of its own -- it writes into somebody else's.
+   *
+   *  A ruler asking whether the platform's MECHANISM works -- are documents recorded as
+   *  designed, does a version change carry its cause -- is asking about rows, not prose, and a
+   *  threshold can only be drawn over a figure that is on the sheet. This is that figure.
+   *  Without it the question had to be put to a judge reading markdown, which answered a
+   *  different question confidently: a fix that took `evidence` from 0 documents to 64 moved
+   *  the mark DOWN, because the judge never sees a column. */
+  record: { documents: number; revised: number; revised_with_evidence: number } | null;
   /** Which window `use` and `never_called` were counted over — a door plugin's whole recorded
    *  history, or this version's own runs. They answer different questions and the figures are
    *  not comparable between them. */
@@ -266,6 +276,28 @@ export async function pluginTraces(
   // set is bare tool names, so compare on the half after the colon.
   const called = new Set(use.map((u) => u.tool.split(":").pop() ?? u.tool));
 
+  // A REVISED DOCUMENT IS ONE WITH A FROZEN COPY BESIDE IT. `_versions/<name>.v<N>.md` is
+  // written on the draft -> approved flip, so its presence is the platform's own record that
+  // this document has been through a version change -- which is the population the evidence
+  // question is about. A document written once has no version change to justify and counting it
+  // would bury the ones that do.
+  const rec = servesOwnDoor
+    ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string }>(`
+        with live as (select * from zz.doc d where d.path not like '\\_versions/%'),
+        rev as (select l.evidence,
+                       exists (select 1 from zz.doc v
+                                where v.team_slug = l.team_slug and v.initiative = l.initiative
+                                  and v.path like '\\_versions/%' || replace(l.path, '.md', '') || '.v%') as revised
+                  from live l)
+        select count(*)::text as documents,
+               count(*) filter (where revised)::text as revised,
+               count(*) filter (where revised and coalesce(array_length(evidence,1),0) > 0)::text
+                 as revised_with_evidence
+          from rev`)).rows.map((r) => ({
+            documents: Number(r.documents), revised: Number(r.revised),
+            revised_with_evidence: Number(r.revised_with_evidence) }))[0] ?? null
+    : null;
+
   return {
     runs,
     usable_runs: usable,
@@ -287,6 +319,7 @@ export async function pluginTraces(
     unplaced: [...unplacedCount].map(([step, count]) => ({ step, count })).sort((a, b) => b.count - a.count),
     use,
     never_called: reachable.filter((t) => !called.has(t)).sort(),
+    record: rec,
     use_window: servesOwnDoor
       ? `every call recorded on this plugin's own door, across all its versions`
       : `the tool calls inside runs of this version's own skills`,

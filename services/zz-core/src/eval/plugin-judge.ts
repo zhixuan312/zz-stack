@@ -109,6 +109,15 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
                    ours: a.ours + u.ours, theirs: a.theirs + u.theirs,
                    unattributed: a.unattributed + u.unattributed }),
       { total: 0, guardrail: 0, ours: 0, theirs: 0, unattributed: 0 }),
+    // THE RECORD, ON THE SHEET. A threshold over rows needs the rows counted here; asking a
+    // judge that reads markdown about the contents of a database column is how a dimension
+    // comes to measure something other than what it is named for.
+    record: figures.record
+      ? { ...figures.record,
+          revised_with_evidence_pct: figures.record.revised
+            ? Math.round(1000 * Number(figures.record.revised_with_evidence) / Number(figures.record.revised)) / 10
+            : null }
+      : null,
     traces: { ...figures, initiatives_with_a_path: stage_paths.length },
     cases,
   }, null, 2);

@@ -237,9 +237,26 @@ export function registerPluginEvalTools(server: McpServer): void {
         // `sufficient_for_judging: false` was the whole answer, and a boolean is not an
         // instruction. This says which command, with which arguments, and what to do with its
         // output — so the next step is in the answer rather than in somebody's memory of the
-        // skill. It is null when there is enough evidence, because a next action nobody needs
-        // is noise on every profile that is already fine.
-        next_action: enough ? null : {
+        // skill.
+        //
+        // AND IT IS NEVER NULL, WHICH IT USED TO BE WHENEVER THE EVIDENCE WAS ENOUGH. The
+        // reasoning was that a next action nobody needs is noise on a profile that is already
+        // fine. What it actually did was END THE CHAIN: a caller following `next_action` from
+        // plugin_locate onwards arrived here, got null, and went to the ruler from memory of
+        // the skill. `plugin_conform` is named by this stage's skill and has NEVER been called
+        // — not once in four complete evaluations of four different plugins, including by the
+        // agent that wrote this comment, four times in one day. It is not that anybody decided
+        // it was unnecessary. It was simply never in the chain, and the chain is what gets
+        // followed.
+        next_action: enough ? {
+          action: "read_the_contract_then_define",
+          why: "the evidence is enough to judge against, so this stage's remaining question is " +
+               "the one plugin_conform answers: does the package hold to the building-block " +
+               "contract it is shipped under. It reads the catalog entry and calls no model.",
+          run: `plugin_conform(plugin: "${plugin}", version: "${version}")`,
+          then: `ruler_read(plugin: "${plugin}", version: "${version}") — everything the ruler ` +
+                "is written FROM, which is the define stage's input",
+        } : {
           action: "record_a_suite_run",
           why: cases.reason
             ? `no case evidence: ${cases.reason}`

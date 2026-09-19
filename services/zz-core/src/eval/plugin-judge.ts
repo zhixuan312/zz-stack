@@ -32,6 +32,7 @@ import { z } from "zod";
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
 import { stageDocsOf, usageDocs, usageInitiatives, usageRuns } from "./plugin-subjects.js";
 import { Dim, MarkItem, Marking, Subject, markAll } from "./judge.js";
+import { effectiveness, headroom } from "./judge-score.js";
 import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
 import { pluginTraces } from "./plugin-profile.js";
@@ -639,8 +640,37 @@ export function registerPluginJudgeTools(server: McpServer): void {
                                         proposed_change: string; decision: string }>(`
         select pattern, scope, docs_affected, proposed_change, decision
           from zz.eval_finding where eval_id = $1::uuid order by created_at`, [eval_id])).rows;
+      // THE TWO NUMBERS A PERSON ACTUALLY ASKED FOR, computed here from what is already above.
+      //
+      // The recommendation enum is a DECISION and was being read as a MEASUREMENT. "Keep" does
+      // not say whether a plugin is excellent or barely adequate, and how-good-is-it and
+      // what-is-left-to-fix are independent: a plugin at 9 can still have a named change
+      // waiting, and one at 5 with nothing identified is a worse situation than one at 5 with
+      // three. See judge-score.ts for the weights and the bands, which are fixed before any
+      // round is read rather than fitted to one.
+      //
+      // THIS ROUND'S OWN FIGURES, not the pooled ones. `dimensions` above groups by rubric and
+      // judge across every round under this version, which is right for a series and wrong for
+      // scoring one round — a second round would otherwise be scored partly on the first.
+      const thisRound = dimensions.filter((d) => d.rubric === round.rubric && d.judge === round.judge);
+      const qualMean = thisRound.length
+        ? Math.round((thisRound.reduce((a, d) => a + Number(d.mean), 0) / thisRound.length) * 100) / 100
+        : null;
+      const mine = thresholds.filter((t) => t.round === eval_id);
+      const met = mine.filter((t) => t.score >= 5).length;
+      const gapNow = trial[0]?.real_mean && trial[0]?.control_mean
+        ? Number((Number(trial[0].real_mean) - Number(trial[0].control_mean)).toFixed(2)) : null;
+      const effective = effectiveness(qualMean, met, mine.length, gapNow);
+      const room = headroom(effective.score, mine.length - met,
+                            findings.filter((f) => f.scope === "generic").length);
+
       return json({
-        eval_id, round, dimensions,
+        eval_id, round,
+        // FIRST IN THE ANSWER, because it is the first question. Everything below is what it
+        // was computed from, in the order somebody would check it.
+        effectiveness: effective,
+        headroom: room,
+        dimensions,
         judge_on_trial: trial.map((t) => ({
           ...t,
           gap: t.real_mean && t.control_mean

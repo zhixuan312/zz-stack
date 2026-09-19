@@ -27,6 +27,7 @@ import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
 import { ask, configured, NOT_CONFIGURED, type ChoiceQuestion, type ScoreQuestion } from "./typesafe.js";
+import { effectiveness, headroom } from "./judge-score.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing can be recorded");
@@ -319,9 +320,29 @@ export function registerPluginRecordTools(server: McpServer): void {
 
       const gap = control?.real && control?.ctl
         ? Math.round((Number(control.real) - Number(control.ctl)) * 100) / 100 : null;
+      // THE SCORE GOES INTO THE STATE, so the enum is chosen knowing it.
+      //
+      // The word and the number answer different questions -- what to do, and how good it is --
+      // and they must not be derived independently or a report can carry "keep" beside a 4.2
+      // with nothing saying which to believe. The number is computed first, from figures no
+      // model touched; the enum is chosen after, with the number in front of it.
+      const qual = dims.filter((d) => d.kind === "qualitative");
+      const quant = dims.filter((d) => d.kind === "quantitative");
+      const qualMean = qual.length
+        ? Math.round((qual.reduce((a, d) => a + Number(d.mean), 0) / qual.length) * 100) / 100
+        : null;
+      const metCount = quant.filter((d) => Number(d.mean) >= 5).length;
+      const effective = effectiveness(qualMean, metCount, quant.length, gap);
+      const room = headroom(effective.score, quant.length - metCount,
+                            findings.filter((f) => f.scope === "generic").length);
+
       const state = [
         `Plugin under evaluation: ${round.plugin} ${round.version}, marked against rubric ` +
         `version ${round.rubric} by judge ${round.judge}.`,
+        effective.score === null
+          ? `Effectiveness: NOT MEASURABLE. ${effective.basis}`
+          : `Effectiveness: ${effective.score} out of 10 — "${effective.band}". ${effective.basis}.`,
+        `Room for improvement: ${room.verdict}.`,
         dims.length
           ? "Dimension results: " + dims.map((d) => `${d.dimension} (${d.kind}) mean ${d.mean} ` +
               `over ${d.n} mark(s)` + (d.confidence ? `, judge confidence ${d.confidence}` : "")).join("; ") + "."
@@ -394,6 +415,10 @@ export function registerPluginRecordTools(server: McpServer): void {
 
       return json({
         eval_id, plugin: round.plugin, version: round.version,
+        // THE NUMBER FIRST, THEN THE WORD. A reader asking "how good is it" gets an answer
+        // before a verb they would otherwise have to interpret.
+        effectiveness: effective,
+        headroom: room,
         recommendation: rec.choice,
         confidence: rec.confidence,
         probabilities: rec.probabilities,

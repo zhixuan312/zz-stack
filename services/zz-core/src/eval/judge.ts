@@ -84,11 +84,29 @@ const LLM_BASE = (process.env.LLM_BASE_URL || "").replace(/\/+$/, "");
 const LLM_KEY = process.env.LLM_API_KEY || "";
 
 /** The most of an INITIATIVE PAIR a judgement service is given, in characters, split evenly
- *  between the two ends. Measured against the live service: an untruncated pair of real
- *  documents answers `max_tokens_exceeded` and scores nothing at all, which loses the subject
- *  rather than shortening it. Overridable, because a service with a larger window is the same
- *  contract with a different number. */
-const PAIR_CAP = Number(process.env.ZZ_JUDGE_PAIR_CAP || 24_000);
+ *  between the two ends.
+ *
+ *  DERIVED FROM THE SERVICE'S MEASURED CEILING, not chosen for safety. It was 24,000 — a number
+ *  picked to stay clear of a `max_tokens_exceeded` that had lost a subject once, never measured
+ *  against what the service actually accepts. That caution cost more than it saved: across six
+ *  real initiatives it cut 210,702 characters, and the worst-marked subject in that round was
+ *  the one that lost 113,332 of them. A judge shown a third of an arc and asked whether the end
+ *  answers the beginning is being asked about an excerpt.
+ *
+ *  Three measurements against the live service settle it:
+ *    32,275 input tokens is accepted and ~36,400 is refused, so the ceiling is 32,768 (2^15).
+ *    Real documents run 3.01 characters per token -- a 42,531-character explore.md measured
+ *    14,117 tokens -- and NOT the ~5 a synthetic probe suggests, so a cap derived from repeated
+ *    words would have been wrong by two thirds.
+ *    The ruler's own text rides in the same request: three dimensions of five written levels,
+ *    plus instructions, and that has to fit too.
+ *
+ *  70,000 is what those leave. At a pathological 2.5 characters per token it is 28,000 tokens,
+ *  and 3,000 for the questions still clears 32,768. On the six initiatives above, four would
+ *  have been judged with NO truncation at all and a fifth with 8,231 characters cut instead of
+ *  54,231. Overridable, because a service with a larger window is the same contract with a
+ *  different number -- and the number is now one a re-measurement can move. */
+const PAIR_CAP = Number(process.env.ZZ_JUDGE_PAIR_CAP || 70_000);
 
 
 /** How many subjects one round judges, whatever the subject is.

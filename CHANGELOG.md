@@ -33,6 +33,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.55.1] — 2026-09-19
+
+The text catches up with two rules that changed under it.
+
+### Fixed
+
+- **`initiative_close` still said "Closed is not yet complete — one step remains".** Both halves
+  stopped being true in 0.55.0, and that sentence is what a person reads at the moment they
+  close something. It now says nothing is owed and offers the handover. `sdlc-flow`'s skill
+  carried the same claim and says the same thing now.
+- **Three surfaces still described the ablation suite removed in 0.54.0** — the `/eval` door
+  introduced itself as reading "what a recorded ablation says installing it is worth", README
+  described two kinds of evidence with their own sufficiency lines, and the console commented on
+  "the most recent ablation run". A door that describes a capability it does not serve is worse
+  than one that describes nothing: the reader believes the name is theirs to call.
+- **README's `evals/` entry described a directory the repository no longer has.** Replaced with
+  what is true: a round's findings live in the initiative it ran as, with the scores in the
+  platform's own tables.
+
 ## [0.55.0] — 2026-09-19
 
 The close is the end, and closing is a normal way for work to end.

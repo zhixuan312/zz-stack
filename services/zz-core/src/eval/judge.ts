@@ -34,6 +34,7 @@ import { configured as typedJudgeConfigured } from "./typesafe.js";
 import { markTyped } from "./judge-typed.js";
 import { applyThresholds } from "./judge-thresholds.js";
 import { traceOf } from "./judge-trace.js";
+import { pairOf } from "./judge-pair.js";
 
 /** The judge is NOT the platform's base model. The base model is what the flows' own agents
  *  run on, and judging with it would make the judge exactly as good as the thing being
@@ -82,14 +83,6 @@ const typedJudgeName = (): string =>
   `typesafe/${(process.env.TYPESAFE_MODEL || "jev-latest").trim()}`;
 const LLM_BASE = (process.env.LLM_BASE_URL || "").replace(/\/+$/, "");
 const LLM_KEY = process.env.LLM_API_KEY || "";
-
-/** The most of an INITIATIVE PAIR a judgement service is given, in characters, split evenly
- *  between the two ends. Measured against the live service: an untruncated pair of real
- *  documents answers `max_tokens_exceeded` and scores nothing at all, which loses the subject
- *  rather than shortening it. Overridable, because a service with a larger window is the same
- *  contract with a different number. */
-const PAIR_CAP = Number(process.env.ZZ_JUDGE_PAIR_CAP || 24_000);
-
 
 /** How many subjects one round judges, whatever the subject is.
  *
@@ -589,30 +582,10 @@ export async function markAll(
     let text = "", truncated = 0;
     if (controlText) { text = controlText.text; truncated = controlText.truncated; }
     else if (x.closePath) {
-      // BOTH ENDS, LABELLED. The judge is asked whether the second answers the first, so it
-      // has to be able to tell them apart — an unlabelled concatenation reads as one long
-      // document and the question becomes unanswerable.
-      // BOTH ENDS, AND NEITHER CROWDS THE OTHER OUT.
-      //
-      // Two real documents together run past what a judgement service will accept — measured:
-      // an explore-to-spec pair answered `max_tokens_exceeded` and scored nothing. Truncating
-      // the concatenation from the end would have fed the whole beginning and none of the
-      // conclusion, which is the one comparison this subject exists to make. So each end gets
-      // HALF the budget, and a cut is announced in the text the judge reads as well as counted
-      // in `truncated` — a judge that cannot see it was given an excerpt will mark it as
-      // though it were the whole.
-      const half = Math.floor(PAIR_CAP / 2);
-      const cut = (body: string): { text: string; lost: number } => body.length <= half
-        ? { text: body, lost: 0 }
-        : { text: `${body.slice(0, half)}\n\n[TRUNCATED: ${body.length - half} of ${body.length} characters not shown]`,
-            lost: body.length - half };
-      const a = cut(bodyOf(x.team, x.init, x.path) ?? "");
-      const b = cut(bodyOf(x.team, x.init, x.closePath) ?? "");
-      truncated = a.lost + b.lost;
-      text = a.text.trim() && b.text.trim()
-        ? `=== THE BEGINNING: ${x.init}/${x.path} ===\n\n${a.text}\n\n` +
-          `=== THE END: ${x.init}/${x.closePath} ===\n\n${b.text}`
-        : "";
+      const pair = pairOf(x.init, x.path, bodyOf(x.team, x.init, x.path),
+                          x.closePath, bodyOf(x.team, x.init, x.closePath));
+      text = pair.text;
+      truncated = pair.truncated;
     }
     else if (x.docId) text = bodyOf(x.team, x.init, x.path) ?? "";
     else if (x.runId) { const t = await traceOf(p, x.runId); text = t.text; truncated = t.truncated; }

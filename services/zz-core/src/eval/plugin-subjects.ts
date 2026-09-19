@@ -146,12 +146,20 @@ export async function usageRuns(p: pg.Pool, plugin: string, version: string) {
  * conclusion answers the brief was handed a stakeholder attachment and a spec, and marked them
  * 4.55. The manifest says which documents are this flow's: `stages[].produces`, in the order
  * the stages run, whenever it names a file rather than `source`, `record` or `nothing`. That
- * list arrives as `$3` and the join to it excludes everything else without naming any of it.
+ * list arrives as `$4` and the join to it excludes everything else without naming any of it.
  *
- * AND THE CLOSING DOCUMENT MUST BE THERE. `$4` is the last entry in that list, and an
- * initiative without it is not a subject. An initiative still in flight has no end, and
+ * AND THE CLOSING DOCUMENT MUST BE THERE AND APPROVED. `$5` is the last entry in that list,
+ * and an initiative without it is not a subject. An initiative still in flight has no end, and
  * feeding `explore.md -> spec.md` to a ruler that asks about DELIVERY marks the spec as though
- * it were the deliverable. */
+ * it were the deliverable.
+ *
+ * APPROVED, because PRESENT was not enough and the round that proved it is on the record. Six
+ * sdlc initiatives were judged on a written review.md whatever status it carried. Two of those
+ * reviews were drafts nobody had signed -- and they were the two LOWEST marks in the round,
+ * 1.7 and 2.9 against an approved-arc mean of 3.78. An initiative whose review was written and
+ * never signed has not finished its own gate, so judging it as a delivered arc measures the
+ * work's incompleteness rather than the plugin. That is the same error this file already
+ * refuses one step earlier, at the in-flight initiative, arriving one document later. */
 export async function usageInitiatives(
   p: pg.Pool, plugin: string, version: string, stageDocs: string[], flowName: string,
 ) {
@@ -183,6 +191,10 @@ export async function usageInitiatives(
                                                     join zz.plugin p on p.id = pv.plugin_id
                                                    where p.name = $1 and pv.version = $2)) as scored
       from ends e
+      -- SIGNED, not merely written. See the header: two unsigned reviews were the two lowest
+      -- marks in a round that treated them as delivered work.
+      join zz.doc cd on cd.team_slug = e.team_slug and cd.initiative = e.initiative
+                    and cd.path = e.close_path and cd.status = 'approved'
      where e.docs > 1 and e.close_path = $5
      order by e.initiative desc limit ${SUBJECT_CAP}`,
     [plugin, version, flowName, stageDocs, stageDocs[stageDocs.length - 1]])).rows;

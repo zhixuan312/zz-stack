@@ -28,7 +28,7 @@ const EXPECTED = new Set([
   "plugin_locate", "plugin_profile", "plugin_conform",
   "ruler_read", "ruler_record", "ruler_affirm",
   "round_judge", "round_scores", "round_recommend",
-  "finding_record",
+  "finding_record", "finding_decide",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

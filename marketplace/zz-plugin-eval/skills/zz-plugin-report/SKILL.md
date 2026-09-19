@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-report
-version: 1.1
+version: 1.2
 description: Stage 5 of plugin evaluation. Take the recommendation from the typed judge, read the scores back, and write findings.md — five sections, gated, and it closes the initiative.
 when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation."
 ---
@@ -119,6 +119,36 @@ can never be wrong, which means it was never a measurement.
 in this flow edits a plugin, and `finding_record` lands everything `deferred` for that reason. A
 change is **a repository edit and a release by whoever owns the plugin**. A recommendation that
 does not say so dead-ends in a document nobody can act from.
+
+## A FINDING STAYS OPEN UNTIL SOMEBODY CLOSES IT, AND OPEN MEANS IT COUNTS
+
+`round_recommend` reads **every finding still `deferred` on this plugin**, not just this round's,
+and headroom counts them. So the second round of any plugin inherits whatever the first one
+named and nobody acted on.
+
+That is correct and it has a cost: a finding that was quietly done, or quietly abandoned, keeps
+inflating the headroom of every later round. When this rule was written, in September 2026, every
+finding ever recorded was still `deferred` — the ledger had three values and only ever held
+one, because no tool could close a row.
+
+```
+finding_decide(decisions: [{ finding_id, decision: applied | rejected, note }])
+```
+
+`round_recommend` returns `open_changes`, each with its `finding_id` and the round that named
+it. **Before you write section 4, read that list.** For each carried-over finding, one of three
+things is true:
+
+- **it was done** — `applied`, and the note says what changed and where: a version, a file, a
+  release. The next round can check it.
+- **it will not be done** — `rejected`, and the note says why. A change nobody intends to make
+  is not headroom.
+- **it is still waiting** — leave it. It belongs in section 4 beside this round's own.
+
+A note is required for both real decisions, and `deferred` is refused as a decision: it is where
+a finding starts, so choosing it would be a decision that changed nothing while looking like one
+that did. Deciding is not this flow's call to make alone — `applied` and `rejected` are the
+plugin owner's judgement, so ask when you are not the owner.
 
 ## After the close comes the handover
 

@@ -68,6 +68,13 @@ export interface Dim {
   kind: string;
   threshold: string;
   threshold_reason: string;
+  /** THE FIGURE THE LINE IS DRAWN OVER, as dotted paths into the facts sheet — empty on a
+   *  qualitative dimension, which reads the artifact instead. It exists because a threshold
+   *  was prose and nothing checked that the figure it needs is one this platform computes: the
+   *  threshold pass answers NOT MET for a missing figure, so an unanswerable line comes back
+   *  FAILED and is indistinguishable afterwards from one the plugin really missed. Resolved at
+   *  ruler_record, and again before any round is marked. See plugin-facts.ts and journal 0143. */
+  reads: string[] | null;
 }
 
 /** WHAT THE PROVIDER SAID A CALL COST, read from the response's own `usage` block and from

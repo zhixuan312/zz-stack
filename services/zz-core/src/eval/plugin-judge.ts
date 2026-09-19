@@ -19,24 +19,21 @@
  * computed, and the line is written down BEFORE any artifact is measured — which is the only
  * thing standing between a ruler and a number chosen to flatter the result it will produce.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
-import { ARTIFACTS_DIR } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
+import { bodyOf, factObject, readsRefusal } from "./plugin-facts.js";
 import { stageDocsOf, usageDocs, usageInitiatives, usageRuns } from "./plugin-subjects.js";
 import { Dim, MarkItem, Marking, Subject, markAll } from "./judge.js";
 import { effectiveness, headroom } from "./judge-score.js";
 import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
 import { pluginTraces } from "./plugin-profile.js";
-import { sanitize, userRoot } from "../paths.js";
+import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -56,7 +53,7 @@ async function pluginRuler(p: pg.Pool, plugin: string, version: string) {
            -- judgement service is asked against described levels and cannot be asked against
            -- two ends and a number. Null on a ruler written before levels existed.
            d.levels,
-           d.kind, d.threshold, d.threshold_reason
+           d.kind, d.threshold, d.threshold_reason, d.reads
       from zz.plugin p
       join zz.plugin_version pv on pv.plugin_id = p.id
       join zz.rubric rb on rb.id = pv.rubric_id
@@ -65,64 +62,6 @@ async function pluginRuler(p: pg.Pool, plugin: string, version: string) {
      order by d.ordinal`, [plugin, version])).rows;
 }
 
-/** The document body, out of the artifact store. Resolved HERE and not passed in, which is what
- *  keeps the judge's input out of the conversation: the caller names a plugin and a version. */
-const bodyOf = (team: string, initiative: string, path: string): string | null => {
-  try {
-    const f = join(ARTIFACTS_DIR, "teams", sanitize(team), initiative, path);
-    return existsSync(f) ? readFileSync(f, "utf8") : null;
-  } catch { return null; }
-};
-
-/** Everything a threshold could be written against, as one sheet.
- *
- * THE WHOLE PROFILE MINUS THE STAGE PATHS. A threshold reads a figure — how many runs, how many
- * returns, how many named tools were never called, what the mean delta was — and stage_paths is
- * a per-initiative listing rather than a figure, so it is the one block that would spend the
- * budget without being able to answer anything. Everything else stays, because a fact sheet
- * trimmed to what somebody expected the thresholds to ask makes an unanswerable threshold look
- * like a failed one. */
-async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<string> {
-  const entry = entryOf(plugin);
-  const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
-  const { stage_paths, ...figures } = traces;
-  const named = toolsNamedBy(plugin);
-  return JSON.stringify({
-    plugin, version,
-    // THE DENOMINATOR, STATED. A threshold is routinely written as a share of "the tools this
-    // plugin's skills name" — and the sheet listed `never_called` and `use` but never that
-    // set, so the judge had to infer its size from the two and got it wrong: zz-core's ruler
-    // was read against 16 named tools on a plugin that names 15, because the one tool a run
-    // had called (`skill_read`) is not one this plugin's skills name and was added in anyway.
-    // A figure a threshold is measured against belongs on the sheet, not in the reader's head.
-    tools_named: named,
-    tools_named_count: named.length,
-    // THE TOTAL, ALONGSIDE THE PER-TOOL ROWS. A threshold over refusals is written as a SHARE
-    // -- at least half of them are the guardrail firing -- and a judge handed fifteen per-tool
-    // rows has to add four columns across all of them before it can read the line. It is the
-    // same argument as tools_named_count above: a figure a threshold is measured against
-    // belongs on the sheet rather than in the reader's arithmetic.
-    refusals: figures.use.reduce(
-      (a, u) => ({ total: a.total + u.refusals, guardrail: a.guardrail + u.guardrail,
-                   ours: a.ours + u.ours, theirs: a.theirs + u.theirs,
-                   unattributed: a.unattributed + u.unattributed }),
-      { total: 0, guardrail: 0, ours: 0, theirs: 0, unattributed: 0 }),
-    // THE RECORD, ON THE SHEET. A threshold over rows needs the rows counted here; asking a
-    // judge that reads markdown about the contents of a database column is how a dimension
-    // comes to measure something other than what it is named for.
-    record: figures.record
-      ? { ...figures.record,
-          revised_with_evidence_pct: figures.record.revised
-            ? Math.round(1000 * Number(figures.record.revised_with_evidence) / Number(figures.record.revised)) / 10
-            : null,
-          patched_with_evidence_pct: figures.record.patched
-            ? Math.round(1000 * Number(figures.record.patched_with_evidence) / Number(figures.record.patched)) / 10
-            : null }
-      : null,
-    traces: { ...figures, initiatives_with_a_path: stage_paths.length },
-  }, null, 2);
-}
 
 export function registerPluginJudgeTools(server: McpServer): void {
   server.registerTool(
@@ -214,8 +153,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
           "it. Scores taken under a ruler nobody approved are indistinguishable afterwards from " +
           "scores taken under one that was.");
       }
-      const dims = (await p.query<{ name: string; kind: string; threshold: string }>(
-        "select name, kind, threshold from zz.rubric_dimension where rubric_id = $1::uuid order by ordinal",
+      const dims = (await p.query<{ name: string; kind: string; threshold: string; reads: string[] | null }>(
+        "select name, kind, threshold, reads from zz.rubric_dimension where rubric_id = $1::uuid order by ordinal",
         [rows[0].rubric_id])).rows;
       const blank = dims.filter((d) => d.kind === "quantitative" && !d.threshold.trim());
       if (blank.length) {
@@ -227,6 +166,15 @@ export function registerPluginJudgeTools(server: McpServer): void {
           "sees any artifact — a blank one becomes a number somebody picks after seeing the " +
           "result, which nobody afterwards can tell from one they picked before. Fill in " +
           "`threshold` and `threshold_reason` for each, put the document back, and call again.");
+      }
+      // AND THE SAME CLAUSE AGAIN AT THE LAST GATE. ruler_record refuses a line that cannot
+      // reach its figure, so this catches only what changed in between — a ruler recorded
+      // before `reads` existed, or a sheet whose shape moved while the document was with the
+      // stakeholder. This is the last point before marks can be taken: a line that gets past
+      // here becomes a 1 in eval_score that nobody can distinguish from a real failure.
+      if (dims.some((d) => d.kind === "quantitative")) {
+        const refusal = readsRefusal(dims, await factObject(p, plugin, version));
+        if (refusal) return text(refusal);
       }
       const who = parseCaller(requestHeaders()).email;
       await p.query("update zz.plugin_version set rubric_id = $1::uuid where id = $2::uuid",
@@ -372,8 +320,35 @@ export function registerPluginJudgeTools(server: McpServer): void {
         // of purely qualitative dimensions has nothing to apply them to, and a CONTROL round
         // never runs the threshold pass at all — its dimensions read the version's own facts,
         // so scoring them on both arms would shrink the gap the control exists to measure.
-        const facts = !control && dims.some((d) => d.kind === "quantitative")
-          ? await factSheet(p, plugin, version) : null;
+        // THE SHEET IS BUILT ONCE AND CHECKED BEFORE IT IS USED.
+        //
+        // ruler_record already refused any line that could not reach its figure, so reaching
+        // this refusal means the SHEET changed under a ruler somebody had already affirmed —
+        // a profile block that stopped being computed, or a plugin whose door no longer writes
+        // documents so `record` came back null. Both are real and neither is visible from the
+        // ruler: the line still reads correctly and the figure behind it is gone.
+        //
+        // REFUSED BEFORE THE FIRST MARK, not reported after the last. A round that discovers
+        // this halfway has already paid for the qualitative pass and written rows nobody can
+        // use, and the natural next move — score it anyway and note the gap — is precisely how
+        // a line that measured nothing became a closed report's headline finding.
+        const sheet = !control && dims.some((d) => d.kind === "quantitative")
+          ? await factObject(p, plugin, version) : null;
+        if (sheet) {
+          const refusal = readsRefusal(dims, sheet);
+          if (refusal) {
+            // CONCATENATED, NEVER String.replace. The refusal carries a plugin's own ruler
+            // text, and `$&` or `$'` inside a replacement VALUE is read as a pattern — so a
+            // dimension named with a dollar sign would rewrite the message around itself.
+            return text(
+              `REFUSED: the ruler in force for ${plugin} ${version} can no longer be measured ` +
+              `against this version —${refusal.slice("REFUSED:".length)}` +
+              "\n\nThis ruler was affirmed when the figure existed. Record the dimension " +
+              "against a figure that is on the sheet today, or drop it, and affirm the ruler " +
+              "again before marking anything.");
+          }
+        }
+        const facts = sheet ? JSON.stringify(sheet, null, 2) : null;
 
         // WHAT THE CONTROL ACTUALLY READ, captured so the response can name it.
         //

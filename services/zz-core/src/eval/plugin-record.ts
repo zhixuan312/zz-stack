@@ -1,12 +1,20 @@
 /**
- * THE TWO TOOLS THAT WRITE DOWN WHAT A PERSON DECIDED.
+ * THE TOOLS THAT WRITE DOWN WHAT A PERSON DECIDED.
  *
  * Everything else in the plugin evaluation reads: it counts runs, reads a recorded delta, marks
- * artifacts against a ruler. These two are where a judgement made by somebody comes back into
- * the platform as a row — the ruler the define stage derived, and the findings the report stage
- * concluded. They are their own subject for that reason, and not because plugin-judge.ts got
+ * artifacts against a ruler. These are where a judgement made by somebody comes back into
+ * the platform as a row — the ruler the define stage derived, the findings the report stage
+ * concluded, what became of each of those findings, and the verdict the round ends on. They are
+ * their own subject for that reason, and not because plugin-judge.ts got
  * long: the tools there answer "what is true of this plugin", these answer "what did a person
  * decide about it", and the second is not a smaller version of the first.
+ *
+ * A DECISION THAT CANNOT BE CLOSED IS NOT A LEDGER. `finding_record` has always said that
+ * applying or rejecting a finding is "a separate act by whoever owns the plugin", and for as
+ * long as it said so no tool performed that act: eleven findings on this deployment, eleven
+ * `deferred`, none applied, none rejected. A column with three values that only ever holds one
+ * is a promise with nothing behind it — and once headroom counts every open finding, it is also
+ * a number that only ever grows.
  *
  * BOTH REFUSE INCOMPLETE INPUT, and for the same reason at both ends. A quantitative dimension
  * with no threshold, or a threshold with no stated reason, is a line somebody can move later
@@ -28,6 +36,7 @@ import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
 import { ask, configured, NOT_CONFIGURED, type ChoiceQuestion, type ScoreQuestion } from "./typesafe.js";
 import { effectiveness, headroom } from "./judge-score.js";
+import { factObject, readsRefusal } from "./plugin-facts.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing can be recorded");
@@ -43,8 +52,11 @@ export function registerPluginRecordTools(server: McpServer): void {
         "and RETURNS the dimensions as they now stand. Each dimension is qualitative (a reader " +
         "scores 1-5 between two written ends) or quantitative (a tool computes a fact and this " +
         "carries the line drawn over it, with the reason it was drawn there). REFUSES a " +
-        "quantitative dimension with no threshold. Re-recording replaces the dimensions of the " +
-        "ruler at the same rubric version.",
+        "quantitative dimension with no threshold, with no threshold_reason, or whose `reads` " +
+        "name a figure that is not on this plugin's facts sheet — a line that cannot reach " +
+        "its figure is scored FAILED rather than unanswered, which costs the plugin twice " +
+        "and is indistinguishable afterwards from a real miss. Re-recording replaces the " +
+        "dimensions of the ruler at the same rubric version.",
       inputSchema: {
         plugin: z.string(),
         version: z.string(),
@@ -64,6 +76,11 @@ export function registerPluginRecordTools(server: McpServer): void {
           one_means: z.string().optional(),
           threshold: z.string().optional(),
           threshold_reason: z.string().optional(),
+          /** WHICH FIGURE THE LINE IS DRAWN OVER, as dotted paths into the facts sheet
+           *  plugin_profile produces — `record.revised_with_evidence_pct`, `refusals.total`,
+           *  `traces.usable_runs`. Required on a quantitative dimension and resolved against
+           *  this plugin's own sheet before the ruler is written. */
+          reads: z.array(z.string()).optional(),
         })).min(1),
       },
     },
@@ -102,6 +119,20 @@ export function registerPluginRecordTools(server: McpServer): void {
         }
       }
       if (bad.length) return text(`REFUSED: ${bad.join("; ")}`);
+
+      // AND THE LINE HAS TO BE ABLE TO REACH ITS FIGURE — checked here, against this plugin's
+      // real sheet, while the ruler is still a draft nobody has agreed to.
+      //
+      // Refusing at judging time would be too late for the same reason the threshold checks
+      // above are here: by then the figures exist. But this one is worse than late, because
+      // judging time cannot refuse at all — `applyThresholds` answers NOT MET when the facts
+      // lack the figure a line needs, so an unanswerable line does not come back unanswered,
+      // it comes back FAILED, and the round proceeds to write a 1 into eval_score that nobody
+      // can afterwards distinguish from a line the plugin really missed. See journal 0143.
+      if (dimensions.some((d) => d.kind === "quantitative")) {
+        const refusal = readsRefusal(dimensions, await factObject(p, plugin, version));
+        if (refusal) return text(refusal);
+      }
 
       const pv = (await p.query<{ id: string; plugin_id: string }>(`
         select pv.id::text as id, p.id::text as plugin_id
@@ -157,17 +188,21 @@ export function registerPluginRecordTools(server: McpServer): void {
           await p.query(`
             update zz.rubric_dimension
                set five_means = $2, one_means = $3, ordinal = $4, kind = $5,
-                   threshold = $6, threshold_reason = $7, levels = $8::text[]
+                   threshold = $6, threshold_reason = $7, levels = $8::text[],
+                   reads = $9::text[]
              where id = $1::uuid`,
             [id, d.five_means ?? "", d.one_means ?? "", i,
-             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null]);
+             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null,
+             d.reads ?? []]);
         } else {
           await p.query(`
             insert into zz.rubric_dimension
-              (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason, levels)
-            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::text[])`,
+              (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason,
+               levels, reads)
+            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10::text[])`,
             [rubricId, d.name, d.five_means ?? "", d.one_means ?? "", i,
-             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null]);
+             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null,
+             d.reads ?? []]);
         }
       }
 
@@ -233,25 +268,105 @@ export function registerPluginRecordTools(server: McpServer): void {
           "it without the platform treating it as a claim about the plugin.");
       }
 
-      let stored = 0;
+      // THE IDS COME BACK, because a finding nobody can name is a finding nobody can close.
+      // `decision` has carried three values since it was written and held one: closing a
+      // finding is a separate act, and the act needs a handle to perform it on.
+      const stored: { id: string; scope: string; pattern: string }[] = [];
       for (const f of findings) {
-        await p.query(`
+        const id = (await p.query<{ id: string }>(`
           insert into zz.eval_finding (eval_id, pattern, docs_affected, scope, proposed_change, decision)
-          values ($1::uuid, $2, $3, $4, $5, $6)`,
+          values ($1::uuid, $2, $3, $4, $5, $6) returning id::text as id`,
           [eval_id, f.pattern, f.docs_affected ?? 0, f.scope,
-           f.proposed_change ?? "", f.decision ?? "deferred"]);
-        stored++;
+           f.proposed_change ?? "", f.decision ?? "deferred"])).rows[0].id;
+        stored.push({ id, scope: f.scope, pattern: f.pattern });
       }
       const who = parseCaller(requestHeaders()).email;
       logActivity(await userRoot(), null,
-        { user: who, action: "finding_record", eval_id, findings: stored });
+        { user: who, action: "finding_record", eval_id, findings: stored.length });
       return json({
-        eval_id, recorded: stored,
+        eval_id, recorded: stored.length, findings: stored,
         generic: findings.filter((f) => f.scope === "generic").length,
         specific: findings.filter((f) => f.scope === "specific").length,
         next: "These are DEFERRED. Nothing here changes the plugin — the catalog is read-only " +
               "wherever the platform runs, and a change is a repository edit and a release by " +
-              "whoever owns it.",
+              "whoever owns it. They stay open, and COUNT AGAINST THIS PLUGIN'S HEADROOM in " +
+              "every later round, until finding_decide records that somebody applied or " +
+              "rejected each one.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "finding_decide",
+    {
+      description:
+        "WHEN somebody who owns the plugin has applied a change an earlier round named, or has " +
+        "decided not to. It closes those findings and RETURNS each as it now stands, with who " +
+        "decided and when. This is the act finding_record's own description promises and " +
+        "nothing performed: a finding lands `deferred` and stays there, counting against this " +
+        "plugin's headroom in every later round, until this is called. REFUSES an id nothing " +
+        "minted, a finding already decided, and `deferred` as a decision — deferring is where a " +
+        "finding starts, so choosing it here would be a decision that changes nothing while " +
+        "looking like one that did. A note is required for both real decisions, because " +
+        "`applied` with no change named and `rejected` with no reason are the two ways this " +
+        "ledger stops being readable.",
+      inputSchema: {
+        decisions: z.array(z.object({
+          finding_id: z.string().describe("from finding_record, or round_recommend's open_changes"),
+          decision: z.enum(["applied", "rejected"]),
+          note: z.string().describe(
+            "applied: what was changed and where — a version, a file, a release. " +
+            "rejected: why this is not worth doing."),
+        })).min(1),
+      },
+    },
+    async ({ decisions }) => {
+      const p = db();
+      if (!p) return noDb();
+      const blank = decisions.filter((d) => !d.note.trim());
+      if (blank.length) {
+        return text(
+          `REFUSED: ${blank.length} decision(s) carry no note. An \`applied\` that does not say ` +
+          "what changed cannot be checked by the next round, and a `rejected` that does not say " +
+          "why is indistinguishable from the finding being forgotten. Both close a change " +
+          "somebody proposed; say what happened to it.");
+      }
+      const who = parseCaller(requestHeaders()).email;
+      const done: unknown[] = [];
+      const refused: string[] = [];
+      for (const d of decisions) {
+        // ONE STATEMENT, GUARDED IN THE WHERE CLAUSE. Reading the row and then updating it
+        // would let two callers deciding the same finding both see `deferred` and both write,
+        // and the second would silently overwrite the first's name and reason.
+        const row = (await p.query<{ id: string; pattern: string; decision: string; at: string }>(`
+          update zz.eval_finding
+             set decision = $2, decision_note = $3, decided_by = $4, decided_at = now()
+           where id = $1::uuid and decision = 'deferred'
+          returning id::text as id, pattern, decision, decided_at::text as at`,
+          [d.finding_id, d.decision, d.note.trim(), who])).rows[0];
+        if (row) { done.push({ ...row, decided_by: who, note: d.note.trim() }); continue; }
+        // WHICH OF THE TWO, because they need opposite responses: an unknown id is a caller
+        // working from the wrong round, and an already-decided one is a caller about to undo
+        // somebody else's decision.
+        const was = (await p.query<{ decision: string; by: string | null; note: string }>(
+          "select decision, decided_by as by, decision_note as note from zz.eval_finding where id = $1::uuid",
+          [d.finding_id])).rows[0];
+        refused.push(was
+          ? `${d.finding_id} was already ${was.decision}${was.by ? ` by ${was.by}` : ""}` +
+            `${was.note ? ` — "${was.note}"` : ""}. Reopening a decided finding is not something ` +
+            "this tool does: record what the next round found instead."
+          : `${d.finding_id} names no finding. Ids come from finding_record, or from the ` +
+            "open_changes round_recommend returns.");
+      }
+      logActivity(await userRoot(), null,
+        { user: who, action: "finding_decide", decided: done.length, refused: refused.length });
+      return json({
+        decided: done.length, findings: done,
+        refused: refused.length ? refused : undefined,
+        next: done.length
+          ? "These no longer count against the plugin's headroom. The next round will read the " +
+            "remaining open ones and say what is still available to do."
+          : "Nothing was decided.",
       });
     },
   );
@@ -269,7 +384,9 @@ export function registerPluginRecordTools(server: McpServer): void {
         "opinion of itself. YOU DO NOT CHOOSE THE WORD: the enum is `keep`, `keep-and-change`, " +
         "`re-run`, `not-evaluable`, `retire`, and which one this evidence supports is the " +
         "judgement being outsourced. Writing the paragraph that explains it is yours. REFUSES " +
-        "an eval_id nothing minted; reports the judgement as ABSENT, without failing, when the " +
+        "an eval_id nothing minted, and an eval_id no control run names — a round whose ruler " +
+        "was never tried against another plugin's work establishes nothing, so there is no " +
+        "verdict to give. Reports the judgement as ABSENT, without failing, when the " +
         "deployment has no key for the service.",
       inputSchema: { eval_id: z.string() },
     },
@@ -294,6 +411,33 @@ export function registerPluginRecordTools(server: McpServer): void {
           "Pass the real round's eval_id — round_scores shows both.");
       }
 
+      // NO CONTROL, NO VERDICT — ENFORCED HERE RATHER THAN MEASURED ANYWHERE.
+      //
+      // This flow's entire argument is that a score without a blind control establishes
+      // nothing: a ruler that cannot tell this plugin's work from another plugin's produces
+      // marks that mean nothing, and the gap is the only thing that says which case you are in.
+      // `round_judge` has always TOLD the caller to run the control next, and nothing has ever
+      // required it — so a round could be scored, recommended and written up on a ruler nobody
+      // tried.
+      //
+      // IT IS A REFUSAL AND NOT A RULER LINE, and that distinction cost a false headline. A
+      // threshold reading "every round carries a control" cannot work: the figure is not in the
+      // profile, and the control runs AFTER the pass that would read it, so the line is false
+      // at the instant it is measured no matter what the truth is. Enforced here the property
+      // is true by construction and needs no line, no figure and no judge. See journal 0143.
+      const ctl = (await p.query<{ id: string }>(
+        "select id::text as id from zz.eval where controls = $1::uuid limit 1", [eval_id])).rows[0];
+      if (!ctl) {
+        return text(
+          "REFUSED: no control run names this round, so there is no verdict to give. A control " +
+          "marks ANOTHER plugin's work against this same ruler; the gap between the two is what " +
+          "says whether the ruler can tell the right artifact from the wrong one. Without it " +
+          "the marks are unfalsifiable — a ruler that scores everything 4 and a ruler that " +
+          "works look identical. Run round_judge again with `control: true` for this version, " +
+          "then call this. Rounds taken before controls were recorded cannot be recommended on " +
+          "and have to be re-taken.");
+      }
+
       // WHAT THIS ROUND ESTABLISHED, read back rather than re-derived. Every figure here is
       // already stored: the means the judge produced, the control it was tried against, the
       // thresholds with the line each was held to. Re-deriving any of them would let the
@@ -305,18 +449,47 @@ export function registerPluginRecordTools(server: McpServer): void {
           from zz.eval_score s join zz.rubric_dimension d on d.id = s.dimension_id
          where s.eval_id = $1::uuid and not s.is_control
          group by d.name, d.kind, d.ordinal order by d.ordinal`, [eval_id])).rows;
+      // THIS ROUND'S OWN CONTROL, NAMED — not every round that shares a version and a ruler.
+      //
+      // This pooled across `plugin_version_id + rubric_id`, which was the only thing available
+      // before a control named the round it controls. It meant a gap could be borrowed from a
+      // DIFFERENT round: three rounds at one version put all their marks in one average, so a
+      // round whose own control collapsed could read as discriminating because an earlier one
+      // did. Now that a control is required above, the link exists on every round that can
+      // reach this line, and the honest gap is the one between these two evals and no others.
       const control = (await p.query<{ real: string | null; ctl: string | null }>(`
         select round(avg(s.score) filter (where not s.is_control),2)::text as real,
                round(avg(s.score) filter (where s.is_control),2)::text as ctl
           from zz.eval_score s
           join zz.rubric_dimension d on d.id = s.dimension_id and d.kind <> 'quantitative'
-         where s.eval_id in (
-                 select e2.id from zz.eval e2
-                  where e2.plugin_version_id = (select plugin_version_id from zz.eval where id = $1::uuid)
-                    and e2.rubric_id = (select rubric_id from zz.eval where id = $1::uuid))`,
-        [eval_id])).rows[0];
-      const findings = (await p.query<{ scope: string; pattern: string }>(
-        "select scope, pattern from zz.eval_finding where eval_id = $1::uuid", [eval_id])).rows;
+         where s.eval_id in ($1::uuid, $2::uuid)`, [eval_id, ctl.id])).rows[0];
+      // EVERY FINDING STILL OPEN ON THIS PLUGIN, NOT JUST THIS ROUND'S.
+      //
+      // Headroom counts NAMED CHANGES -- things somebody could actually do -- and a change
+      // named by an earlier round and never decided is exactly that. Reading only this round's
+      // rows made the second round of any plugin report less to do than the first, purely
+      // because the first round's findings had scrolled out of the query: on this deployment
+      // eleven findings sat `deferred`, five of them about plugins that were scored again
+      // afterwards, and not one was visible to the score.
+      //
+      // `deferred` IS THE OPEN STATE and the other two are closed, which is why the ledger has
+      // three values rather than a boolean. `applied` means the change was made -- counting it
+      // would charge the plugin for work already done. `rejected` means somebody decided it was
+      // not worth doing, and a change nobody intends to make is not headroom. Neither is a
+      // silent drop: `finding_decide` records who closed it and why, and it stays readable.
+      const findings = (await p.query<{ id: string; scope: string; pattern: string;
+                                        change: string; round: string; open: boolean }>(`
+        select f.id::text as id, f.scope, f.pattern, f.proposed_change as change,
+               pv2.version as round, (f.decision = 'deferred') as open
+          from zz.eval_finding f
+          join zz.eval e2 on e2.id = f.eval_id
+          join zz.plugin_version pv2 on pv2.id = e2.plugin_version_id
+         where pv2.plugin_id = (select pv.plugin_id from zz.eval e
+                                  join zz.plugin_version pv on pv.id = e.plugin_version_id
+                                 where e.id = $1::uuid)
+           and (f.eval_id = $1::uuid or f.decision = 'deferred')
+         order by f.created_at`, [eval_id])).rows;
+      const open = findings.filter((f) => f.open);
 
       const gap = control?.real && control?.ctl
         ? Math.round((Number(control.real) - Number(control.ctl)) * 100) / 100 : null;
@@ -334,7 +507,7 @@ export function registerPluginRecordTools(server: McpServer): void {
       const metCount = quant.filter((d) => Number(d.mean) >= 5).length;
       const effective = effectiveness(qualMean, metCount, quant.length, gap);
       const room = headroom(effective.score, quant.length - metCount,
-                            findings.filter((f) => f.scope === "generic").length);
+                            open.filter((f) => f.scope === "generic").length);
 
       const state = [
         `Plugin under evaluation: ${round.plugin} ${round.version}, marked against rubric ` +
@@ -353,10 +526,19 @@ export function registerPluginRecordTools(server: McpServer): void {
           : `Judge on trial: the real subjects averaged ${control?.real} and the blind control ` +
             `averaged ${control?.ctl}, a gap of ${gap}. A gap below 1.5 means the ruler failed ` +
             "to tell the right artifact from the wrong one and the round establishes nothing.",
-        findings.length
-          ? `Findings recorded: ${findings.length} (` +
-            findings.map((f) => `${f.scope}: ${f.pattern}`).join(" | ").slice(0, 1200) + ")."
-          : "No findings were recorded against this round.",
+        // THE SAME SET THE SCORE WAS COMPUTED FROM. The enum is chosen with the number in
+        // front of it, so the evidence behind the number has to be in front of it too — a
+        // state naming this round's findings while headroom counted every open one would let
+        // `keep` be chosen against a plugin with four changes waiting that were never shown.
+        open.length
+          ? `Changes still open on this plugin: ${open.length}, of which ` +
+            `${open.filter((f) => f.round === round.version).length} were named by this round ` +
+            `and the rest by earlier ones and never decided (` +
+            open.map((f) => `${f.scope}, from ${f.round}: ${f.pattern}`).join(" | ").slice(0, 1200) + ")."
+          : findings.length
+            ? `This round recorded ${findings.length} finding(s) and every change named against ` +
+              "this plugin has since been applied or rejected, so nothing is open."
+            : "No findings were recorded against this round, and none are open from earlier ones.",
       ].join(" ");
 
       // ABSENCE IS AN ANSWER. A deployment with no key still produces a report; it produces one
@@ -419,6 +601,15 @@ export function registerPluginRecordTools(server: McpServer): void {
         // before a verb they would otherwise have to interpret.
         effectiveness: effective,
         headroom: room,
+        // WHAT THE HEADROOM IS MADE OF, with the handle needed to close each one. A count of
+        // named changes that a reader cannot enumerate is a number they have to trust; these
+        // are the rows it was computed from, including the ones earlier rounds named and
+        // nobody has decided since.
+        open_changes: open.map((f) => ({
+          finding_id: f.id, scope: f.scope, named_by_round: f.round,
+          pattern: f.pattern, proposed_change: f.change,
+          carried_over: f.round !== round.version,
+        })),
         recommendation: rec.choice,
         confidence: rec.confidence,
         probabilities: rec.probabilities,

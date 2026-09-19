@@ -63,7 +63,8 @@ const EVAL_INSTRUCTIONS =
   "  ruler_*    the three-step gate, in this order: read what a ruler is written from, record " +
   "the ruler, record the stakeholder's approval of it\n" +
   "  round_*    score one version against the ruler in force, and read one round's marks back\n" +
-  "  finding_*  record what a round concluded, as rows the next round can read\n\n" +
+  "  finding_*  record what a round concluded, and close each one when somebody applies " +
+  "or rejects it\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +

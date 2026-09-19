@@ -184,7 +184,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
   ruler_read: "evaluation", ruler_record: "evaluation", ruler_affirm: "evaluation",
   round_judge: "evaluation", round_scores: "evaluation", round_recommend: "evaluation",
-  finding_record: "evaluation",
+  finding_record: "evaluation", finding_decide: "evaluation",
 };
 {
   const serves = new Map<string, string>();   // tool -> the door that registers it

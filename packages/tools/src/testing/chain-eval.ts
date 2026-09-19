@@ -71,5 +71,13 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("finding_record", {
       eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
     }), /no platform database|no evaluation/);
+  // A RANDOM UUID DECIDES NOTHING, which is what makes this probe safe to run against a live
+  // deployment: finding_decide is the one tool on this door that closes a row somebody else
+  // recorded, and the id below matches none. It refuses, and the refusal proves the door
+  // serves the tool and reaches its argument checks without touching a real finding.
+  eitherOr("finding_decide refuses an id nothing minted",
+    await callEval("finding_decide", {
+      decisions: [{ finding_id: randomUUID(), decision: "rejected", note: "chain-check probe" }],
+    }), /no platform database|names no finding/);
 
 }

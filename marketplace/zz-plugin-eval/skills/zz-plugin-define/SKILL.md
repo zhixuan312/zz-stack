@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 1.2
+version: 1.3
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into rulers.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.md, which is gated — judging does not start until somebody approves it."
 ---
@@ -106,6 +106,45 @@ Name the two fields the comparison is between, and let the sheet supply both num
 write either figure into the threshold itself — a ruler carrying today's count is a ruler that
 is wrong after the next release.
 
+## NAME THE FIGURE, AND THE PLATFORM WILL CHECK IT EXISTS
+
+Every quantitative dimension carries `reads` — the dotted path(s) into the facts sheet its line
+is drawn over, like `record.revised_with_evidence_pct` or `refusals.total`. `ruler_record`
+resolves each one against **this plugin's own sheet** and refuses the ruler if any is missing,
+listing every figure the sheet does carry.
+
+**This is a gate and not paperwork, because a line that cannot reach its figure does not come
+back unanswered — it comes back FAILED.** The threshold pass is instructed to answer NOT MET
+when the facts lack the figure a line needs, so an unanswerable line scores 1, and
+`zz.eval_score` holds 1 for that and 1 for a line the plugin really missed. Nothing afterwards
+can tell them apart.
+
+It costs twice, in opposite directions: the score is **deflated**, because the void line counts
+against the quantitative half, and the headroom is **inflated**, because the same line counts as
+a named change. zz-plugin-eval 0.56.0 was scored 7.06 where the same marks otherwise give 9.06
+— a whole band — and its closed report made the void line its headline finding. It was false.
+
+**The same figure is not on every plugin's sheet.** `record` is null for a plugin whose door
+writes no documents, so `record.revised` is a legitimate line on zz-core and unanswerable on
+sdlc. Resolve against the sheet in front of you, not the one you remember.
+
+## IF THE PROPERTY IS ONLY TRUE AFTER THE ROUND, ENFORCE IT — DO NOT MEASURE IT
+
+Some lines cannot be thresholds no matter what figure you add, and the tell is the timing.
+
+zz-plugin-eval's ruler carried *"every non-control round recorded against this plugin version
+has a control round naming it"* — a fair line, drawn deliberately against the flow's own central
+claim. It could never be met. The threshold pass runs on the **real round**, and the control is
+recorded **after** it. At the instant the line is applied, this round's control does not exist,
+so the line is false by construction whatever the truth is. Computing the figure would not have
+helped.
+
+The answer was not a better threshold. It was `round_recommend` refusing a round no control
+names. **A rule enforced at the door needs no line, no figure and no judge — it is true by
+construction, and the ruler is shorter.** Before writing a threshold, ask whether the thing you
+want is a measurement or a rule. If a round could violate it and still finish, it is a
+measurement. If it should be impossible, it belongs in the tool.
+
 ## The threshold is written before any artifact is scored
 
 That ordering is the only guard against a ruler written to flatter the number it will produce.
@@ -147,10 +186,14 @@ ruler_record(plugin, version, rubric_version, subject, dimensions)
 ```
 
 puts it in the registry, where the judge reads it. It refuses a quantitative dimension with no
-`threshold`, or with no `threshold_reason`, or a qualitative one missing either end — all three
-for the same reason: a dimension a marker cannot place is one that gets placed by mood, and a
-line with no stated reason is a number somebody can move later to make a result come out
-differently.
+`threshold`, with no `threshold_reason`, or whose `reads` name a figure that is not on this
+plugin's sheet; and a qualitative one missing its levels. All for the same reason: a dimension
+a marker cannot place is one that gets placed by mood, a line with no stated reason is a number
+somebody can move later to make a result come out differently, and a line that cannot reach its
+figure is scored as a failure the plugin never earned.
+
+`ruler_affirm` checks the figures again, because the sheet can move while the document is with
+the stakeholder.
 
 **Record before the person reads it, approve after.** Recording is not approving — nothing is
 scored until `ruler_affirm` says a person agreed.

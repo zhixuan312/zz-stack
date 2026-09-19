@@ -64,12 +64,29 @@ export async function usageDocs(p: pg.Pool, plugin: string, version: string, own
                         where es.doc_id = d.id and es.plugin_version_id = ${pvId}) as scored
           from zz.doc d
          where d.path not like '\_versions/%'
-           -- tool_call ONLY. zz.event.team_slug is nullable and some kinds are written by acts
-           -- that belong to a person rather than a team, so matching a document's team against
-           -- an unscoped event would attribute it on a column that kind never filled. A door
-           -- call is the kind that carries the plugin name in the first place.
+           -- A CALL THAT WROTE A DOCUMENT, not any call at all.
+           --
+           -- Matching on every tool_call credited a door with documents it never touched. An
+           -- administration door proved it: two whoami and team_switch calls happened while
+           -- an evaluation initiative was the session's context, so the event carried that
+           -- initiative, and the query handed zz-access the whole of zz-core's evaluation to be
+           -- judged on. That is the same substitution this file already refuses elsewhere --
+           -- marking one plugin's artifacts under another plugin's ruler -- arriving through
+           -- the selector instead of the fallback.
+           --
+           -- The three names are spelled out rather than matched by prefix. document_read,
+           -- document_list, document_present and document_approve all begin the same way
+           -- and none of them writes anything; a plugin whose door only READS documents has not
+           -- produced them and must not be judged on them.
+           --
+           -- tool_call is implied by the tool names but kept explicit, because zz.event.team_slug
+           -- is nullable and other kinds are written by acts that belong to a person rather than
+           -- a team -- matching a document's team against one of those compares on a column that
+           -- kind never filled.
            and exists (select 1 from zz.event e
                         where e.kind = 'tool_call' and e.plugin = $1
+                          and split_part(coalesce(e.tool_key, e.subject), ':', 2)
+                              in ('document_write', 'document_patch', 'document_revise')
                           and e.initiative = d.initiative and e.team_slug = d.team_slug)
          order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows
     : (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`

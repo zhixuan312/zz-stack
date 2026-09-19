@@ -33,6 +33,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.10] — 2026-09-19
+
+A document's evidence column reads the field the platform actually writes.
+
+### Fixed
+
+- **`zz.doc.evidence` was declared on every document and populated on none.** Measured: 0 of 365,
+  while `zz.knowledge_node.evidence` — whose tool refuses a node that cites nothing — carried it
+  on 867 of 867. The indexer read an `evidence:` frontmatter field that no write path sets, while
+  `document_revise`, which refuses a version naming no cause, writes that cause into the
+  envelope's `sources`. `evidence` now falls back to `sources`; an explicit `evidence` still wins
+  where it is set. This is the change zz-core's own evaluation proposed against its weakest
+  dimension.
+
+### Upgrade notes
+
+- Existing documents carry a stale `content_hash` until they are re-indexed. Run
+  `knowledge_reindex` once after upgrading, or the column stays empty for everything already
+  written.
+
 ## [0.52.9] — 2026-09-19
 
 Every wait on the platform database is bounded.

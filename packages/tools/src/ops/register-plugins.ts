@@ -34,7 +34,6 @@ import { DEFAULT_PSQL, psqlText } from "../lib/psql.js";
 interface LockEntry {
   version: string;
   digest: string;
-  cases_digest?: string;
   skills?: Record<string, string>;
 }
 
@@ -73,11 +72,10 @@ function main(argv: string[]): number {
       insert into zz.plugin (name, origin) values (${lit(name)}, ${lit(ORIGIN)})
       on conflict (name) do update set origin = excluded.origin`);
     psqlText(psql, `
-      insert into zz.plugin_version (plugin_id, version, digest, cases_digest)
-      select id, ${lit(p.version)}, ${lit(p.digest)}, ${lit(p.cases_digest ?? "")}
+      insert into zz.plugin_version (plugin_id, version, digest)
+      select id, ${lit(p.version)}, ${lit(p.digest)}
         from zz.plugin where name = ${lit(name)}
-      on conflict (plugin_id, version) do update set digest = excluded.digest,
-                                                     cases_digest = excluded.cases_digest`);
+      on conflict (plugin_id, version) do update set digest = excluded.digest`);
     for (const skill of Object.keys(p.skills ?? {}).sort()) {
       // Resolved by NAME AND VERSION against what register-skills wrote a moment earlier in the
       // same release. A skill the registry has not heard of is COUNTED AND REPORTED rather than

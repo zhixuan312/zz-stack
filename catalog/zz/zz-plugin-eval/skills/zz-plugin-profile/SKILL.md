@@ -1,7 +1,7 @@
 ---
 name: zz-plugin-profile
-version: 0.6
-description: Stage 2 of plugin evaluation. Compute the two evidence blocks — traces from real runs and cases from the ablation suite — each with its own sufficiency verdict and the coverage it was derived from. No model touches any of it.
+version: 0.7
+description: Stage 2 of plugin evaluation. Compute the evidence block — traces from this plugin version's real runs — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
 
@@ -14,23 +14,29 @@ plugin_conform(plugin, version)     R1–R14, three-valued
 
 Neither calls a model. Every field is a count, a set, an ordering or a difference.
 
-## Two blocks, two sufficiency lines, and only both empty is a stop
+## One block, one sufficiency line
 
 ```
-CASES     4 · mean Δ +0.62 · last run 2026-09-13          sufficient
 TRACES    6 usable runs · coverage 198/510                sufficient
 ```
 
 | block | sufficient at | why the line is there |
 |---|---|---|
-| cases | **1 case** | cases need no history; one real counterfactual beats none |
 | traces | **5 usable runs** | a floor for a signal to exist, not a claim about power |
 
-**A thin trace block does not stop this flow.** Report it as thin and go on to `define` with the
-cases. The stop condition is `sufficient_for_judging: false`, which means *both* are empty —
-and even then, `locate` and `profile` still ran and still reported. **A plugin nobody has used
-is a correct and complete outcome**, not a failure. Say so plainly rather than treating the
-refusal as an error, or the next agent starts inventing data to get past it.
+**THERE WAS A SECOND BLOCK AND IT IS GONE.** `CASES` reported a with-plugin against
+no-plugin delta from a `claude plugin eval` suite. It never measured what it appeared to: no
+case declared a mock, so under the CLI's default no plugin server started and the plugin's
+tools were **not callable in either arm**. Every grader was a regex over tool NAMES or a
+judgement about an answer's shape — so a delta said the method's text had reached the agent and
+it used the right words, never that the plugin worked.
+
+**A thin trace block does not stop this flow.** Report it as thin and go on. The stop condition
+is `sufficient_for_judging: false` — and even then, `locate` and `profile` still ran and still
+reported. **A plugin nobody has used is a correct and complete outcome**, not a failure. Say so
+plainly rather than treating it as an error, or the next agent starts inventing data to get
+past it. A ruler whose subject is the document or the initiative may have subjects even when
+the trace history is thin; `ruler_read` says what is there.
 
 ## What each block actually says
 
@@ -46,18 +52,6 @@ refusal as an error, or the next agent starts inventing data to get past it.
   搭不搭 no static check can see.
 - `coverage` — the denominator for all of it.
 
-**CASES** — from the recorded ablation run:
-
-Every case ran twice, once with the plugin and once without, and the delta is the difference. A
-delta is a **counterfactual**: it says the plugin caused the outcome, which no score can.
-
-- `discriminating` per case: `strong`, `weak`, `dead` or `harmful`. A `dead` case is one both
-  arms pass or both arms fail — it does not test the plugin, and it is noise in the mean. A
-  `harmful` one is the opposite of noise: the arm WITH the plugin did worse. Never average a
-  `harmful` case away — say which case it was and what it asked.
-- `last_run` — **always report the date.** A three-week-old delta read as today's is worse than
-  no delta.
-
 ## Read the coverage before you read anything else
 
 `coverage: { events: 510, with_step: 198, resolvable: 198 }` means every figure above rests on
@@ -66,78 +60,6 @@ delta is a **counterfactual**: it says the plugin caused the outcome, which no s
 This rule was bought expensively. The run table once reported 1805 rows when four were real, for
 weeks, and every query that read it read a healthy-looking table. **A number without its
 denominator can be wrong by three orders of magnitude and look fine.**
-
-## If the case block is empty and somebody wants one
-
-**`plugin_profile` tells you.** When neither block has enough to judge against it returns a
-`next_action`, and that is the instruction — the command with this plugin's name already in
-it, the `case_record` call that follows, what it costs, and the one trap worth naming. Read it
-from the answer rather than from here: this page can go stale and the tool's answer is
-generated from the plugin you actually asked about.
-
-```json
-"next_action": {
-  "action": "record_a_suite_run",
-  "why":    "no case evidence: ...",
-  "run":    "claude plugin eval <plugin>@zz-stack --json <path>",
-  "then":   "case_record(plugin, version, result: <the JSON at that path, verbatim>)",
-  "costs":  "roughly $0.40 per case, on this machine, against this account's credential",
-  "target": "ONE built plugin directory — marketplace/<plugin> — never the repository root"
-}
-```
-
-**THE TWO STEPS ARE ONE ACT, and the second is the one that gets forgotten.** The CLI writes
-JSON to a file on your disk and exits; it knows nothing about this platform. Until
-`case_record` carries that JSON across, the run did not happen as far as every stage after
-this one is concerned — and nothing anywhere will tell you so. It has happened here: four
-suites run, eleven cases measured, and the platform went on serving a three-week-old
-measurement with twelve errored runs in it, because the person read the numbers off their
-terminal and stopped.
-
-Running the suite is a deliberate act and nothing here does it for you: it is a CLI on this
-machine spending this account's own credential. Recording is what gives a delta a timestamp.
-Ask before spending; do not run it because a profile looked thin.
-
-**The target is ONE built plugin directory: `marketplace/<plugin>`.** From a checkout of this
-repository that is `marketplace/sdlc`, `marketplace/zz-access`, `marketplace/zz-plugin-eval` or
-`marketplace/zz-core` — not the `@zz-stack` form, and above all **not the repository root.**
-
-The root resolves too, which is the trap. It resolves ALL FOUR plugins at once and runs every
-case in the repository as a single suite: measured 2026-09-13, twelve cases over four plugins,
-with `audit-catches-an-unverified-claim` discovered twice — once under `catalog/` and once under
-`marketplace/` — never reaching a single baseline arm before it was killed, and what it wrote was
-`partial: true` carrying with-arm scores only, which reads like a suite where the plugin helped
-with nothing. 89MB of repository against 144KB of built plugin. Point it at one plugin.
-
-**Keep the host awake for the whole run, lid open and on mains.** That same 2026-09-13 run is on
-disk as two hours and twenty minutes, and two hours and thirteen of them were the laptop asleep:
-the lid was closed on battery at 18:30:01 and not opened again until 21:15:49, and in between
-macOS dark-woke it for two to forty-five seconds every sixteen minutes or so. Nine runs launched
-inside those windows, made no API call at all, and were killed at the next one. `caffeinate -i` does
-NOT cover this — no caffeinate assertion survives a closed lid.
-
-**What a slept-through run looks like in the JSON**, because it does not look like an error:
-`turns: 0`, an agent cost of exactly 0 (`costUsd` minus `judgeCostUsd`), and `durationSeconds`
-far past the case's own `timeoutSeconds` — 974 and 6204 against a 300s timeout — with all three
-runs of a case sharing a duration to the second. The timeout message is the symptom and raising
-the timeout does nothing: the clock the harness compares against ran while the process did not.
-Judges still run on the empty transcript, so one of those runs scored **0.25** on an LLM grader
-having spent every cent it cost on grading nothing. A run the host slept through can look like a
-weak case, or like a partial success. It is neither: it is a case that did not run.
-
-The other way to get it wrong is quieter: point it somewhere with no `evals/` below it and it
-reports "no eval cases found", which reads exactly like a plugin that has none.
-
-**Every plugin's MCP servers are absent from BOTH arms** unless you pass `--allow-real-servers`,
-which starts them as you, outside the sandbox. Do not. A case that grades whether a tool was
-actually CALLED therefore reads zero on both sides and contributes nothing; grade what the
-skill makes the agent say, name and decline. Every case in this repository is written that way.
-
-**A grader that measures zero is a result, not a broken case.** zz-access's
-`kills-it-first` predicted ~0.8 and measured 0.00 — a bare agent revokes a leaked credential
-first as readily as the plugin does. It is left exactly as written, with the measurement
-recorded beside the prediction. Editing a case until it flatters its plugin ends the series:
-nothing after it can be compared with anything before it.
 
 ## Conformance, for a plugin with no history of its own
 
@@ -156,6 +78,5 @@ Use it as a starting ruler when a plugin is somebody else's and has no runs here
 
 ❌ **Calling a return good or bad.** That is `define`'s job. See the entry skill.
 
-❌ **Averaging a `dead` case into the mean without saying so.**
-
-❌ **Running the case suite to fill a gap nobody asked about.** It costs money.
+❌ **Treating a thin trace block as a failure.** A plugin nobody has used yet is a plugin. Say
+so; do not go looking for a second source of evidence to fill the gap.

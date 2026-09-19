@@ -148,7 +148,7 @@ const EXEMPT = new Set([
   "checks/pre-rename-literals.ts", "checks/core-names.ts", "checks/core-surface-19.ts",
 ]);
 const TREES = ["services", "packages", "scripts", "checks", "catalog", "marketplace", "skills",
-               "evals", "testing"];
+               "testing"];
 const CODE = /\.(ts|tsx|mjs|js)$/;
 const YAML = /\.ya?ml$/;
 

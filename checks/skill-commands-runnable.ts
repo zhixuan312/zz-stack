@@ -38,6 +38,4 @@ for (const c of readdirSync("marketplace/zz-access/commands").filter((f) => f.en
     }
   }
 }
-const evalCase = readFileSync("catalog/zz/zz-access/evals/diagnoses-a-401-with-zz-doctor/case.yaml", "utf8");
-if (/doctor\\?\.mjs/.test(evalCase)) fail.push("the eval case still matches doctor.mjs — evals do not run in the gate, so this degrades scoring silently");
 if (fail.length) { console.error(fail.join("\n")); process.exit(1); }

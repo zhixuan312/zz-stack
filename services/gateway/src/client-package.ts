@@ -29,7 +29,6 @@ import { catalogEntry, catalogManifest, pluginName } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
-import { EVALS_DIR, OUTPUT_DIR } from "./package/plugin-lock.js";
 import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one
@@ -121,36 +120,6 @@ function platformOwnSkills(prefix: string): PackageFile[] {
   return out;
 }
 
-/** The baseline plugin's own eval cases. Same walk and the same directories-only rule as
- * `platformOwnSkills`, rooted at `evals/` because that is where the command looks.
- *
- * `zz-core` needs its own because it is the one plugin whose FILES are not read from the catalog —
- * it is synthesised
- * per caller — so `residentFiles` has nothing to resolve for it. It is also the plugin everybody
- * installs, which makes it the one most worth having a suite for. */
-function platformOwnEvals(): PackageFile[] {
-  if (!existsSync(EVALS_DIR)) return [];
-  const out: PackageFile[] = [];
-  // A SUITE'S OUTPUT IS NOT PART OF THE SUITE, the same exclusion plugin-lock.ts keeps and for
-  // a sharper reason: that file was only deciding a hash, this one decides what bytes travel to
-  // a person. `evals/results/` is what running the suite produced — one directory per run, one
-  // machine's, `.gitignore`d precisely because it belongs to nobody else — and every installer
-  // was being handed it. It is also the one thing under evals/ that is not text: a run leaves
-  // HTML reports and a trace.jsonl, and `readFileSync(abs, "utf8")` on those ships mojibake.
-  const walk = (dir: string, rel: string): void => {
-    for (const f of readdirSync(dir, { withFileTypes: true })) {
-      if (f.name === OUTPUT_DIR) continue;
-      const abs = join(dir, f.name);
-      if (f.isDirectory()) walk(abs, `${rel}/${f.name}`);
-      else out.push({ path: `evals/${rel}/${f.name}`, content: readFileSync(abs, "utf8") });
-    }
-  };
-  for (const e of readdirSync(EVALS_DIR, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.name === OUTPUT_DIR) continue;
-    if (e.isDirectory()) walk(join(EVALS_DIR, e.name), e.name);
-  }
-  return out;
-}
 
 /** What the baseline plugin carries: the router, the platform's own skills, and a command
  * for each skill its manifest declares one for.
@@ -173,7 +142,7 @@ function baselineFiles(flows: ShelfFlow[]): PackageFile[] {
   const { commands, promoted } = promoteCommands(BASELINE, skills);
   // Assets beside a promoted skill still travel: only its SKILL.md moves. That is what
   // carries each command's script, which lives in the skill's own directory.
-  return [...commands, ...skills.filter((sk) => !promoted.has(sk)), ...platformOwnEvals()];
+  return [...commands, ...skills.filter((sk) => !promoted.has(sk))];
 }
 
 /** The baseline's marketplace card, addressed to whoever this package was built for.
@@ -206,11 +175,10 @@ function baselineCard(target: string): string {
  * name.
  *
  * `sub` was hard-coded to "skills" while the caller passed a `prefix` that was always that same
- * word — one directory the shelf could carry. It carries two now: `evals/` holds the cases
- * `claude plugin eval` runs against the plugin, and they have to travel WITH it. The command
- * resolves an installed plugin to its cache directory and looks for `evals/` below it, so a
- * suite left behind in the catalog is a suite nobody can run against what they actually
- * installed — and the run silently becomes a baseline-only one with no comparison in it at all.
+ * word. It stayed parameterised when the shelf briefly carried a second directory — `evals/`,
+ * holding the cases `claude plugin eval` ran — and that half is gone, so "skills" is once again
+ * the only thing any caller passes. It is left as an argument rather than folded back in
+ * because the next directory the shelf carries will want the same treatment.
  *
  * Source and destination are the same word deliberately: a package that renamed the directory
  * on the way out would be a package whose layout the tool reading it cannot predict. */
@@ -321,8 +289,7 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
         servers: pp.servers.map((sv) => ({ name: sv.name, url: `${base}${sv.path}` })),
         required: true,
         // Assets beside a promoted skill still travel: only its SKILL.md moves.
-        files: [...commands, ...skills.filter((sk) => !promoted.has(sk)),
-                ...residentFiles(pp.dir, "evals")],
+        files: [...commands, ...skills.filter((sk) => !promoted.has(sk))],
       };
     }),
     ...flows.map((f): Plugin => {
@@ -363,7 +330,6 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
           // And the eval suite, for the reason residentFiles gives: a suite that did not travel
           // with the plugin turns `claude plugin eval` into a baseline-only run with no
           // comparison in it, which looks like a result and is not one.
-          ...residentFiles(f.flow, "evals"),
         ],
       };
     }),

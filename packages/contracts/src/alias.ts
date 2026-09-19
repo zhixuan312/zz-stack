@@ -78,7 +78,6 @@ export const EVAL_ALIAS: Record<string, string> = Object.freeze({
   plugin_affirm: "ruler_affirm",
   plugin_judge: "round_judge",
   plugin_scores: "round_scores",
-  plugin_cases_record: "case_record",
   plugin_finding_record: "finding_record",
 });
 /** The two skill renames (FR-37a). A different mechanism from the tool maps above — this one

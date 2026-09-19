@@ -231,9 +231,7 @@ the timing; getting this wrong costs a plan, not a refusal.
   document that outlives the conversation.
 - **WORK STARTS WITH `initiative_open(slug)`.**
   Writing a document into a name nobody opened is refused, and so is attaching a
-  source to one. (One tool opens one for you: `case_record` on `/eval/mcp` takes
-  `initiative` optionally, and omitting it opens one named for what was measured.
-  Look for that folder rather than opening a second beside it.) Send the SLUG alone — a few words in the stakeholder's own
+  source to one. Send the SLUG alone — a few words in the stakeholder's own
   language, hyphenated — and use the name the tool hands back: **the platform
   prepends today's date from its own clock, and you never type a date into a
   folder name.** An agent that reasoned "latest stored activity is 27-08 and the
@@ -534,7 +532,7 @@ reading later can see one caused the other.
   | skills | `/core/mcp` | `skill_list` `skill_read` |
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `round_recommend` `case_record` `finding_record` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_profile` `plugin_conform` `ruler_read` `ruler_record` `ruler_affirm` `round_judge` `round_scores` `round_recommend` `finding_record` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 
@@ -565,8 +563,8 @@ writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Five of the ten write. Four of those — `case_record`, `ruler_record`, `ruler_affirm` and
-`finding_record` — record a fact or a decision and never a score. The fifth, `round_judge`,
+Four of them write. Three of those — `ruler_record`, `ruler_affirm` and
+`finding_record` — record a fact or a decision and never a score. The fourth, `round_judge`,
 is the one tool on that door that DOES score: it marks one subject per call against the
 ruler in force and stores every mark. Running it again to "check" appends to a stored
 series rather than re-reading one.

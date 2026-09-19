@@ -16,7 +16,6 @@
  * which is also why the two directory constants live HERE rather than in client-package.ts.
  * That file needs a caller to do anything; this one must not.
  */
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -32,11 +31,6 @@ import { BASELINE } from "./skills.js";
  *  real packages on a machine where /skills does not exist. */
 export const SKILLS_DIR = process.env.ZZ_SKILLS_DIR || "/skills";
 
-/** The `zz` plugin's own eval cases. Beside its skills for the same reason they are: `zz` is
- *  the one plugin everybody installs, which makes it the one most worth knowing about, and the
- *  only one whose content is not catalog-resident. Same override, same reason. */
-export const EVALS_DIR = process.env.ZZ_EVALS_DIR || "/evals";
-
 /** Where a skill's declared version and content hash are recorded. */
 const SKILLS_LOCK = "skills.lock.json";
 
@@ -50,7 +44,6 @@ interface PluginLockEntry {
   /** The eval suite this version shipped with, or "" when it has none. A Δ measured against
    *  four cases and a Δ measured against one are not the same measurement, so a score has to be
    *  able to name the suite it was taken against. */
-  cases_digest: string;
   skills: PluginSkill[];
 }
 
@@ -80,7 +73,7 @@ interface PluginLockEntry {
  * aggregate-result.json, HTML reports and trace files, read through readFileSync(.., "utf8").
  * Fixing the hash and leaving the package would have been the same defect wearing a different
  * hat. One constant, imported, so the next tree that walks evals/ cannot quietly disagree. */
-export const OUTPUT_DIR = "results";
+const OUTPUT_DIR = "results";
 
 function walkTree(root: string, prefix: string): PackageFile[] {
   if (!existsSync(root)) return [];
@@ -100,16 +93,6 @@ function walkTree(root: string, prefix: string): PackageFile[] {
   return out;
 }
 
-/** A digest over one file set, used for the eval suite. Empty when there are no files, so that
- *  "no suite" and "a suite that happens to hash to something" are distinguishable. */
-function treeDigest(files: PackageFile[]): string {
-  if (!files.length) return "";
-  const h = createHash("sha256");
-  for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-    h.update(f.path).update("\0").update(f.content).update("\0");
-  }
-  return h.digest("hex").slice(0, 8);
-}
 
 /** The top-level directory names under a tree — one per skill. */
 function skillNames(root: string): string[] {
@@ -182,23 +165,7 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
     // zz-core never had a manifest version at all and was fine, which is the tell: these
     // plugins are released together, out of one repository, at one number.
     const version = PLATFORM_VERSION;
-    // THE SUITE IS WHERE THE MANIFEST SAYS, not where this line used to guess. `cases_digest`
-    // below is what lets a score name the suite it was taken against — "a Δ measured against
-    // four cases and a Δ measured against one are not the same measurement" — so the one thing
-    // it must not do is hash a different directory from the one the suite was run out of. A
-    // hardcoded "evals" here and a declared `evals` in the manifest are two answers to that
-    // question, and this file would have been the one that was wrong.
-    //
-    // REQUIRED, NOT DEFAULTED. `?? "evals"` would keep a plugin that declares nothing working
-    // by accident, which is the state the declaration was added to end; a plugin whose suite
-    // nobody located is a digest nothing can vouch for, exactly as the version above is.
-    const evalsDir = e.manifest.evals;
-    if (!evalsDir) {
-      throw new Error(`${e.owner}/${e.flow}/flow.json declares no evals directory — the suite a ` +
-                      "score is measured against cannot be guessed at");
-    }
     const skillFiles = walkTree(join(e.dir, "skills"), "skills");
-    const caseFiles = walkTree(join(e.dir, evalsDir), "evals");
     out.push({
       name,
       version,
@@ -207,9 +174,8 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
         description: e.manifest.description ?? "",
         required: false,
         servers: (e.manifest.servers ?? []).map((sv) => ({ name: sv.name, url: "" })),
-        files: [...skillFiles, ...caseFiles],
+        files: skillFiles,
       }),
-      cases_digest: treeDigest(caseFiles),
       skills: lockedSkills(repoRoot, skillNames(join(e.dir, "skills")), name),
     });
   }
@@ -231,7 +197,6 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
   // number means nothing.
   const zzSkills = walkTree(SKILLS_DIR, "skills");
   if (zzSkills.length) {
-    const zzCases = walkTree(EVALS_DIR, "evals");
     out.push({
       name: BASELINE,
       version: platformVersion(repoRoot),
@@ -242,9 +207,8 @@ export function pluginLock(repoRoot: string): PluginLockEntry[] {
         description: "",
         required: true,
         servers: [{ name: "zz-core", url: "" }],
-        files: [...zzSkills, ...zzCases],
+        files: zzSkills,
       }),
-      cases_digest: treeDigest(zzCases),
       skills: lockedSkills(repoRoot, skillNames(SKILLS_DIR), BASELINE),
     });
   }

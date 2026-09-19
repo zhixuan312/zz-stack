@@ -52,7 +52,8 @@ import { registerPluginRecordTools } from "./eval/plugin-record.js";
 const EVAL_INSTRUCTIONS =
   "zz-plugin-eval is this platform's instrument for judging a plugin: what its real runs did, " +
   "and whether installing it beats not installing it. It measures, and it never changes what " +
-  "it measures. This is the /eval/mcp door and it serves that one job.\n\n" +
+  "it measures — from this platform's own record of what its doors did, and from no second " +
+  "runner. This is the /eval/mcp door and it serves that one job.\n\n" +
   'START HERE: skill_read("zz-plugin-eval") on the /core/mcp door — it carries the order these ' +
   "tools go in and what each kind of evidence is worth. The ruler is agreed BEFORE any scoring, " +
   "in a gated rulers.md; a score produced before that gate is evidence of nothing.\n\n" +
@@ -62,7 +63,6 @@ const EVAL_INSTRUCTIONS =
   "  ruler_*    the three-step gate, in this order: read what a ruler is written from, record " +
   "the ruler, record the stakeholder's approval of it\n" +
   "  round_*    score one version against the ruler in force, and read one round's marks back\n" +
-  "  case_*     record what a `claude plugin eval` run cost and found\n" +
   "  finding_*  record what a round concluded, as rows the next round can read\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +

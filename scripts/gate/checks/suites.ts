@@ -290,9 +290,6 @@ check("every script or check a document or a thrown error names by path is a fil
 check("a plugin's content identity moves with its content and not with its address",
       runsCheck("digest-per-plugin.ts"));
 
-check("a suite's output reaches neither the lock nor the package somebody installs",
-      runsCheck("lock-reproducible.ts"));
-
 check("a check that works is a check the gate runs",
       runsCheck("working-checks-registered.ts"));
 
@@ -383,9 +380,6 @@ check("the chain check runs where a deployment exists, and not in this gate",
 check("every completion the judge asks for is recorded, and an unreported figure stays null",
       runsCheck("judge-usage.ts"));
 
-check("what a recorded eval run cost is readable without paying for it again, and nothing caps spend",
-      runsCheck("eval-cost.ts"));
-
 check("the manifest can express what the standard requires, and not what it replaced",
       runsCheck("contract-fields.ts"));
 
@@ -440,9 +434,6 @@ check("every skill ships from the plugin that owns it, and its commands follow w
 check("the two misnamed core skills are renamed, every caller moved, and an old step still resolves",
       runsCheck("skill-renames.ts"));
 
-check("every eval case is discovered once, from the tree its manifest declares",
-      runsCheck("eval-suite-once.ts"));
-
 check("no shipped file states a count of this platform's own surface",
       runsCheck("derived-counts.ts"));
 
@@ -481,10 +472,7 @@ check("the deck chassis carries no slides and the guidebook carries all of them"
  * here buys silence only for as long as the check cannot pass, and the day it can, the other
  * rule demands a registration. Neither rule is weakened by the other's existence.
  */
-const notRegistered = new Map([
-  ["eval-readable.ts",
-   "reads evals/results/latest/, which is one person's run output and no checkout carries"],
-]);
+const notRegistered = new Map<string, string>([]);
 
 check("every check in checks/ is registered here, or named here with a reason", () => {
   // WHY A CROSS-VALIDATOR AND NOT A LOOP. Registering the directory with a `for` would be one

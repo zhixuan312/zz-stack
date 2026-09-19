@@ -421,7 +421,6 @@ anybody. These are the rows that have to exist for that to be true.
 | the act | a tool that changes something records that it did, through the shared guard, once | `check "a tool that changes something records that it did"`, `check "a record that is counted is a record that is written once"` |
 | what it cost | a column beside the row, where the platform made the call. Detail keeps no second copy of it | `check "what a call cost is a column, and detail keeps no second copy"` |
 | what it cost, unobtainably | where the caller is a client we do not run, the figure cannot be had, and it is recorded as **null** — never as zero. A confident zero is a measurement nobody took | `check "every completion the judge asks for is recorded, and an unreported figure stays null"`, `check "an aggregate nothing measured renders as null, never a confident zero"` |
-| the spend, uncapped | an evaluation run's cost is readable without paying for it again, and nothing may cap spend. A ceiling turns "what does this cost" into "what did we allow" | `check "what a recorded eval run cost is readable without paying for it again, and nothing caps spend"` |
 | the content identity | a plugin's identity moves with its content, not with its address, and `plugins.lock.json` records version AND digest | `check "a plugin's content identity moves with its content and not with its address"`, `check "plugins.lock.json says what the catalog ships, on both version and digest"` |
 
 ### A description of the surface is derived, never asserted

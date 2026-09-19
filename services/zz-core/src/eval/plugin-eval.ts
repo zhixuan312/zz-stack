@@ -13,27 +13,31 @@
  * fact, the ruler says where the line is, and the tool may then apply that line. A field named
  * `healthy` here would be this file answering a question it cannot see the evidence for.
  *
- * READ-ONLY, with one exception that proves the rule. `case_record` writes, because
- * `claude plugin eval` is a CLI on the person's own machine spending their own credential and
- * this service cannot see its output. The skill runs it where it can be run and hands the result
- * over; recording it is how a delta acquires a timestamp, which is the field that stops a
- * three-week-old measurement being read as today's.
+ * READ-ONLY, WITHOUT EXCEPTION. `case_record` used to be the one tool here that wrote: it took
+ * the output of a `claude plugin eval` suite -- a CLI on the person's own machine, spending
+ * their own credential -- and stored the with-plugin against without-plugin delta it reported.
+ *
+ * That whole half is removed, and what it was actually measuring is the reason. No case ever
+ * declared a mock, so under `--mocks record` no plugin server started and the plugin's tools
+ * were NOT CALLABLE IN EITHER ARM. Every grader was a regex over tool NAMES or a judgement
+ * about an answer's shape, so a delta said the method's text had reached the agent and it had
+ * used the right words. It never said the plugin worked.
+ *
+ * What this door can see instead is what the platform's own doors recorded: which tools were
+ * called, on whose door, how often, what they refused and whose refusal it was. That is the
+ * thing itself rather than an agent's vocabulary, it needs no second runner and no credential,
+ * and it cannot fall out of step with the plugin because the plugin produces it.
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { catalogEntries, pluginName } from "@zz/catalog";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller } from "@zz/contracts";
-import { requestHeaders, text } from "@zz/mcp-http";
+import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { initiativeNameFor, recordOpen } from "../initiative-record.js";
-import { logActivity } from "../persist.js";
-import { pluginCases, parseCaseRun, worthRecording } from "./plugin-cases.js";
 import { pluginTraces } from "./plugin-profile.js";
-import { db, teamFor } from "../platform-db.js";
-import { userRoot } from "../paths.js";
+import { db } from "../platform-db.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing about a " +
@@ -155,8 +159,8 @@ export function registerPluginEvalTools(server: McpServer): void {
     async ({ plugin }) => {
       const pool = db();
       if (!pool) return noDb();
-      const { rows } = await pool.query<{ version: string; digest: string; cases_digest: string; origin: string }>(`
-        select pv.version, pv.digest, pv.cases_digest, p.origin
+      const { rows } = await pool.query<{ version: string; digest: string; origin: string }>(`
+        select pv.version, pv.digest, p.origin
           from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
          where p.name = $1
          order by pv.version desc limit 1`, [plugin]);
@@ -179,7 +183,6 @@ export function registerPluginEvalTools(server: McpServer): void {
       const entry = entryOf(plugin);
       return json({
         plugin, version: row.version, digest: row.digest,
-        cases_digest: row.cases_digest || null,
         origin: row.origin,
         // WHAT AN EVALUATION IS ALLOWED TO DO WITH ITS FINDINGS, and it follows from whose the
         // plugin is. Ours: the findings feed a change somebody makes. Somebody else's: we
@@ -214,41 +217,39 @@ export function registerPluginEvalTools(server: McpServer): void {
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
       const traces = await pluginTraces(pool, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
-      const cases = await pluginCases(pool, plugin, version);
-      const enough = traces.sufficient || cases.sufficient;
       return json({
         plugin, version,
         traces,
-        cases,
-        // BOTH may be read, and only both being insufficient is a reason to stop. Cases need no
-        // history at all, so a plugin nobody has run is still evaluable — which is the whole
-        // reason the case half exists. Said here rather than left for a reader to infer.
-        sufficient_for_judging: enough,
+        // THE RUN HISTORY IS THE EVIDENCE, and it is the only evidence now.
+        //
+        // There was a second half: a `claude plugin eval` suite of ablation cases, recorded
+        // through `case_record`, giving a with-plugin against without-plugin delta. It is gone,
+        // and the reason is worth keeping. It never measured what it appeared to: no case ever
+        // declared a mock, so with `--mocks record` no plugin server started and the plugin's
+        // tools were NOT CALLABLE IN EITHER ARM. Every grader was a regex over tool NAMES or a
+        // judgement about an answer's shape, so a delta established that the method's text had
+        // reached the agent and it had used the right words -- never that the plugin worked.
+        //
+        // Nine cases, several hundred dollars of somebody's own credential, and two of the four
+        // most recent came back with a delta of exactly zero. The strongest result in the whole
+        // suite came from a prompt that TYPED THE COMMAND, which is a way of asking whether text
+        // helps once you have already handed it over.
+        //
+        // What this platform can actually see is what its own doors recorded: which tools were
+        // called, on whose door, how often, what they refused and whose refusal it was. That is
+        // a measurement of the thing itself rather than of an agent's vocabulary, and it needs
+        // no second runner, no credential and no suite to be kept in step with the plugin.
+        sufficient_for_judging: traces.sufficient,
         // AND WHAT TO DO ABOUT IT, in the same shape `initiative_status` answers with.
         //
-        // The suite and this platform are ONE pipeline and were reachable only as two: the CLI
-        // measures, `case_record` stores what it measured, and the stages after this one judge
-        // what was stored. Nothing joined them. A person ran `claude plugin eval`, read the
-        // numbers off their terminal, and stopped — because the recording step is a separate act
-        // that nothing asks for and nothing notices the absence of. It happened on this platform:
-        // four suites were run, eleven cases measured, and the platform went on holding a three-
-        // week-old run with twelve errored cases in it, because nobody carried the JSON across.
-        //
-        // `sufficient_for_judging: false` was the whole answer, and a boolean is not an
-        // instruction. This says which command, with which arguments, and what to do with its
-        // output — so the next step is in the answer rather than in somebody's memory of the
-        // skill.
-        //
-        // AND IT IS NEVER NULL, WHICH IT USED TO BE WHENEVER THE EVIDENCE WAS ENOUGH. The
-        // reasoning was that a next action nobody needs is noise on a profile that is already
-        // fine. What it actually did was END THE CHAIN: a caller following `next_action` from
-        // plugin_locate onwards arrived here, got null, and went to the ruler from memory of
-        // the skill. `plugin_conform` is named by this stage's skill and has NEVER been called
-        // — not once in four complete evaluations of four different plugins, including by the
-        // agent that wrote this comment, four times in one day. It is not that anybody decided
-        // it was unnecessary. It was simply never in the chain, and the chain is what gets
-        // followed.
-        next_action: enough ? {
+        // NEVER NULL, WHICH IT USED TO BE WHENEVER THE EVIDENCE WAS ENOUGH. The reasoning was
+        // that a next action nobody needs is noise on a profile that is already fine. What it
+        // did was END THE CHAIN: a caller following `next_action` from plugin_locate arrived
+        // here, got null, and went on from memory of the skill. `plugin_conform` is named by
+        // this stage's own skill and had NEVER been called -- not once in four complete
+        // evaluations, including by the agent that wrote this comment. The chain is what gets
+        // followed; anything worth doing has to be on it.
+        next_action: traces.sufficient ? {
           action: "read_the_contract_then_define",
           why: "the evidence is enough to judge against, so this stage's remaining question is " +
                "the one plugin_conform answers: does the package hold to the building-block " +
@@ -257,152 +258,16 @@ export function registerPluginEvalTools(server: McpServer): void {
           then: `ruler_read(plugin: "${plugin}", version: "${version}") — everything the ruler ` +
                 "is written FROM, which is the define stage's input",
         } : {
-          action: "record_a_suite_run",
-          why: cases.reason
-            ? `no case evidence: ${cases.reason}`
-            : "neither the run history nor a recorded suite carries enough to judge against",
-          run: `claude plugin eval ${plugin}@zz-stack --json <path>`,
-          then: `case_record(plugin: "${plugin}", version: "${version}", result: <the JSON at that path, verbatim>)`,
-          // Said before it is spent, not after. It is this account's own credential.
-          costs: "roughly $0.40 per case, on this machine, against this account's credential",
-          // The trap that produced a two-hour partial run reading as a plugin that helped with
-          // nothing. Named here because this is where somebody is about to run the command.
-          target: "ONE built plugin directory — marketplace/<plugin> — never the repository root",
+          action: "wait_for_use",
+          why: traces.reason
+            ? `no usable run history: ${traces.reason}`
+            : "this version's run history does not carry enough to judge against",
+          // No command to offer, and saying so is the honest answer. Evidence here is a
+          // by-product of the plugin being USED; nothing anybody runs on demand produces it.
+          then: "let the plugin be used, then profile it again. A ruler whose subject is the " +
+                "document or the initiative may already have subjects even when the trace " +
+                "history is thin — ruler_read says what is there.",
         },
-      });
-    },
-  );
-
-  server.registerTool(
-    "case_record",
-    {
-      description:
-        "WHEN you have run `claude plugin eval <plugin>@zz-stack --json` yourself and hold " +
-        "its output. Run that command first — it is a CLI on this machine, spending this " +
-        "account's own credential (roughly $0.40 per case), and nothing runs it for you. Pass " +
-        "its output here whole. RETURNS what was stored and what the run cost, which is what " +
-        "gives a delta a timestamp, so a profile can say how old the measurement is instead of " +
-        "presenting a three-week-old number as today's. REFUSES a payload carrying neither a " +
-        "readable case nor a cost, and refuses nothing else: a run whose cases all timed out is " +
-        "still stored for what it cost, and that answer is then free instead of costing another " +
-        "suite to find out.",
-      inputSchema: {
-        plugin: z.string(),
-        version: z.string(),
-        result: z.string().describe("the command's --json output, verbatim"),
-        // RUNNING A SUITE IS A PIECE OF WORK, so it belongs to an initiative like any other.
-        //
-        // Omit it and one is opened, named for what was measured, on the zz-plugin-eval flow —
-        // which is the flow this run is the first evidence for. Before this, four suites could
-        // be run and $15.76 spent while the platform's record of "what is this team doing" said
-        // nothing had happened, and `findings.md` had nowhere to be written to because no
-        // initiative existed to write it into.
-        initiative: z.string().optional().describe(
-          "The initiative this run belongs to. Omit to open one for it — which is the ordinary " +
-          "case; pass one to record a second suite against a round already under way."),
-      },
-    },
-    async ({ plugin, version, result, initiative }) => {
-      const pool = db();
-      if (!pool) return noDb();
-      let parsed: unknown;
-      try { parsed = JSON.parse(result); }
-      catch (err) { return text(`ERROR: that is not JSON — ${String(err).slice(0, 160)}`); }
-      // Validated BEFORE it is stored. A result whose shape moved is worth knowing about now,
-      // at the moment somebody can re-run the command, rather than at read time weeks later.
-      const read = parseCaseRun(parsed, new Date().toISOString(), "");
-      // A CASE OR A COST IS ENOUGH TO STORE IT. This refused on `!read.count` alone, which
-      // turned away the one kind of payload the raw column exists for: a suite that spent real
-      // money and produced no readable delta. `worthRecording` owns the rule so it can be
-      // tested; the refusal below still fires for a payload carrying neither.
-      if (!worthRecording(read)) return text(`ERROR: nothing was recorded — ${read.reason}`);
-      const { rows } = await pool.query<{ id: string; cases_digest: string }>(`
-        select pv.id, pv.cases_digest from zz.plugin_version pv
-          join zz.plugin p on p.id = pv.plugin_id
-         where p.name = $1 and pv.version = $2`, [plugin, version]);
-      const pv = rows[0];
-      if (!pv) return text(`ERROR: no released version ${version} of "${plugin}" is recorded`);
-      const who = parseCaller(requestHeaders()).email;
-
-      // THE RUN BECOMES A PIECE OF WORK, not just a row. An initiative on the zz-plugin-eval
-      // flow is what the stages after this one write into — `rulers.md` from define, and
-      // `findings.md` from report — so recording a suite outside one left the flow's own first
-      // evidence somewhere its later stages could not reach.
-      //
-      // OPENED ONLY WHEN NONE WAS GIVEN, and named for what was measured rather than for the
-      // clock alone, so two rounds on the same plugin and version are the same initiative asked
-      // for twice rather than two folders nobody can tell apart. `recordOpen` is the same act
-      // `initiative_open` performs; this does not reimplement it.
-      const team = await teamFor(who);
-      const root = await userRoot();
-      let round = initiative?.trim() || "";
-      let opened = false;
-      if (!round) {
-        round = initiativeNameFor(`eval-${plugin}-${version}`.replace(/[^a-z0-9-]+/gi, "-").toLowerCase());
-        if (!existsSync(join(root, round))) {
-          recordOpen(root, round, "zz-plugin-eval", who);
-          opened = true;
-          logActivity(root, `${round}/_open.json`,
-            { user: who, action: "initiative_open", initiative: round, flow: "zz-plugin-eval" });
-        }
-      }
-
-      await pool.query(
-        `insert into zz.plugin_case_run (plugin_version_id, cases_digest, recorded_by, result,
-                                         team_slug, initiative)
-         values ($1::uuid, $2, $3, $4::jsonb, $5, $6)`,
-        [pv.id, pv.cases_digest, who, JSON.stringify(parsed), team, round]);
-      // Recorded, because this is the one tool here that changes anything. WHO ran a suite and
-      // WHEN is provenance a later reader needs: a delta is only as good as the moment it was
-      // measured, and the run cost somebody real money on their own credential.
-      logActivity(await userRoot(), null,
-        { user: who, action: "case_record", plugin, version, cases: read.count });
-      // THE COST GOES BACK ON EVERY PATH, at the one moment the person has just spent it.
-      // And when no case parsed, `recorded: 0` alone reads to an LLM caller like a failure it
-      // should retry — so that path says both facts in a sentence: what could not be read, and
-      // what was kept anyway.
-      const money = read.cost_usd === null
-        ? "the payload carries no cost figure"
-        : `it cost $${read.cost_usd} to run` +
-          (read.judge_cost_usd === null ? "" : `, plus $${read.judge_cost_usd} to grade`);
-      // HOW MUCH OF THE SUITE ACTUALLY RAN, said here rather than left for a reader to notice.
-      // This is the only moment the caller can still do something about it: they have the
-      // command in their shell and the money is already spent. The frozen 2.1.269 run is the
-      // case that argues for it — twelve of its thirty-six runs died and the CLI marked the
-      // whole suite `partial: "interrupted"`, and everything downstream of it went on treating
-      // a mean over what survived as a measurement. A `mean_delta` taken across a suite that
-      // half fell over is not a smaller measurement, it is a different one.
-      //
-      // Both fields go back unconditionally, and the sentence only when there is something to
-      // say. A caller that reads fields gets them either way; one that reads prose is not made
-      // to parse "errored_runs: 0" to learn that nothing went wrong.
-      const damage = [
-        read.errored_runs ? `${read.errored_runs} run${read.errored_runs === 1 ? "" : "s"} errored or timed out` : "",
-        read.partial ? "`claude plugin eval` marked the suite partial — it did not finish" : "",
-      ].filter(Boolean);
-      return json({
-        recorded: read.count, mean_delta: read.mean_delta,
-        cost_usd: read.cost_usd, judge_cost_usd: read.judge_cost_usd,
-        errored_runs: read.errored_runs, partial: read.partial, plugin, version,
-        // WHICH INITIATIVE THIS IS NOW PART OF, and whether asking for it created it. A caller
-        // that opened a round without meaning to should be told at the moment it happened,
-        // rather than finding an initiative in the console later that nobody remembers opening.
-        initiative: round,
-        initiative_opened: opened,
-        next_action: {
-          action: "judge_the_round",
-          why: "the suite is recorded; a delta is not a verdict until it is scored against a ruler somebody agreed",
-          then: `ruler_read(plugin: "${plugin}") to see what it would be judged against, then ` +
-                `ruler_record and round_judge against initiative "${round}"`,
-        },
-        ...(damage.length ? {
-          warning: `${damage.join("; ")}. Whatever was recorded is a measurement of a suite ` +
-                   "that did not fully run; re-run it before reading a delta off it.",
-        } : {}),
-        ...(read.count ? {} : {
-          note: `no case was readable — ${read.reason}. The result was stored whole anyway ` +
-                `and ${money}, so nothing has to be re-run to ask about it.`,
-        }),
       });
     },
   );

@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-interface LockEntry { version: string; digest: string; cases_digest: string; skills: Record<string, string> }
+interface LockEntry { version: string; digest: string; skills: Record<string, string> }
 type Lock = Record<string, LockEntry>;
 
 const gate = () => spawnSync("node", ["scripts/gate.ts", "--quiet"], { encoding: "utf8" });
@@ -61,7 +61,7 @@ if (!redMissing) {
 // enumeration returns five plugins and zz is absent, not present-and-empty. Second, an absence
 // is exactly what this branch catches.
 const parsed3: Lock = JSON.parse(lock);
-parsed3["a-plugin-the-catalog-does-not-ship"] = { version: "9.9.9", digest: "deadbeef", cases_digest: "", skills: {} };
+parsed3["a-plugin-the-catalog-does-not-ship"] = { version: "9.9.9", digest: "deadbeef", skills: {} };
 writeFileSync(LOCK, JSON.stringify(parsed3, null, 2) + "\n");
 const redGhost = gate().status !== 0;
 writeFileSync(LOCK, lock);

@@ -10,7 +10,7 @@ for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
 for (const want of ["ruler_read", "ruler_record", "ruler_affirm", "round_judge",
-                    "round_scores", "case_record", "finding_record"]) {
+                    "round_scores", "finding_record"]) {
   if (!registered.has(want)) fail.push(`${want} is not registered`);
 }
 // Control: the three correct names must be UNCHANGED. A sweep that renamed everything fails here.
@@ -28,7 +28,7 @@ const EXPECTED = new Set([
   "plugin_locate", "plugin_profile", "plugin_conform",
   "ruler_read", "ruler_record", "ruler_affirm",
   "round_judge", "round_scores", "round_recommend",
-  "case_record", "finding_record",
+  "finding_record",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);
@@ -93,35 +93,6 @@ for (const s of readdirSync(skillsDir)) {
 // Both are checked against `registered`, which was read off the source above rather than
 // listed here — so a later rename moves them together or this goes red.
 
-const isToolShaped = (t: string) => /^(plugin|ruler|round|case|finding)_[a-z0-9_]+$/.test(t);
-
-// The graders. Every alternative in a `pattern:` that is SHAPED like one of this door's tool
-// names must BE one — which catches the bare stem as well as the old name. `plugin_cases` was
-// exactly that: not an EVAL_ALIAS key, so a sweep over the map's keys left it behind, and it
-// had already stopped matching the tool it was a stem of.
-const evalsDir = "catalog/zz/zz-plugin-eval/evals";
-let patternsSeen = 0;
-let namedARegisteredTool = 0;
-for (const c of readdirSync(evalsDir)) {
-  const rel = join(evalsDir, c, "case.yaml");
-  const body = readFileSync(rel, "utf8");
-  for (const old of Object.keys(EVAL_ALIAS)) {
-    if (new RegExp(`(^|[^a-z_])${old}([^a-z_]|$)`).test(body)) fail.push(`${rel} still names ${old}`);
-  }
-  for (const m of body.matchAll(/^\s*pattern:\s*'([^']*)'/gm)) {
-    patternsSeen += 1;
-    for (const alt of m[1].split("|")) {
-      const t = alt.replace(/\\/g, "").trim();
-      if (!isToolShaped(t)) continue;
-      if (registered.has(t)) namedARegisteredTool += 1;
-      else fail.push(`${rel} greps for \`${t}\`, which this door registers no tool by — the grader matches nothing`);
-    }
-  }
-}
-// CONTROLS. Either number at zero means the scan above proved nothing: no cases found, or no
-// grader names a tool at all, and every clause in the loop is vacuously satisfied.
-if (patternsSeen === 0) fail.push(`no \`pattern:\` line was found under ${evalsDir} — the grader scan read nothing`);
-if (namedARegisteredTool === 0) fail.push(`no grader under ${evalsDir} names a tool this door registers — the tool-name clause was never exercised`);
 
 // The chain check. Its first argument IS the tool name sent over the wire.
 //

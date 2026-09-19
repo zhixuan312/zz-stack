@@ -34,7 +34,6 @@ import { stageDocsOf, usageDocs, usageInitiatives, usageRuns } from "./plugin-su
 import { Dim, MarkItem, Marking, Subject, markAll } from "./judge.js";
 import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
-import { pluginCases } from "./plugin-cases.js";
 import { pluginTraces } from "./plugin-profile.js";
 import { sanitize, userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
@@ -86,7 +85,6 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
   const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
-  const cases = await pluginCases(p, plugin, version);
   const { stage_paths, ...figures } = traces;
   const named = toolsNamedBy(plugin);
   return JSON.stringify({
@@ -122,7 +120,6 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
             : null }
       : null,
     traces: { ...figures, initiatives_with_a_path: stage_paths.length },
-    cases,
   }, null, 2);
 }
 
@@ -133,7 +130,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
       description:
         "WHEN the define stage is writing rulers.md and needs everything a ruler for this " +
         "plugin version is written FROM. RETURNS the computed profile (traces and recorded " +
-        "cases), the documents and runs its use has left behind with whether each has already " +
+        "the computed profile), the documents and runs its use has left behind with whether each has already " +
         "been scored, and any ruler the plugin already has — and no ruler. REFUSES only a " +
         "deployment with no platform database: a version nothing has been recorded against " +
         "comes back as empty facts, because \"nothing recorded\" is an answer. It decides " +
@@ -146,9 +143,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
       if (!p) return noDb();
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-      const [traces, cases, docs, runs] = await Promise.all([
+      const [traces, docs, runs] = await Promise.all([
         pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin)),
-        pluginCases(p, plugin, version),
         usageDocs(p, plugin, version, servesOwnDoor(plugin)),
         usageRuns(p, plugin, version),
       ]);
@@ -167,7 +163,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
          order by rb.created_at`, [plugin])).rows;
       return json({
         plugin, version,
-        profile: { traces, cases, sufficient_for_judging: traces.sufficient || cases.sufficient },
+        profile: { traces, sufficient_for_judging: traces.sufficient },
         usage: {
           documents: docs, runs,
           unscored_documents: docs.filter((d) => !d.scored).length,

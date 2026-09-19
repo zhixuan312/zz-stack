@@ -119,16 +119,8 @@ for (const [rel, why] of [
   ["catalog/zz/zz-access/skills/zz-migrate/migrate.ts", "zz-migrate's script"],
   ["catalog/zz/zz-access/skills/zz-migrate/mcp.ts", "zz-migrate's MCP client"],
   ["catalog/zz/zz-access/skills/zz-migrate/read-mma.ts", "zz-migrate's reader"],
-  // The eval suite is carried by the plugin, so a case about a moved skill moves with it: a
-  // case left in the baseline's suite types a command the baseline no longer declares, and
-  // scores exactly what the no-plugin arm scores. Nothing in the gate runs evals, so the
-  // only place that can be caught is here.
-  ["catalog/zz/zz-access/evals/diagnoses-a-401-with-zz-doctor/case.yaml", "zz-doctor's eval case"],
 ]) {
   if (!existsSync(rel)) fail.push(`${why} did not travel: ${rel} is missing`);
-}
-if (existsSync("evals/diagnoses-a-401-with-zz-doctor")) {
-  fail.push("the zz-doctor eval case is still in the baseline's suite at evals/");
 }
 
 /* ── the four say what they are ───────────────────────────────────── */

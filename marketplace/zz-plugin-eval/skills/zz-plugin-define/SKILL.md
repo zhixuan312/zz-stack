@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 1.1
+version: 1.2
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into rulers.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.md, which is gated — judging does not start until somebody approves it."
 ---
@@ -8,7 +8,7 @@ when_to_use: "The third stage of zz-plugin-eval, after profile. Produces rulers.
 # zz-plugin-define
 
 ```
-ruler_read(plugin, version)   the profile, the cases, and the unscored artifacts
+ruler_read(plugin, version)   the profile and the unscored artifacts
 ```
 
 Then you write `rulers.md`, and **a person approves it before anything is scored.**
@@ -135,7 +135,7 @@ no tool could have made.
 ## Say which evidence each dimension reads
 
 The two blocks answer different questions and a dimension has to name which one it is scored
-from. A `recovery` dimension read from cases and a `recovery` dimension read from traces are not
+from. A `recovery` dimension read from one plugin's traces and the same name read from another's are not
 the same measurement, and a reader six months later cannot tell them apart unless you say.
 
 ## Recording it, then writing it
@@ -162,7 +162,7 @@ spelled exactly:
 
 - `## The plugin under evaluation` — name and version and digest, from locate.
 - `## What good means here` — the dimensions, with anchors or thresholds.
-- `## The evidence each dimension reads` — cases, traces, or both, per dimension.
+- `## The evidence each dimension reads` — which computed figure or which artifact, per dimension.
 
 Then `document_present` it and put what comes back in front of the person. They are approving this
 document, not your account of it. Record their agreement with `document_approve` the moment it arrives,

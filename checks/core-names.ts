@@ -96,7 +96,7 @@ const EXEMPT = new Set([
 const MARKER = /NOT A TOOL:/;
 
 const TREES = ["services", "packages", "scripts", "checks", "catalog", "marketplace", "skills",
-               "evals", "testing"];
+               "testing"];
 const CODE = /\.(ts|tsx|mjs|js)$/;
 const YAML = /\.ya?ml$/;
 

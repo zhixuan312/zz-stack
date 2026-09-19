@@ -48,7 +48,7 @@
 //
 //   1. the directories moved, the frontmatter moved with them, and nothing was left behind at
 //      the old name or duplicated into the dead catalog path;
-//   2. no caller still says an old name — swept over source, manifests, eval cases and shell,
+//   2. no caller still says an old name — swept over source, manifests and shell,
 //      not just over the two trees the rename touched;
 //   3. EVERY `skills/<name>/SKILL.md` literal in a script or a check resolves to a directory
 //      that exists. This is the property the plan's site table could not be, because
@@ -112,12 +112,11 @@ for (const [oldName, newName] of PAIRS) {
 
 // ── 2. no caller left behind ─────────────────────────────────────────────────────────────
 //
-// Roots beyond the plan's six. `evals/` holds a `tool: Skill(<name>)` grader the gate never
 // runs, `testing/` holds a shell prompt that names the skill to an agent, `deploy/` documents
 // the skills root, and `checks/` is where the alias's own consumers live — all outside a sweep
 // over `services packages scripts catalog marketplace skills`, and every one of them a live
 // caller.
-const ROOTS = ["services", "packages", "scripts", "catalog", "skills", "checks", "evals",
+const ROOTS = ["services", "packages", "scripts", "catalog", "skills", "checks",
                "testing", "deploy", "blocks", "docs", "."];
 const SKIP_DIR = new Set(["node_modules", ".git", "dist", "marketplace", "results", "migrations", "runs"]);
 // `marketplace/` is a RENDER of `skills/`, rebuilt by the gate itself — reading it mid-gate is a

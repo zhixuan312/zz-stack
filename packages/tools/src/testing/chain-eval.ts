@@ -55,9 +55,6 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("round_scores refuses an eval_id nothing minted",
     await callEval("round_scores", { eval_id: randomUUID() }),
     /no platform database|is not an evaluation/);
-  eitherOr("case_record refuses a result that is not JSON",
-    await callEval("case_record", { plugin: PLUGIN, version: "0", result: "not json" }),
-    /no platform database|that is not JSON/);
   eitherOr("ruler_record refuses a quantitative dimension with no threshold",
     await callEval("ruler_record", {
       plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",

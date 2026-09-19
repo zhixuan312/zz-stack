@@ -44,22 +44,28 @@ measures the shelf's routing rather than this flow's content.
 
 Load `zz-platform` first, as with every flow on this platform.
 
-## Two kinds of evidence, and each has its own sufficiency line
-
-This is the part that most often gets read wrong, so it is stated before anything else.
+## One kind of evidence, and where the second one went
 
 | | where it comes from | needs | answers |
 |---|---|---|---|
-| **cases** | `claude plugin eval`, recorded by `case_record` | nothing — somebody writes them | does installing this beat not installing it? |
 | **traces** | the event log, via `plugin_profile` | five usable runs | what did it actually do in real use? |
 
-**Cases need no history at all.** A plugin released this morning can be evaluated this
-afternoon. So a thin trace block is a fact to report, not a reason to stop — `define` proceeds
-on cases alone, and only *both* blocks being empty means there is nothing to judge.
+**There were two.** `cases` came from a `claude plugin eval` suite recorded by `case_record`,
+and reported a with-plugin against no-plugin delta — a counterfactual, which is a stronger
+claim than any score. It is removed, and what it actually measured is why.
 
-An earlier design had one evidence source and one sufficiency line, and spent its whole
-verification plan explaining that three of its five stages could not be run. That was a
-consequence of the design, not of the data.
+No case ever declared a mock, so under the CLI's default `--mocks record` no plugin server
+started and **the plugin's tools were not callable in either arm**. Every grader was a regex
+over tool NAMES or a judgement about an answer's shape. A delta therefore established that the
+method's TEXT had reached the agent and that it used the right words — never that the plugin
+worked. The strongest result the suite ever produced came from a prompt that typed the plugin's
+own command, which is a way of asking whether text helps once you have already handed it over.
+
+**So a thin trace block is now a real constraint, not a fact to report and route around.** A
+plugin nobody has used cannot be judged on its runs. That is an honest `not-evaluable`, and the
+enum carries that word for exactly this. Two things soften it: a ruler whose subject is the
+**document** or the **initiative** reads artifacts rather than runs, and may have subjects when
+the trace history is thin; and `plugin_conform` answers from the catalog entry alone.
 
 ## The one hard rule
 

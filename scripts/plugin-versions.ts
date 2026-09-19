@@ -21,10 +21,9 @@
  * shelf and includes each server's URL. It answers "what did this person receive" and is the
  * runtime's cache key. It cannot answer "what is sdlc", which is what an evaluation needs.
  *
- * TWO NUMBERS PER PLUGIN, and the second one is not a duplicate. `digest` covers everything the
- * plugin ships; `cases_digest` covers its eval suite alone. A score is only comparable with
- * another score taken against the same suite — four cases and one case are not one measurement
- * — so the suite gets an identity of its own.
+ * ONE NUMBER PER PLUGIN. There were two: `cases_digest` covered the eval suite alone, so a
+ * score could name the suite it was taken against. That suite is gone — it never measured what
+ * it appeared to — and with it the second digest.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -69,7 +68,6 @@ if (process.argv.includes("--write")) {
   const lock = Object.fromEntries(entries.map((p) => [p.name, {
     version: p.version,
     digest: p.digest,
-    cases_digest: p.cases_digest,
     skills: Object.fromEntries(p.skills.map((s) => [s.name, s.sha])),
   }]));
   writeFileSync(LOCK, `${JSON.stringify(lock, null, 2)}\n`);
@@ -79,7 +77,6 @@ if (process.argv.includes("--write")) {
   interface LockedPlugin {
     version: string;
     digest: string;
-    cases_digest: string;
     skills: Record<string, string>;
   }
   const prev: Record<string, LockedPlugin> = existsSync(LOCK) ? JSON.parse(readFileSync(LOCK, "utf8")) : {};
@@ -101,7 +98,7 @@ if (process.argv.includes("--write")) {
         : `STALE: the lock says ${was.version}, the catalog says ${p.version} — RUN --write, ` +
           "the release registers plugin versions FROM this file";
     console.log(`  ${pad(p.name, 16)}${pad(p.version, 11)}${pad(p.digest, 10)}` +
-                `${pad(p.cases_digest || "(none)", 8)}${pad(p.skills.length, 8)}${state}`);
+                `${pad(p.skills.length, 8)}${state}`);
   }
   console.log();
 }

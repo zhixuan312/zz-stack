@@ -1,8 +1,8 @@
 ---
 name: zz-plugin-report
-version: 1.0
+version: 1.1
 description: Stage 5 of plugin evaluation. Take the recommendation from the typed judge, read the scores back, and write findings.md — five sections, gated, and it closes the initiative.
-when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation and what admits the proposed cases into the suite."
+when_to_use: "The last stage of zz-plugin-eval, after judge. Produces findings.md; approving it is what closes the evaluation."
 ---
 
 # zz-plugin-report
@@ -55,7 +55,7 @@ report without a recommendation and say so in section 1. Do not substitute a wor
 - **Confidence** — the number it returned, and the runner-up option if the distribution is not
   concentrated. A 0.42 spread across two options is a different message from a 0.95.
 - **Key numbers** — the same table every time, so two reports can be read side by side: each
-  dimension's mean, the judge-on-trial gap, every threshold met-or-not, the case delta.
+  dimension's mean, the judge-on-trial gap, and every threshold met-or-not.
 - **One paragraph** — why those numbers support that word. Written from them, not beside them.
 
 Anything that is not one of those four belongs in a later section.

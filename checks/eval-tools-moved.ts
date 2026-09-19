@@ -72,7 +72,7 @@ const EVAL = "eval";                                  // the eval side, relative
 const THE_DOOR = "eval-door.ts";
 
 /** The three support modules this task moves, and the three registration modules they serve. */
-const SUPPORT = ["judge.ts", "plugin-cases.ts", "plugin-profile.ts"];
+const SUPPORT = ["judge.ts", "plugin-profile.ts"];
 const REGISTRATIONS = ["plugin-eval.ts", "plugin-judge.ts", "plugin-record.ts"];
 const MOVED = [...SUPPORT, ...REGISTRATIONS];
 

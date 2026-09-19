@@ -19,7 +19,7 @@ size("TOOL_ALIAS", TOOL_ALIAS, 17);
 // door. An alias pointing at a name that 404s is worse than an absent one: it turns "no such
 // tool" into a tool the client accepts and the gateway refuses.
 size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
-size("EVAL_ALIAS", EVAL_ALIAS, 7);
+size("EVAL_ALIAS", EVAL_ALIAS, 6);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 
 const resolves: [Record<string, string>, string, string][] = [

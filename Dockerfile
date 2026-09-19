@@ -88,9 +88,6 @@ RUN npm ci --omit=dev && npm cache clean --force
 # with change on their own cadence, and neither is code.
 COPY catalog /catalog
 COPY skills /skills
-# The baseline plugin's own eval cases. `zz` is generated per caller rather than read from
-# catalog/, so its suite has nowhere else to ride along.
-COPY evals /evals
 # NO `COPY blocks /blocks`. That directory held the building-block contract and two prose
 # documents and never held a single usage skill, so the image carried documentation and
 # skill-roots.ts walked it for skills that were never there. It is removed from the repository;

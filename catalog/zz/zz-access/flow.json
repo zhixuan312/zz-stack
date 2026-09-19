@@ -5,7 +5,6 @@
   "description": "Access, yours and everybody's: your platform token and the setup for whichever client you work in — plus, if your role carries them, the people and teams behind them. One door; the tools you are offered are the ones your role can execute.",
   "purpose": "To be the one door for every question about who may do what — your platform token, your client setup, and, if your role carries them, the people and teams behind them. A tool belongs here when it hands somebody a credential or changes who holds one. Answering for the deployment itself is NOT here: an operator act belongs on the door that owns its subject, which is why the bug tools and the index rebuild sit with the records they are about.",
   "entry": "zz-access",
-  "evals": "evals",
   "servers": [
     {
       "name": "zz-access",

@@ -56,7 +56,7 @@ services:
       # failure this whole apparatus exists to prevent.
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
-      - ZZ_JUDGE_MODEL=${ZZ_JUDGE_MODEL:-glm-5.3}
+      - ZZ_JUDGE_MODEL=${ZZ_JUDGE_MODEL:-deepseek-v4.1-flash}
       - ZZ_JUDGE_THINKING=${ZZ_JUDGE_THINKING:-on}
       # The TYPED judge — the one that answers shapes rather than sentences. A ruler dimension
       # is a position on named levels, a recommendation is one word from a closed set, a

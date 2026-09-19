@@ -31,58 +31,12 @@
 import type pg from "pg";
 
 import { configured as typedJudgeConfigured } from "./typesafe.js";
+import { JUDGE_BASE, JUDGE_MODEL, LLM_BASE, LLM_KEY, THINKING, typedJudgeName } from "./judge-model.js";
 import { markTyped } from "./judge-typed.js";
 import { applyThresholds } from "./judge-thresholds.js";
 import { traceOf } from "./judge-trace.js";
 import { bodyWithin, pairOf } from "./judge-pair.js";
 
-/** The judge is NOT the platform's base model. The base model is what the flows' own agents
- *  run on, and judging with it would make the judge exactly as good as the thing being
- *  judged — the one property a ruler must not have. It is pinned separately and defaults to
- *  the full model where the agents run on the flash one. */
-const JUDGE_BASE = process.env.ZZ_JUDGE_MODEL || "glm-5.3";
-
-/** EXTENDED REASONING IS ON, and the control is why.
- *
- * It was turned off for a good reason and put back for a better one. With it on, a control
- * call ran past 95 seconds and timed out three times in a row, storing nothing — and a lost
- * control costs a round the only number that establishes the judge was reading rather than
- * rewarding confident prose. Off, the same call answered in five seconds. That looked like a
- * clear trade.
- *
- * Then the control judged the change, and THE CONCLUSION DRAWN FROM IT WAS WRONG. It read:
- * under the fast judge using-the block's gap fell from 1.67 to 1.00 and
- * writing-case-queries went to minus 0.33, therefore the fast judge is broken.
- *
- * Both of those rounds have `subject: body`, and no body round has EVER cleared the collapse
- * line, under any judge, with reasoning on or off. Measured across the whole store on
- * 2026-09-06: using-casebox is -1.83 with reasoning and -1.00 without;
- * writing-case-queries is 0.00 with and +0.33 without. Reasoning-off scored BETTER on both.
- * The "1.67" was a gap that was already negative, reported as though it were positive and
- * shrinking.
- *
- * The cause is the ruler, not the mode. A body rubric asks generic questions about a skill's
- * text, the control is another skill's text, and a decent one answers them — so the control
- * cannot fail and the comparison measures nothing about the judge. Turning reasoning off made
- * a meaningless number noisier; it did not make it meaningless.
- *
- * Reasoning stays ON, and the reason is now the honest one: a mode change is a judge change,
- * it starts an incomparable series, and there is no measured benefit to buying that. The
- * timeout is paid rather than avoided, which the resume design affords — a subject whose call
- * times out is reported skipped, `remaining` does not move, and the next call retries it with
- * a fresh budget.
- *
- * ZZ_JUDGE_THINKING=off is kept, because the comparison above is worth being able to re-run —
- * and because a mode is part of a judge's identity, it records as a different judge name and
- * never averages with these. */
-const THINKING = (process.env.ZZ_JUDGE_THINKING || "on").toLowerCase() === "on";
-const JUDGE_MODEL = THINKING ? JUDGE_BASE : `${JUDGE_BASE}/no-reasoning`;
-/** What goes in `judge_model` when the typed service marked the round. Read from the same
- *  environment the client reads, so the recorded name is the model that actually answered. */
-const typedJudgeName = (): string =>
-  `typesafe/${(process.env.TYPESAFE_MODEL || "jev-latest").trim()}`;
-const LLM_BASE = (process.env.LLM_BASE_URL || "").replace(/\/+$/, "");
-const LLM_KEY = process.env.LLM_API_KEY || "";
 
 /** How many subjects one round judges, whatever the subject is.
  *

@@ -33,6 +33,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.53.1] — 2026-09-19
+
+A tool outside the chain is a tool nobody calls.
+
+### Fixed
+
+- **`plugin_profile` no longer ends the flow's `next_action` chain when the evidence is
+  sufficient.** It returned null there, on the reasoning that a next action nobody needs is
+  noise. What it did was stop the chain: a caller following `next_action` from `plugin_locate`
+  arrived at the profile, got null, and continued from memory of the skill. `plugin_conform` —
+  which reads a plugin against the building-block contract and is named by its own stage's skill
+  — had therefore never been called, in four complete evaluations of four different plugins. The
+  sufficient branch now points at it, and then at `ruler_read`.
+
 ## [0.53.0] — 2026-09-19
 
 A skill that only fires when you already know to ask for it adds nothing.

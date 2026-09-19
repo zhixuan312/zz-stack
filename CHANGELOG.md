@@ -33,6 +33,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.54.2] — 2026-09-19
+
+The model is `deepseek-v4.1-flash`, and the judge rule is warned rather than assumed.
+
+### Changed
+
+- **`PLATFORM_BASE_MODEL` and `ZZ_JUDGE_MODEL` are both `deepseek-v4.1-flash`.** They were both
+  `glm-5.3-flash` on the deployment, which already violated the rule the env file states two
+  paragraphs apart — the judge is "deliberately not the one above". The default said `glm-5.3`
+  and the deployment said `glm-5.3-flash`, so the separation was documented and not in force.
+  `LLM_BASE_URL` was already `ollama.com`; only the model name changed.
+- **The judge-equals-base rule is enforced by a boot warning, not by a default.** It can only do
+  damage when the typed judgement service is absent, because every typed decision now goes there
+  — twelve of twelve rounds since that switch carry `typesafe/jev-latest`. `checkJudgeModel`
+  warns on exactly that combination. Warned, not refused: a deployment that wants one model is
+  allowed to have one.
+
+### Fixed
+
+- **`prompt_tokens_details.cached_tokens` is confirmed.** `judge.ts` recorded that the name came
+  from a provider reference and had never been seen on a live response, and that the first real
+  round would settle it. It is present and correct.
+
+### Upgrade notes
+
+- Set `PLATFORM_BASE_MODEL` and `ZZ_JUDGE_MODEL` to a model your `LLM_BASE_URL` actually lists —
+  `curl $LLM_BASE_URL/models` answers. A name that endpoint does not serve fails at the call,
+  not at boot.
+- Marks taken under the old model do not average with new ones; `zz.eval.judge_model` records
+  which answered, and every comparison groups by it.
+
 ## [0.54.1] — 2026-09-19
 
 An initiative opened by mistake can be abandoned.

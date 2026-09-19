@@ -33,6 +33,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.7] — 2026-09-19
+
+Which initiatives are a flow's is answered by `zz.doc.flow`, not by a run nobody recorded.
+
+### Fixed
+
+- **A flow was judged on a sixth of its own work.** `usageInitiatives` decided which initiatives
+  belonged to a plugin by joining documents to their producing run and that run to the plugin's
+  skill versions — but `zz.doc.produced_by_run_id` is null on 326 of this platform's 365
+  documents, because a document is written by whatever is holding the conversation and only some
+  of those carry a run. The query returned 3 initiatives where 17 are governed by the flow, and
+  1 with a closing document where 6 have one. Nothing errored; the sample was silently wrong.
+  `zz.doc.flow` is stamped at write time from the flow that governs the initiative, needs no run
+  to exist, and is now what answers the question — counted across every version, the way a door
+  plugin's tool use already is.
+
+### Upgrade notes
+
+- Any round recorded against an `initiative` ruler was scored on whatever fraction of the flow's
+  initiatives happened to carry a producing run. Re-run it.
+
 ## [0.52.6] — 2026-09-19
 
 A refusal says whose it was, and the sheet totals them.

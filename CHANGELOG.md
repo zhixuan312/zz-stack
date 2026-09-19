@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.6] — 2026-09-19
+
+A refusal says whose it was, and the sheet totals them.
+
+### Fixed
+
+- **A threshold over the share of refusals that are guardrails could not be read at all.** The
+  fact sheet carried a refusal count and not `refusal_owner`, so the line came back unmet with
+  "the facts contain no refusal_owner breakdown" — an absence in the instrument reported as a
+  defect in the plugin. The profile now splits every tool's refusals into `guardrail`, `ours`,
+  `theirs` and the ones nothing attributed, and the sheet carries the door's totals beside the
+  per-tool rows.
+
 ## [0.52.5] — 2026-09-19
 
 A door-owner's documents are the ones written through its door, and a declared subject is never

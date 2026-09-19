@@ -33,6 +33,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.59.0] — 2026-09-19
+
+**A score is now a thing the platform keeps, and it says which initiative produced it.**
+
+An evaluation round derived two figures — effectiveness out of ten, and headroom, the
+distance from ten with a count of named changes — put them in front of the typed judge so
+the recommendation was chosen knowing them, returned them to whoever called the tool, and
+stored neither. The verb survived; the measurement did not. Both are columns now.
+
+They are **stored rather than recomputed by readers**. The arithmetic lives in one file, and
+a second copy of it in the console's API would drift the first time a weight or a band moved
+— at which point the console would print one score and the report another, with nothing on
+screen saying which of the two to believe.
+
+**A round also records the initiative it was run inside.** Evaluations happen inside an
+initiative — the one whose ruler was approved and whose findings are written — and nothing
+recorded which, so a score had no route back to the report that explains it and a report had
+no route to the rows underneath it. `round_judge` now takes that initiative and stamps it
+with the caller's team; a control run inherits both from the round it controls.
+
+It is a parameter rather than something the platform works out, and deliberately: the
+derivation does not exist. Matching a score to a report by plugin name and a date window is
+correct right up to the week two rounds of one plugin land close together, and that class of
+guess has already cost this platform five separate defects in a single day.
+
+**The console shows it.** `/api/console/plugins` carries the newest round that reached a
+verdict for each plugin — both axes, the recommendation and its confidence, the version that
+was actually measured, and the initiative when one is recorded.
+
+**Rounds scored before this release keep an honest gap.** A one-off script recomputes their
+two axes from their own stored marks, through the same arithmetic the reports were written
+against. It does not invent the initiative link: that one is genuinely absent on those rows,
+so they read as a date with no report rather than a guess dressed as a fact.
+
+**If you run evaluations:** `round_judge` takes `initiative` on the call that mints a round.
+Continuation calls carry `eval_id` and do not repeat it.
+
 ## [0.58.2] — 2026-09-19
 
 **A correction to 0.58.0's own changelog, which understated the break it shipped.** That

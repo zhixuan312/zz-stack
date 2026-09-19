@@ -30,7 +30,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
-import { Dim, MarkItem, Marking, SUBJECT_CAP, Subject, markAll, traceOf } from "./judge.js";
+import { Dim, MarkItem, Marking, SUBJECT_CAP, Subject, markAll } from "./judge.js";
+import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
 import { pluginCases } from "./plugin-cases.js";
 import { pluginTraces } from "./plugin-profile.js";

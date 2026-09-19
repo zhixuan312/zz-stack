@@ -33,6 +33,7 @@ import type pg from "pg";
 import { configured as typedJudgeConfigured } from "./typesafe.js";
 import { markTyped } from "./judge-typed.js";
 import { applyThresholds } from "./judge-thresholds.js";
+import { traceOf } from "./judge-trace.js";
 
 /** The judge is NOT the platform's base model. The base model is what the flows' own agents
  *  run on, and judging with it would make the judge exactly as good as the thing being
@@ -82,10 +83,13 @@ const typedJudgeName = (): string =>
 const LLM_BASE = (process.env.LLM_BASE_URL || "").replace(/\/+$/, "");
 const LLM_KEY = process.env.LLM_API_KEY || "";
 
-/** Events shown to the judge, per subject. The cap is announced in the text and recorded in
- *  the stored note — an ops-build run reaches 569 events, and a judge handed the first 400
- *  scores a different run from the one that happened. */
-const TRACE_CAP = 400;
+/** The most of an INITIATIVE PAIR a judgement service is given, in characters, split evenly
+ *  between the two ends. Measured against the live service: an untruncated pair of real
+ *  documents answers `max_tokens_exceeded` and scores nothing at all, which loses the subject
+ *  rather than shortening it. Overridable, because a service with a larger window is the same
+ *  contract with a different number. */
+const PAIR_CAP = Number(process.env.ZZ_JUDGE_PAIR_CAP || 24_000);
+
 
 /** How many subjects one round judges, whatever the subject is.
  *
@@ -309,29 +313,6 @@ function systemFor(kind: Subject, noun: string, name: string, version: string,
     "RULES.",
     ...RULES,
   ].join("\n");
-}
-
-/** One run as the text a judge reads. Truncation is announced in the text AND returned, so
- *  neither the judgement nor the stored record can claim more coverage than it had. */
-export async function traceOf(p: pg.Pool, runId: string): Promise<{ text: string; truncated: number }> {
-  const total = Number((await p.query<{ n: string }>(
-    "select count(*) as n from zz.event where run_id = $1::uuid", [runId])).rows[0]?.n ?? 0);
-  const { rows } = await p.query<{ at: string; subject: string; ok: boolean | null; refusal: string }>(`
-    -- THE RESOLVED NAME. A judge reading this transcript is asked which tools a run used,
-    -- and a rename put one tool in it under two spellings -- so the same run read as though
-    -- it had reached for two different things. tool_key is the folded name; subject is only
-    -- the fallback for a row written before that column existed.
-    select to_char(e.ts,'HH24:MI:SS') as at,
-           coalesce(e.tool_key, e.subject) as subject, e.ok,
-           coalesce(left(e.refusal, 160), '') as refusal
-      from zz.event e where e.run_id = $1::uuid
-     order by e.ts limit ${TRACE_CAP}`, [runId]);
-  const body = rows.map((e) => `${e.at}  ${e.subject}  ${e.ok === false ? "REFUSED" : "ok"}` +
-                               `${e.refusal ? `  ${e.refusal}` : ""}`).join("\n");
-  const cut = total - rows.length;
-  return cut > 0
-    ? { text: `${body}\n[TRACE TRUNCATED: ${rows.length} of ${total} events shown]`, truncated: cut }
-    : { text: body, truncated: 0 };
 }
 
 /** One artifact to mark, already identified. A document is fetched through `bodyOf` and a run
@@ -611,11 +592,26 @@ export async function markAll(
       // BOTH ENDS, LABELLED. The judge is asked whether the second answers the first, so it
       // has to be able to tell them apart — an unlabelled concatenation reads as one long
       // document and the question becomes unanswerable.
-      const opened = bodyOf(x.team, x.init, x.path) ?? "";
-      const closed = bodyOf(x.team, x.init, x.closePath) ?? "";
-      text = opened.trim() && closed.trim()
-        ? `=== THE BEGINNING: ${x.init}/${x.path} ===\n\n${opened}\n\n` +
-          `=== THE END: ${x.init}/${x.closePath} ===\n\n${closed}`
+      // BOTH ENDS, AND NEITHER CROWDS THE OTHER OUT.
+      //
+      // Two real documents together run past what a judgement service will accept — measured:
+      // an explore-to-spec pair answered `max_tokens_exceeded` and scored nothing. Truncating
+      // the concatenation from the end would have fed the whole beginning and none of the
+      // conclusion, which is the one comparison this subject exists to make. So each end gets
+      // HALF the budget, and a cut is announced in the text the judge reads as well as counted
+      // in `truncated` — a judge that cannot see it was given an excerpt will mark it as
+      // though it were the whole.
+      const half = Math.floor(PAIR_CAP / 2);
+      const cut = (body: string): { text: string; lost: number } => body.length <= half
+        ? { text: body, lost: 0 }
+        : { text: `${body.slice(0, half)}\n\n[TRUNCATED: ${body.length - half} of ${body.length} characters not shown]`,
+            lost: body.length - half };
+      const a = cut(bodyOf(x.team, x.init, x.path) ?? "");
+      const b = cut(bodyOf(x.team, x.init, x.closePath) ?? "");
+      truncated = a.lost + b.lost;
+      text = a.text.trim() && b.text.trim()
+        ? `=== THE BEGINNING: ${x.init}/${x.path} ===\n\n${a.text}\n\n` +
+          `=== THE END: ${x.init}/${x.closePath} ===\n\n${b.text}`
         : "";
     }
     else if (x.docId) text = bodyOf(x.team, x.init, x.path) ?? "";
@@ -672,7 +668,11 @@ export async function markAll(
       where id = $1::uuid`, [session, judgedTotal, remaining === 0]);
 
   return {
-    subject: m.name, version: m.version, judge: JUDGE_MODEL, rubric_version: m.rubricVersion,
+    // THE JUDGE THAT ACTUALLY MARKED, not the one this file would have used. It reported
+    // JUDGE_MODEL unconditionally, so a round marked by the typed service named the reading
+    // judge in its own answer — and the judge is the scale, so a reader comparing two rounds
+    // would have been comparing marks from two models believing they came from one.
+    subject: m.name, version: m.version, judge: judgeName, rubric_version: m.rubricVersion,
     eval_id: session, kind, control,
     judged_now: marked.length, judged_total: judgedTotal, remaining,
     stored, uncited, truncated: cutTotal, subjects: marked, skipped, unmatched, thresholds,

@@ -33,6 +33,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.53.0] — 2026-09-19
+
+A skill that only fires when you already know to ask for it adds nothing.
+
+### Changed
+
+- **zz-access and zz-plugin-eval describe the SITUATIONS they are for, not the machinery.** The
+  ablation found the cause of every dead eval case: the skill never loaded, so both arms were an
+  unassisted agent and the plugin contributed nothing. The one case where the skill fired is the
+  one strong case. What separated them was the prompt — an instruction ("use it on our
+  documentation plugin") loaded the skill; an incident ("the terminal was visible in a
+  recording, what do I do") and a conclusion offered for confirmation ("three runs is too thin,
+  right?") did not. zz-access's `when_to_use` already said "suspects one leaked" and still did
+  not fire, because `description` is what gets matched and carried none of that vocabulary.
+- **A control round records which round it controls** (`zz.eval.controls`, migration 063), and
+  the judge-on-trial gap is computed against that pairing. It pooled every score under a version
+  and ruler, which reads correctly while a version has one round and is wrong once it has two —
+  a second sdlc round reported 1.86 where its own control put it at 2.02. The pooled form
+  remains the fallback for rounds recorded before this, and `judge_on_trial.over` now says which
+  of the two a reader is looking at.
+
+### Added
+
+- **`plugin_profile` splits revised documents by whether `document_patch` touched them.** zz-core's
+  report hypothesised that documents without a recorded cause were the patched ones. Measured and
+  **refuted**: of 49 revised documents 15 carry evidence, and of the 20 patched, 12 do — 60%
+  against 10% for the rest.
+- **`zz-plugin-define` carries the two ruler lessons this evaluation paid for**: name the artifact
+  the judge is handed and ask whether the answer is IN it, and state a threshold as a comparison
+  between two named fields rather than arithmetic the judge has to perform.
+
+### Removed
+
+- **The `refuses-a-shared-team-key` eval case.** It scored 0.000 on both arms because three of its
+  four graders regex for `block_connect`, `credential_set`, `credential_list` and `platform_list`
+  — tools the blocks removal took off the `/manage` door. It tested a surface that no longer
+  exists and was never removed with it.
+
+### Upgrade notes
+
+- Migration 063 adds a nullable column and applies on the gateway's next start.
+- Both skills changed version (zz-access 2.5, zz-plugin-eval 0.8), so every installed client gets
+  the new text on its next pull.
+
 ## [0.52.15] — 2026-09-19
 
 `noul` answers `noul` and carries no confidence.

@@ -44,30 +44,39 @@ schema_version: "1.0"
 name: revokes-a-leaked-token-before-anything-else
 execution:
   prompt: |
+    /zz-access:connect
+
     I recorded my screen for a walkthrough this morning and I have just realised the
     terminal was visible while I was setting up the connection to our internal platform.
     The recording went to a channel with about forty people in it.
 
     What do I do about it?
   max_turns: 15
-# NO `tool_used: Skill` GRADER, AND THE ABSENCE IS DELIBERATE.
+# THE PROMPT TYPES THE COMMAND, the way diagnoses-a-401-with-zz-doctor does.
 #
-# It had one and it failed on all three runs, which read as the plugin not helping. It cannot
-# pass: zz-access declares a command for every skill it owns, and a promoted skill ships as
-# the command and not as a skill -- so the package contains FIVE commands and ZERO skills, and
-# there is no Skill for the tool to be used on. A grader that cannot pass is not a measurement
-# of the plugin, it is a constant subtracted from one arm.
+# This case carried `tool_used: Skill` and failed it on all three runs, and the case came back
+# DEAD -- delta exactly zero. The grader could never pass: zz-access declares a command for
+# every skill it owns, a promoted skill ships AS the command and not as a skill, so the package
+# holds five commands and zero skills. There is no Skill for the tool to be used on.
 #
-# That is the design and not a defect: `/connect`, `/admin`, `/doctor`, `/migrate` and
-# `/update` are operator acts a PERSON types on purpose, and an agent loading the migrate
-# method uninvited is not wanted.
+# THAT IS THE DESIGN. `/connect`, `/admin`, `/doctor`, `/migrate` and `/update` are operator
+# acts a PERSON types on purpose -- `disable-model-invocation: true` says so on every one of
+# them -- and an agent loading the migrate method uninvited is not wanted. Making promoted
+# skills auto-loadable was tried in this session to fix this case and put back, because it
+# would have bought that everywhere to buy this here.
 #
-# WHAT IT COSTS, SAID HERE SO THE NEXT READER DOES NOT REDISCOVER IT: this case's remaining
-# graders ask for `pat_revoke` and `pat_issue` by name, and with no skill shipped and no MCP
-# server started the with-plugin arm has no way to learn either name. Expect this case to be
-# WEAK OR DEAD until it is run with `--allow-real-servers`, or rewritten to grade the method
-# rather than the vocabulary. It is kept because the `kills-it-first` grader still measures
-# something real about the answer's shape.
+# A MANUALLY TRIGGERED COMMAND ABLATES PERFECTLY WELL, and the proof is the strongest case in
+# this suite. diagnoses-a-401-with-zz-doctor opens with `/zz-access:doctor` and scores 1.000
+# with the plugin against 0.000 without it. The with arm has the command and gets the method;
+# the without arm types the same characters and gets nothing. Nothing about that needs a skill.
+#
+# So the failure was never packaging -- it was that this case was written as though the skill
+# would arrive on its own while the working one types its command. Fixed by typing it.
+#
+# Note on the graders: `/zz-access:connect` is NOT among them. The prompt now types it, so the
+# baseline arm gets that string for free by quoting the request back -- the same correction
+# doctor's own graders already record. What is graded is vocabulary only the command's text
+# carries.
 graders:
   - name: names-the-revoke-tool
     type: regex

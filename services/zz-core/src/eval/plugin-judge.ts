@@ -34,7 +34,7 @@ import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
 import { pluginTraces } from "./plugin-profile.js";
 import { userRoot } from "../paths.js";
-import { db } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing about a " +
@@ -213,7 +213,8 @@ export function registerPluginJudgeTools(server: McpServer): void {
         "work under this ruler, and a judge that is reading collapses on it; one without the " +
         "other is not a measurement. It REFUSES a rubric_id the version does not declare, and " +
         "it MARKS ONE SUBJECT PER CALL: call again with the `eval_id` it returns until " +
-        "`remaining` is 0.",
+        "`remaining` is 0. It records which INITIATIVE the round belongs to, so a score can " +
+        "be read back to the report that explains it.",
       inputSchema: {
         plugin: z.string(),
         version: z.string(),
@@ -223,13 +224,19 @@ export function registerPluginJudgeTools(server: McpServer): void {
                     "cannot select a ruler, only catch a caller working from a stale one."),
         control: z.boolean().optional()
           .describe("Mark another plugin's work under this ruler, stored as the control."),
+        initiative: z.string().optional()
+          .describe("The evaluation initiative this round belongs to — the one whose rulers.md " +
+                    "was approved and whose findings.md will carry the result. Recorded on the " +
+                    "round so a score can be read back to the report that explains it, and a " +
+                    "report back to the rows behind it. Omit only when continuing a round the " +
+                    "tool already minted; a control inherits it from the round it controls."),
         eval_id: z.string().optional()
           .describe("Continue an evaluation this tool started, from its `eval_id`. Omit to begin one."),
         take: z.number().int().min(1).max(4).optional()
           .describe("How many subjects to mark in THIS call. Default 1: each takes about thirty seconds, and a call still running at two minutes returns nothing at all."),
       },
     },
-    async ({ plugin, version, rubric_id, control, eval_id, take }) => {
+    async ({ plugin, version, rubric_id, control, eval_id, take, initiative }) => {
       const p = db();
       if (!p) return noDb();
       try {
@@ -359,9 +366,15 @@ export function registerPluginJudgeTools(server: McpServer): void {
         // provenance a reader most needs, because it is what says the rest are trustworthy.
         let controlSource = "";
 
+        // RESOLVED FROM THE CALLER, not asked for. An initiative is keyed (team_slug,
+        // initiative) — the slug alone does not identify one and cannot address one — and the
+        // team is a fact about who is calling rather than a choice the caller should be able
+        // to make. Same resolution every document write on this platform already uses.
+        const teamSlug = initiative?.trim() ? await teamFor(parseCaller(requestHeaders()).email) : null;
         const marking: Marking = {
           versionColumn: "plugin_version_id", versionId: dims[0].version_id, noun: "plugin",
           name: plugin, version, rubricId: dims[0].rubric_id,
+          initiative: initiative?.trim() || null, teamSlug,
           rubricVersion: dims[0].rubric_version, dims, kind, items, facts,
           // THE BLIND CONTROL IS UNCHANGED: a different subject's artifact of the same kind,
           // under this ruler. Another PLUGIN's run rather than another skill's, because the

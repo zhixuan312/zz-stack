@@ -326,6 +326,16 @@ export interface Marking {
   version: string;
   rubricId: string;
   rubricVersion: string;
+  /** WHICH INITIATIVE THIS ROUND BELONGS TO, and the team that owns it — carried through from
+   *  `round_judge`'s caller and written onto the row when the round is minted.
+   *
+   *  It is here rather than derived because the derivation does not exist. An evaluation is run
+   *  inside an initiative, and nothing else on zz.eval names one: joining a score back to its
+   *  report by plugin name and a date window would be right today and wrong the first week two
+   *  rounds of one plugin land close together. Journal 0116 is the record of what that class of
+   *  guess costs. Both are null for a control, which inherits them from the round it controls. */
+  initiative: string | null;
+  teamSlug: string | null;
   dims: Dim[];
   kind: Subject;
   items: MarkItem[];
@@ -501,13 +511,23 @@ export async function markAll(
              and is_control is false
            order by started_at desc limit 1`, [versionId, m.rubricId])).rows[0]?.id ?? null
       : null;
+    // A CONTROL INHERITS THE ROUND IT CONTROLS, rather than being told again. The two belong
+    // to one measurement and one initiative by construction, and a control that could name a
+    // different initiative from its own round is a state nothing should be able to express.
+    const from = controlled
+      ? (await p.query<{ initiative: string | null; team_slug: string | null }>(
+          "select initiative, team_slug from zz.eval where id = $1::uuid", [controlled])).rows[0]
+      : null;
+    const initiative = from ? from.initiative : m.initiative;
+    const teamSlug = from ? from.team_slug : m.teamSlug;
     session = (await p.query<{ id: string }>(`
       insert into zz.eval (${m.versionColumn}, rubric_id, judge_model, selection_note, doc_count,
-                           is_control, controls)
-      values ($1::uuid, $2::uuid, $3, $4, 0, $5, $6::uuid) returning id::text`,
+                           is_control, controls, initiative, team_slug)
+      values ($1::uuid, $2::uuid, $3, $4, 0, $5, $6::uuid, $7, $8) returning id::text`,
       [versionId, m.rubricId, judgeName,
        `${kind === "document" ? "documents" : "run traces"}` +
-       ` of ${m.name} ${m.version}${control ? ", control" : ""}`, control, controlled])).rows[0].id;
+       ` of ${m.name} ${m.version}${control ? ", control" : ""}`, control, controlled,
+       initiative, teamSlug])).rows[0].id;
   }
 
   // Already scored under THIS session, so a resumed call does not re-judge what it paid for.

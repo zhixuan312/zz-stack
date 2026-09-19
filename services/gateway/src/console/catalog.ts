@@ -159,7 +159,7 @@ export function mountCatalog(app: Express): void {
     // NO TEAM DIMENSION: a plugin's manifest, its skills and its release digest are the same
     // rows for every reader. The platform records no installs, so there is nothing per team.
     const db = platformDb();
-    const [ran, released] = await Promise.all([
+    const [ran, released, evaluated] = await Promise.all([
       // EVERY SKILL THE STORE HAS SEEN, whatever kind it is. The flows route filtered
       // `kind = 'flow_step'`, which was right when the only subject was a flow's stages and
       // is wrong now: `zz` ships common skills (zz-platform) and a block ships block_usage
@@ -197,7 +197,58 @@ export function mountCatalog(app: Express): void {
                        (select count(*) from zz.eval ev where ev.plugin_version_id = pv.id) as evals
                   from zz.plugin p
                   join zz.plugin_version pv on pv.plugin_id = p.id`),
+      // THE LATEST ROUND THAT REACHED A VERDICT, one per plugin.
+      //
+      // `recommendation is not null` is the whole definition of "evaluated" here. A round is
+      // minted by round_judge and only gets its verdict at round_recommend, so a round that
+      // was started and abandoned — or one whose control never ran, which round_recommend now
+      // refuses — has marks but nothing to report. Showing the newest row regardless would put
+      // an empty score beside a plugin that has a perfectly good one from the round before.
+      //
+      // ACROSS VERSIONS, not within one. The question a reader has is "how did this plugin
+      // score", and the answer is the last time anybody measured it; pinning to the version on
+      // the shelf would blank the column on the day of every release. The version that WAS
+      // measured travels with the figures so the answer never pretends to be about today's.
+      //
+      // The columns are named rather than starred: `recommendation_probabilities` is jsonb and
+      // no reader of this page wants it on the wire.
+      db.query(`select distinct on (pv.plugin_id)
+                       p.name as plugin, pv.version,
+                       e.effectiveness, e.effectiveness_band,
+                       e.headroom_points, e.headroom_named,
+                       e.recommendation, e.recommendation_confidence,
+                       e.initiative, e.team_slug,
+                       to_char(e.started_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') as at
+                  from zz.eval e
+                  join zz.plugin_version pv on pv.id = e.plugin_version_id
+                  join zz.plugin p on p.id = pv.plugin_id
+                 where e.is_control is false and e.recommendation is not null
+                 order by pv.plugin_id, e.started_at desc`),
     ]);
+
+    /** The newest verdict per plugin, by name.
+     *
+     *  EVERY FIGURE IS NULLABLE AND THAT IS THE POINT. Migration 067 added the two axes and the
+     *  initiative link; every round taken before it has a recommendation and none of the rest,
+     *  and there is no backfill — inferring which initiative produced a round from its plugin
+     *  name and a date window is the attribution-through-an-absent-link that journal 0116 was
+     *  minted for. So an older round reads as "keep-and-change, score not recorded", which is
+     *  exactly what it is. */
+    const verdict = new Map(evaluated.rows.map((r) => [r.plugin as string, {
+      version: r.version as string,
+      effectiveness: r.effectiveness === null ? null : Number(r.effectiveness),
+      band: (r.effectiveness_band as string | null) || null,
+      headroomPoints: r.headroom_points === null ? null : Number(r.headroom_points),
+      headroomNamed: r.headroom_named === null ? null : Number(r.headroom_named),
+      recommendation: r.recommendation as string,
+      confidence: r.recommendation_confidence === null ? null : Number(r.recommendation_confidence),
+      // BOTH, OR NEITHER. zz.doc is keyed (team_slug, initiative): a slug with no team cannot
+      // be addressed, and a link built from half of a key is a 404 waiting for a reader.
+      initiative: r.initiative && r.team_slug
+        ? { team: r.team_slug as string, slug: r.initiative as string }
+        : null,
+      at: r.at as string,
+    }]));
 
     const stats = new Map(ran.rows.map((r) => [r.name as string, r]));
     const release = new Map(released.rows.map((r) => [`${r.plugin as string}@${r.version as string}`, r]));
@@ -258,6 +309,7 @@ export function mountCatalog(app: Express): void {
           ? { version: rel.version as string, digest: rel.digest as string,
               evals: +rel.evals }
           : null,
+        latestEval: verdict.get(p.plugin) ?? null,
       };
     });
 

@@ -195,7 +195,11 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             argument one level up, for the unit a person actually installs: each
             plugin's declared version beside a digest of what it ships, recorded in
             plugins.lock.json so the gate can refuse content that moved under a
-            frozen number), manifests.ts (where the packages are, read by
+            frozen number), backfill-eval-axes.ts (one-off: gives the rounds
+            scored before migration 067 the effectiveness and headroom they
+            always implied, recomputed from their own stored marks through
+            judge-score.ts — it never invents the initiative link, which is
+            genuinely absent on those rows), manifests.ts (where the packages are, read by
             both) and build-image.sh (the runtime image, from the lockfile). The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:
             set-credential, probe-block, register-skills (what we OFFER, from

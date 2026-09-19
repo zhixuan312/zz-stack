@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-judge
-version: 0.3
+version: 0.4
 description: Stage 4 of plugin evaluation. Confirm the ruler was approved, then score the plugin's usage artifacts against it with a pinned model outside this conversation. Writes scores; decides nothing.
 when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Never before — the affirm call refuses, and that refusal is the gate working."
 ---
@@ -9,10 +9,18 @@ when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Ne
 
 ```
 ruler_affirm(plugin, version)                          is there an approved ruler?
-round_judge(plugin, version, rubric_id, take: 1-4)     score, ONE subject per call
+round_judge(plugin, version, rubric_id, initiative, take: 1-4)  score, ONE per call
 round_judge(..., eval_id, take: 1-4)                   again, until `remaining` is 0
 round_judge(..., control: true)                        and once blind — see below
 ```
+
+**PASS THE INITIATIVE ON THE FIRST CALL.** `initiative` is the evaluation initiative you are
+working inside — the one whose `rulers.md` was approved and whose `findings.md` you will write.
+It is recorded on the round, which is what lets a score be read back to the report that explains
+it, and a report back to the rows behind it. Nothing infers it: joining a score to its report by
+plugin name and a date is right until two rounds of one plugin land close together, and that
+class of guess is what journal 0116 was minted for. Continuation calls carry `eval_id` and do not
+repeat it; the control inherits it from the round it controls.
 
 **`round_judge` MARKS ONE SUBJECT PER CALL.** It returns an `eval_id` and a `remaining`
 count; call it again with that `eval_id` until `remaining` is 0. `take` (1–4) says how many

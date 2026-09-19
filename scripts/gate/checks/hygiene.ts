@@ -125,6 +125,17 @@ check("nothing is exported that nobody imports", () => {
     }
   }
   const FRAMEWORK = /^(default|metadata|generateMetadata|generateStaticParams|dynamic|revalidate|viewport)$/;
+  // NEXT'S ROOT ENTRY POINTS, which the framework loads BY FILENAME and never imports.
+  //
+  // The `app/` exemption above covers route exports and misses these, because they do not live
+  // under `app/` — so `middleware.ts`, which is the only place a Next app can touch a request
+  // before it is routed, read as dead code the moment it was written. Keyed by filename and
+  // matched against the exact symbol Next looks for, rather than exempting the file outright:
+  // a helper that really is unused, exported from the same file, is still caught.
+  const NEXT_ENTRY: Record<string, RegExp> = {
+    "middleware.ts": /^(middleware|config)$/,
+    "instrumentation.ts": /^(register|onRequestError)$/,
+  };
   for (const [file, src] of dashText) {
     const rel = file.slice(dash.length + 1);
     if (rel.startsWith("tests/") || /(^|\/)index\.tsx?$/.test(rel)) continue;
@@ -136,6 +147,7 @@ check("nothing is exported that nobody imports", () => {
     for (const m of src.matchAll(EXPORTED)) {
       const name = m[1];
       if (isRoute && FRAMEWORK.test(name)) continue;
+      if (NEXT_ENTRY[rel]?.test(name)) continue;
       if (viaBarrel) continue;
       const used = [...dashText].some(([other, otherSrc]) =>
         other !== file && new RegExp(`\\b${name}\\b`).test(otherSrc));

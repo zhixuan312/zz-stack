@@ -584,11 +584,25 @@ export function registerPluginRecordTools(server: McpServer): void {
       }
       if (rec?.type !== "choice") return text("ERROR: the typed judgement service did not answer a choice");
 
+      // THE NUMBER IS STORED, NOT ONLY RETURNED.
+      //
+      // Both axes were computed here, put in front of the typed judge so the enum was chosen
+      // knowing them, handed back to the caller — and dropped. So "how good is it, out of ten"
+      // survived exactly as long as the tool response that carried it, and anything reading
+      // this table later saw a verb and no measurement.
+      //
+      // STORED RATHER THAN RECOMPUTED BY THE READER, because judge-score.ts owns the
+      // arithmetic and a second copy of it in the console's API would drift the first time a
+      // weight changed — the console would then print a different score from the report, with
+      // nothing on screen saying which of the two to believe.
       await p.query(`
         update zz.eval set recommendation = $2, recommendation_confidence = $3,
-                           recommendation_probabilities = $4::jsonb
+                           recommendation_probabilities = $4::jsonb,
+                           effectiveness = $5, effectiveness_band = $6,
+                           headroom_points = $7, headroom_named = $8
          where id = $1::uuid`,
-        [eval_id, rec.choice, rec.confidence, JSON.stringify(rec.probabilities)]);
+        [eval_id, rec.choice, rec.confidence, JSON.stringify(rec.probabilities),
+         effective.score, effective.band, room.points, room.named_changes]);
 
       const who = parseCaller(requestHeaders()).email;
       logActivity(await userRoot(), null,

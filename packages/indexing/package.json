@@ -1,7 +1,7 @@
 {
   "name": "@zz/indexing",
   "private": true,
-  "version": "0.53.2",
+  "version": "0.54.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

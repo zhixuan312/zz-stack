@@ -33,6 +33,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.54.0] — 2026-09-19 · platform 0.54.0 · console 0.17.0
+
+The ablation half of plugin evaluation is removed, data included.
+
+### Removed
+
+- **`claude plugin eval` and everything downstream of it.** A suite ran cases with the plugin
+  and without it and reported the score delta; `case_record` stored the run, and rulers drew
+  thresholds over it.
+
+  **It never measured what it appeared to.** No case ever declared a mock, so under the CLI's
+  default `--mocks record` no plugin server started and the plugin's MCP tools were **not
+  callable in either arm** — a fact one sdlc case had already written beside its own graders.
+  Every grader was a regex over tool *names* or a judgement about an answer's shape. A delta
+  therefore established that the method's **text** had reached the agent and that it used the
+  right words; never that the plugin worked. The strongest result the suite ever produced came
+  from a prompt that typed the plugin's own command.
+
+  Gone: nine `case.yaml` files, the `evals/` tree, `plugin-cases.ts`, the `case_record` tool,
+  the CASES block in `plugin_profile` and `ruler_read`, `cases_digest` through the lock and the
+  console, `EVALS_DIR` and its Dockerfile `COPY`, the console's Evaluated column and field, and
+  four gate checks whose whole subject was the suite. The gate is 334 checks, from 337.
+
+- **The recorded rows, in migration 064.** `zz.plugin_case_run`, `zz.plugin_version.cases_digest`,
+  and the ruler dimensions written against case evidence with their scores. Reports were
+  published citing these deltas; those documents keep their text and their approvals, and this
+  removes the numbers behind them. A figure nothing can reproduce and nothing should be read
+  from is worse kept than dropped.
+
+### Changed
+
+- **Evaluation now rests on the platform's own telemetry alone** — which tools were called, on
+  whose door, how often, what they refused and whose refusal it was. That is the thing itself
+  rather than an agent's vocabulary, it needs no second runner and no credential, and it cannot
+  drift out of step with the plugin because the plugin produces it. A plugin nobody has used is
+  an honest `not-evaluable`; a ruler whose subject is the document or the initiative may still
+  have subjects when the trace history is thin.
+
+### Upgrade notes
+
+- Migration 064 **drops a table and deletes rows**, and applies on the gateway's next start.
+- `case_record` is gone from `/eval/mcp`. A caller still naming it gets "tool not found".
+- Four skills changed version, so every installed client gets the new text on its next pull.
+
 ## [0.53.2] — 2026-09-19
 
 A manually triggered command ablates perfectly well.

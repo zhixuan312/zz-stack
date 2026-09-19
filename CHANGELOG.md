@@ -33,6 +33,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.2] — 2026-09-19
+
+A parameter the statement stopped naming, and the check that now watches for it.
+
+### Fixed
+
+- **`plugin_profile` threw for every plugin that serves a door.** 0.52.1 made the tool-use query
+  count across all versions, which dropped its reference to `$2` — while the caller still passed
+  `[plugin, version]`. Postgres rejects that bind rather than ignoring it. `tsc` was clean, the
+  gate was green and the dry run was green, because nothing offline reads SQL inside a template
+  literal and the dry run's throwaway stack has no released plugin version to profile.
+
+### Added
+
+- **`checks/query-arity.ts`** — a statement's highest `$N` against the length of the array its
+  caller binds, over every `.query(\`…\`, [...])` under `services/`. 113 statements compared.
+  **It would not have caught the bug above**, and says so in its own header: that statement is
+  assembled from a fragment, so it sits in the 34 this cannot read. A check whose stated
+  motivation it cannot detect is worse than no check, because the next reader believes the class
+  is covered — so the limitation is written down beside the rule rather than discovered later.
+
 ## [0.52.1] — 2026-09-19
 
 The window a tool-use figure is counted over.

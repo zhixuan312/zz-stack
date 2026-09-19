@@ -28,9 +28,26 @@ drop table if exists zz.plugin_case_run;
 
 alter table zz.plugin_version drop column if exists cases_digest;
 
--- Ruler dimensions written against case evidence. Their scores go with them by cascade -- a
--- threshold over a suite that no longer exists cannot be re-read, re-run or compared, and
+-- Ruler dimensions written against case evidence, AND THEIR SCORES FIRST.
+--
+-- A threshold over a suite that no longer exists cannot be re-read, re-run or compared, and
 -- leaving it would let a later round average a line nothing can compute against one it can.
+--
+-- THE SCORES GO FIRST BECAUSE THEY HOLD THE KEY. zz.eval_score.dimension_id references
+-- zz.rubric_dimension with no ON DELETE, so deleting a dimension that any round ever marked
+-- raises 23503. This migration shipped without that delete and the failure was not local: the
+-- gateway catches a failed init and continues WITHOUT a platform database, so every door
+-- answered 401 -- "invalid, expired or revoked PAT" -- while /health stayed green. An outage
+-- shaped exactly like the one the connection-timeout work in 0.52.9 was written about.
+--
+-- The same shape had already been paid for once, in ruler_record: `delete from
+-- zz.rubric_dimension` there violated this identical constraint and became an upsert-by-name.
+delete from zz.eval_score
+ where dimension_id in (
+   select id from zz.rubric_dimension
+    where threshold ilike '%case%'
+       or name in ('the gain is the plugin''s, not the prompt''s', 'its own cases discriminate'));
+
 delete from zz.rubric_dimension
  where threshold ilike '%case%'
     or name in ('the gain is the plugin''s, not the prompt''s', 'its own cases discriminate');

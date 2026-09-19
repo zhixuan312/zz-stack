@@ -33,6 +33,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.13] — 2026-09-19
+
+The record a door keeps is a figure on the sheet, because that is what the question was about.
+
+### Added
+
+- **`plugin_profile` counts the record a door-owning plugin keeps** — documents governed, how
+  many have been through a version change, and how many of those carry evidence — and the
+  judge's fact sheet carries it with the percentage. On this deployment: 377 documents, 45
+  revised, 15 carrying evidence (33.3%), against a tool that refuses a revision naming no cause.
+  Null for a flow, which keeps no record of its own.
+
+  This exists because a prediction was falsified. zz-core's evaluation proposed making
+  `zz.doc.evidence` carry a document's cause and said it expected the "a version change was
+  caused by evidence" mark to rise. 0.52.10 shipped it and it worked — 0 documents to 64 — and
+  the mark fell, 3.14 to 2.85. The judge is handed the document's markdown body and never sees a
+  database column, so a dimension worded as a question about the record was being answered from
+  prose. A threshold can only be drawn over a figure that is on the sheet; the same lesson as
+  0.52.6.
+
 ## [0.52.12] — 2026-09-19
 
 A single document is capped too, and it reached the ceiling on the first round that looked.

@@ -30,7 +30,8 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
-import { Dim, MarkItem, Marking, SUBJECT_CAP, Subject, markAll } from "./judge.js";
+import { stageDocsOf, usageDocs, usageInitiatives, usageRuns } from "./plugin-subjects.js";
+import { Dim, MarkItem, Marking, Subject, markAll } from "./judge.js";
 import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
 import { pluginCases } from "./plugin-cases.js";
@@ -42,92 +43,6 @@ const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing about a " +
                         "plugin's evaluation can be read or written");
 
-/** The runs a plugin version owns, through the skill membership recorded at release. The same
- *  join plugin-profile.ts uses and for the same reason — zz.event.step_version is stamped only
- *  when a skill is served whole, and release is the only moment anybody knows what a plugin
- *  version contained. */
-const RUNS_OF = `
-  from zz.run r
-  join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
-  join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-  join zz.plugin p on p.id = pv.plugin_id
- where p.name = $1 and pv.version = $2`;
-
-/** The documents this plugin version's runs produced, newest first.
- *
- * `scored` says whether a round has already marked it, and it is a fact the define stage needs
- * before it writes anything: a ruler derived from work that was already judged under an earlier
- * ruler is a ruler fitted to its own answers. */
-async function usageDocs(p: pg.Pool, plugin: string, version: string) {
-  return (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
-    select d.team_slug, d.initiative, d.path, d.id::text as id,
-           exists (select 1 from zz.eval_subject es
-                    where es.doc_id = d.id and es.plugin_version_id = pv.id) as scored
-      from zz.doc d
-      join zz.run r on r.id = d.produced_by_run_id
-      join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
-      join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-      join zz.plugin p on p.id = pv.plugin_id
-     where p.name = $1 and pv.version = $2 and d.path not like '\\_versions/%'
-     order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
-}
-
-/** The runs of this plugin version that left events. A run with no events is not a subject —
- *  there is nothing for a judge to read — and it is reported as a gap by plugin_profile rather
- *  than silently dropped here. */
-async function usageRuns(p: pg.Pool, plugin: string, version: string) {
-  return (await p.query<{ run_id: string; started: string; scored: boolean }>(`
-    select r.id::text as run_id, to_char(r.started_at,'YYYY-MM-DD HH24:MI') as started,
-           exists (select 1 from zz.eval_subject es
-                    where es.run_id = r.id and es.plugin_version_id = pv.id) as scored
-    ${RUNS_OF}
-       and exists (select 1 from zz.event e where e.run_id = r.id)
-     order by r.started_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
-}
-
-/** The INITIATIVES this plugin version worked on, each with both of its ends.
- *
- * The subject is the sequence, not a document: "does the end deliver what the beginning asked
- * for" cannot be asked of one file. So each row is one initiative with its FIRST document and
- * its LAST — earliest and latest by creation, which is the order they were written in — and an
- * initiative that has only one document is not a subject at all, because it has no two ends to
- * compare.
- *
- * Snapshots are excluded like everywhere else: `_versions/` holds frozen copies of approvals,
- * and the newest of them is not the end of the work. */
-async function usageInitiatives(p: pg.Pool, plugin: string, version: string) {
-  return (await p.query<{ team_slug: string; initiative: string; open_path: string;
-                          close_path: string; open_id: string; scored: boolean }>(`
-    with touched as (
-      select distinct d.team_slug, d.initiative
-        from zz.doc d
-        join zz.run r on r.id = d.produced_by_run_id
-        join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
-        join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-        join zz.plugin p on p.id = pv.plugin_id
-       where p.name = $1 and pv.version = $2
-    ),
-    ends as (
-      select t.team_slug, t.initiative,
-             (array_agg(d.path order by d.created_at))[1]                as open_path,
-             (array_agg(d.id::text order by d.created_at))[1]            as open_id,
-             (array_agg(d.path order by d.created_at desc))[1]           as close_path,
-             count(*)                                                    as docs
-        from touched t
-        join zz.doc d on d.team_slug = t.team_slug and d.initiative = t.initiative
-       where d.path not like '\\_versions/%'
-       group by t.team_slug, t.initiative
-    )
-    select e.team_slug, e.initiative, e.open_path, e.close_path, e.open_id,
-           exists (select 1 from zz.eval_subject es
-                    where es.doc_id = e.open_id::uuid
-                      and es.plugin_version_id = (select pv.id from zz.plugin_version pv
-                                                    join zz.plugin p on p.id = pv.plugin_id
-                                                   where p.name = $1 and pv.version = $2)) as scored
-      from ends e
-     where e.docs > 1
-     order by e.initiative desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
-}
 
 /** The ruler this plugin VERSION declares, dimension by dimension. Through
  *  zz.plugin_version.rubric_id and never through zz.rubric.plugin_id: a plugin may carry more
@@ -380,14 +295,24 @@ export function registerPluginJudgeTools(server: McpServer): void {
         // and if this version has left no initiative with two ends then that ruler cannot be
         // scored and says so, rather than quietly marking single documents against dimensions
         // written about a whole arc.
-        const inits = declared === "initiative" ? await usageInitiatives(p, plugin, version) : [];
+        const stageDocs = stageDocsOf(plugin);
+        const inits = declared === "initiative"
+          ? await usageInitiatives(p, plugin, version, stageDocs) : [];
         if (declared === "initiative" && !inits.length) {
           return text(
-            `ERROR: ${plugin} ${version} has left no initiative carrying both a first and a ` +
-            "last document, so a ruler whose subject is the initiative has nothing to read. " +
-            "This is a fact about its reach rather than its quality — plugin_profile says how " +
-            "thin the evidence is. Either wait for an initiative to close under this version, " +
-            "or record a ruler whose subject is the document.");
+            stageDocs.length < 2
+              ? `ERROR: ${plugin} declares ${stageDocs.length} document-producing stage(s), so ` +
+                "it has no sequence to judge and a ruler whose subject is the initiative " +
+                "cannot read it. That is a fact about the plugin's shape — a flow is what has " +
+                "an arc — rather than about this version's quality."
+              : `ERROR: ${plugin} ${version} has left no initiative that reached ` +
+                `${stageDocs[stageDocs.length - 1]}, so a ruler whose subject is the ` +
+                "initiative has nothing to read. An initiative still in flight has no end, and " +
+                "asking whether the end delivers the beginning of one that has not ended marks " +
+                "the work's incompleteness rather than the plugin. This is a fact about the " +
+                "version's reach rather than its quality — plugin_profile says how thin the " +
+                "evidence is. Either wait for an initiative to close under this version, or " +
+                "record a ruler whose subject is the document."); 
         }
         const docs = declared === "trace" || declared === "initiative"
           ? [] : await usageDocs(p, plugin, version);

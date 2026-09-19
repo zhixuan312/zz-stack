@@ -98,43 +98,52 @@ export async function usageRuns(p: pg.Pool, plugin: string, version: string) {
      order by r.started_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
 }
 
-/** The INITIATIVES this plugin version CARRIED TO ITS OWN END, each with both of them.
+/** The INITIATIVES this flow CARRIED TO ITS OWN END, each with both of them.
  *
  * The subject is the sequence, not a document: "does the end deliver what the beginning asked
  * for" cannot be asked of one file. So each row is one initiative with the first and the last
  * of THE DOCUMENTS THIS FLOW'S OWN STAGES DECLARE.
  *
- * NOT THE OLDEST AND NEWEST FILE IN THE FOLDER, which is what this asked for one round and got
- * wrong three times out of three. An initiative folder holds more than the flow's stage output:
- * `source_add` registers supporting material under `sources/`, and `handover.md` is written
- * after the close by a different plugin's skill entirely. Ordered by creation, those win both
- * ends — so a ruler asking whether the conclusion answers the brief was handed a stakeholder
- * attachment and a spec, and marked them 4.55. The number was real and it was about the wrong
- * pair.
+ * WHICH INITIATIVES ARE THIS FLOW'S IS ANSWERED BY `zz.doc.flow`, AND THAT IS THE THIRD TIME
+ * THIS FILE HAS HAD TO LEARN IT. The first two routes both went through
+ * `zz.doc.produced_by_run_id` -> a run -> the skill versions a plugin version shipped. That
+ * column is null on 326 of this platform's 365 documents, because a document is written by
+ * whatever is holding the conversation and only some of those carry a run. The consequence was
+ * not an error: the query returned 3 initiatives where the store holds 17 governed by this
+ * flow, and 1 of them had reached its closing document where 6 have. A round was scored on one
+ * subject and reported as thin evidence, when the evidence was there and the join could not
+ * see it.
  *
- * The manifest already says which documents are this flow's: `stages[].produces`, in the order
+ * `flow` is stamped on the document when it is written, from the flow that governs the
+ * initiative, and it is the same string the catalog entry carries. It needs no run to exist.
+ *
+ * COUNTED ACROSS EVERY VERSION, deliberately, the way a door plugin's tool use is. An
+ * initiative governed by this flow is this flow's work whichever release happened to be
+ * current while it ran, and version-scoping it reported a plugin's whole history as empty four
+ * minutes after a release that changed nothing in it.
+ *
+ * NOT THE OLDEST AND NEWEST FILE IN THE FOLDER either, which is what the ends used to be. An
+ * initiative folder holds more than the flow's stage output: `source_add` registers supporting
+ * material under `sources/`, and `handover.md` is written after the close by a different
+ * plugin's skill. Ordered by the clock, those won both ends — so a ruler asking whether the
+ * conclusion answers the brief was handed a stakeholder attachment and a spec, and marked them
+ * 4.55. The manifest says which documents are this flow's: `stages[].produces`, in the order
  * the stages run, whenever it names a file rather than `source`, `record` or `nothing`. That
- * list arrives as `$3` and the join to it is what excludes everything else — `sources/`,
- * `handover.md` and `_versions/` alike, without naming any of them.
+ * list arrives as `$3` and the join to it excludes everything else without naming any of it.
  *
  * AND THE CLOSING DOCUMENT MUST BE THERE. `$4` is the last entry in that list, and an
  * initiative without it is not a subject. An initiative still in flight has no end, and
  * feeding `explore.md -> spec.md` to a ruler that asks about DELIVERY marks the spec as though
- * it were the deliverable — a low mark would then be about the work being unfinished rather
- * than about the plugin. Thin evidence is a fact a report can state; a confident mark on the
- * wrong question is one it cannot recover from. */
-export async function usageInitiatives(p: pg.Pool, plugin: string, version: string, stageDocs: string[]) {
-  if (stageDocs.length < 2) return [];
+ * it were the deliverable. */
+export async function usageInitiatives(
+  p: pg.Pool, plugin: string, version: string, stageDocs: string[], flowName: string,
+) {
+  if (stageDocs.length < 2 || !flowName) return [];
   return (await p.query<{ team_slug: string; initiative: string; open_path: string;
                           close_path: string; open_id: string; scored: boolean }>(`
     with touched as (
       select distinct d.team_slug, d.initiative
-        from zz.doc d
-        join zz.run r on r.id = d.produced_by_run_id
-        join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
-        join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-        join zz.plugin p on p.id = pv.plugin_id
-       where p.name = $1 and pv.version = $2
+        from zz.doc d where d.flow = $3
     ),
     ends as (
       select t.team_slug, t.initiative,
@@ -147,7 +156,7 @@ export async function usageInitiatives(p: pg.Pool, plugin: string, version: stri
         -- STAGE ORDER, NOT CLOCK ORDER. A flow can revisit a stage -- an audit sends the spec
         -- back -- so the newest write is not the furthest point reached. The manifest's
         -- position is what "first" and "last" mean here.
-        join unnest($3::text[]) with ordinality as sd(path, ord) on sd.path = d.path
+        join unnest($4::text[]) with ordinality as sd(path, ord) on sd.path = d.path
        group by t.team_slug, t.initiative
     )
     select e.team_slug, e.initiative, e.open_path, e.close_path, e.open_id,
@@ -157,9 +166,9 @@ export async function usageInitiatives(p: pg.Pool, plugin: string, version: stri
                                                     join zz.plugin p on p.id = pv.plugin_id
                                                    where p.name = $1 and pv.version = $2)) as scored
       from ends e
-     where e.docs > 1 and e.close_path = $4
+     where e.docs > 1 and e.close_path = $5
      order by e.initiative desc limit ${SUBJECT_CAP}`,
-    [plugin, version, stageDocs, stageDocs[stageDocs.length - 1]])).rows;
+    [plugin, version, flowName, stageDocs, stageDocs[stageDocs.length - 1]])).rows;
 }
 
 /** The documents THIS FLOW'S OWN STAGES produce, in the order the stages run.

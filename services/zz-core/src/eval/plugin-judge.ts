@@ -307,7 +307,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
         // written about a whole arc.
         const stageDocs = stageDocsOf(plugin);
         const inits = declared === "initiative"
-          ? await usageInitiatives(p, plugin, version, stageDocs) : [];
+          ? await usageInitiatives(p, plugin, version, stageDocs, entryOf(plugin)?.flow ?? "") : [];
         if (declared === "initiative" && !inits.length) {
           return text(
             stageDocs.length < 2

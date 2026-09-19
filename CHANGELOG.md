@@ -33,6 +33,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.9] — 2026-09-19
+
+Every wait on the platform database is bounded.
+
+### Fixed
+
+- **A hung statement could take zz-core down behind a green health check.** Its pool holds four
+  connections and set no `statement_timeout`, so four statements stuck on a lock or an
+  unresponsive peer would exhaust it while `/health` kept answering 200 — it touches no
+  database. zz-core now sets a 30s server-side statement timeout, and both services bound how
+  long a caller waits for a free connection. The gateway deliberately sets no statement timeout:
+  its pool runs the migrations, and aborting one partway is worse than the pile-up it prevents.
+
+### Upgrade notes
+
+- `ZZ_DB_STATEMENT_TIMEOUT_MS` (30000), `ZZ_DB_CONNECT_TIMEOUT_MS` (10000) and `ZZ_DB_POOL_MAX`
+  are new and all optional; the defaults are the values above and the pool sizes already in use.
+
 ## [0.52.8] — 2026-09-19
 
 A door owns the documents its door wrote, not every document in scope when it was called.

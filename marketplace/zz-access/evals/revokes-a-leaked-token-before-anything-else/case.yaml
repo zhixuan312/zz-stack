@@ -50,10 +50,25 @@ execution:
 
     What do I do about it?
   max_turns: 15
+# NO `tool_used: Skill` GRADER, AND THE ABSENCE IS DELIBERATE.
+#
+# It had one and it failed on all three runs, which read as the plugin not helping. It cannot
+# pass: zz-access declares a command for every skill it owns, and a promoted skill ships as
+# the command and not as a skill -- so the package contains FIVE commands and ZERO skills, and
+# there is no Skill for the tool to be used on. A grader that cannot pass is not a measurement
+# of the plugin, it is a constant subtracted from one arm.
+#
+# That is the design and not a defect: `/connect`, `/admin`, `/doctor`, `/migrate` and
+# `/update` are operator acts a PERSON types on purpose, and an agent loading the migrate
+# method uninvited is not wanted.
+#
+# WHAT IT COSTS, SAID HERE SO THE NEXT READER DOES NOT REDISCOVER IT: this case's remaining
+# graders ask for `pat_revoke` and `pat_issue` by name, and with no skill shipped and no MCP
+# server started the with-plugin arm has no way to learn either name. Expect this case to be
+# WEAK OR DEAD until it is run with `--allow-real-servers`, or rewritten to grade the method
+# rather than the vocabulary. It is kept because the `kills-it-first` grader still measures
+# something real about the answer's shape.
 graders:
-  - name: access-skill-fired
-    type: tool_used
-    tool: Skill
   - name: names-the-revoke-tool
     type: regex
     pattern: 'pat_revoke'

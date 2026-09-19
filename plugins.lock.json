@@ -1,6 +1,6 @@
 {
   "sdlc": {
-    "version": "0.52.8",
+    "version": "0.52.9",
     "digest": "cc96c064",
     "cases_digest": "ac009e81",
     "skills": {
@@ -20,7 +20,7 @@
     }
   },
   "zz-access": {
-    "version": "0.52.8",
+    "version": "0.52.9",
     "digest": "63eda8ee",
     "cases_digest": "a0ba2ff9",
     "skills": {
@@ -32,7 +32,7 @@
     }
   },
   "zz-core": {
-    "version": "0.52.8",
+    "version": "0.52.9",
     "digest": "894fcd47",
     "cases_digest": "f64bba10",
     "skills": {
@@ -45,7 +45,7 @@
     }
   },
   "zz-plugin-eval": {
-    "version": "0.52.8",
+    "version": "0.52.9",
     "digest": "bee83725",
     "cases_digest": "cfa54fb8",
     "skills": {

@@ -290,14 +290,18 @@ the timing; getting this wrong costs a plan, not a refusal.
   was wrong, that is a different thing and not a revision: `knowledge_add` it against
   the initiative, `scope: "team"` unless the mistake is itself a fact about a registry
   entry, in which case `scope: "platform"`.
-- **After the close comes the handover, and it belongs to the platform.**
-  Every flow ends the same way, whatever its manifest says: once the outcome
-  is recorded, load `zz-handover` with `skill_read` and run it now — it
-  writes `handover.md`, the one document the handover is. `initiative_status`
-  keeps returning `action: "handover"` until a team member approves it; only
-  then does the initiative report `action: "closed"`. It is not the flow
-  author's call to make, which is why the platform runs this the same way
-  after every flow. A node says which shelf it is for: `scope: "team"` for a
+- **THE CLOSE IS THE END. The handover is worth doing and is not owed.**
+  `initiative_close` is terminal, and it may be called at ANY point: an
+  initiative that ran to its last stage and one that stopped halfway are both
+  closed, not one finished and one short of something. `initiative_status`
+  answers `action: "closed"` from that moment, whatever the outcome, and the
+  ledger row is the record. Nothing on this platform asks for more.
+  What remains is an OPPORTUNITY. Once the outcome is recorded, load
+  `zz-handover` with `skill_read` and run it if the cycle taught something —
+  it writes `handover.md` and mints what generalises. The close satisfies
+  that document's prerequisite, so an initiative abandoned before its closing
+  document can still be handed over; one on this platform produced the most
+  durable node in the store. A node says which shelf it is for: `scope: "team"` for a
   lesson about how this team works, `scope: "platform"` for a fact about a
   registry entry — a
   plugin, a provider, an interface — that holds for everybody.

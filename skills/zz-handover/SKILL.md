@@ -125,8 +125,9 @@ is nothing further to write.
 
 **Anything else — `handover.md` exists but is still `draft` or awaiting the stakeholder.**
 There is nothing for this skill to do. It is a human gate; do not re-run the judgement to
-"check", and do not mint team nodes early because the wait is long. `initiative_status`
-already reports `action: "handover", waiting_on: "human"` for exactly this state.
+"check", and do not mint team nodes early because the wait is long. `initiative_status` reports
+the initiative as `closed` throughout — the close is terminal and this document is not owed, so
+an unapproved handover holds nothing open.
 
 ## Writing the nodes
 

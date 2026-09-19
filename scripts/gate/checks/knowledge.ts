@@ -432,23 +432,45 @@ check("the handover carries a gate and does not carry the close", () => {
   return bad.length ? bad.join("; ") : null;
 });
 
-check("the handover is complete when its document is approved, not when a node mentions it", () => {
-  // knowledgeMentions scanned every node file for the initiative's folder name as a SUBSTRING
-  // — so any node mentioning an initiative completed it, whoever wrote it. Under "zero nodes
-  // is legitimate" it became worse than loose: a careful handover that found nothing worth
-  // recording was indistinguishable from one nobody ran.
+check("a closed initiative owes nothing, and can still be handed over", () => {
+  // THIS REPLACES TWO CHECKS THAT ENFORCED THE OPPOSITE. They held an initiative open until
+  // handover.md was written, approved, and its promised team-node count met -- three gates
+  // AFTER the close, reported as `action: "handover"`.
+  //
+  // Both are deleted because the rule changed, not because they were weak. Closing is allowed
+  // at any point and the close is terminal: work stops, not every initiative finishes, and an
+  // initiative closed halfway is closed rather than short of something. The ledger row is the
+  // record.
+  //
+  // AND THE OLD RULE INSTRUCTED AN ACT ITS OWN GATE REFUSED. handover.md requires the flow's
+  // closing document; an initiative abandoned at the plan stage has none and never will, so
+  // `document_write` turned the handover away while `initiative_status` demanded it, forever.
   const src = zzCoreSource();
   const bad: string[] = [];
   if (/knowledgeMentions/.test(src)) {
-    bad.push("knowledgeMentions still exists — the blind signal must be deleted, not bypassed");
+    bad.push("knowledgeMentions still exists -- the blind substring signal must stay deleted");
   }
-  const at = src.indexOf('action: "handover"');
-  if (at < 0) { bad.push("initiative_status no longer reports a handover at all"); }
-  else {
-    const region = src.slice(Math.max(0, at - 1500), at + 1500);
-    if (!/handover\.md/.test(region)) bad.push("the handover computation does not consult handover.md");
-    if (!/waiting_on:\s*"agent"/.test(region)) bad.push('no waiting_on: "agent" state — an unwritten handover is indistinguishable from an unapproved one');
-    if (!/waiting_on:\s*"human"/.test(region)) bad.push('no waiting_on: "human" state — an unapproved handover is indistinguishable from an unwritten one');
+  // PROSE IS FREE, CODE IS NOT. The first version of this matched its own subject in the two
+  // comments that explain WHY the state was removed, and went red on a repository that had
+  // already done the thing it asks for. That is the anti-pattern this gate has a node about:
+  // a check that greps for vocabulary passes -- or fails -- on the documentation of the
+  // feature, and thorough comments make it worse rather than better. Line comments are
+  // stripped before the test; a `//` inside a string is not a case this file contains.
+  const code = src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  if (/action:\s*"handover"/.test(code)) {
+    bad.push('initiative_status still reports action: "handover" -- a closed initiative owes ' +
+             "nothing, so there is no state after the close to wait in");
+  }
+  // THE HANDOVER MUST STILL BE WRITEABLE, or this became "closing removes the obligation and
+  // the ability" -- and an abandoned initiative on this platform produced the most durable node
+  // in the store. guards.ts lets a closed initiative satisfy a prerequisite its close skipped.
+  const guards = readFileSync(join(root, "services/zz-core/src/guards.ts"), "utf8");
+  const at = guards.indexOf("does not exist yet");
+  if (at < 0) {
+    bad.push("the prerequisite guard is gone -- nothing sequences an OPEN initiative's documents");
+  } else if (!/outcome/.test(guards.slice(Math.max(0, at - 2000), at + 600))) {
+    bad.push("the prerequisite guard does not consult the outcome -- a closed initiative cannot " +
+             "write a handover whose prerequisite its close deliberately skipped");
   }
   return bad.length ? bad.join("; ") : null;
 });
@@ -599,48 +621,4 @@ check("the abandon-contradiction refusal is not disabled by the derived handover
     return "the abandon check counts the derived handover.md among the gates a finished initiative must have passed — it can never exist at close time, so the refusal can never fire";
   }
   return null;
-});
-
-check("an approved handover must have kept the team nodes it promised", () => {
-  // FOUND BY REVIEW. document_approve() is a generic gate recorder with no side effect, so nothing
-  // makes zz-handover's second pass happen — and reading "closed" the instant handover.md
-  // was approved let an initiative report complete with every promised team node unwritten.
-  // A promise recorded whose keeping went unverified: the same shape as the substring scan
-  // this initiative deleted, one level up.
-  //
-  // The fix must not resurrect that anti-pattern, so the check below is what distinguishes
-  // them: a NUMBER the document declares, against nodes whose STRUCTURED evidence names the
-  // initiative — never a scan of node text for a mention.
-  const src = zzCoreSource();
-  // ANCHORED ON THE DECLARED COUNT AND READ FORWARD. A first version anchored on
-  // `action: "closed"` and looked BACKWARD — but there are two such transitions now (the
-  // zero-promise early return, and the promises-kept one), indexOf found the earlier one, and
-  // the window never reached the evidence read below it. Anchoring on the token that appears
-  // once, then reading forward over the logic it governs, is what makes this legible.
-  // AND SOMETHING HAS TO WRITE IT. The server has always read this field and no skill ever
-  // said to set it, so it was absent on every handover ever written — `Number(undefined ??
-  // "0")` is zero, and "an approved handover kept what it promised" was satisfied by zero
-  // every time. Round 1 of the 09-09 smoke closed with two team nodes promised in its own
-  // prose and none on the shelf, and nothing anywhere disagreed. A read with no writer is
-  // invisible: the code is present, the check runs, and it always passes.
-  const knowledgeSkill = readFileSync(join(root, "skills/zz-handover/SKILL.md"), "utf8");
-  if (!/proposed_team_nodes/.test(knowledgeSkill)) {
-    return "the server counts handover.md's `proposed_team_nodes` and zz-handover never tells an agent to write it — the field is always absent, always reads as zero, and the promise-kept check can never fail";
-  }
-  const at = src.indexOf("proposed_team_nodes");
-  if (at < 0) {
-    return "the closed transition does not consult the count handover.md declared — an approved document whose promised team nodes were never written still reads as closed";
-  }
-  const region = src.slice(at, at + 2600);
-  const bad: string[] = [];
-  if (!/action:\s*"closed"/.test(region)) {
-    bad.push("the declared count is read but no closed transition depends on it");
-  }
-  // Either spelling: the literal frontmatter key, or the parsed field. The first version
-  // tested only `evidence:` and went red the moment the read was correctly routed through
-  // parseEnvelope — a check coupled to one way of writing the right thing.
-  if (!/\.evidence\b|evidence:/.test(region)) {
-    bad.push("the count is not taken from nodes' structured evidence — a substring scan of node text is the anti-pattern this replaced and must not return");
-  }
-  return bad.length ? bad.join("; ") : null;
 });

@@ -288,73 +288,35 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // would then refuse as undeclared. Nothing on this platform is that shape today, which
     // is the only reason it has not been hit — a closed initiative on such a flow would
     // never have been counted as closed.
-    const handoverState = states.find(isHandover);
-    next = !chain.documents.some(isHandover)
-      ? { action: "closed", waiting_on: "nobody",
-          why: `closed with outcome: ${outcome}; this flow gates nothing, so it owes no handover` }
-      : !handoverState || !handoverState.exists
-      ? {
-          action: "handover", waiting_on: "agent",
-          why: `closed with outcome: ${outcome}; the platform's closing step is the ` +
-               "handover — run `skill_read(\"zz-handover\")`, mint what generalises with " +
-               "`knowledge_add`, and write handover.md, so what this cycle learned " +
-               "outlives the conversation that learned it",
-        }
-      : handoverState.status !== "approved"
-      ? {
-          action: "handover", waiting_on: "human",
-          why: `closed with outcome: ${outcome}; handover.md is ` +
-               `${handoverState.status ?? "unwritten"} — call ` +
-               `document_approve("${name}/handover.md") once the stakeholder agrees before this ` +
-               "initiative can close",
-        }
-      : (() => {
-          // THE APPROVAL AUTHORISES THE TEAM NODES; IT DOES NOT WRITE THEM.
-          //
-          // zz-handover mints platform nodes immediately and PROPOSES team nodes in
-          // handover.md, minting them only once a team member has approved. But document_approve()
-          // is a generic gate recorder with no side effect, so nothing makes that second
-          // pass happen. Reading "closed" the moment the document was approved therefore
-          // let an initiative report complete with every promised team node unwritten, and
-          // nothing anywhere noticed — a promise recorded whose keeping went unverified,
-          // which is the same shape as the substring scan this branch replaced.
-          //
-          // So the document declares how many it promised, and the count has to be met.
-          // This is NOT the deleted substring scan returning: that read every node's whole text
-          // for the initiative's name and any mention satisfied it. This reads a number the
-          // document itself states, and counts nodes on the TEAM shelf whose structured
-          // `evidence` names this initiative. A promise of zero is met by zero, so a
-          // careful handover that found nothing worth the team keeping still closes — the
-          // rule is "keep what you promised", never "promise something".
-          const promised = Number(
-            parseEnvelope(readFileSync(join(root, name, "handover.md"), "utf8"))
-              .proposed_team_nodes ?? "0");
-          if (!promised) {
-            return { action: "closed", waiting_on: "nobody",
-                     why: `closed with outcome: ${outcome}; handover.md is approved` };
-          }
-          const ndir = join(root, "_knowledge", "nodes");
-          const minted = existsSync(ndir)
-            ? readdirSync(ndir).filter((f) => f.endsWith(".md")).filter((f) => {
-                // Through parseEnvelope like every other envelope read on this platform.
-                // A bespoke regex here would take the first match rather than the last of a
-                // repeated key, and would read the whole document rather than the
-                // frontmatter — the two failures that rule exists for.
-                const ev = parseEnvelope(readFileSync(join(ndir, f), "utf8")).evidence ?? "";
-                return ev.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim()).includes(name);
-              }).length
-            : 0;
-          return minted >= promised
-            ? { action: "closed", waiting_on: "nobody",
-                why: `closed with outcome: ${outcome}; handover.md is approved and its ` +
-                     `${promised} proposed team node(s) are written` }
-            : { action: "handover", waiting_on: "agent",
-                why: `closed with outcome: ${outcome}; handover.md is approved but only ` +
-                     `${minted} of the ${promised} team node(s) it proposed have been ` +
-                     "written — run `skill_read(\"zz-handover\")` and mint the rest with " +
-                     "`knowledge_add(scope: \"team\")`, exactly as the approved document " +
-                     "promised them" };
-        })();
+    // A CLOSED INITIATIVE OWES NOTHING. The close is the terminal act, whatever it closed on.
+    //
+    // This used to hold an initiative open until handover.md was written AND approved AND its
+    // promised team-node count was met -- three further gates after the close, reported as
+    // `action: "handover"`. Two things were wrong with it, and the second is the one that
+    // decided this.
+    //
+    // IT INSTRUCTED AN ACT ITS OWN GATE REFUSED. handover.md requires the flow's closing
+    // document. An initiative abandoned at the plan stage has none and never will -- which
+    // initiative_close already knows, recording the outcome on the furthest document the work
+    // reached -- so `document_write` turned the handover away while this told the agent to
+    // write it, forever. The same shape as the close-with-no-documents trap fixed in 0.54.1,
+    // one document further along.
+    //
+    // AND WORK STOPS. Not every initiative finishes, and an initiative closed halfway is closed
+    // rather than short of something: the ledger row already records what happened, and a
+    // platform that goes on asking for more is asking about work nobody is doing. Closing is
+    // allowed at any point, and after it the remainder is not owed.
+    //
+    // THE HANDOVER IS STILL WRITEABLE AND STILL WORTH WRITING -- the guard in guards.ts lets a
+    // closed initiative satisfy a prerequisite its close skipped, so anybody who wants to write
+    // one can, and an abandoned initiative on this platform produced the most durable node in
+    // the store. What changed is only that it is no longer owed, and therefore no longer a
+    // reason to report a closed initiative as open.
+    next = { action: "closed", waiting_on: "nobody",
+             why: `closed with outcome: ${outcome}. Nothing further is owed — the ledger row is ` +
+                  "the record. If the cycle taught something worth keeping, `skill_read" +
+                  "(\"zz-handover\")` mints it and writes handover.md; the close satisfies that " +
+                  "document's prerequisite." };
   } else {
     // A REQUIREMENT IS MET BY THE ONLY THING ITS TARGET CAN OFFER.
     //

@@ -125,10 +125,11 @@ does not say so dead-ends in a document nobody can act from.
 `findings.md` is this flow's closing document, so approving it lets `initiative_close()` record
 the outcome — one call, naming who accepted it. That ends the EVALUATION, not the cycle.
 
-`initiative_status` then answers `action: "handover"` until `handover.md` exists and is
-approved. `zz-handover` writes it, cold and afterwards: it reads the closed initiative, mints
+`initiative_status` answers `action: "closed"` from that moment — the close is terminal and
+nothing further is owed. `zz-handover` writes it, cold and afterwards: it reads the closed initiative, mints
 what generalises onto the platform shelf, and proposes to the team shelf what only this team
-needs. Report the evaluation closed and say the handover is what remains.
+needs. Report the evaluation closed; the handover is worth writing if the cycle taught
+something, and is not owed.
 
 ## Pitfalls
 

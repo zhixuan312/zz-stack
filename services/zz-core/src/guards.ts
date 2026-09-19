@@ -10,7 +10,7 @@
  * the caller to guess which rule they broke, and an agent that has to guess writes the same
  * document again with a different mistake in it.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
@@ -230,7 +230,27 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
   if (!dep) return null;
   const depFile = join(root, parts[0], dep);
   if (!existsSync(depFile)) {
-    return `ERROR: ${parts[0]}/${dep} does not exist yet — the flow writes it first, and its gate must pass before ${parts[1]} is written.`;
+    // A CLOSED INITIATIVE HAS SETTLED ITS PREREQUISITE, WHICHEVER DOCUMENT IT LANDED ON.
+    //
+    // handover.md requires review.md, and an initiative ABANDONED at the plan stage has no
+    // review.md and never will — initiative_close already knows that and records the outcome on
+    // the furthest document the work reached. So the chain demanded a document the close had
+    // deliberately skipped, and `initiative_status` went on answering `action: "handover"`
+    // forever: the platform instructing an act its own gate refuses. That is the same shape as
+    // the close-with-no-documents trap fixed in 0.54.1, one document further along.
+    //
+    // An outcome ANYWHERE in the folder is the proof. It is written by initiative_close and by
+    // nothing else, the ledger row is already appended, and what the prerequisite exists to
+    // establish — that the work before this document is settled — is exactly what a close
+    // asserts. The narrower rule still applies to every OPEN initiative, which is all of them
+    // until somebody closes one.
+    const closed = readdirSync(join(root, parts[0]))
+      .some((f: string) => f.endsWith(".md") &&
+                   !!parseEnvelope(readFileSync(join(root, parts[0], f), "utf8")).outcome);
+    if (!closed) {
+      return `ERROR: ${parts[0]}/${dep} does not exist yet — the flow writes it first, and its gate must pass before ${parts[1]} is written.`;
+    }
+    return null;
   }
   // A NON-GATED PREREQUISITE IS SATISFIED BY EXISTING. `gate: false` says no approval is
   // required, so nothing ever approves such a document and its status stays `draft` for the

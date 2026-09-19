@@ -146,7 +146,8 @@ plan's, and write it down in the same turn.
 One step does follow, and it is the platform's rather than this flow's: `initiative_status`
 returns `action: handover` until `handover.md` exists and is approved, and `zz-handover` is
 what writes it, cold and afterwards. So the close ends DELIVERY, not the cycle — report the
-initiative closed and say the handover is what remains.
+initiative closed. The handover is worth writing if the cycle taught something, and is
+not owed — `initiative_status` reads `closed` from the moment the outcome is recorded.
 
 ## The journal is the platform's, not a file
 

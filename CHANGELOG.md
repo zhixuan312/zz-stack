@@ -33,6 +33,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.53.2] — 2026-09-19
+
+A manually triggered command ablates perfectly well.
+
+### Fixed
+
+- **`revokes-a-leaked-token-before-anything-else` came back `dead` on a grader that could never
+  pass.** It asked for `tool_used: Skill`, and zz-access ships five commands and zero skills — a
+  promoted skill ships *as* the command, which is the design: `/connect`, `/admin`, `/doctor`,
+  `/migrate` and `/update` are operator acts a person types on purpose, and every one carries
+  `disable-model-invocation: true`. The grader was a constant subtracted from one arm.
+  The case now types `/zz-access:connect` the way `diagnoses-a-401-with-zz-doctor` types its
+  command — that case scores **1.000 with the plugin against 0.000 without**, the strongest
+  delta recorded here, and has no skill grader at all. A command is part of the plugin; nothing
+  about an ablation needs a skill.
+
+### Removed
+
+- **`refuses-a-shared-team-key`.** Its graders named `block_connect` and the credential tools,
+  which the blocks removal took off the `/manage` door — and the skill's "there is no shared
+  team key" section went with them, because the better answer it offered *was* `block_connect`.
+  One clause survives saying a token is personal. There is no distinctive behaviour left to
+  measure.
+
 ## [0.53.1] — 2026-09-19
 
 A tool outside the chain is a tool nobody calls.

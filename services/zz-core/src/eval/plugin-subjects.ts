@@ -27,23 +27,62 @@ const RUNS_OF = `
   join zz.plugin p on p.id = pv.plugin_id
  where p.name = $1 and pv.version = $2`;
 
-/** The documents this plugin version's runs produced, newest first.
+/** The documents this plugin version GOVERNS, newest first — and which route says so depends
+ *  on whether the plugin owns a door.
+ *
+ * A FLOW'S DOCUMENTS ARE THE ONES ITS STAGES WROTE, through the skill membership recorded at
+ * release. That is the `false` arm, and it is right for a flow: sdlc's documents are the ones
+ * sdlc's stages produced, and no others.
+ *
+ * A DOOR-OWNER'S DOCUMENTS ARE THE ONES WRITTEN THROUGH ITS DOOR, and the skill route gets
+ * that badly wrong. zz-core's own skills barely write documents — every document on this
+ * platform is written by another flow's stage CALLING zz-core's `document_write` — so the
+ * skill join returned nothing for the one plugin that touches every document there is. The
+ * consequence was not an empty round: it was a SILENT SUBSTITUTION. With no documents found,
+ * the round fell through to marking run transcripts against a ruler whose dimensions ask
+ * whether documents carry their frontmatter, cite their evidence and move version on approval.
+ * A transcript answers none of those, so it scored 1.68 to 1.94 — and the report drawn from it
+ * would have called the backbone weak for the second time, on the same mistaken attribution,
+ * in the other half of the same file.
+ *
+ * The door route attributes a document to a plugin when that plugin's door recorded work on
+ * the document's INITIATIVE. `zz.event` carries the initiative and the door but not the
+ * document's path, so this is the finest link the record actually holds; it reaches 211 of the
+ * platform's 365 documents where the run route reached 13. Announced rather than hidden — the
+ * round's denominator is what the report prints beside the cap.
  *
  * `scored` says whether a round has already marked it, and it is a fact the define stage needs
  * before it writes anything: a ruler derived from work that was already judged under an earlier
  * ruler is a ruler fitted to its own answers. */
-export async function usageDocs(p: pg.Pool, plugin: string, version: string) {
-  return (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
-    select d.team_slug, d.initiative, d.path, d.id::text as id,
-           exists (select 1 from zz.eval_subject es
-                    where es.doc_id = d.id and es.plugin_version_id = pv.id) as scored
-      from zz.doc d
-      join zz.run r on r.id = d.produced_by_run_id
-      join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
-      join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-      join zz.plugin p on p.id = pv.plugin_id
-     where p.name = $1 and pv.version = $2 and d.path not like '\\_versions/%'
-     order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
+export async function usageDocs(p: pg.Pool, plugin: string, version: string, ownsDoor: boolean) {
+  const pvId = `(select pv.id from zz.plugin_version pv join zz.plugin p on p.id = pv.plugin_id
+                  where p.name = $1 and pv.version = $2)`;
+  return ownsDoor
+    ? (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
+        select d.team_slug, d.initiative, d.path, d.id::text as id,
+               exists (select 1 from zz.eval_subject es
+                        where es.doc_id = d.id and es.plugin_version_id = ${pvId}) as scored
+          from zz.doc d
+         where d.path not like '\_versions/%'
+           -- tool_call ONLY. zz.event.team_slug is nullable and some kinds are written by acts
+           -- that belong to a person rather than a team, so matching a document's team against
+           -- an unscoped event would attribute it on a column that kind never filled. A door
+           -- call is the kind that carries the plugin name in the first place.
+           and exists (select 1 from zz.event e
+                        where e.kind = 'tool_call' and e.plugin = $1
+                          and e.initiative = d.initiative and e.team_slug = d.team_slug)
+         order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows
+    : (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
+        select d.team_slug, d.initiative, d.path, d.id::text as id,
+               exists (select 1 from zz.eval_subject es
+                        where es.doc_id = d.id and es.plugin_version_id = pv.id) as scored
+          from zz.doc d
+          join zz.run r on r.id = d.produced_by_run_id
+          join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
+          join zz.plugin_version pv on pv.id = pvs.plugin_version_id
+          join zz.plugin p on p.id = pv.plugin_id
+         where p.name = $1 and pv.version = $2 and d.path not like '\_versions/%'
+         order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
 }
 
 /** The runs of this plugin version that left events. A run with no events is not a subject —

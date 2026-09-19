@@ -127,7 +127,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
       const [traces, cases, docs, runs] = await Promise.all([
         pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin)),
         pluginCases(p, plugin, version),
-        usageDocs(p, plugin, version),
+        usageDocs(p, plugin, version, servesOwnDoor(plugin)),
         usageRuns(p, plugin, version),
       ]);
       // EVERY RULER THE PLUGIN HAS, not only the one this version declares. The skill side
@@ -315,7 +315,23 @@ export function registerPluginJudgeTools(server: McpServer): void {
                 "record a ruler whose subject is the document."); 
         }
         const docs = declared === "trace" || declared === "initiative"
-          ? [] : await usageDocs(p, plugin, version);
+          ? [] : await usageDocs(p, plugin, version, servesOwnDoor(plugin));
+        // A DOCUMENT IS ASKED FOR TOO, and for the reason the initiative branch above already
+        // gives. This used to fall through: a ruler that declared `document`, finding none,
+        // silently marked run transcripts instead — against dimensions asking whether a
+        // document carries its frontmatter and moves version on approval, which a transcript
+        // cannot answer at all. It scored the backbone 1.68 and the round read as a verdict.
+        // A declared subject the evidence cannot supply is a refusal, never a substitution.
+        if (declared === "document" && !docs.length) {
+          return text(
+            `ERROR: ${plugin} ${version} governs no document this round could read, so a ruler ` +
+            "whose subject is the document has nothing to mark. Marking its run transcripts " +
+            "instead would answer different questions from the ones the ruler asks and report " +
+            "the answers as though they were the same. This is a fact about the version's " +
+            "reach rather than its quality — plugin_profile says how thin the evidence is. " +
+            "Either wait for documents to be written under this version, or record a ruler " +
+            "whose subject is the trace.");
+        }
         const kind: Subject = inits.length ? "initiative" : docs.length ? "document" : "trace";
         const runs = kind === "trace" ? await usageRuns(p, plugin, version) : [];
         if (kind === "trace" && !runs.length) {

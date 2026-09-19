@@ -33,6 +33,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.14] — 2026-09-19
+
+A line over a figure is a yes/no, so the typed judge answers it.
+
+### Changed
+
+- **The threshold pass moved from the reading judge to the typed judgement service.** It was the
+  last quantitative decision in the flow still made by a transformer returning JSON — does 15 of
+  45 clear a half line — while the qualitative marks, the recommendation enum and the
+  evidence-strength score had all moved. The cost was shape rather than judgement: the parser
+  had to coerce `"true"` the string into `true` the boolean, because a model asked for a boolean
+  returns the string often enough to turn a met line into an unmet one, and a truncated answer
+  dropped a dimension silently. `noul` cannot answer off-vocabulary.
+- **A threshold now records the distribution behind its verdict.** Met is still 5 and unmet 1,
+  because a line is binary — but the probability and its confidence are stored beside it, so a
+  line cleared at 0.51 and one cleared at 0.99 stop reading as the same result.
+
+The reading judge remains the fallback where no `TYPESAFE_API_KEY` is set. Absence is an answer,
+never an error.
+
 ## [0.52.13] — 2026-09-19
 
 The record a door keeps is a figure on the sheet, because that is what the question was about.

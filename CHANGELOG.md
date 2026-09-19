@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.57.1] — 2026-09-19
+
+Only a door that writes documents has a document record to report.
+
+### Fixed
+
+- **`plugin_profile.record` reported the whole store's document figures under any door-owning
+  plugin's name.** It was gated on `servesOwnDoor` alone. For zz-core that is right — it is the
+  door every document is written through — but zz-access's profile reported 410 documents, 62
+  revised, for a plugin that has never written one, and a ruler drawing a threshold over that
+  would have measured the platform while naming zz-access. The block now requires the door to
+  have recorded a `document_write`, `document_patch` or `document_revise` call.
+
 ## [0.57.0] — 2026-09-19
 
 A timeout does not lose an answer, and every typed call leaves a row.

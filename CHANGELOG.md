@@ -33,6 +33,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.11] — 2026-09-19
+
+The pair cap is measured, and an arc is not finished until somebody signed it.
+
+Both changes are the ones sdlc's own evaluation proposed. Both remove a confound sitting on its
+weakest dimension rather than changing the plugin.
+
+### Changed
+
+- **`ZZ_JUDGE_PAIR_CAP` is 70000, up from 24000, and the number is now derived.** 24000 was
+  chosen to stay clear of a `max_tokens_exceeded` that had lost a subject once, never measured
+  against what the service accepts. Across six real initiatives it cut 210,702 characters, and
+  the worst-marked subject was the one that lost 113,332 of them. Measured against the live
+  service: 32,275 input tokens accepted and ~36,400 refused, so the ceiling is 32768; a real
+  42,531-character document measured 14,117 tokens, so prose runs 3.01 characters per token and
+  not the ~5 a repeated-word probe reports. 70000 clears the ceiling even at a pathological 2.5
+  chars/token with room for the ruler's own text.
+- **An initiative is a subject only when its closing document is APPROVED.** Presence was
+  enough, so two unsigned draft reviews were judged as delivered arcs — and they were the two
+  lowest marks in that round, 1.7 and 2.9 against an approved-arc mean of 3.78. An initiative
+  whose review was never signed has not finished its own gate.
+
+### Fixed
+
+- Closes bug `343ffb42`.
+
+### Upgrade notes
+
+- Rounds against an `initiative` ruler now judge fewer subjects and truncate far less. Marks
+  taken before this are not comparable with marks taken after it; re-run rather than compare.
+
 ## [0.52.10] — 2026-09-19
 
 A document's evidence column reads the field the platform actually writes.

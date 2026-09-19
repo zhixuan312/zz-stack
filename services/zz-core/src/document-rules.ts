@@ -81,6 +81,31 @@ export function slugRefusal(slug: string): string | null {
   return null;
 }
 
+/** A slug as the store will hold it: lowercase, words joined by single hyphens, nothing else.
+ *
+ * THE PLATFORM ALREADY OWNS THIS NAME. It prepends today's date from its own clock and hands
+ * the composed name back, and `zz-platform` tells every agent to use what it returns rather
+ * than what they sent. Owning the rest of the name is the same rule applied one character
+ * further along.
+ *
+ * IT SHAPES RATHER THAN REFUSES, because a refusal here buys nothing. `slugRefusal` above
+ * still rejects what is genuinely ambiguous — a path separator, a leading dot, a second date —
+ * and those are questions only the caller can answer. "A sentence with spaces and a comma" is
+ * not ambiguous; it is a slug somebody typed in prose, and the store can hold it correctly
+ * without asking.
+ *
+ * WHAT IT COST TO LEARN. A sentence went in and the store got
+ * `2026-09-15-one plugin concept, not block and flow` — a folder whose name carries spaces and
+ * a comma. That alone is cosmetic; what made it stick is that `initiative_close` records an
+ * outcome ON a document, so an initiative opened by mistake could not be abandoned until
+ * somebody wrote a document into it purely to satisfy the gate. Two rules each right on their
+ * own, leaving no exit. */
+export function slugify(slug: string): string {
+  return slug.trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 /** A flow field this document may not carry, or null.
  *
  * TWO WAYS A FIELD FAILS, and only one of them used to be said out loud. A name the envelope

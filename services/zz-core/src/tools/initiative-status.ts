@@ -14,10 +14,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller, parseEnvelope, type FlowDoc } from "@zz/contracts";
+import { OUTCOME_STOPPED, parseCaller, parseEnvelope, type FlowDoc } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { openRecord } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { safeName, userRoot } from "../paths.js";
 import { logActivity } from "../persist.js";
@@ -161,6 +162,25 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const envs: Array<{ name: string } & Record<string, string>> =
       files.map((f) => ({ name: f, ...envelopeOf(join(dir, f)) }));
     const closer = envs.find((e) => e.outcome);
+    // AN EMPTY INITIATIVE THAT WAS ABANDONED IS OVER, and nothing above can see that.
+    //
+    // Every branch here reads an outcome off a DOCUMENT, and the one case with no document is
+    // the one this has to answer for: an initiative opened by mistake. initiative_close records
+    // that on `_open.json`, so this reads it from the same place. Without this the abandon
+    // would be written and the listing would go on reporting the initiative as open, which is
+    // the whole defect wearing a different hat.
+    const rec = openRecord(root, name);
+    if (!closer && rec?.abandoned_at) {
+      return {
+        initiative: name, flow: rec.flow, documents: envs, sources: 0,
+        sources_after_approval: [],
+        outcome: OUTCOME_STOPPED, closed_by: rec.abandoned_by ?? null,
+        next_move: { action: "closed", waiting_on: "nobody",
+                     why: `abandoned on ${rec.abandoned_at} — it holds no document, so the ` +
+                          "outcome is recorded on its own open record and no ledger row was " +
+                          "appended" },
+      };
+    }
     // THE SAME TWO SOURCE FIELDS THE GOVERNED RETURN CARRIES. Freeform has no manifest; it
     // still has a `sources/` directory, `source_add` still writes into it, and
     // `document_revise` still refuses a revision that cites nothing — so an agent here met

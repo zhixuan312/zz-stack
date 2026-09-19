@@ -31,7 +31,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
-import { slugRefusal } from "../document-rules.js";
+import { slugify, slugRefusal } from "../document-rules.js";
 import { initiativeNameFor, OPEN_RECORD, recordOpen, takenRefusal } from "../initiative-record.js";
 import { userRoot } from "../paths.js";
 import { logActivity } from "../persist.js";
@@ -65,6 +65,17 @@ export function registerInitiativeOpenTool(server: McpServer): void {
     async ({ slug, flow }) => {
       const bad = slugRefusal(slug);
       if (bad) return text(bad);
+      // SHAPED, NOT REFUSED. See slugify's own note: the platform already composes this name
+      // and the caller is told to use what comes back, so holding the rest of it to the store's
+      // shape is the same rule one character further along. What is genuinely ambiguous was
+      // refused above.
+      const shaped = slugify(slug);
+      if (!shaped) {
+        return text(
+          `ERROR: "${slug}" has no letters or digits in it, so there is no name to make from ` +
+          "it. A few words in the stakeholder's own language.");
+      }
+      slug = shaped;
       const who = parseCaller(requestHeaders()).email;
       const root = await userRoot();
       const taken = takenRefusal(root, slug);

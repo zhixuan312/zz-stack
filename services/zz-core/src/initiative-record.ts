@@ -39,6 +39,10 @@ export const OPEN_RECORD = "_open.json";
 
 interface OpenRecord {
   initiative: string;
+  /** Set only when an initiative holding NO document was abandoned — see recordAbandoned.
+   *  Its presence is what `initiative_status` reads to stop offering a next move. */
+  abandoned_by?: string;
+  abandoned_at?: string;
   /** The flow that governs this initiative, or null — which is a DECLARED freeform, not an
    * unanswered question. Telling those two apart is the only reason this file is written for
    * a freeform open as well. */
@@ -69,6 +73,20 @@ export function recordOpen(root: string, name: string, flow: string | null, who:
   mkdirSync(join(root, name), { recursive: true });
   writeFileSync(join(root, name, OPEN_RECORD), `${JSON.stringify(record, null, 2)}\n`);
   return record;
+}
+
+/** Mark an initiative that holds no document as abandoned, on the record of its own opening.
+ *
+ * An outcome belongs ON a document, and this is the one case where there is none and never
+ * will be: an initiative opened by mistake. Requiring a document there meant writing one a
+ * stage never produced purely to satisfy a gate, which this platform refuses everywhere else,
+ * so the initiative stayed open forever instead. The open record is the platform's own file
+ * for this initiative, so it is where the platform records that the open was undone. */
+export function recordAbandoned(root: string, name: string, who: string): void {
+  const rec = openRecord(root, name);
+  if (!rec) return;
+  writeFileSync(join(root, name, OPEN_RECORD),
+                `${JSON.stringify({ ...rec, abandoned_by: who, abandoned_at: isoToday() }, null, 2)}\n`);
 }
 
 /** The record, or null when there is none. Exported rather than a `declaredFlow(root, name)`

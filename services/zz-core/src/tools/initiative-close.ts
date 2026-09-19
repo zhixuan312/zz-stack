@@ -7,7 +7,7 @@
  * the flow names or, for an abandon that never reached that document, on the furthest one the
  * work did reach.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -15,6 +15,7 @@ import { OUTCOMES, OUTCOME_STOPPED, parseCaller, parseEnvelope } from "@zz/contr
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.js";
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
@@ -175,11 +176,37 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         : named;
       if (!closingDoc) {
         if (stopped) {
+          // AN EMPTY INITIATIVE IS ABANDONED ON ITS OWN RECORD, not on a document nobody wrote.
+          //
+          // This refused: "an outcome is recorded ON a document, so there is nothing here to
+          // mark. Write the first one". That is right for work that PRODUCED something and
+          // wrong for the case it actually caught — an initiative opened by mistake, which has
+          // no documents by definition and never will. The two rules were each correct alone
+          // and together left no exit: it stayed open in initiative_status forever, or somebody
+          // manufactured a document a stage never produced, which this platform refuses
+          // everywhere else.
+          //
+          // `_open.json` is the platform's own record of the open, so it is where the platform
+          // records that the open was undone. No ledger row is appended: a team's counts are
+          // built from work that happened, and this is the record of work that did not.
+          const rec = openRecord(root, initiative);
+          if (!rec) {
+            return text(
+              `ERROR: ${initiative} has neither a document nor an open record, so there is ` +
+              "nothing here to mark and nothing that says it was ever opened.");
+          }
+          if (readdirSync(join(root, initiative)).some((f: string) => f.endsWith(".md"))) {
+            return text(
+              `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
+              "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
+          }
+          recordAbandoned(root, initiative, who.email);
+          logActivity(root, `${initiative}/${OPEN_RECORD}`,
+            { user: who.email, action: "initiative_close", initiative, outcome: OUTCOME_STOPPED });
           return text(
-            `ERROR: ${initiative} has no document to record the close on — not one of the ` +
-            "documents its flow declares has been written. An outcome is recorded ON a " +
-            "document, so there is nothing here to mark. Write the first one, or name any " +
-            "document in the folder with `document: \"<name>.md\"`.");
+            `${initiative} abandoned — it holds no document, so the outcome is recorded on its ` +
+            "own open record and no ledger row is appended. A team's counts are built from work " +
+            "that happened; this is the record of work that did not.");
         }
         return text(
           `ERROR: no flow governs '${initiative}', so nothing declares which document records ` +

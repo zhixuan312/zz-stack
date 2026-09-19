@@ -34,10 +34,35 @@ let pool: pg.Pool | undefined;
  *
  * One accessor, so "is there a database" has one answer and connecting is not something a
  * caller can forget to do. The size lives here too: four connections spelled in five places
- * is four connections until somebody changes one of them. */
+ * is four connections until somebody changes one of them.
+ *
+ * EVERY WAIT HERE IS BOUNDED, and with only four connections that is not a refinement.
+ *
+ * A statement with no timeout holds its connection for as long as the server will let it — on a
+ * lock, on a plan that went wrong, on a peer that stopped answering mid-transfer. Four of those
+ * and this service has no connections left, while `/health` keeps answering 200 because it
+ * touches no database. That is the worst shape an outage can take: every tool failing and every
+ * probe green.
+ *
+ * `statement_timeout` is the server-side bound and the one that actually releases the
+ * connection, so it is set on the connection rather than left to a client-side race. Thirty
+ * seconds is far above anything here — the largest table on this deployment is six megabytes
+ * and the slowest tool query returns in milliseconds — so it can only fire on something that is
+ * already wrong. `connectionTimeoutMillis` bounds the wait for a connection to become free, so
+ * a caller arriving during that pile-up is refused in ten seconds instead of joining it.
+ * `idleTimeoutMillis` returns connections the deployment is not using.
+ *
+ * All three are overridable, because a deployment with a bigger database is the same contract
+ * with different numbers. */
 export function db(): pg.Pool | null {
   if (!TEAM_DB_URL) return null;
-  pool ??= new pg.Pool({ connectionString: TEAM_DB_URL, max: 4 });
+  pool ??= new pg.Pool({
+    connectionString: TEAM_DB_URL,
+    max: Number(process.env.ZZ_DB_POOL_MAX || 4),
+    statement_timeout: Number(process.env.ZZ_DB_STATEMENT_TIMEOUT_MS || 30_000),
+    connectionTimeoutMillis: Number(process.env.ZZ_DB_CONNECT_TIMEOUT_MS || 10_000),
+    idleTimeoutMillis: 30_000,
+  });
   return pool;
 }
 // THE INDEXER IS TOLD HOW TO REACH THE DATABASE HERE, at import time, because this module is

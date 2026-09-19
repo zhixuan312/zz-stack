@@ -57,7 +57,25 @@ export async function initPlatformDb(): Promise<void> {
   }
   // platform tables live in the `zz` SCHEMA of the existing database —
   // one Postgres, clean separation, zero new infrastructure
-  pool = new pg.Pool({ connectionString: serverUrl, max: 6, options: "-csearch_path=zz,public" });
+  //
+  // BOUNDED WAITS, AND NO `statement_timeout` — the omission is deliberate.
+  //
+  // zz-core's pool sets one, because every statement it runs is a tool query that returns in
+  // milliseconds. THIS pool runs the migrations, twenty lines below, and a migration that
+  // rewrites a table legitimately takes as long as it takes. A server-side timeout here would
+  // abort one partway on the first deployment whose data outgrew it, which is a worse failure
+  // than the one it prevents: a half-applied migration is not something a retry fixes.
+  //
+  // The other two bounds carry no such risk and are set. `connectionTimeoutMillis` stops a
+  // caller queueing forever behind six busy connections — it is refused in ten seconds and says
+  // so — and `idleTimeoutMillis` returns what the deployment is not using.
+  pool = new pg.Pool({
+    connectionString: serverUrl,
+    max: Number(process.env.ZZ_DB_POOL_MAX || 6),
+    connectionTimeoutMillis: Number(process.env.ZZ_DB_CONNECT_TIMEOUT_MS || 10_000),
+    idleTimeoutMillis: 30_000,
+    options: "-csearch_path=zz,public",
+  });
   await pool.query("create schema if not exists zz");
 
   await pool.query(`create table if not exists zz.schema_migration (

@@ -364,6 +364,9 @@ check("a column nothing reads is not proof a column nothing needs", runsCheck("t
 check("an insert names as many values as it names columns",
       runsCheck("insert-arity.ts"));
 
+check("a query binds as many parameters as its statement names",
+      runsCheck("query-arity.ts"));
+
 check("the definition this platform is built on holds in its source",
       runsCheck("definition-rules.ts"));
 

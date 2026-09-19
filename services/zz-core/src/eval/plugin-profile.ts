@@ -228,13 +228,17 @@ export async function pluginTraces(
     : `from zz.event e
         where e.run_id in (select r.id ${RUNS_BY_SKILL})
           and e.kind = 'tool_call'`;
+  // THE PARAMETERS THE BRANCH ACTUALLY USES. The door form references $1 alone — it counts
+  // across every version by design — and passing a $2 it never names is rejected by the server,
+  // not ignored: "bind message supplies 2 parameters, but prepared statement requires 1".
+  const useParams = servesOwnDoor ? [plugin] : [plugin, version];
   const useRows = (await pool.query<{ tool: string; calls: string; refusals: string }>(`
     select coalesce(e.tool_key, e.subject) as tool,
            count(*)::text as calls,
            count(*) filter (where e.ok is false)::text as refusals
       ${useSource}
      group by coalesce(e.tool_key, e.subject)
-     order by count(*) desc`, [plugin, version])).rows;
+     order by count(*) desc`, useParams)).rows;
   const use = useRows.map((r) => ({ tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals) }));
 
   // A tool_call subject is `<surface>:<tool>` -- core:document_write, manage:whoami. The reachable

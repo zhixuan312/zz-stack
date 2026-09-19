@@ -282,7 +282,19 @@ export async function pluginTraces(
   // this document has been through a version change -- which is the population the evidence
   // question is about. A document written once has no version change to justify and counting it
   // would bury the ones that do.
-  const rec = servesOwnDoor
+  // ONLY A DOOR THAT WRITES DOCUMENTS HAS A DOCUMENT RECORD TO REPORT.
+  //
+  // This was gated on `servesOwnDoor` alone, and the figures below are the STORE'S -- every
+  // document on the platform, not this plugin's. For zz-core that is exactly right: it is the
+  // door every document is written through, so the store's record IS its record. For any other
+  // door owner it is a number about somebody else's work printed under this plugin's name, and
+  // zz-access's profile duly reported 410 documents it has never touched.
+  //
+  // The test is the same one usageDocs applies: has this door recorded a call to a tool that
+  // WRITES a document. A door that only reads them has not produced them.
+  const writesDocuments = servesOwnDoor && use.some((u) =>
+    ["document_write", "document_patch", "document_revise"].includes(u.tool.split(":").pop() ?? ""));
+  const rec = writesDocuments
     ? (await pool.query<{ documents: string; revised: string; revised_with_evidence: string;
                           patched: string; patched_with_evidence: string }>(`
         with live as (select * from zz.doc d where d.path not like '\\_versions/%'),

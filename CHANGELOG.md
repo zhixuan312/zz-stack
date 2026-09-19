@@ -33,6 +33,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.54.1] — 2026-09-19
+
+An initiative opened by mistake can be abandoned.
+
+### Fixed
+
+- **An initiative with no documents could never be closed** (bug `e1958baf`, open since 0.39.1).
+  Two rules, each right alone, together leaving no exit. `initiative_open` prepended the date but
+  did not shape the rest of the name, so a sentence produced a folder carrying spaces and a
+  comma; and `initiative_close` records an outcome ON a document, so an initiative opened by
+  mistake — which has no documents by definition — could not be abandoned until somebody wrote
+  one purely to satisfy the gate. It stayed open in `initiative_status` forever instead.
+
+  Both halves are fixed. `slugify` **shapes rather than refuses**: the platform already composes
+  this name and tells callers to use what comes back, so holding the rest of it to the store's
+  shape is the same rule one character further along. `slugRefusal` still rejects what is
+  genuinely ambiguous — a separator, a leading dot, a second date. And an empty initiative is
+  abandoned on its own `_open.json`, with **no ledger row**: a team's counts are built from work
+  that happened, and this is the record of work that did not. `initiative_status` reads the same
+  field, so the abandon is visible.
+
 ## [0.54.0] — 2026-09-19 · platform 0.54.0 · console 0.17.0
 
 The ablation half of plugin evaluation is removed, data included.

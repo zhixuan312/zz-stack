@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.12] — 2026-09-19
+
+A single document is capped too, and it reached the ceiling on the first round that looked.
+
+### Fixed
+
+- **A `document` subject had no size cap at all and scored nothing when it overran.** 0.52.11
+  derived the pair budget from the judgement service's measured ceiling; one branch over, a
+  single document was still sent whole. On the next round a real `spec.md` reached 153,379
+  characters — about 51,000 tokens against a 32,768 ceiling — the service answered
+  `max_tokens_exceeded`, and the subject was lost rather than shortened. One document now gets
+  the whole `ZZ_JUDGE_PAIR_CAP` budget, with the cut announced in the text and counted.
+
 ## [0.52.11] — 2026-09-19
 
 The pair cap is measured, and an arc is not finished until somebody signed it.

@@ -33,6 +33,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.56.0] — 2026-09-19
+
+How good is it, and what is left to fix — two numbers, because they are two questions.
+
+### Added
+
+- **An effectiveness score, 0–10, computed from the round's own figures.** A round ended in one
+  word — `keep`, `keep-and-change`, `re-run`, `not-evaluable`, `retire` — which is a *decision*
+  and was being read as a *measurement*. "Keep" does not say whether a plugin is excellent or
+  barely adequate.
+
+  `0.6 × qualitative + 0.4 × quantitative`, each rescaled to 0–10, with bands at **8 / 6 / 4**
+  fixed before any round is read. Null over a void round: a mean below a collapsed control is
+  noise, and printing it with a caveat is how the caveat gets lost.
+
+  **Computed, not asked.** Every input is already on the round, so no model is in the
+  derivation — a number a model produced is one more thing a reader has to trust. The weights
+  live in `judge-score.ts`, so disagreeing with them is a one-line change.
+
+- **A headroom figure, independent of the score.** A plugin at 9 can still have something worth
+  fixing, and a plugin at 5 with *nothing identified* is a worse situation than a 5 with three
+  named changes — that quadrant is the retire signal. Headroom counts only things already
+  written down: unmet thresholds and generic findings, each of which names a change by
+  construction. Anything else is an opinion.
+
+### Changed
+
+- **Both numbers go into the state `round_recommend` hands the typed judge**, so the enum is
+  chosen knowing the score rather than derived beside it. A report can no longer carry `keep`
+  next to a 4.2 with nothing saying which to believe.
+- `round_scores` computes from **this round's** figures, not the pooled series — which is right
+  for a trend and wrong for scoring one round.
+
 ## [0.55.1] — 2026-09-19
 
 The text catches up with two rules that changed under it.

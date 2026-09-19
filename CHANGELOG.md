@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.58.2] — 2026-09-19
+
+**A correction to 0.58.0's own changelog, which understated the break it shipped.** That
+entry said a ruler with no `reads` is "refused only when re-recorded" and that existing
+rulers were otherwise unaffected. They are not: `round_judge` checks the same clause before
+it takes the first mark, so every ruler affirmed before 0.58.0 — all twelve quantitative
+dimensions across the four plugins — refuses a round until its lines name their figures.
+
+Nothing in the code changed. What changed is that the changelog now describes the release
+that was shipped. A changelog that softens a breaking change is the one document where being
+wrong costs somebody a broken upgrade, and this is the second false claim found by re-reading
+a record against the database rather than against the report that summarised it.
+
 ## [0.58.1] — 2026-09-19
 
 **The list of figures a ruler line may read is now the list the gate accepts.** When
@@ -81,10 +94,12 @@ In the same release, an evaluation's headroom counts every finding still open on
 rather than only the round's own — a change named once and never acted on stays visible to
 the score — which is only defensible now that closing one is possible.
 
-**If you maintain a ruler:** a quantitative dimension with no `reads` is refused at the next
-`ruler_record`. Existing rulers keep their rows and their scores; they are refused only when
-re-recorded. Rounds taken before controls were linked cannot be recommended on and have to
-be re-taken.
+**If you maintain a ruler:** a quantitative dimension with no `reads` is refused at
+`ruler_record`, at `ruler_affirm`, and at `round_judge` before the first mark. Existing
+rulers keep their rows and their scores — nothing stored was rewritten — but **no ruler
+affirmed before this release can be judged against until its quantitative dimensions name
+their figures**, because none of them carries `reads`. Rounds taken before controls were
+linked cannot be recommended on and have to be re-taken.
 
 ## [0.57.1] — 2026-09-19
 

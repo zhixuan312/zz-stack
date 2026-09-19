@@ -1,7 +1,7 @@
 {
   "name": "zz-plugin-eval",
   "description": "Measure a whole plugin: what its real runs did, and whether installing it beats not installing it. Two kinds of evidence, one ruler you agree, evidence and never a change.",
-  "version": "0.55.1+d6714ec0",
+  "version": "0.56.0+5ada38e0",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

@@ -589,8 +589,30 @@ export function registerPluginJudgeTools(server: McpServer): void {
       // computed facts and never the artifact, so it scores identically whichever artifact is in
       // front of the judge — folding it into both arms would shrink the gap by arithmetic and
       // make a ruler look worse the more lines it draws.
-      const trial = (await p.query<{ rubric: string; judge: string; real_mean: string | null;
-                                     control_mean: string | null }>(`
+      // THIS ROUND AGAINST ITS OWN CONTROL, when the control named it.
+      //
+      // A gap is a property of ONE round and this pooled every score under the version and
+      // ruler, real on one side and control on the other, because nothing linked them. Correct
+      // while a version had one round; wrong the moment it had two, and a round later shown to
+      // be defective moved the number of every round beside it until its rows were deleted.
+      //
+      // The pooled form is still the fallback and is LABELLED as such, because every round
+      // recorded before migration 063 has no link and was always measured that way. Changing
+      // what those numbers mean retroactively would be worse than reporting how they were got.
+      const paired = (await p.query<{ rubric: string; judge: string; real_mean: string | null;
+                                      control_mean: string | null }>(`
+        select rb.version as rubric, ev.judge_model as judge,
+               round(avg(sc.score) filter (where sc.eval_id = $1::uuid),2)::text as real_mean,
+               round(avg(sc.score) filter (where sc.eval_id = ctl.id),2)::text as control_mean
+          from zz.eval ev
+          join zz.eval ctl on ctl.controls = ev.id
+          join zz.rubric rb on rb.id = ev.rubric_id
+          join zz.eval_score sc on sc.eval_id in (ev.id, ctl.id)
+          join zz.rubric_dimension d on d.id = sc.dimension_id and d.kind = 'qualitative'
+         where ev.id = $1::uuid
+         group by 1,2`, [eval_id])).rows;
+      const trial = paired.length ? paired : (await p.query<{ rubric: string; judge: string;
+                                     real_mean: string | null; control_mean: string | null }>(`
         select rb.version as rubric, ev.judge_model as judge,
                round(avg(sc.score) filter (where sc.is_control is false),2)::text as real_mean,
                round(avg(sc.score) filter (where sc.is_control is true),2)::text as control_mean
@@ -627,6 +649,11 @@ export function registerPluginJudgeTools(server: McpServer): void {
           ...t,
           gap: t.real_mean && t.control_mean
             ? Number((Number(t.real_mean) - Number(t.control_mean)).toFixed(2)) : null,
+          // WHICH ROUNDS THE NUMBER IS OVER, said rather than left to be assumed. A reader
+          // comparing two reports needs to know whether a gap is this round's or an average
+          // across every round under the ruler.
+          over: paired.length ? "this round and the control that names it"
+                              : "every round under this ruler, pooled - no control names this one",
         })),
         // Met is 5 and unmet is 1 because a line is binary; the reason is the ruler's own
         // threshold_reason, recorded when the line was drawn and not written after the fact.

@@ -511,12 +511,32 @@ export async function markAll(
             "to start the control."));
     }
   } else {
+    // A CONTROL NAMES THE ROUND IT CONTROLS, at the moment it is created.
+    //
+    // The gap is a property of ONE round -- these subjects, marked this way, against this
+    // control -- and it was computed by pooling every score under a version and a rubric
+    // because nothing linked the two rows. That reads correctly while a version has one round
+    // and stops the moment it has two: a second round's gap averaged both, and a round whose
+    // evidence was later shown defective moved the number of every round beside it.
+    //
+    // The newest real round under the same version and ruler is the one being controlled --
+    // the flow's own order, since `next` sends a caller to the control immediately after the
+    // subjects are judged. Null when there is no such round, which leaves the pooled fallback
+    // to answer, the way every round recorded before this column was always measured.
+    const controlled = control
+      ? (await p.query<{ id: string }>(`
+          select id::text from zz.eval
+           where ${m.versionColumn} = $1::uuid and rubric_id = $2::uuid
+             and is_control is false
+           order by started_at desc limit 1`, [versionId, m.rubricId])).rows[0]?.id ?? null
+      : null;
     session = (await p.query<{ id: string }>(`
-      insert into zz.eval (${m.versionColumn}, rubric_id, judge_model, selection_note, doc_count, is_control)
-      values ($1::uuid, $2::uuid, $3, $4, 0, $5) returning id::text`,
+      insert into zz.eval (${m.versionColumn}, rubric_id, judge_model, selection_note, doc_count,
+                           is_control, controls)
+      values ($1::uuid, $2::uuid, $3, $4, 0, $5, $6::uuid) returning id::text`,
       [versionId, m.rubricId, judgeName,
        `${kind === "document" ? "documents" : "run traces"}` +
-       ` of ${m.name} ${m.version}${control ? ", control" : ""}`, control])).rows[0].id;
+       ` of ${m.name} ${m.version}${control ? ", control" : ""}`, control, controlled])).rows[0].id;
   }
 
   // Already scored under THIS session, so a resumed call does not re-judge what it paid for.

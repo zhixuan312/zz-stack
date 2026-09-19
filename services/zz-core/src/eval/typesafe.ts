@@ -66,7 +66,14 @@ interface ScoreAnswer {
   type: "score"; score: number; confidence: number;
   legend: Record<string, string>; probabilities: Record<string, number>;
 }
-interface NoulAnswer { type: "noul"; probability: number; confidence: number }
+/** NOUL IS THE ONE PRIMITIVE THAT CARRIES NO `confidence`, and the field is `noul` rather than
+ *  `probability`. Both were wrong in this file until something finally called it -- written
+ *  from the documentation's prose rather than from a response, and never exercised, so
+ *  `a.confidence.toFixed(2)` threw on the first real threshold round. Verified against the live
+ *  service: a sharp line answers 0.02, a vague one answers 0.41, and neither carries anything
+ *  else. For a yes/no the probability IS the shape of the distribution, so there is nothing a
+ *  separate confidence could add. */
+interface NoulAnswer { type: "noul"; noul: number }
 export type Answer = ChoiceAnswer | ScoreAnswer | NoulAnswer;
 
 /** Whether this deployment can ask at all. Every caller checks it and says so in its own

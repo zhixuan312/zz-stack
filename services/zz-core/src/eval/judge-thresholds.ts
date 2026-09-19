@@ -37,10 +37,18 @@ interface Applied {
  * the confidence that is the shape of that distribution.
  *
  * 0.5 IS THE CUT, because a threshold is binary by construction -- a band between met and
- * unmet would be this pass inventing degrees the ruler did not write. But the probability and
- * its confidence are STORED beside the verdict, so a line cleared at 0.51 and one cleared at
- * 0.99 stop looking identical in the record. A threshold whose probability sits near the cut
- * is a threshold nobody drew sharply enough, and that is worth being able to see.
+ * unmet would be this pass inventing degrees the ruler did not write. But the probability is
+ * STORED beside the verdict, so a line cleared at 0.51 and one cleared at 0.99 stop looking
+ * identical in the record. A threshold whose probability sits near the cut is a threshold
+ * nobody drew sharply enough, and that is worth being able to see. Measured against the live
+ * service: "15 of 45 clears at least half" answers 0.02, and "the documentation is generally
+ * quite good" answers 0.41 -- the vague line reports its own vagueness.
+ *
+ * `confidence` IS DERIVED HERE AND SAID TO BE. Unlike choice and score, noul returns no
+ * confidence of its own -- for a yes/no the probability already IS the shape of the
+ * distribution, so there is nothing separate to report. Distance from the cut, doubled, is
+ * that same shape on the 0-1 scale the column holds for every other dimension: 0.02 and 0.98
+ * both read 0.96, and 0.51 reads 0.02.
  *
  * The facts are put in `state` and each line becomes one question, so every threshold in a
  * ruler rides in ONE request -- the service evaluates them in parallel and the round trip is
@@ -66,11 +74,11 @@ async function typedThresholds(dims: Dim[], facts: string): Promise<Applied[]> {
     }
     return {
       dimension: d.name,
-      meets: a.probability > 0.5,
-      fact: `the typed judge put ${Math.round(a.probability * 100)}% on this line holding ` +
-            `(confidence ${a.confidence.toFixed(2)}), read against: ${d.threshold}`,
-      confidence: a.confidence,
-      probabilities: { met: a.probability, unmet: 1 - a.probability },
+      meets: a.noul > 0.5,
+      fact: `the typed judge put ${Math.round(a.noul * 100)}% on this line holding, ` +
+            `read against: ${d.threshold}`,
+      confidence: Math.round(Math.abs(a.noul - 0.5) * 200) / 100,
+      probabilities: { met: a.noul, unmet: Math.round((1 - a.noul) * 100) / 100 },
     };
   });
 }

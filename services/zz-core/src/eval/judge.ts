@@ -34,7 +34,7 @@ import { configured as typedJudgeConfigured } from "./typesafe.js";
 import { markTyped } from "./judge-typed.js";
 import { applyThresholds } from "./judge-thresholds.js";
 import { traceOf } from "./judge-trace.js";
-import { pairOf } from "./judge-pair.js";
+import { bodyWithin, pairOf } from "./judge-pair.js";
 
 /** The judge is NOT the platform's base model. The base model is what the flows' own agents
  *  run on, and judging with it would make the judge exactly as good as the thing being
@@ -587,7 +587,14 @@ export async function markAll(
       text = pair.text;
       truncated = pair.truncated;
     }
-    else if (x.docId) text = bodyOf(x.team, x.init, x.path) ?? "";
+    else if (x.docId) {
+      // CAPPED LIKE A PAIR IS. A single document looks like it cannot reach the service's
+      // ceiling and a real spec.md reached 153,379 characters — about 51,000 tokens against
+      // 32,768 — and scored nothing at all.
+      const one = bodyWithin(bodyOf(x.team, x.init, x.path));
+      text = one.text;
+      truncated = one.truncated;
+    }
     else if (x.runId) { const t = await traceOf(p, x.runId); text = t.text; truncated = t.truncated; }
     if (!text.trim()) { skipped.push(`${x.label} — nothing to read`); continue; }
     let marks: Mark[] = [];

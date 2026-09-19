@@ -1,5 +1,5 @@
 /**
- * BOTH ENDS OF ONE INITIATIVE AS THE TEXT A JUDGE READS.
+ * THE TEXT A JUDGE READS, WITHIN THE BUDGET A JUDGE WILL ACCEPT — a pair, or one document.
  *
  * SPLIT OUT OF judge.ts BY SUBJECT, the same cut judge-trace.ts already is. That file runs the
  * round; this one answers a narrower question — what does a whole arc look like to somebody
@@ -43,6 +43,29 @@
  *  different number -- and the number is now one a re-measurement can move. */
 const PAIR_CAP = Number(process.env.ZZ_JUDGE_PAIR_CAP || 70_000);
 
+/** One body cut to `limit`, with the cut announced in the text itself. A judge that cannot see
+ *  it was handed an excerpt marks the excerpt as though it were the whole. */
+function cutTo(body: string, limit: number): { text: string; lost: number } {
+  return body.length <= limit
+    ? { text: body, lost: 0 }
+    : { text: `${body.slice(0, limit)}\n\n[TRUNCATED: ${body.length - limit} of ${body.length} characters not shown]`,
+        lost: body.length - limit };
+}
+
+/** ONE DOCUMENT, within the same budget.
+ *
+ *  This branch had NO cap at all, and the reason it went unnoticed is that the pair branch got
+ *  one first: two documents obviously risk the ceiling, one apparently does not. Measured, it
+ *  does — a real spec.md reached 153,379 characters, about 51,000 tokens against a 32,768
+ *  ceiling, and the service answered `max_tokens_exceeded`. The subject scored NOTHING, which
+ *  is the failure the pair cap exists to prevent, arriving through the branch nobody capped.
+ *
+ *  The whole budget rather than half, because there is only one document to fit. */
+export function bodyWithin(body: string | null): { text: string; truncated: number } {
+  const c = cutTo(body ?? "", PAIR_CAP);
+  return { text: c.text, truncated: c.lost };
+}
+
 /** Both ends of one initiative, labelled and within budget. `truncated` is what was cut, so
  *  neither the judgement nor the stored record can claim more coverage than it had. Either end
  *  missing yields empty text, which the caller reports as a subject it could not read. */
@@ -51,12 +74,8 @@ export function pairOf(
   closePath: string, closeBody: string | null,
 ): { text: string; truncated: number } {
   const half = Math.floor(PAIR_CAP / 2);
-  const cut = (body: string): { text: string; lost: number } => body.length <= half
-    ? { text: body, lost: 0 }
-    : { text: `${body.slice(0, half)}\n\n[TRUNCATED: ${body.length - half} of ${body.length} characters not shown]`,
-        lost: body.length - half };
-  const a = cut(openBody ?? "");
-  const b = cut(closeBody ?? "");
+  const a = cutTo(openBody ?? "", half);
+  const b = cutTo(closeBody ?? "", half);
   return a.text.trim() && b.text.trim()
     ? { text: `=== THE BEGINNING: ${initiative}/${openPath} ===\n\n${a.text}\n\n` +
               `=== THE END: ${initiative}/${closePath} ===\n\n${b.text}`,

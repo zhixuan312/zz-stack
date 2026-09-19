@@ -569,7 +569,12 @@ export async function markAll(
       for (const t of applied) {
         const d = quant.find((x) => x.name === t.dimension);
         if (!d) continue;
-        await store(subjId, d.dim_id, t.meets ? 5 : 1, t.fact, d.threshold_reason);
+        // MET IS 5 AND UNMET IS 1 BECAUSE A LINE IS BINARY -- but the distribution behind the
+        // verdict is stored beside it, so a line cleared at 0.51 and one cleared at 0.99 stop
+        // reading as the same result. Present only from the typed judge; the reading judge
+        // answers a boolean and has no distribution to report.
+        await store(subjId, d.dim_id, t.meets ? 5 : 1, t.fact, d.threshold_reason,
+                    t.confidence, t.probabilities);
         thresholds.push(t);
       }
     } catch (err) {

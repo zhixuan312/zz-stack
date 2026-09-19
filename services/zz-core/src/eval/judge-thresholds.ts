@@ -16,6 +16,64 @@
 import type pg from "pg";
 
 import { ask, type Dim, matcher } from "./judge.js";
+import { ask as askTyped, configured as typedConfigured, type NoulQuestion } from "./typesafe.js";
+
+/** What a threshold answer carries, whichever service produced it. `confidence` and
+ *  `probabilities` are present only from the typed service — the reading judge answers a
+ *  boolean and has no distribution behind it to report. */
+interface Applied {
+  dimension: string; meets: boolean; fact: string;
+  confidence?: number; probabilities?: Record<string, number>;
+}
+
+/** A LINE OVER A FIGURE IS A YES/NO, WHICH IS A PRIMITIVE THE TYPED SERVICE HAS.
+ *
+ * This is the most quantitative decision in the whole flow -- does 15 of 45 clear a half line
+ * -- and it was the last one still being made by a transformer returning JSON. The cost was
+ * not wrong judgement; it was SHAPE. The parser below this used to coerce `"true"` the string
+ * into `true` the boolean because a model asked for a boolean returns the string often enough
+ * to turn a met line into an unmet one, and a truncated answer silently dropped a dimension.
+ * `noul` cannot answer off-vocabulary: it returns the probability that the line holds, plus
+ * the confidence that is the shape of that distribution.
+ *
+ * 0.5 IS THE CUT, because a threshold is binary by construction -- a band between met and
+ * unmet would be this pass inventing degrees the ruler did not write. But the probability and
+ * its confidence are STORED beside the verdict, so a line cleared at 0.51 and one cleared at
+ * 0.99 stop looking identical in the record. A threshold whose probability sits near the cut
+ * is a threshold nobody drew sharply enough, and that is worth being able to see.
+ *
+ * The facts are put in `state` and each line becomes one question, so every threshold in a
+ * ruler rides in ONE request -- the service evaluates them in parallel and the round trip is
+ * paid once. */
+async function typedThresholds(dims: Dim[], facts: string): Promise<Applied[]> {
+  const questions: Record<string, NoulQuestion> = {};
+  dims.forEach((d, i) => {
+    questions[`t${i}`] = {
+      type: "noul",
+      instructions:
+        `Do the facts meet this line? THE LINE: ${d.threshold}\n\n` +
+        "Answer only whether the recorded facts satisfy it. You are not judging quality and " +
+        "you are not deciding where the line should be -- it was written down before any of " +
+        "these measurements were taken. If the facts do not contain the figure this line " +
+        "needs, the line is NOT met.",
+    };
+  });
+  const answers = await askTyped(facts, questions);
+  return dims.map((d, i) => {
+    const a = answers[`t${i}`];
+    if (!a || a.type !== "noul") {
+      return { dimension: d.name, meets: false, fact: "the typed judge returned no answer for this line" };
+    }
+    return {
+      dimension: d.name,
+      meets: a.probability > 0.5,
+      fact: `the typed judge put ${Math.round(a.probability * 100)}% on this line holding ` +
+            `(confidence ${a.confidence.toFixed(2)}), read against: ${d.threshold}`,
+      confidence: a.confidence,
+      probabilities: { met: a.probability, unmet: 1 - a.probability },
+    };
+  });
+}
 
 /** The threshold pass: quantitative dimensions, scored against figures a tool computed.
  *
@@ -30,7 +88,11 @@ import { ask, type Dim, matcher } from "./judge.js";
  * inventing degrees the ruler did not write.
  */
 export async function applyThresholds(p: pg.Pool, plugin: string | null, dims: Dim[], facts: string):
-    Promise<{ dimension: string; meets: boolean; fact: string }[]> {
+    Promise<Applied[]> {
+  // THE TYPED SERVICE FIRST, because a line over a figure is exactly what it answers. The
+  // reading judge stays as the fallback for a deployment with no key -- absence is an answer,
+  // never an error -- and it is the only path that can return a shape nobody can parse.
+  if (typedConfigured()) return typedThresholds(dims, facts);
   const system = [
     "The message below is a set of facts about one subject, computed by a tool with no model",
     "anywhere in the derivation. You are applying thresholds that were written down BEFORE any",

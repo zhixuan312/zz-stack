@@ -53,7 +53,7 @@ export interface ScoreQuestion {
   /** 2-10 level descriptions, ORDERED low to high. */
   criteria: string[];
 }
-interface NoulQuestion {
+export interface NoulQuestion {
   type: "noul";
   instructions: string;
 }

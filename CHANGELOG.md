@@ -33,6 +33,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.58.0] — 2026-09-19
+
+**A ruler line now names the figure it reads, and the platform checks that figure exists.**
+
+A quantitative dimension was prose, and nothing tied it to a number this platform computes.
+The threshold pass is instructed to answer NOT MET when the facts lack the figure a line
+needs — so a line nobody could measure did not come back unanswered, it came back FAILED.
+Every quantitative dimension now carries `reads`: the dotted paths into the facts sheet its
+line is drawn over. `ruler_record` resolves them against that plugin's own sheet and refuses
+a line that cannot reach its figure, printing every figure the sheet does carry.
+`ruler_affirm` checks again, because the sheet can move while the document sits with the
+stakeholder, and `round_judge` checks once more before the first mark is taken.
+
+**Why it mattered enough to gate.** An unmeasurable line costs twice, in opposite
+directions. It DEFLATES the effectiveness score, because it counts against the quantitative
+half, and it INFLATES the headroom, because the same line counts as a named change. One
+evaluation on this deployment was scored a full band below what its own marks support, and
+its report — approved, closed — made that line its headline finding. The finding was false.
+Afterwards nothing could tell the two cases apart: the score table holds the same value for
+a line that failed and a line that was never asked.
+
+**Some properties cannot be thresholds at all, and are now enforced instead.**
+`round_recommend` refuses a round that no control run names. The rule it enforces was
+previously written as a ruler line, which could never hold: the threshold pass runs on the
+real round and the control is recorded after it, so at the instant the line is read the
+control does not exist yet, whatever the truth is. Enforced at the door, the property is
+true by construction and needs no line, no figure and no judge. The same tool's judge-on-
+trial gap now reads that named control directly instead of pooling every round taken at the
+same version under the same ruler — a round whose own control collapsed could previously
+borrow a gap from an earlier one.
+
+**A finding can finally be closed.** `finding_decide` records a finding as applied or
+rejected, with a note saying what changed or why it will not, and the name of whoever
+decided. `finding_record` has always described that as a separate act by whoever owns the
+plugin, and until now no tool performed it, so every finding ever recorded was still open.
+In the same release, an evaluation's headroom counts every finding still open on the plugin
+rather than only the round's own — a change named once and never acted on stays visible to
+the score — which is only defensible now that closing one is possible.
+
+**If you maintain a ruler:** a quantitative dimension with no `reads` is refused at the next
+`ruler_record`. Existing rulers keep their rows and their scores; they are refused only when
+re-recorded. Rounds taken before controls were linked cannot be recommended on and have to
+be re-taken.
+
 ## [0.57.1] — 2026-09-19
 
 Only a door that writes documents has a document record to report.

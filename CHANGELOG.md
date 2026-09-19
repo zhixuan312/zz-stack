@@ -33,6 +33,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.4] — 2026-09-19
+
+An initiative's two ends are the ones its flow declares, and it must have reached the last.
+
+### Fixed
+
+- **A ruler whose subject is the initiative was judging pairs no flow ever produced.** The two
+  ends were the oldest and newest document in the initiative folder by creation time — but that
+  folder also holds material registered with `source_add` under `sources/`, and `handover.md`,
+  which is written after the close by a different plugin's skill. Two of three subjects in a
+  real round were therefore a stakeholder attachment against a spec, marked 4.55. The ends now
+  come from the flow's own `stages[].produces` in stage order, which excludes everything else
+  without naming any of it. Stage order rather than clock order, because an audit sends a
+  document back and the newest write is then not the furthest point reached.
+- **An initiative still in flight was judged as though it had finished.** Asking whether the end
+  delivers what the beginning asked for, of work that has no end yet, marks the work's
+  incompleteness rather than the plugin. An initiative that has not reached its flow's closing
+  document is no longer a subject, and a version with no such initiative is refused with that
+  reason — `not-evaluable` is in the recommendation enum for exactly this case.
+
+### Upgrade notes
+
+- Any round already recorded against an `initiative` ruler sampled the old way. Its marks are
+  about pairs the flow did not produce; re-run rather than re-read them.
+
 ## [0.52.3] — 2026-09-19
 
 An initiative pair is shortened rather than lost, and a round names the judge that marked it.

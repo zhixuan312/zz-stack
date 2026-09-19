@@ -74,16 +74,19 @@ export interface Dim {
  *  nothing else. FR-10 forbids deriving a token figure from the bytes we sent: an estimate and
  *  a measurement are not the same fact, and one column cannot say which of the two it holds.
  *
- *  `prompt_tokens_details.cached_tokens` IS THE PROVIDER'S DOCUMENTED SPELLING AND HAS NOT BEEN
- *  SEEN ON A LIVE RESPONSE. The judge calls whatever LLM_BASE_URL names — z.ai's
- *  OpenAI-compatible v4 API on this deployment, whose chat-completion reference documents
- *  exactly this nesting under `usage`. It could not be confirmed against a real answer: there
- *  is no LLM_API_KEY on the machine this was written on and ssh to the deployment timed out, so
- *  the name comes from the reference rather than from a response, which is a weaker thing and
- *  is said here rather than left to be assumed. If the spelling is wrong the column reads null,
- *  which the schema defines as "not reported" — the truthful answer for a figure nobody managed
- *  to read. The first real round after this deploys settles it: a populated column confirms the
- *  name, a column that is null while input_tokens is not says the name is wrong. */
+ *  `prompt_tokens_details.cached_tokens` IS CONFIRMED AGAINST A LIVE RESPONSE. This block used
+ *  to say the opposite at length: the name came from a provider's reference rather than from
+ *  an answer, because there was no LLM_API_KEY on the machine it was written on, and it set
+ *  out how the question would be settled — a populated column confirms the spelling, a null
+ *  one beside a non-null input_tokens says it is wrong.
+ *
+ *  Settled on 2026-09-19, against ollama.com's OpenAI-compatible v1 API with
+ *  `deepseek-v4.1-flash`: `usage.prompt_tokens_details.cached_tokens` is present and is 0 on an
+ *  uncached call. The nesting and the spelling are right.
+ *
+ *  A zero and an absence still mean different things and the reader below keeps them apart —
+ *  `count()` returns null for anything that is not a number, so "the provider reported no
+ *  caching" and "the provider reported nothing" land as 0 and null rather than both as 0. */
 interface Usage {
   prompt_tokens?: unknown;
   completion_tokens?: unknown;

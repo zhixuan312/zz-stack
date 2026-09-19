@@ -99,6 +99,16 @@ async function factSheet(p: pg.Pool, plugin: string, version: string): Promise<s
     // A figure a threshold is measured against belongs on the sheet, not in the reader's head.
     tools_named: named,
     tools_named_count: named.length,
+    // THE TOTAL, ALONGSIDE THE PER-TOOL ROWS. A threshold over refusals is written as a SHARE
+    // -- at least half of them are the guardrail firing -- and a judge handed fifteen per-tool
+    // rows has to add four columns across all of them before it can read the line. It is the
+    // same argument as tools_named_count above: a figure a threshold is measured against
+    // belongs on the sheet rather than in the reader's arithmetic.
+    refusals: figures.use.reduce(
+      (a, u) => ({ total: a.total + u.refusals, guardrail: a.guardrail + u.guardrail,
+                   ours: a.ours + u.ours, theirs: a.theirs + u.theirs,
+                   unattributed: a.unattributed + u.unattributed }),
+      { total: 0, guardrail: 0, ours: 0, theirs: 0, unattributed: 0 }),
     traces: { ...figures, initiatives_with_a_path: stage_paths.length },
     cases,
   }, null, 2);

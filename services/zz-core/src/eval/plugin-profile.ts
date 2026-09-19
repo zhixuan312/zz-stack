@@ -43,7 +43,15 @@ interface PluginTraces {
    *  nothing placed is either a stage somebody removed from the manifest or a name that has
    *  drifted, and both are worth a person's attention. */
   unplaced: { step: string; count: number }[];
-  use: { tool: string; calls: number; refusals: number }[];
+  /** Per tool: how often it was called, how often it refused, and WHOSE refusal each was.
+   *
+   *  `refusal_owner` is the column the console already reads, and a bare refusal count without
+   *  it answers the wrong question. A ruler that asks whether a door's refusals are guardrails
+   *  firing or the door breaking cannot be read against a total, because the two are opposite
+   *  findings with the same number: `guardrail` is the platform refusing on purpose, `ours` is
+   *  this platform failing, and `theirs` is somebody else's service failing underneath it. */
+  use: { tool: string; calls: number; refusals: number;
+         guardrail: number; ours: number; theirs: number; unattributed: number }[];
   /** Reachable, named by a skill, green on every gate check — and never called once. This is the
    *  half of fit no static check can see: reachability is a property of the package, use is a
    *  property of the runs. */
@@ -232,14 +240,27 @@ export async function pluginTraces(
   // across every version by design — and passing a $2 it never names is rejected by the server,
   // not ignored: "bind message supplies 2 parameters, but prepared statement requires 1".
   const useParams = servesOwnDoor ? [plugin] : [plugin, version];
-  const useRows = (await pool.query<{ tool: string; calls: string; refusals: string }>(`
+  const useRows = (await pool.query<{ tool: string; calls: string; refusals: string;
+                                      guardrail: string; ours: string; theirs: string;
+                                      unattributed: string }>(`
     select coalesce(e.tool_key, e.subject) as tool,
            count(*)::text as calls,
-           count(*) filter (where e.ok is false)::text as refusals
+           count(*) filter (where e.ok is false)::text as refusals,
+           -- WHOSE REFUSAL, split three ways plus the ones nothing attributed. A row written
+           -- before the column existed, or by a path that never set it, is counted as its own
+           -- figure rather than folded into any of the three -- a ruler drawing a line over the
+           -- guardrail share needs to know how much of the total was never attributed at all.
+           count(*) filter (where e.ok is false and e.refusal_owner = 'guardrail')::text as guardrail,
+           count(*) filter (where e.ok is false and e.refusal_owner = 'ours')::text as ours,
+           count(*) filter (where e.ok is false and e.refusal_owner = 'theirs')::text as theirs,
+           count(*) filter (where e.ok is false and e.refusal_owner is null)::text as unattributed
       ${useSource}
      group by coalesce(e.tool_key, e.subject)
      order by count(*) desc`, useParams)).rows;
-  const use = useRows.map((r) => ({ tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals) }));
+  const use = useRows.map((r) => ({
+    tool: r.tool, calls: Number(r.calls), refusals: Number(r.refusals),
+    guardrail: Number(r.guardrail), ours: Number(r.ours), theirs: Number(r.theirs),
+    unattributed: Number(r.unattributed) }));
 
   // A tool_call subject is `<surface>:<tool>` -- core:document_write, manage:whoami. The reachable
   // set is bare tool names, so compare on the half after the colon.

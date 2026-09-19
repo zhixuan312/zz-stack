@@ -182,7 +182,9 @@ export function mountCatalog(app: Express): void {
                        (select to_char(max(e.ts) at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"') from zz.event e
                          where e.kind = 'tool_call' and e.step = s.name)                  as last_run
                   from zz.skill s`),
-      // WHAT WAS RELEASED, and the most recent ablation run against it.
+      // WHAT WAS RELEASED. The ablation run that used to ride beside it is gone with the
+      // suite: it measured whether a method's text reached an agent, never whether the
+      // plugin worked.
       //
       // The delta is read here in SQL and PARSED in zz-core. plugin-cases.ts owns
       // `parseCaseRun` — it knows which spellings of the two arm scores the CLI has used and

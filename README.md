@@ -96,9 +96,11 @@ catalog/    the flows and platform capabilities, one directory per owner. A
                                 the only level two of its properties are visible from:
                                 whether a flow that goes wrong can return to an earlier
                                 stage, and whether a tool its skills name was ever
-                                called. TWO kinds of evidence with their own sufficiency
-                                lines — cases from the ablation suite, which need no
-                                history, and traces from real runs, which need five.
+                                called. ONE kind of evidence: traces from real runs,
+                                which need five. A second kind — an ablation suite —
+                                was removed; with no mock declared no plugin server
+                                started, so it measured whether a method's text reached
+                                an agent, never whether the plugin worked.
                                 locate, profile, define (the gate: what good means for
                                 THIS plugin), judge, report. Measures; never changes
 skills/     the baseline plugin's skills, served whatever flow a team runs. They
@@ -122,14 +124,9 @@ skills/     the baseline plugin's skills, served whatever flow a team runs. They
             evaluation calls for is not a skill: the report SPECIFIES one change
             and its expected effect, and a repository edit plus a release applies
             it, because /catalog and /skills are read-only wherever this runs.
-            A PLUGIN carries its eval CASE SUITE beside its skills — evals/
-            under the catalog package, and evals/ at the repository root for the
-            baseline, whose skills are not in the catalog either. One directory per case, holding a
-            case.yaml: the prompt, and the graders that read what came back. It
-            ships with the plugin, so anyone who installs it can run the same
-            ablation. What a round FOUND is not here — findings.md lives in the
+            What a round FOUND is not in the catalog — findings.md lives in the
             initiative the evaluation ran as, with the scores in the platform's
-            own tables, because a finding belongs to a moment and a version
+            own tables, because a finding belongs to a moment and a version.
 docs/       written for somebody who does not work on this every day.
             architecture.html is the platform end to end — one page, eight
             tabs, every capability described by what it is, how we look at it,

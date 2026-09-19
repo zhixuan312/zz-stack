@@ -143,11 +143,15 @@ recorded — the spec used to close this flow, which meant an initiative could c
 agreement written before any code existed. Ask for the approval the way stage 4 asks for the
 plan's, and write it down in the same turn.
 
-One step does follow, and it is the platform's rather than this flow's: `initiative_status`
-returns `action: handover` until `handover.md` exists and is approved, and `zz-handover` is
-what writes it, cold and afterwards. So the close ends DELIVERY, not the cycle — report the
-initiative closed. The handover is worth writing if the cycle taught something, and is
-not owed — `initiative_status` reads `closed` from the moment the outcome is recorded.
+**The close is the end.** `initiative_status` reads `closed` from the moment the outcome is
+recorded, whatever that outcome is, and nothing further is owed — closing part-way through is a
+normal way for work to end, not a lesser one.
+
+One step MAY follow, and it belongs to the platform rather than to this flow: `zz-handover`
+writes `handover.md`, cold and afterwards, minting whatever generalises. Worth doing when the
+cycle taught something; not owed, and not a condition of being closed. The close satisfies that
+document's prerequisite, so it can be written even by an initiative that stopped before
+`review.md`.
 
 ## The journal is the platform's, not a file
 

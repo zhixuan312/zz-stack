@@ -285,10 +285,17 @@ export function registerInitiativeCloseTool(server: McpServer): void {
             ? "Nobody accepted it, because it stopped before it was done.\n"
             : `Nobody signed off — recorded reason: ${oneLine(reason)}.\n`) +
         "A ledger row was appended. The ledger is read by counting these, so the word matters.\n" +
-        "Closed is not yet complete — one step remains, and it belongs to the platform rather " +
-        "than to this flow. Run `skill_read(\"zz-handover\")` next: it mints whatever " +
-        "generalises from this cycle and writes handover.md. That document is gated — a team " +
-        "member approves it, and only then does `initiative_status` read `action: \"closed\"`.",
+        // CLOSED IS COMPLETE. This said the opposite -- "one step remains", the handover, and
+        // "only then does initiative_status read closed". Both halves are gone: the close is
+        // terminal whatever it closed on, and status answers `closed` from this moment.
+        //
+        // The handover is OFFERED here rather than demanded, and the distinction is the whole
+        // point. A tool's own return text is documentation and rots like it; this one told
+        // people for months that they owed a document its own gate would refuse them.
+        "Nothing further is owed. If this cycle taught something worth keeping, " +
+        "`skill_read(\"zz-handover\")` mints it and writes handover.md — the close satisfies " +
+        "that document's prerequisite, so it can be written even when the work stopped before " +
+        "the document it would normally follow.",
       );
     },
   );

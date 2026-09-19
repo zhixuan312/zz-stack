@@ -1,12 +1,12 @@
 {
   "sdlc": {
     "version": "0.55.0",
-    "digest": "2253fbce",
+    "digest": "34e40af7",
     "skills": {
       "sdlc-audit-criteria": "d4588e9f25ec",
       "sdlc-execute": "d7cc2dfe5515",
       "sdlc-explore": "9c87b081e9aa",
-      "sdlc-flow": "b2f5ecae951f",
+      "sdlc-flow": "1f5dcfc5f826",
       "sdlc-investigate": "c52bfb4eff39",
       "sdlc-method": "76465dc209ab",
       "sdlc-plan": "5d904c4bea4c",

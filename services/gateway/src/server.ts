@@ -145,7 +145,7 @@ const DOORS: Record<string, { name: string; who: string; what: string; auth: str
     what: "Access, yours and everybody's: your own building-block keys, your platform token and your client setup \u2014 and, if your role carries them, people, teams, the flow registry, block grants and the projections into every client the platform serves. The tools you are offered are the ones your role can execute, so a tool you cannot see is a fact about you, not about the platform; whoami says which. Each tool still authorises per call, because a tool you can run for one team is not one you can run for another.",
     auth: "Bearer <your token>" },
   "/eval/mcp": { name: "zz-plugin-eval", who: "teams that installed the zz-plugin-eval flow",
-    what: "Evaluating a plugin: what its real runs did, what a recorded ablation says installing it is worth, and the ruler both are scored against. Separate from /core/mcp because it is one flow's instrument rather than everybody's process layer — it is on the door you get by installing that flow, and on no other.",
+    what: "Evaluating a plugin: what its real runs did, read from this platform's own door telemetry, and the ruler they are scored against. Separate from /core/mcp because it is one flow's instrument rather than everybody's process layer — it is on the door you get by installing that flow, and on no other.",
     auth: "Bearer <your token>" },
 };
 

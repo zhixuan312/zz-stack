@@ -122,14 +122,19 @@ export function reaches(sheet: Record<string, unknown>, path: string): boolean {
  *  figure is not on the sheet" sends an author guessing at key names, and the guess costs
  *  another round trip through a gated document. Arrays and their elements are not walked: a
  *  threshold reads a figure, and `use[3].refusals` is one plugin-run's row rather than a line
- *  anybody should draw. */
+ *  anybody should draw.
+ *
+ *  A NULL IS NOT LISTED, on exactly the rule `reaches` applies one line up. This listed them,
+ *  and the first real refusal it printed offered `record` to a plugin whose `record` is null —
+ *  so the message that exists to say which figures are usable named one that would be refused
+ *  on the very next call. A list of what you may write has to be the list the gate accepts. */
 function figuresOn(sheet: Record<string, unknown>, prefix = ""): string[] {
   const out: string[] = [];
   for (const [k, v] of Object.entries(sheet)) {
     const path = prefix ? `${prefix}.${k}` : k;
     if (v !== null && typeof v === "object" && !Array.isArray(v)) {
       out.push(...figuresOn(v as Record<string, unknown>, path));
-    } else if (v !== undefined) {
+    } else if (v !== undefined && v !== null) {
       out.push(path);
     }
   }

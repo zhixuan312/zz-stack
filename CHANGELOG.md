@@ -33,6 +33,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.5] — 2026-09-19
+
+A door-owner's documents are the ones written through its door, and a declared subject is never
+substituted for another.
+
+### Fixed
+
+- **A ruler whose subject is the document was marking run transcripts instead.** `round_judge`
+  fell through to traces when it found no documents, so a ruler asking whether a document
+  carries its frontmatter, whether its version moved because evidence arrived, and whether its
+  knowledge cites its source was handed transcripts that answer none of those. It scored 1.68 to
+  1.94 and the round read as a verdict on the plugin. A declared subject the evidence cannot
+  supply is now refused with that reason, the way the initiative subject already was.
+- **A plugin that owns a door was credited with only the documents its own skills wrote.** Every
+  document on this platform is written by some other flow's stage calling zz-core's
+  `document_write`, so the skill route found 13 of 365 for the one plugin that touches all of
+  them — the same mistaken attribution 0.52.1 fixed in `plugin_profile`, left standing in the
+  subject selector next to it. A door-owner's documents are now those whose initiative its door
+  recorded work on, which reaches 211.
+
+### Upgrade notes
+
+- Any round recorded against a `document` ruler for a door-owning plugin sampled the wrong
+  artifacts, or none. Re-run rather than re-read it.
+
 ## [0.52.4] — 2026-09-19
 
 An initiative's two ends are the ones its flow declares, and it must have reached the last.

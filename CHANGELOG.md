@@ -33,6 +33,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.57.0] — 2026-09-19
+
+A timeout does not lose an answer, and every typed call leaves a row.
+
+### Added
+
+- **The typed judgement service now records every call to `zz.model_call`.** It makes every typed
+  decision on this platform — the qualitative marks, the thresholds, the recommendation enum —
+  and wrote nothing: twelve rounds of evidence with no record that the calls behind them
+  happened, how long they took, or whether any had to be retried.
+- **`attempts`, `confidence` and `note` on `zz.model_call`** (migration 065). A call that
+  succeeded on its third try is not the same fact as one that succeeded immediately; `ok = false`
+  made a timeout, a 429 and a moved body look identical when they need different responses; and
+  **confusion is a measurement, not an error** — an answer set at 0.96 and one at 0.11 are
+  different evidence wearing the same shape, so the mean confidence per call is recorded and a
+  run of low-confidence judgements reads as a trend.
+
+### Changed
+
+- **A transient timeout costs latency, not a subject.** The typed client retries a timeout, a
+  transport failure or a 5xx within a total budget (`TYPESAFE_BUDGET_MS`, 100s;
+  `TYPESAFE_ATTEMPTS`, 3). A 4xx is not retried — asking again with the same body spends the
+  budget to be told the same thing. The refusal now names the attempts and seconds spent.
+- **The reading judge deliberately does not retry.** It answers one subject per call, and a
+  skipped subject leaves `remaining` unmoved so the next call retries it with a *fresh* budget —
+  better than one squeezed into a window already nearly spent. The typed client has no such
+  resume: its whole ruler rides in one request.
+
+### Upgrade notes
+
+- Migration 065 adds three nullable/defaulted columns and applies on the gateway's next start.
+- `TYPESAFE_BUDGET_MS` and `TYPESAFE_ATTEMPTS` are new and optional.
+
 ## [0.56.0] — 2026-09-19
 
 How good is it, and what is left to fix — two numbers, because they are two questions.

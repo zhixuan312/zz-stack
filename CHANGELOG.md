@@ -33,6 +33,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.15] — 2026-09-19
+
+`noul` answers `noul` and carries no confidence.
+
+### Fixed
+
+- **The typed client's `noul` shape was wrong since it was written, and 0.52.14 was the first
+  caller.** It declared `{ probability, confidence }`; the service returns `{ noul }` and no
+  confidence at all. Written from documentation prose rather than from a response, and never
+  exercised — choice and score were used from the first typed round, `noul` was dead code
+  carrying a wrong shape. The first real threshold round threw and reported the dimension
+  skipped, which is the resume design working; nothing was stored wrong.
+- **A threshold's confidence is derived and says so.** For a yes/no the probability already is
+  the shape of the distribution, so distance from the 0.5 cut, doubled, is that shape on the
+  0–1 scale the column holds for every other dimension.
+
+Measured against the live service: "at least half of revised documents carry evidence", against
+facts saying 15 of 45, answers **0.02**; "the documentation is generally quite good" answers
+**0.41**. The sharp line answers sharply and the vague line reports its own vagueness.
+
 ## [0.52.14] — 2026-09-19
 
 A line over a figure is a yes/no, so the typed judge answers it.

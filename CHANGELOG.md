@@ -33,6 +33,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.55.0] — 2026-09-19
+
+The close is the end, and closing is a normal way for work to end.
+
+### Changed
+
+- **A closed initiative owes nothing.** It could be closed and still owe three things —
+  `handover.md` written, then approved, then its promised team-node count met — reported as
+  `action: "handover"` until all three landed. `initiative_status` now answers `closed` from the
+  moment an outcome exists, whatever that outcome is.
+
+  Two reasons. **The old rule instructed an act its own gate refused:** `handover.md` requires
+  the flow's closing document, an initiative abandoned at the plan stage has none and never
+  will, so `document_write` turned the handover away while `initiative_status` demanded it,
+  forever — the same shape as the close-with-no-documents trap fixed in 0.54.1, one document
+  further along. And **work stops.** Not every initiative finishes; an initiative closed halfway
+  is closed rather than short of something, and the ledger row is the record.
+
+- **The handover is still writeable, and still worth writing.** A closed initiative now satisfies
+  a prerequisite its close deliberately skipped, so the opportunity survives the obligation being
+  removed. That matters: an abandoned initiative on this platform produced the most durable node
+  in the store, minted today from a five-day-old folder.
+
+### Removed
+
+- **Two gate checks that enforced the old rule**, replaced by one that enforces the new one.
+  The gate is 333 checks, from 334.
+
+### Upgrade notes
+
+- Any initiative reading `action: "handover"` will read `closed` after this. None is lost — the
+  outcome and ledger row are unchanged.
+- Four skills changed version, so every installed client gets the new text on its next pull.
+
 ## [0.54.2] — 2026-09-19
 
 The model is `deepseek-v4.1-flash`, and the judge rule is warned rather than assumed.

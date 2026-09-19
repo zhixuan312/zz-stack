@@ -33,6 +33,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.52.8] — 2026-09-19
+
+A door owns the documents its door wrote, not every document in scope when it was called.
+
+### Fixed
+
+- **An administration door was offered another plugin's documents to be judged on.** A
+  door-owning plugin's documents were selected by matching any `tool_call` on its door against a
+  document's initiative — so two `whoami` and `team_switch` calls made while an evaluation was
+  the session's context handed zz-access the whole of zz-core's evaluation. Attribution now
+  requires a call to `document_write`, `document_patch` or `document_revise`: a plugin whose door
+  only reads documents has not produced them.
+
 ## [0.52.7] — 2026-09-19
 
 Which initiatives are a flow's is answered by `zz.doc.flow`, not by a run nobody recorded.

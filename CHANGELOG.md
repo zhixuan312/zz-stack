@@ -33,6 +33,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.58.1] — 2026-09-19
+
+**The list of figures a ruler line may read is now the list the gate accepts.** When
+`ruler_record` refuses a quantitative dimension, it prints every figure that plugin's facts
+sheet carries, so the author can correct the line without guessing. That list included paths
+whose value was null — which the gate itself refuses — so it could offer `record` to a plugin
+whose door writes no documents, and the next call would refuse the very figure the message
+had just suggested. Found by running 0.58.0's new gate against zz-plugin-eval.
+
 ## [0.58.0] — 2026-09-19
 
 **A ruler line now names the figure it reads, and the platform checks that figure exists.**

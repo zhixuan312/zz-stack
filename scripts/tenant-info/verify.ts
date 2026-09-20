@@ -28,12 +28,72 @@ export function resolveSuite(name: string, availableNames: readonly string[]) {
     : { status: "not_run" as const, module };
 }
 
+/** The two profiles the spec declares for `verify`. It lives here rather than in `cli.ts`
+ *  because the profile's MEANING is enforced here — `cli.ts` only parses the flag. */
+export type VerifyProfile = "integration" | "acceptance";
+
 interface SuiteOutcome {
   suite: string;
-  status: "passed" | "failed" | "not_run";
+  status: "passed" | "failed" | "blocked" | "not_run";
   module: string;
   partial: boolean;
   detail?: unknown;
+  /** Named at `--profile acceptance` when a case did not run — see `blockedAtAcceptance`. */
+  blocked_cases?: string[];
+}
+
+/**
+ * The names of every case a suite reported `not_run`, or `null` when its detail carries no
+ * readable case map at all.
+ *
+ * `null` IS NOT "nothing was skipped". A suite whose receipt cannot be read case-by-case
+ * cannot demonstrate it ran a complete required set, and at the acceptance profile that is
+ * the same answer as having skipped one. Returning `[]` for an unreadable receipt would make
+ * the weakest suite in the repository the easiest one to pass.
+ */
+function notRunCases(detail: unknown): string[] | null {
+  if (typeof detail !== "object" || detail === null) return null;
+  const cases = (detail as { cases?: unknown }).cases;
+  if (typeof cases !== "object" || cases === null) return null;
+  const out: string[] = [];
+  for (const [name, value] of Object.entries(cases as Record<string, unknown>)) {
+    if (typeof value !== "object" || value === null) return null;
+    const status = (value as { status?: unknown }).status;
+    if (typeof status !== "string") return null;
+    if (status === "not_run") out.push(name);
+  }
+  return out;
+}
+
+/**
+ * `--profile acceptance` FORBIDS A SUITE FROM PASSING ON CASES IT DID NOT RUN.
+ *
+ * The spec's CLI contract is explicit: "`--profile acceptance` forbids case restrictions and
+ * runs the complete required suite. Partial cases never pass a whole business AC." Every one
+ * of the thirteen acceptance criteria names `verify --suite <name> --profile acceptance` as
+ * its evidence command, so this predicate is what stands between a criterion's evidence and a
+ * green tick it did not earn.
+ *
+ * WHAT THIS CORRECTS. Until this existed, `--profile` was parsed, validated and then never
+ * threaded anywhere — `runReadySuite` called `mod.run({ cases })` identically for both
+ * profiles. Suites deliberately treat `not_run` as non-blocking so an honestly-unreachable
+ * live database does not drag down the offline cases a checkout CAN prove, which is right at
+ * the integration profile and exactly wrong at the acceptance one: it made `passed` the
+ * default answer for a case that never executed.
+ *
+ * `blocked`, NOT `failed`, and the distinction is the point. A failure is an assertion that
+ * ran and went red — a fact about the system. A block is the absence of evidence — a fact
+ * about the run. Collapsing them would let a reader of `acceptance.json` mistake "we never
+ * stood up PostgreSQL 17" for "isolation is broken".
+ */
+function blockedAtAcceptance(outcome: SuiteOutcome): SuiteOutcome {
+  if (outcome.status !== "passed") return outcome;
+  const notRun = notRunCases(outcome.detail);
+  if (notRun === null) {
+    return { ...outcome, status: "blocked", blocked_cases: ["<the receipt carries no readable per-case status>"] };
+  }
+  if (notRun.length === 0) return outcome;
+  return { ...outcome, status: "blocked", blocked_cases: notRun };
 }
 
 /** A suite module's own shape: it exposes `run`, takes whatever case subset it was asked
@@ -54,16 +114,18 @@ export async function runReadySuite(
   name: string,
   modulePath: string,
   cases: string | undefined,
+  profile: VerifyProfile,
 ): Promise<SuiteOutcome> {
   const mod = (await import(pathToFileURL(modulePath).href)) as SuiteModule;
   const outcome = await mod.run({ cases });
-  return {
+  const result: SuiteOutcome = {
     suite: name,
     module: modulePath,
     partial: cases !== undefined,
     status: outcome.passed ? "passed" : "failed",
     detail: outcome.detail,
   };
+  return profile === "acceptance" ? blockedAtAcceptance(result) : result;
 }
 
 async function runNamedSuite(name: SuiteName): Promise<SuiteOutcome> {
@@ -71,7 +133,7 @@ async function runNamedSuite(name: SuiteName): Promise<SuiteOutcome> {
   if (resolution.status === "not_run") {
     return { suite: name, status: "not_run", module: resolution.module, partial: false };
   }
-  return runReadySuite(name, resolution.module, undefined);
+  return runReadySuite(name, resolution.module, undefined, "acceptance");
 }
 
 /** `verify --finalize` — every suite, none of them partial, all of them required. A missing

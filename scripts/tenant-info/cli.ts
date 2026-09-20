@@ -29,13 +29,11 @@ import { resolveWorkspace } from "./workspace.ts";
 import { parseFlags, requireFlag, type FlagValue } from "./args.ts";
 import { runBaseline, validateBaseline } from "./baseline.ts";
 import { runFixtures } from "./inventory.ts";
-import { resolveSuite, runReadySuite, finalize } from "./verify.ts";
+import { resolveSuite, runReadySuite, finalize, type VerifyProfile } from "./verify.ts";
 import { SUITE_NAMES, availableSuiteNames, type SuiteName } from "./suites.ts";
 import { runBenchmark, type BenchmarkProfile } from "./benchmark.ts";
 import { runMigrate } from "./migrate.ts";
 import { runExport } from "./export.ts";
-
-type VerifyProfile = "integration" | "acceptance";
 
 interface DispatchResult {
   receipt: unknown;
@@ -83,7 +81,7 @@ async function dispatchVerify(flags: Map<string, FlagValue>): Promise<DispatchRe
       ok: false,
     };
   }
-  const result = await runReadySuite(name, resolution.module, casesValue);
+  const result = await runReadySuite(name, resolution.module, casesValue, profile);
   return { receipt: result, ok: result.status === "passed" };
 }
 

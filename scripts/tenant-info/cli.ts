@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { CliError, failInvocation } from "./errors.ts";
 import { resolveWorkspace } from "./workspace.ts";
 import { parseFlags, requireFlag, type FlagValue } from "./args.ts";
-import { runBaseline } from "./baseline.ts";
+import { runBaseline, validateBaseline } from "./baseline.ts";
 import { runFixtures } from "./inventory.ts";
 import { resolveSuite, runReadySuite, finalize } from "./verify.ts";
 import { SUITE_NAMES, availableSuiteNames, type SuiteName } from "./suites.ts";
@@ -93,7 +93,11 @@ async function dispatch(argv: string[]): Promise<DispatchResult> {
     case "baseline": {
       parseFlags(rest, new Set(), new Set());
       const workspace = resolveWorkspace();
-      return { receipt: runBaseline(workspace), ok: true };
+      const { report, ok } = await runBaseline(workspace);
+      // Trust but verify at the boundary that emits the exit code: a "complete" receipt is
+      // only ever ok if it would still pass the same validator the collector itself gates on.
+      const verified = ok && (report.status !== "complete" || validateBaseline(report).ok);
+      return { receipt: report, ok: verified };
     }
     case "fixtures": {
       const flags = parseFlags(rest, new Set(["seed", "scale"]), new Set());

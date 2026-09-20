@@ -465,6 +465,9 @@ check("the artifact reference and semantic payload schemas reject malformed inpu
 check("a commit manifest hashes over its own canonical fields, never over bytes containing that hash, and a commit's basename refuses a non-positive sequence",
       runsCheck("tenant-record-durability.ts"));
 
+check("a mutation request hashes canonically regardless of key order, changes with its payload or expected_etag, and a commit outcome classifies to true/false/unknown exactly as the spec's publication/durability table says",
+      runsCheck("tenant-kernel-codes.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

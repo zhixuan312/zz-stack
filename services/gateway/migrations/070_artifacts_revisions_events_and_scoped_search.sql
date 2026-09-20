@@ -75,7 +75,18 @@
 -- Declaring the requirement defers this file instead: skipped, NOT recorded as applied,
 -- and applied in full by the first boot on a cluster that can supply the extension.
 
+-- requires-extension: pg_trgm
+--
+-- THE FUZZY LANE IS NOT OPTIONAL AND IT IS NOT STOCK POSTGRESQL. One of the four recall lanes
+-- (`buildFuzzyLaneQuery`, services/zz-core/src/tenant-info/lanes.ts) issues
+-- `similarity(ai.normalized_text, $n) >= ...` and orders by the `<->` distance operator. Both
+-- belong to pg_trgm, and no migration in this repository created it. pg_trgm ships WITH
+-- PostgreSQL, which is what that lane's own comment says -- but shipped is not installed, and
+-- the deployed cluster reports only citext and plpgsql. The lane would have failed at runtime
+-- with `function similarity(text, text) does not exist` on the first fuzzy query ever issued.
+
 create extension if not exists pg_textsearch;
+create extension if not exists pg_trgm;
 
 -- ── common artifact/revision/event/edge projections ─────────────────────────────────────────
 --
@@ -349,5 +360,21 @@ create table if not exists zz.artifact_identifier (
   identifier_text text not null,
   normalized_text text not null
 );
+-- BTREE CANNOT SERVE EITHER HALF OF THE FUZZY LANE'S QUERY, and this index was the only one
+-- on this column. `similarity(normalized_text, $n) >= t` is not a range or equality predicate,
+-- and `order by normalized_text <-> $n` is a KNN ordering; a btree accelerates neither, so
+-- every fuzzy query would have sequentially scanned the whole identifier table -- against a
+-- reference corpus of 780,000 records.
+--
+-- GiST RATHER THAN GIN, and the choice is forced rather than preferred. `gin_trgm_ops`
+-- supports `%` and `similarity()`, but pg_trgm's KNN `<->` operator is supported ONLY by
+-- `gist_trgm_ops`. This lane uses both, so GiST is the one index type that serves the whole
+-- statement.
+--
+-- AND IT IS WHAT MAKES CHINESE RETRIEVABLE AT ALL TODAY. Trigrams are computed over
+-- characters, not whitespace-delimited words, so they segment CJK text that no
+-- whitespace tokenizer can. 240 of the 600 judged queries are Chinese or mixed.
 create index if not exists artifact_identifier_normalized on zz.artifact_identifier (normalized_text);
+create index if not exists artifact_identifier_trgm on zz.artifact_identifier
+  using gist (normalized_text gist_trgm_ops);
 create index if not exists artifact_identifier_owner on zz.artifact_identifier (owner_id, artifact_id, revision, scope);

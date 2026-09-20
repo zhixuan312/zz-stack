@@ -18,6 +18,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { requiredExtensions } from "../services/gateway/dist/db.js";
+
 const DIR = "services/gateway/migrations";
 const fail: string[] = [];
 
@@ -28,6 +30,26 @@ if (!/requires-extension/.test(runner)) {
 }
 if (!/pg_available_extensions/.test(runner)) {
   fail.push("services/gateway/src/db.ts no longer asks which extensions this cluster offers");
+}
+
+// EVERY DIRECTIVE, NOT THE FIRST. Driven against the runner's own exported function rather
+// than asserted about its source text, because this is a behaviour rather than a presence.
+//
+// The regression it guards is not hypothetical: the reader was `.exec(...)?.[1]` until
+// migration 070 came to need a second extension, so one requirement was checked and the file
+// was attempted anyway when the other was missing — the exact outage the deferral exists for,
+// re-entered through the guard itself.
+const twoDirectives = "-- requires-extension: alpha\ncreate extension alpha;\n"
+  + "-- requires-extension: beta\ncreate extension beta;\n";
+const read = requiredExtensions(twoDirectives);
+if (read.length !== 2 || read[0] !== "alpha" || read[1] !== "beta") {
+  fail.push(`services/gateway/src/db.ts reads ${JSON.stringify(read)} from a migration declaring ` +
+            "two extensions — it must read every requires-extension directive, not the first. A " +
+            "migration whose second requirement goes unchecked is attempted on a cluster that " +
+            "cannot run it, and the gateway then serves with no database at all");
+}
+if (requiredExtensions("-- nothing here\ncreate table t ();\n").length !== 0) {
+  fail.push("services/gateway/src/db.ts finds a requirement in a migration that declares none");
 }
 
 for (const file of readdirSync(DIR).filter((f) => f.endsWith(".sql"))) {

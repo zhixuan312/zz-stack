@@ -49,6 +49,24 @@ export function platformDbReady(): boolean {
 // written.
 configureIndexing(() => (platformDbReady() ? platformDb() : null));
 
+/**
+ * Every extension a migration declares it cannot run without.
+ *
+ * EXPORTED SO IT CAN BE DRIVEN DIRECTLY by `checks/migration-extension-declared.ts`, rather
+ * than asserted about by reading this file's source text. The two source-text assertions that
+ * check already makes exist because a directive with no reader is a comment; this one is the
+ * reader's actual behaviour, and the runner below calls the same function, so the two cannot
+ * drift apart.
+ *
+ * ALL OF THEM, AND THAT IS THE POINT. This was `.exec(...)?.[1]` — the first match only. A
+ * migration needing two extensions had one of them checked and was attempted anyway when the
+ * other was absent, which is exactly the platform-wide outage the deferral exists to prevent.
+ * Migration 070 needs `pg_textsearch` and `pg_trgm`, and it was the second that went unread.
+ */
+export function requiredExtensions(sql: string): string[] {
+  return [...sql.matchAll(/^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/gim)].map((m) => m[1]);
+}
+
 export async function initPlatformDb(): Promise<void> {
   const serverUrl = (process.env.PLATFORM_DB_URL || process.env.TEAM_DB_URL || "").trim();
   if (!serverUrl) {
@@ -115,11 +133,18 @@ export async function initPlatformDb(): Promise<void> {
     //
     // AND IT STOPS THE LOOP. A later migration may build on a deferred one's objects, so
     // applying past a gap trades a loud, correct failure for a confusing one.
-    const needs = /^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/im.exec(sql)?.[1];
-    if (needs && !available.has(needs)) {
-      console.warn(`migration DEFERRED: ${file} requires the "${needs}" extension, which this ` +
-        `server does not offer. It is not recorded as applied and will run on a cluster that ` +
-        `can supply it. Migrations after it are deferred too.`);
+    // EVERY directive, not the first one. This read `.exec(...)?.[1]`, which stops at the
+    // first match — so a migration needing two extensions was checked for one and attempted
+    // anyway if the other was missing, which is precisely the platform-wide outage this
+    // deferral exists to prevent. Migration 070 needs both `pg_textsearch` (the BM25 ranker)
+    // and `pg_trgm` (the fuzzy lane's `similarity()`/`<->`), and it was the second one that
+    // would have gone unchecked.
+    const missing = requiredExtensions(sql).filter((name) => !available.has(name));
+    if (missing.length > 0) {
+      console.warn(`migration DEFERRED: ${file} requires the ${missing.map((n) => `"${n}"`).join(" and ")} ` +
+        `extension${missing.length > 1 ? "s" : ""}, which this server does not offer. It is not ` +
+        `recorded as applied and will run on a cluster that can supply ${missing.length > 1 ? "them" : "it"}. ` +
+        `Migrations after it are deferred too.`);
       break;
     }
 

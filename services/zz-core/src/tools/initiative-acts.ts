@@ -439,7 +439,16 @@ export function registerInitiativeActTools(server: McpServer): void {
       const role = chain.documents.find((d) => d.name === parts[1])?.role;
       if (role) env.type = role;
       if (linked.size) env.sources = [...linked].join(", ");
-      if (note) env.revision_note = note.replace(/\n/g, " ").slice(0, 200);
+      // CUT ON A WORD, AND SAY IT WAS CUT. This was `.slice(0, 200)`, which ends wherever the
+      // two-hundredth character lands — a spec audit found a stored note reading "...the
+      // migration prefix resolves from the repository, no", and nothing in the frontmatter, the
+      // response or the log said anything had been removed. A reader cannot tell a note that
+      // ended there from one that was truncated there, which is the same defect as an empty
+      // string standing in for "no value": the record holds something that looks whole and is
+      // not. It stays a truncation rather than becoming a refusal because the note describes a
+      // content change that has already been made — losing the revision over the label would be
+      // the worse trade — but a truncated note now reads as truncated.
+      if (note) env.revision_note = oneLine(note, 200);
       const doc = renderEnvelope(env,
         ["flow", "type", "title", "stakeholder", "tags", "version", "updated_at", "status", "sources", "revision_note"]) +
         "\n" + body.replace(/^\n+/, "");

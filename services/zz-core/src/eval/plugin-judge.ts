@@ -85,7 +85,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
       const [traces, docs, runs] = await Promise.all([
         pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin)),
-        usageDocs(p, plugin, version, servesOwnDoor(plugin)),
+        usageDocs(p, plugin, version, servesOwnDoor(plugin), entry?.flow ?? ""),
         usageRuns(p, plugin, version),
       ]);
       // EVERY RULER THE PLUGIN HAS, not only the one this version declares. The skill side
@@ -289,7 +289,7 @@ export function registerPluginJudgeTools(server: McpServer): void {
                 "record a ruler whose subject is the document."); 
         }
         const docs = declared === "trace" || declared === "initiative"
-          ? [] : await usageDocs(p, plugin, version, servesOwnDoor(plugin));
+          ? [] : await usageDocs(p, plugin, version, servesOwnDoor(plugin), entryOf(plugin)?.flow ?? "");
         // A DOCUMENT IS ASKED FOR TOO, and for the reason the initiative branch above already
         // gives. This used to fall through: a ruler that declared `document`, finding none,
         // silently marked run transcripts instead — against dimensions asking whether a

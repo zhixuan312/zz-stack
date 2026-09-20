@@ -186,7 +186,11 @@ async function resolvePat(token: string): Promise<Identity | null> {
   );
   const row = r.rows[0];
   if (!row || row.status !== "active") return null;
-  void db.query("update pat set last_used_at = now() where id = $1", [row.id]).catch(() => undefined);
+  // LOGGED, because a permanently failing update here is indistinguishable from a succeeding
+  // one and the column it writes is what "when was this token last used" answers — the
+  // question somebody asks immediately before revoking a token.
+  void db.query("update pat set last_used_at = now() where id = $1", [row.id])
+    .catch((err) => console.error("pat.last_used_at update failed:", err));
   const base = await principalByEmail(row.email);
   if (!base) return null;
 
@@ -239,7 +243,7 @@ async function resolveSession(token: string): Promise<Identity | null> {
   const row = r.rows[0];
   if (!row || row.status !== "active") return null;
   void db.query("update console_session set last_seen_at = now() where id = $1", [row.id])
-    .catch(() => undefined);
+    .catch((err) => console.error("console_session.last_seen_at update failed:", err));
   const base = await principalByEmail(row.email);
   if (!base) return null;
   return { ...base, via: "session" };

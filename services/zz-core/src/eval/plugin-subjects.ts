@@ -30,9 +30,24 @@ const RUNS_OF = `
 /** The documents this plugin version GOVERNS, newest first — and which route says so depends
  *  on whether the plugin owns a door.
  *
- * A FLOW'S DOCUMENTS ARE THE ONES ITS STAGES WROTE, through the skill membership recorded at
- * release. That is the `false` arm, and it is right for a flow: sdlc's documents are the ones
- * sdlc's stages produced, and no others.
+ * A FLOW'S DOCUMENTS ARE THE ONES `zz.doc.flow` NAMES, AND THAT IS THE FOURTH TIME THIS FILE
+ * HAS HAD TO LEARN IT. The `false` arm went through `zz.doc.produced_by_run_id` -> a run -> the
+ * skill versions a plugin version shipped, which is the identical route `usageInitiatives`
+ * abandoned 100 lines below for the identical reason — and the lesson was applied there and not
+ * here, in the same commit, one function apart.
+ *
+ * The column is null on almost every document, because a document is written by whatever is
+ * holding the conversation and only some of those carry a run. It is also the attribution route
+ * this platform ruled out after five defects in one day. Measured 2026-09-19: judging `sdlc`
+ * 0.60.0 through that join reached 10 documents where `zz.doc.flow = 'sdlc-flow'` holds 72, and
+ * `SUBJECT_CAP` is 20 — so the cap was not the constraint, the join was. The round did not fail;
+ * it scored 14% of the corpus and reported it as the plugin's usage evidence, which is the
+ * failure this file keeps rediscovering.
+ *
+ * `flow` is stamped on the document when it is written, from the flow that governs the
+ * initiative, and needs no run to exist. COUNTED ACROSS EVERY VERSION, the way the door arm
+ * counts tool use and for the reason `usageInitiatives` argues below: a document governed by
+ * this flow is this flow's work whichever release happened to be current while it was written.
  *
  * A DOOR-OWNER'S DOCUMENTS ARE THE ONES WRITTEN THROUGH ITS DOOR, and the skill route gets
  * that badly wrong. zz-core's own skills barely write documents — every document on this
@@ -54,9 +69,15 @@ const RUNS_OF = `
  * `scored` says whether a round has already marked it, and it is a fact the define stage needs
  * before it writes anything: a ruler derived from work that was already judged under an earlier
  * ruler is a ruler fitted to its own answers. */
-export async function usageDocs(p: pg.Pool, plugin: string, version: string, ownsDoor: boolean) {
+export async function usageDocs(
+  p: pg.Pool, plugin: string, version: string, ownsDoor: boolean, flowName: string,
+) {
   const pvId = `(select pv.id from zz.plugin_version pv join zz.plugin p on p.id = pv.plugin_id
                   where p.name = $1 and pv.version = $2)`;
+  // A plugin the catalog does not carry governs no flow, so no document is attributable to it.
+  // Empty is the honest answer and plugin_profile reports it as the gap it is; the old route
+  // would have returned whatever rows a stale run join happened to reach.
+  if (!ownsDoor && !flowName) return [];
   return ownsDoor
     ? (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
         select d.team_slug, d.initiative, d.path, d.id::text as id,
@@ -92,14 +113,10 @@ export async function usageDocs(p: pg.Pool, plugin: string, version: string, own
     : (await p.query<{ team_slug: string; initiative: string; path: string; id: string; scored: boolean }>(`
         select d.team_slug, d.initiative, d.path, d.id::text as id,
                exists (select 1 from zz.eval_subject es
-                        where es.doc_id = d.id and es.plugin_version_id = pv.id) as scored
+                        where es.doc_id = d.id and es.plugin_version_id = ${pvId}) as scored
           from zz.doc d
-          join zz.run r on r.id = d.produced_by_run_id
-          join zz.plugin_version_skill pvs on pvs.skill_version_id = r.skill_version_id
-          join zz.plugin_version pv on pv.id = pvs.plugin_version_id
-          join zz.plugin p on p.id = pv.plugin_id
-         where p.name = $1 and pv.version = $2 and d.path not like '\_versions/%'
-         order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version])).rows;
+         where d.flow = $3 and d.path not like '\_versions/%'
+         order by d.created_at desc limit ${SUBJECT_CAP}`, [plugin, version, flowName])).rows;
 }
 
 /** The runs of this plugin version that left events. A run with no events is not a subject —

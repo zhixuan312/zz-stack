@@ -75,7 +75,10 @@ export function platformEvent(e: {
     `insert into zz.event (actor, team_slug, team_id, kind, subject, detail)
      values (lower($1), $2, (select id from zz.team where slug = $2), $3, $4, $5)`,
     [e.actor, e.team, e.kind, e.subject, JSON.stringify(e.detail)],
-  ).catch(() => undefined);
+  // LOGGED. This is the platform journal: a row dropped here leaves no trace anywhere, so a
+  // database that refuses every insert looks identical to one recording them all — and what
+  // goes missing is the provenance that the evaluation track and every report read back.
+  ).catch((err) => console.error("platform journal insert failed:", err));
 }
 /** Append a row to the journal's human-readable log. It is markdown, so it
  * must be a table: consecutive plain lines render as one run-on paragraph. */

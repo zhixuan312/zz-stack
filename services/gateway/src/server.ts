@@ -21,7 +21,7 @@ import { mountConsoleAsk } from "./console-ask.js";
 import { mountConsoleWrite } from "./console-write.js";
 import { mountConsole } from "./console.js";
 import { issueMyAccessTokenFor, myAccessTokensFor, revokeMyAccessTokenFor } from "./credentials.js";
-import { initPlatformDb } from "./db.js";
+import { initPlatformDb, platformDbReady } from "./db.js";
 import { mountDiscussion } from "./discussion.js";
 import { strandedEvents } from "./events.js";
 import { identityMiddleware } from "./identity.js";
@@ -288,10 +288,22 @@ app.get("/schemas/:name.json", (req, res) => {
  * in this repository polled it.
  *
  * `ok` stays true, because the gateway IS serving. Provenance being incomplete is something
- * to fix, not a reason to take the platform out of a load balancer. */
+ * to fix, not a reason to take the platform out of a load balancer.
+ *
+ * AND `db` IS HERE FOR THE SAME REASON THE STRANDED COUNT IS: it fails silently otherwise.
+ * A failed migration sets the pool to undefined and rethrows, the boot handler logs
+ * "platform db init failed (continuing without it)" and listens anyway, and an unset
+ * PLATFORM_DB_URL/TEAM_DB_URL is a typo in production that looks exactly like a dev box. All
+ * three come up answering 200 here and refusing every real call, and nothing outside the
+ * process could tell them from a healthy one. It stays in the BODY and does not become a
+ * 503: the only healthcheck in deploy/docker-compose.yml is postgres's own pg_isready,
+ * nothing in this repository reads this route's status code, and `zz-tool watch-results`
+ * reads the body — so a 503 would change no monitor's mind and would contradict db.ts's
+ * deliberate choice that a database problem does not take the platform down. */
 app.get("/health", (_req, res) => {
   const stranded = strandedEvents();
-  res.json({ ok: true, ...(stranded.count ? { stranded_events: stranded } : {}) });
+  res.json({ ok: true, db: platformDbReady(),
+             ...(stranded.count ? { stranded_events: stranded } : {}) });
 });
 
 
@@ -366,8 +378,10 @@ initPlatformDb()
     // more often than it needs — the rows are already refused by their own expiry,
     // and this only keeps the table from growing forever. `unref` so a sweep pending
     // at shutdown does not hold the process open.
-    setInterval(() => { void sweepSessions().catch(() => undefined); },
-                60 * 60_000).unref();
+    setInterval(() => {
+      void sweepSessions()
+        .catch((err) => console.error("console_session sweep failed:", err));
+    }, 60 * 60_000).unref();
     // zz.run recomputed from the event log, on start and every few minutes. It is derived
     // data with no writer — see runs.ts — and for five days nothing recomputed it, so every
     // skill's measured reach stopped on the day the migration that created the table ran.

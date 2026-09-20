@@ -62,14 +62,27 @@ const FOLLOWS_FOR_MS = 45 * 60 * 1000;
 const RUN_IDLE_MS = FOLLOWS_FOR_MS;
 
 interface Trace {
-  step: string;
+  /** ABSENT, NOT EMPTY, when this caller has named an initiative without ever reading a skill.
+   *
+   * It was `""`, and an empty string is not "no step" to anything downstream: `??` does not
+   * coalesce it, so it reached the column verbatim and `zz.event.step` came to hold two
+   * spellings of nothing where `event_step` indexes one. Measured on 2026-09-19: 1,713
+   * tool_call rows carried `''` against 943 carrying null, every one of them unjoinable to
+   * `zz.skill`, and the five-minute reconcile in runs.ts re-scanned the skill tables 1,695
+   * times per pass to resolve one of them. `stepVersion` and `stepSha` say unknown by being
+   * absent and always have; this is the same answer, spelled the same way. */
+  step?: string;
   /** The initiative this caller is working on, carried forward from the last call that named
    * one. It reached 254 of 510 rows on 2026-09-13, because most calls do not take it — and
    * without it a refusal cannot be joined to the document it was made for, which is the entire
    * left-hand side of the reconciliation between prediction and outcome. */
   initiative: string;
-  stepVersion: string;
-  stepSha: string;
+  /** Absent where nothing established them. A skill served WHOLE carries its declared version
+   *  and the hash of the bytes; a supporting file, or a trace with no step at all, carries
+   *  neither. These have always said unknown by being absent, which is why `??` works on them
+   *  and did not on `step`. */
+  stepVersion?: string;
+  stepSha?: string;
   run: string;
   at: number;
 }
@@ -158,10 +171,10 @@ export function stepLoaded(caller: string, skill: string, servedBody: string, wh
     initiative: prior && now - prior.at <= FOLLOWS_FOR_MS ? prior.initiative : "",
     // ONLY FROM THE SKILL ITSELF. A supporting file's frontmatter is its own, not the
     // skill's — see the note above for what reading it out of one cost.
-    stepVersion: whole ? declaredVersion(servedBody) : "",
+    stepVersion: whole ? declaredVersion(servedBody) : undefined,
     // The bytes the model was handed, hashed. Twelve hex is plenty to tell two versions of one
     // skill apart and short enough to read in a table.
-    stepSha: whole ? createHash("sha256").update(servedBody).digest("hex").slice(0, 12) : "",
+    stepSha: whole ? createHash("sha256").update(servedBody).digest("hex").slice(0, 12) : undefined,
     run,
     at: now,
   });
@@ -177,12 +190,15 @@ export function initiativeSeen(caller: string, initiative: string): void {
   const t = traces.get(caller);
   if (t && now - t.at <= FOLLOWS_FOR_MS) { t.initiative = initiative; t.at = now; return; }
   sweep(now);
-  traces.set(caller, { step: "", stepVersion: "", stepSha: "", initiative, run: mint(caller, now), at: now });
+  // NO STEP, rather than an empty one — see the note on `Trace.step`. This caller named an
+  // initiative and has read no skill, so there is nothing to say about which step it is
+  // following, and saying it with "" made 1,713 rows unjoinable to `zz.skill`.
+  traces.set(caller, { initiative, run: mint(caller, now), at: now });
 }
 
 /** The step this caller is following, or nothing if none is or the last one has expired. */
 export function currentStep(caller: string):
-  { step: string; step_version: string; step_sha: string; initiative: string; run: string } | undefined {
+  { step?: string; step_version?: string; step_sha?: string; initiative: string; run: string } | undefined {
   const t = traces.get(caller);
   if (!t) return undefined;
   const now = Date.now();

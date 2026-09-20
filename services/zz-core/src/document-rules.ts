@@ -208,8 +208,29 @@ export function envelopeEditRefusal(before: string, after: string): string | nul
 
 /** Anything written into a line-structured file — a frontmatter value, a markdown table
  * cell, a numbered line the tool re-parses later — must not be able to end that line.
- * Every corruption found in this file so far was a value that could. */
-export const oneLine = (v: string) => String(v).replace(/[\r\n]+/g, " ").trim();
+ * Every corruption found in this file so far was a value that could.
+ *
+ * `max` is the second way such a value goes wrong, and it is optional because most values have
+ * no ceiling. WITHOUT IT NOTHING IS DROPPED, which is why every existing caller passes one
+ * argument — a title or a stakeholder is as long as it is.
+ *
+ * WITH `max`, THE CUT LANDS ON A WORD AND SAYS IT HAPPENED. `revision_note` used a bare
+ * `.slice(0, 200)` and a spec audit found one stored as "...the migration prefix resolves from
+ * the repository, no": cut mid-word, with nothing in the frontmatter, the response or the log
+ * saying anything was removed. A reader cannot tell that from a note whose author stopped
+ * there. The ellipsis is the whole point — a truncated value that looks whole is the same
+ * class of defect as an empty string standing in for "no value", and this codebase has now
+ * been bitten by both in the same week. */
+export const oneLine = (v: string, max?: number) => {
+  const s = String(v).replace(/[\r\n]+/g, " ").trim();
+  if (max === undefined || s.length <= max) return s;
+  // Reserve the ellipsis, then fall back to the hard cut when there is no space to break on —
+  // a single unbroken token longer than `max` has no word boundary to find.
+  const room = Math.max(0, max - 1);
+  const cut = s.slice(0, room);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > room * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+};
 
 /** A markdown table cell: `|` ends a column the way a newline ends a row. */
 const tableCell = (v: string) => oneLine(v).replace(/\|/g, "/");

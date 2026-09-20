@@ -491,6 +491,9 @@ check("zz-lexical-v1 handles empty text, CRLF, a forced long-token split with no
 
 check("a migration needing an extension declares it, and the runner still defers rather than taking the database down", runsCheck("migration-extension-declared.ts"));
 
+check("the rebuild cache decision is exact equality, refuses no prior attempt as always stale, and changes on every one of a fingerprint's own named fields",
+      runsCheck("tenant-rebuild-inputs.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

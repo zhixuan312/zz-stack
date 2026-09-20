@@ -31,7 +31,7 @@
  * unhandled — that is `migrate.ts`'s, not this task's.
  *
  * `PolicyContext.getHead` (I-8's, outside this task's edit surface) resolves only
- * `revision`/`content_hash`/`head_event_sequence` — no durable `artifact_class`, no committed
+ * `revision`/`content_hash`/`head_event_sequence` — no committed
  * revision's `cause_refs`/`sources`, no flow declaration. So: a state operation's class is the
  * CALLER's declared value, checked only structurally against `head.revision === null`;
  * `recordDigestOf` folds in `head_event_sequence` rather than the spec's provenance-set/flow-
@@ -241,7 +241,7 @@ function buildStagedSources(newSources: readonly NewSourceInput[], ctx: PolicyCo
     events.push({
       event_id: randomUUID(), transaction_id: ctx.transaction_id, owner_id: ctx.owner_id, artifact_id: src.artifact_id,
       sequence: ctx.sequence, at: now, actor: ctx.actor, kind: "created", revision: null, content_hash: hash,
-      cause_refs: [], data: {},
+      cause_refs: [], data: { artifact_class: "source" },
     });
     blobs.push({ hash, bytes });
     staged.set(src.artifact_id, { content_hash: hash, revision: null });
@@ -326,7 +326,7 @@ function handleCreateSource(request: MutationRequest, ctx: PolicyContext, artifa
   const event: ArtifactEvent = {
     event_id: randomUUID(), transaction_id: ctx.transaction_id, owner_id: ctx.owner_id, artifact_id: artifactId,
     sequence: ctx.sequence, at: now, actor: ctx.actor, kind: "created", revision: null, content_hash: hash,
-    cause_refs: [], data: {},
+    cause_refs: [], data: { artifact_class: "source" },
   };
   if (!ArtifactEventSchema.safeParse(event).success) return { ok: false, error: invalid("prepared source event failed validation") };
   return {
@@ -360,7 +360,7 @@ function handleCreate(request: MutationRequest, ctx: PolicyContext): PolicyOutco
   const event: ArtifactEvent = {
     event_id: randomUUID(), transaction_id: ctx.transaction_id, owner_id: ctx.owner_id, artifact_id: artifactId,
     sequence: ctx.sequence, at: now, actor: ctx.actor, kind: "created", revision: 1, content_hash: prep.hash,
-    cause_refs: [...request.cause_refs], data: {},
+    cause_refs: [...request.cause_refs], data: { artifact_class: request.artifact_class },
   };
   if (!ArtifactEventSchema.safeParse(event).success) return { ok: false, error: invalid("prepared created event failed validation") };
 

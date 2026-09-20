@@ -30,6 +30,8 @@ import {
   type ProjectionClient, type ProjectionManifest,
 } from "../../packages/indexing/dist/tenant-projections.js";
 
+import { GENERATION_CASES } from "./rebuild-generation.ts";
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MIGRATION_PATH = join(repoRoot,
   "services/gateway/migrations/070_artifacts_revisions_events_and_scoped_search.sql");
@@ -494,6 +496,7 @@ const PROJECTION_SCHEMA_CASES: Readonly<Record<string, () => void | Promise<void
 
 const CASE_GROUPS: Readonly<Record<string, Readonly<Record<string, () => void | Promise<void>>>>> = {
   "projection-schema": PROJECTION_SCHEMA_CASES,
+  generation: GENERATION_CASES,
 };
 
 interface CaseResult { readonly status: "passed" | "failed" | "not_run"; readonly reason?: string }

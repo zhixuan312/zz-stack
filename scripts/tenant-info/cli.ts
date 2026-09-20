@@ -31,7 +31,7 @@ import { runBaseline, validateBaseline } from "./baseline.ts";
 import { runFixtures } from "./inventory.ts";
 import { resolveSuite, runReadySuite, finalize, type VerifyProfile } from "./verify.ts";
 import { SUITE_NAMES, availableSuiteNames, type SuiteName } from "./suites.ts";
-import { runBenchmark, type BenchmarkProfile } from "./benchmark.ts";
+import { runBenchmark, type BenchmarkProfile, type BenchmarkReceipt } from "./benchmark-report.ts";
 import { runMigrate, type MigrateArgs, type MigrateReceipt } from "./migrate.ts";
 import { runExport } from "./export.ts";
 
@@ -117,7 +117,13 @@ async function dispatch(argv: string[]): Promise<DispatchResult> {
         throw new CliError("INVALID_ARGUMENTS", `--profile must be "baseline" or "acceptance", got "${profile}".`);
       }
       const workspace = resolveWorkspace();
-      return { receipt: runBenchmark(workspace, profile as BenchmarkProfile), ok: true };
+      // `ok` COMES OFF THE RECEIPT, exactly as `migrate` below already does. A benchmark that
+      // produced a structurally perfect report carrying eighteen blocked targets has run and
+      // has not passed, and the exit code is the only part of that an acceptance script reads.
+      // This verb returned 0 unconditionally until I-23, so "the benchmark command succeeded"
+      // and "the release targets were met" were two claims that looked like one.
+      const receipt: BenchmarkReceipt = runBenchmark(workspace, profile as BenchmarkProfile);
+      return { receipt, ok: receipt.ok };
     }
     case "migrate": {
       const flags = parseFlags(rest, new Set(["source", "target", "manifest", "owner"]), new Set(["apply"]));

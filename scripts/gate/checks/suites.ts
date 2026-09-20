@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { asRecord, codeOnly, envNamesIn, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
-import { generateJudgedDataset, judgedDatasetToJsonl } from "../../tenant-info/benchmark.ts";
+import { generateJudgedDataset, judgedDatasetToJsonl } from "../../tenant-info/judged-dataset.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
  *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
@@ -517,6 +517,12 @@ check("the acceptance profile blocks a suite on a case that never ran and on a r
 
 check("new artifact text over 8 MiB is refused through the real adapter with PAYLOAD_TOO_LARGE, the stored content is untouched, and an under-limit write still commits",
       runsCheck("payload-too-large-is-refused.ts"));
+
+check("every one of the eighteen release targets is evaluated in its own direction, and a missing observation is blocked rather than zero",
+      runsCheck("benchmark-report-completeness.ts"));
+
+check("a benchmark report is refused when its scale is forged, its corpus distribution is off, a slice divides by nothing, its qrels are not the approved ones or a binding is missing — and the honestly empty report still validates",
+      runsCheck("benchmark-report-fixtures.ts"));
 
 check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
       runsCheck("tenant-checks-registered.ts"));

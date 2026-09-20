@@ -246,6 +246,15 @@ const EDIT_SURFACE_LEDGER: readonly LedgerEntry[] = [
 
   // I-23 — Full-scale benchmark and independent pass/fail evaluation
   { path: "checks/benchmark-report-completeness.ts", task: "I-23" },
+  { path: "checks/benchmark-report-fixtures.ts", task: "I-23" },
+  // benchmark.ts was 463 lines of a 700-line ceiling with I-23's evaluator, report validator
+  // and real command still owed to it, so it became three files. The frozen checks chose the
+  // split: they pin `validateJudgments` and `evaluateTargets` to benchmark.ts BY PATH, so
+  // those stayed and everything no frozen check names is what moved.
+  { path: "scripts/tenant-info/judged-dataset.ts", task: "I-23" },
+  { path: "scripts/tenant-info/benchmark-report.ts", task: "I-23" },
+  { path: "deploy/BENCHMARK-MEASUREMENT.md", task: "I-23" },
+  { path: "scripts/tenant-info/cli.ts", task: "I-23", extension: true }, // benchmark's exit code
 
   // I-25 — Final evidence assembly and release-readiness decision
   { path: "docs/tenant-information-v4.md", task: "I-25" },

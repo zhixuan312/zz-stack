@@ -1,91 +1,34 @@
 /**
- * benchmark.ts — the `benchmark` verb, run against either the `baseline` or the `acceptance`
- * profile. As with `baseline.ts`, what a benchmark actually measures belongs to a later
- * task's contract; this records that the verb ran, at which profile, into the workspace.
+ * benchmark.ts — what a benchmark report must satisfy before anybody may read a release
+ * verdict off it. Three pure functions, no I/O, no clock: `validateJudgments` (I-4's
+ * judgment-validation export), `evaluateTargets` (I-23's independent pass/fail evaluator) and
+ * `validateBenchmarkReport` (I-23's structural validator). The command that assembles a report
+ * and writes it into a workspace is `benchmark-run.ts`; the judged dataset's vocabulary and
+ * its generator are `judged-dataset.ts`. Both split out of this file during I-23 at the
+ * 700-line ceiling, and the FROZEN CHECKS decided which half moved: `checks/tenant-info-qrels-
+ * integrity.ts` imports `validateJudgments` from this path and `checks/benchmark-report-
+ * completeness.ts` imports `evaluateTargets` from it, so those two stayed and everything no
+ * frozen check pins by path is what left.
  *
- * `validateJudgments` below is I-4's judgment-validation export: the structural/count/family/
- * ref-shape half of the qrels-integrity technical AC that a coding worker can supply. It is
- * the gate `runBenchmark` (or a later comparison run) must pass BEFORE touching the judged
- * dataset — it never resolves whether a fixture reference actually exists or is authorized in
- * a live fixture store (that half needs the fixture store itself, out of this task's reach),
- * and it never signs a relevance grade. Both are the human sign-off (H1) this task cannot
- * supply on a coding worker's say-so. `generateJudgedDataset` and `judgedDatasetToJsonl`,
- * further down, are the deterministic generator behind `testing/tenant-info/queries.jsonl`
- * and `qrels.jsonl` — kept in this tracked file, not a throwaway script, so the bytes H1
- * signs can actually be re-derived and checked, not just committed and trusted.
+ * `validateJudgments` is the structural/count/family/ref-shape half of the qrels-integrity
+ * technical AC that a coding worker can supply. It never resolves whether a fixture reference
+ * exists in a live fixture store, and it never signs a relevance grade; both are the human
+ * sign-off (H1), which was recorded on 2026-09-20 under the stakeholder's standing delegation
+ * and which states in its own words that no human read the 600 rows.
+ *
+ * `evaluateTargets` IS THE PART THAT CANNOT BE SATISFIED BY SILENCE. Its whole reason to exist
+ * is that a report with no measurements in it must not evaluate to a pass: an absent target is
+ * `blocked`, never `0`, never an omission a reader mistakes for success. `evaluateTargets({})`
+ * returns all eighteen targets blocked and `passed: false`, which is the state this repository
+ * is actually in — no PostgreSQL 17 cluster, no `pg_textsearch` bm25 index and no projected
+ * row exists on any reachable cluster, so not one of the eighteen has ever been observed.
  */
-import { writeFileSync } from "node:fs";
-
 import { planCorpora } from "./inventory.ts";
-import { safeWritePath } from "./workspace.ts";
-
-export type BenchmarkProfile = "baseline" | "acceptance";
-
-interface BenchmarkReceipt {
-  verb: "benchmark";
-  profile: BenchmarkProfile;
-  ranAt: string;
-}
-
-export function runBenchmark(workspaceReal: string, profile: BenchmarkProfile): BenchmarkReceipt {
-  const receipt: BenchmarkReceipt = { verb: "benchmark", profile, ranAt: new Date().toISOString() };
-  writeFileSync(
-    safeWritePath(workspaceReal, `benchmark-${profile}.json`),
-    `${JSON.stringify(receipt, null, 2)}\n`,
-  );
-  return receipt;
-}
-
-// ───────────────────────── judged questions: queries.jsonl / qrels.jsonl ─────────────────────────
-
-/** The nine declared query categories and each one's exact case count — `testing/tenant-info/
- *  queries.jsonl` must hold precisely these, no more, no fewer. */
-const CATEGORY_COUNTS: Readonly<Record<string, number>> = {
-  "exact-reference": 70, "identifier-part": 70, "natural-language": 90, typo: 70,
-  provenance: 70, lifecycle: 60, "scope-filter": 60, "no-answer": 70, isolation: 40,
-};
-
-/** Categories whose queries test cross-tenant isolation are exempt from the "answerable
- *  queries need a relevant judgment" rule: the correct outcome for one of these is a refusal,
- *  not a retrieved fixture, so a grade-0-only judgment is not a missing one. */
-const ISOLATION_CATEGORY = "isolation";
-
-const LANGUAGE_COUNTS: Readonly<Record<string, number>> = { en: 360, zh: 120, mixed: 120 };
-const TOTAL_QUERIES = 600;
-const DEV_COUNT = 480;
-const HELD_OUT_COUNT = 120;
-const VALID_SPLITS = new Set(["dev", "held-out"]);
-const VALID_LANGUAGES = new Set(["en", "zh", "mixed"]);
-const VALID_GRADES = new Set([0, 1, 2]);
-
-/** Every field this task's Contract requires on a query row, minus the ones checked more
- *  specifically elsewhere (`category`, `language`, `split`, `family`, `id`). */
-const REQUIRED_QUERY_FIELDS = [
-  "query", "query_mode", "scopes", "filters", "caller_fixture", "answerable",
-] as const;
-
-interface JudgedQuery {
-  readonly id: string;
-  readonly category: string;
-  readonly language: string;
-  readonly family: string;
-  readonly query: string;
-  readonly query_mode: string;
-  readonly scopes: unknown;
-  readonly filters: unknown;
-  readonly caller_fixture: string;
-  readonly split: string;
-  readonly answerable: boolean;
-}
-
-interface Qrel {
-  readonly query_id: string;
-  readonly ref: string;
-  readonly grade: number;
-  readonly evidence: string;
-  readonly rationale: string;
-  readonly reviewer: string;
-}
+import {
+  CATEGORY_COUNTS, DEV_COUNT, HELD_OUT_COUNT, ISOLATION_CATEGORY, LANGUAGE_COUNTS,
+  REQUIRED_QUERY_FIELDS, TOTAL_QUERIES, VALID_GRADES, VALID_LANGUAGES, VALID_SPLITS,
+  type JudgedQuery, type Qrel,
+} from "./judged-dataset.ts";
 
 interface JudgmentValidation {
   readonly ok: boolean;
@@ -255,209 +198,143 @@ export function validateJudgments(
   return { ok: errors.length === 0, errors };
 }
 
-// ─────────────────── the generator: where the signed hashes can be re-derived ───────────────────
+// ───────────────── the eighteen release targets, and the independent evaluator ─────────────────
 
 /**
- * Rebuilds `testing/tenant-info/queries.jsonl` and `testing/tenant-info/qrels.jsonl` from
- * nothing but this function — no randomness, no clock, no filesystem read. H1 signs the two
- * files' hashes; a signature over bytes nobody can reproduce is a rubber stamp, not a review,
- * so the generator that PRODUCES those bytes lives beside `validateJudgments`, which checks
- * them, rather than in a throwaway script that leaves with whoever wrote it.
+ * The spec's "Fixed capacity and release targets" table, one row per numeric target it fixes,
+ * transcribed with its direction. THE DIRECTION IS THE WHOLE POINT: eleven of these are floors
+ * a system must reach, four are ceilings it must stay under, and three must be exactly zero —
+ * and a comparison written the wrong way round passes a system that fails. The three exact
+ * zeros are separate from the ceilings because "at most zero" would accept a negative count,
+ * which is not a measurement anybody can make and is therefore a broken instrument.
  *
- * Each category's per-language dev/held-out counts are pre-computed, not derived at 80/20
- * here, because a naive `round(0.8 * n)` on ("natural-language", "en": 54) gives 43/11 —
- * matching that language's own count — while the CATEGORY total needs 72/18 once "zh" and
- * "mixed" are added back in; the three language subtotals have to be chosen together so they
- * both hit 60/20/20 of the category AND sum to that category's 80/20. Same story for
- * "lifecycle"/"scope-filter" (36/12/12 → 28/8, 10/2, 10/2) and "isolation" (24/8/8 →
- * 20/4, 6/2, 6/2): the even 80/20 split of the WHOLE category doesn't fall out of splitting
- * each language slice independently, so it is recorded per language rather than computed.
+ * `target` IS A THRESHOLD, NEVER AN OBSERVATION. Nothing in this table was measured; it is the
+ * agreement's own numbers, and a report keeps the two in separate fields for exactly that
+ * reason. The 0 beside `unauthorized_results` is what the release demands, not something
+ * anybody counted.
  */
-export function generateJudgedDataset(): { readonly queries: readonly JudgedQuery[]; readonly qrels: readonly Qrel[] } {
-  interface LangSplit { readonly lang: "en" | "zh" | "mixed"; readonly dev: number; readonly held: number }
-  interface CategoryPlan {
-    readonly name: string; readonly answerable: boolean; readonly langs: readonly LangSplit[];
-  }
-  const PLAN: readonly CategoryPlan[] = [
-    { name: "exact-reference", answerable: true, langs: [
-      { lang: "en", dev: 34, held: 8 }, { lang: "zh", dev: 11, held: 3 }, { lang: "mixed", dev: 11, held: 3 },
-    ] },
-    { name: "identifier-part", answerable: true, langs: [
-      { lang: "en", dev: 34, held: 8 }, { lang: "zh", dev: 11, held: 3 }, { lang: "mixed", dev: 11, held: 3 },
-    ] },
-    { name: "natural-language", answerable: true, langs: [
-      { lang: "en", dev: 44, held: 10 }, { lang: "zh", dev: 14, held: 4 }, { lang: "mixed", dev: 14, held: 4 },
-    ] },
-    { name: "typo", answerable: true, langs: [
-      { lang: "en", dev: 34, held: 8 }, { lang: "zh", dev: 11, held: 3 }, { lang: "mixed", dev: 11, held: 3 },
-    ] },
-    { name: "provenance", answerable: true, langs: [
-      { lang: "en", dev: 34, held: 8 }, { lang: "zh", dev: 11, held: 3 }, { lang: "mixed", dev: 11, held: 3 },
-    ] },
-    { name: "lifecycle", answerable: true, langs: [
-      { lang: "en", dev: 28, held: 8 }, { lang: "zh", dev: 10, held: 2 }, { lang: "mixed", dev: 10, held: 2 },
-    ] },
-    { name: "scope-filter", answerable: true, langs: [
-      { lang: "en", dev: 28, held: 8 }, { lang: "zh", dev: 10, held: 2 }, { lang: "mixed", dev: 10, held: 2 },
-    ] },
-    { name: "no-answer", answerable: false, langs: [
-      { lang: "en", dev: 34, held: 8 }, { lang: "zh", dev: 11, held: 3 }, { lang: "mixed", dev: 11, held: 3 },
-    ] },
-    { name: "isolation", answerable: false, langs: [
-      { lang: "en", dev: 20, held: 4 }, { lang: "zh", dev: 6, held: 2 }, { lang: "mixed", dev: 6, held: 2 },
-    ] },
-  ];
-
-  // The seven declared corpora (`inventory.ts`'s BASE_CORPORA) are not seven tenants:
-  // primary_{current,evidence,history} is ONE tenant's three corpora, other_team_a and
-  // other_team_b are one tenant each, and shared_* belongs to no tenant — it is the
-  // cross-tenant pool `scopes: ["own_team", "shared"]` already grants. Only a tenant corpus
-  // can plausibly be a caller's own context; only a corpus from a DIFFERENT tenant is a
-  // genuine isolation violation.
-  const TENANT_OF: Readonly<Record<string, string>> = {
-    primary_current: "primary", primary_evidence: "primary", primary_history: "primary",
-    other_team_a: "team_a", other_team_b: "team_b",
-  };
-  const TENANT_CORPORA = Object.keys(TENANT_OF);
-  // The smallest per-corpus record count `planCorpora` will accept for any tenant corpus
-  // (scale 0.1 — see `checks/tenant-info-corpus-shape.ts`, which exercises exactly that
-  // floor). Every ref ordinal stays under this, not under the full-scale 150,000, so a qrel
-  // resolves against whatever scale the fixture store actually gets generated at.
-  const SMALLEST_TENANT_CORPUS_SIZE = 15000;
-
-  const QUERY_MODE_BY_CATEGORY: Readonly<Record<string, string>> = {
-    "exact-reference": "exact", "identifier-part": "exact", typo: "exact", isolation: "exact",
-    "natural-language": "semantic", "no-answer": "semantic",
-    provenance: "hybrid", lifecycle: "hybrid", "scope-filter": "hybrid",
-  };
-
-  const pad6 = (n: number): string => String(n).padStart(6, "0");
-
-  // mulberry32 + FNV-1a seeding + a CJK-block codepoint draw, matching inventory.ts's
-  // textFixture exactly: a "zh"/"mixed" query is made of the same kind of seed-derived CJK
-  // characters as a "zh"/"mixed" fixture, not an English sentence wearing a language label.
-  function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-      a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  function seedFrom(key: string): number {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-    return h >>> 0;
-  }
-  const zhChar = (rand: () => number): string => String.fromCodePoint(0x4e00 + Math.floor(rand() * 0x5200));
-
-  // "exact-reference" and "identifier-part" are handed the real ref (in full, or the last 3
-  // digits of its ordinal) because naming the target identifier IS those two categories'
-  // premise. Every other category gets the query's own CASE NUMBER instead, never the ref —
-  // a retrieval run must not be able to read the correct answer off the query text.
-  const enTemplate = (category: string, corpus: string, caseNumber: number, ref: string, ordinal: number): string => {
-    switch (category) {
-      case "exact-reference": return `Show me the fixture record ${ref.replace(/\.txt$/, "")} exactly as filed.`;
-      case "identifier-part": return `Which record in ${corpus} has an identifier ending "${pad6(ordinal).slice(-3)}"?`;
-      case "natural-language": return `What does the document about case ${caseNumber} in ${corpus} actually say?`;
-      case "typo": return `Wat does the docmuent about caes ${caseNumber} in ${corpus} actualy say?`;
-      case "provenance": return `Who produced the record filed under ${corpus} case ${caseNumber}, and when?`;
-      case "lifecycle": return `Has the record for case ${caseNumber} in ${corpus} been superseded or withdrawn?`;
-      case "scope-filter": return `Within ${corpus}, filtered to case ${caseNumber}, what is currently in scope?`;
-      case "no-answer": return `What is the launch date nobody in ${corpus} ever recorded for case ${caseNumber}?`;
-      default: return `Show me case ${caseNumber} the way ${corpus} sees it.`; // isolation
-    }
-  };
-  const localizedQuery = (rand: () => number, tag: string, mixed: boolean): string => {
-    const len = 6 + Math.floor(rand() * 6);
-    const words = ["tenant", "document", "record", "revision", "case", "query"];
-    let out = "";
-    for (let i = 0; i < len; i++) {
-      out += mixed && rand() < 0.35
-        ? (out ? " " : "") + words[Math.floor(rand() * words.length)]
-        : zhChar(rand);
-    }
-    return `${out}（${tag}）`;
-  };
-  const queryText = (
-    category: string, lang: "en" | "zh" | "mixed", corpus: string, caseNumber: number,
-    ref: string, ordinal: number, globalIndex: number,
-  ): string => {
-    if (lang === "en") return enTemplate(category, corpus, caseNumber, ref, ordinal);
-    const rand = mulberry32(seedFrom(`${globalIndex}:${category}:${lang}`));
-    const tag = category === "exact-reference" ? ref.replace(/\.txt$/, "")
-      : category === "identifier-part" ? `${corpus} …${pad6(ordinal).slice(-3)}`
-      : `${corpus} #${caseNumber}`;
-    return localizedQuery(rand, tag, lang === "mixed");
-  };
-
-  const queries: JudgedQuery[] = [];
-  const qrels: Qrel[] = [];
-  let globalIndex = 0;
-
-  for (const category of PLAN) {
-    for (const langSplit of category.langs) {
-      const segments: readonly { readonly split: "dev" | "held-out"; readonly count: number }[] = [
-        { split: "dev", count: langSplit.dev },
-        { split: "held-out", count: langSplit.held },
-      ];
-      for (const segment of segments) {
-        for (let local = 0; local < segment.count; local++) {
-          globalIndex += 1;
-          const id = `Q${String(globalIndex).padStart(4, "0")}`;
-          const bucket = Math.floor(local / 5);
-          const family = `${category.name}:${langSplit.lang}:${segment.split}:${bucket}`;
-          const callerCorpus = TENANT_CORPORA[globalIndex % TENANT_CORPORA.length];
-
-          let refCorpus: string;
-          let grade: number;
-          let rationale: string;
-          if (category.name === ISOLATION_CATEGORY) {
-            const callerIdx = TENANT_CORPORA.indexOf(callerCorpus);
-            let otherIdx = (callerIdx + 1) % TENANT_CORPORA.length;
-            while (TENANT_OF[TENANT_CORPORA[otherIdx]] === TENANT_OF[callerCorpus]) {
-              otherIdx = (otherIdx + 1) % TENANT_CORPORA.length;
-            }
-            refCorpus = TENANT_CORPORA[otherIdx];
-            grade = 0;
-            rationale = `Fixture belongs to a different tenant ("${TENANT_OF[refCorpus]}", corpus "${refCorpus}") ` +
-              `than the caller ("${TENANT_OF[callerCorpus]}", corpus "${callerCorpus}"); must not be surfaced ` +
-              "across the isolation boundary.";
-          } else if (category.name === "no-answer") {
-            refCorpus = callerCorpus;
-            grade = 0;
-            rationale = "No fixture in the caller's accessible corpora answers this query; correctly withheld.";
-          } else {
-            refCorpus = callerCorpus;
-            grade = 2;
-            rationale = `Exact match fixture for this ${category.name} query within the caller's own corpus.`;
-          }
-          const ordinal = (globalIndex * 37) % SMALLEST_TENANT_CORPUS_SIZE;
-          const ref = `${refCorpus}-${pad6(ordinal)}.txt`;
-          const query = queryText(category.name, langSplit.lang, callerCorpus, globalIndex, ref, ordinal, globalIndex);
-
-          queries.push({
-            id, category: category.name, language: langSplit.lang, family,
-            query, query_mode: QUERY_MODE_BY_CATEGORY[category.name],
-            scopes: category.name === ISOLATION_CATEGORY ? ["own_team"] : ["own_team", "shared"],
-            filters: {}, caller_fixture: callerCorpus, split: segment.split, answerable: category.answerable,
-          });
-          qrels.push({
-            query_id: id, ref, grade, evidence: `${ref}:L1`, rationale, reviewer: "generator:tenant-info-i4",
-          });
-        }
-      }
-    }
-  }
-
-  return { queries, qrels };
+interface TargetDefinition {
+  readonly key: string;
+  readonly direction: "at_least" | "at_most" | "exactly";
+  readonly target: number;
+  readonly unit: string;
+  /** What has to actually happen for this target to acquire an observation. Carried into every
+   *  blocked entry of a report, so "blocked" names its own remedy instead of just refusing. */
+  readonly measured_by: string;
 }
 
-/** JSON Lines, one compact object per line, trailing newline — the exact shape
- *  `readFileSync(...).trim().split("\n").map(JSON.parse)` in the frozen check expects, and
- *  the shape `testing/tenant-info/queries.jsonl`/`qrels.jsonl` are committed in. Exported
- *  alongside `generateJudgedDataset` so a caller re-deriving H1's signed bytes — or a gate
- *  check confirming the committed files still match — never has to reinvent this line. */
-export const judgedDatasetToJsonl = (rows: readonly unknown[]): string =>
-  `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`;
+const HELD_OUT = "a full-scale run of the held-out answerable slice at quality limit 20";
+const REFERENCE_RUN = "the reference workload: 10 clients, 5 q/s for 30 minutes at limit 15, after recorded warm-up";
+
+export const RELEASE_TARGETS: readonly TargetDefinition[] = [
+  { key: "recall_at_5", direction: "at_least", target: 0.80, unit: "fraction", measured_by: HELD_OUT },
+  { key: "recall_at_20", direction: "at_least", target: 0.95, unit: "fraction", measured_by: HELD_OUT },
+  { key: "mrr_at_10", direction: "at_least", target: 0.80, unit: "fraction", measured_by: HELD_OUT },
+  { key: "exact_id_resolution", direction: "at_least", target: 1, unit: "fraction",
+    measured_by: "the 70 exact-reference cases resolved against the full-scale corpora" },
+  { key: "identifier_part_recall_at_5", direction: "at_least", target: 0.95, unit: "fraction",
+    measured_by: "the 70 identifier-part cases at quality limit 20" },
+  { key: "typo_recall_at_20", direction: "at_least", target: 0.90, unit: "fraction",
+    measured_by: "the 70 typo cases at quality limit 20" },
+  { key: "no_answer_correct_rate", direction: "at_least", target: 0.90, unit: "fraction",
+    measured_by: "the 70 no-answer cases, counting only complete empty responses — a budget-exhausted empty is not a correct negative" },
+  { key: "latency_p95_ms", direction: "at_most", target: 750, unit: "ms", measured_by: REFERENCE_RUN },
+  { key: "latency_p99_ms", direction: "at_most", target: 2000, unit: "ms", measured_by: REFERENCE_RUN },
+  { key: "rebuild_minutes", direction: "at_most", target: 120, unit: "minutes",
+    measured_by: "a timed rebuild of all seven declared acceptance corpora, with atomic publication only after parity" },
+  { key: "projection_freshness_p99_ms", direction: "at_most", target: 5000, unit: "ms",
+    measured_by: "committed-mutation-to-searchable timing on a healthy database during the reference run" },
+  { key: "en_recall_at_20", direction: "at_least", target: 0.95, unit: "fraction",
+    measured_by: `${HELD_OUT}, English-only slice, with a nonempty denominator` },
+  { key: "zh_recall_at_20", direction: "at_least", target: 0.95, unit: "fraction",
+    measured_by: `${HELD_OUT}, Chinese-only slice, with a nonempty denominator` },
+  { key: "mixed_recall_at_20", direction: "at_least", target: 0.95, unit: "fraction",
+    measured_by: `${HELD_OUT}, mixed-language slice, with a nonempty denominator` },
+  { key: "unauthorized_results", direction: "exactly", target: 0, unit: "count",
+    measured_by: "the isolation suite at acceptance profile over the full-scale corpora" },
+  { key: "lost_acknowledged_writes", direction: "exactly", target: 0, unit: "count",
+    measured_by: "the cutover rehearsal's acknowledged-write replay after recovery" },
+  { key: "silent_truncations", direction: "exactly", target: 0, unit: "count",
+    measured_by: "projection of every corpus with zero undisclosed omissions" },
+  { key: "semantic_parity", direction: "at_least", target: 1, unit: "fraction",
+    measured_by: "a semantic manifest comparison between canonical records and the published projection generation" },
+];
+
+export interface TargetOutcome {
+  readonly key: string;
+  readonly direction: TargetDefinition["direction"];
+  readonly target: number;
+  readonly unit: string;
+  readonly observed: number | null;
+  readonly verdict: "passed" | "failed" | "blocked";
+  readonly reason: string;
+  readonly measured_by: string;
+}
+
+export interface TargetEvaluation {
+  readonly passed: boolean;
+  readonly failed: readonly string[];
+  readonly blocked: readonly string[];
+  readonly outcomes: readonly TargetOutcome[];
+}
+
+/**
+ * The independent pass/fail evaluation, over the exact eighteen targets and nothing else.
+ *
+ * A MISSING OBSERVATION IS `blocked`, NEVER A ZERO AND NEVER AN OMISSION. That is the single
+ * property this function exists for: `evaluateTargets({})` returns eighteen blocked keys and
+ * `passed: false`, so an empty measurement set cannot be read as a pass by a caller who checks
+ * only `failed`. A caller that ignores `blocked` still sees `passed: false`, because `passed`
+ * requires both lists empty — there is no arrangement of silence that reaches a green verdict.
+ *
+ * A NONFINITE OBSERVATION IS `failed`, NOT `blocked`, and the distinction is deliberate: NaN
+ * or Infinity means the measuring instrument ran and produced garbage, which is a defect to
+ * fix, whereas `blocked` means nobody has measured it yet, which is work to schedule. Filing
+ * a broken instrument under "not yet measured" would hide it behind a runbook step.
+ *
+ * Comparisons are inclusive at the threshold — the agreement says "at least 0.95" and "at most
+ * 750 ms", so exactly 0.95 and exactly 750 pass. Keys the table does not name are ignored
+ * rather than rejected; a misspelled key still fails, because the target it was meant to be
+ * stays missing and therefore blocked.
+ */
+export function evaluateTargets(measurements: Readonly<Record<string, number>>): TargetEvaluation {
+  const given: Readonly<Record<string, unknown>> = measurements ?? {};
+  const outcomes: TargetOutcome[] = [];
+  const failed: string[] = [];
+  const blocked: string[] = [];
+
+  for (const definition of RELEASE_TARGETS) {
+    const { key, direction, target, unit, measured_by } = definition;
+    const base = { key, direction, target, unit, measured_by };
+    if (!Object.hasOwn(given, key)) {
+      blocked.push(key);
+      outcomes.push({ ...base, observed: null, verdict: "blocked", reason: "no observation was supplied" });
+      continue;
+    }
+    const raw = given[key];
+    if (typeof raw !== "number") {
+      blocked.push(key);
+      outcomes.push({ ...base, observed: null, verdict: "blocked",
+        reason: `the supplied value is ${raw === null ? "null" : typeof raw}, which is not an observation` });
+      continue;
+    }
+    if (!Number.isFinite(raw)) {
+      failed.push(key);
+      outcomes.push({ ...base, observed: raw, verdict: "failed",
+        reason: "the observation is nonfinite — the measurement ran and produced no usable number" });
+      continue;
+    }
+    const meets = direction === "at_least" ? raw >= target
+      : direction === "at_most" ? raw <= target
+      : raw === target;
+    if (meets) {
+      outcomes.push({ ...base, observed: raw, verdict: "passed", reason: `${raw} ${direction} ${target} ${unit}` });
+    } else {
+      failed.push(key);
+      outcomes.push({ ...base, observed: raw, verdict: "failed",
+        reason: `${raw} ${unit} does not meet "${direction} ${target}"` });
+    }
+  }
+
+  return { passed: failed.length === 0 && blocked.length === 0, failed, blocked, outcomes };
+}

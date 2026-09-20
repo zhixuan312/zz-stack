@@ -274,6 +274,73 @@ async function caseMissingCauseIsRefused(): Promise<void> {
   });
 }
 
+/**
+ * A CAUSE THAT ASSERTS A FOREIGN OWNER IS REFUSED, and every other identity component is
+ * correct so that only the owner field can be what refuses it.
+ *
+ * WHAT THIS CAUGHT. `resolveRef` compared artifact, revision and hash and never `owner_id`, so
+ * a caller could name this store's real artifact while asserting somebody else's owner — and
+ * the request COMMITTED. The false assertion then lived permanently in the ContentRevision's
+ * `cause_refs` and in the `created` event's, both append-only, so nothing later could correct
+ * it. `cause_refs` is the provenance trail: an owner in it that is not the owner the artifact
+ * lives under points a future reader at another tenant's store.
+ *
+ * It was found by the I-24 agent review — the first reader on this delivery who had built none
+ * of it — and no suite here noticed, which is why this case exists rather than only the fix.
+ *
+ * BOTH RESOLUTION PATHS, because there were two doors. `resolveRef` answers from the staged
+ * map when the artifact is in this same batch and from `getHead` otherwise; checking only one
+ * would leave the other open. `same_batch_source_creation` above proves the staged path is
+ * genuinely reachable, so the second half of this case is not hypothetical.
+ *
+ * UNRESOLVED_CAUSE, not a "wrong owner" code, and deliberately: `checkCauses` cannot see WHY a
+ * reference failed, only that it did. "Found, but not yours" is exactly the distinction that
+ * must not leak to a caller probing for another tenant's artifact ids.
+ */
+async function caseForeignOwnerCauseIsRefused(): Promise<void> {
+  const FOREIGN = "99999999-9999-4999-8999-999999999999";
+  await withRoot(async (root) => {
+    const doc = await seedDocument(root);
+
+    // The honest ref first: identical in every field but owner, and it must still work — a
+    // guard that refuses everything would pass the negative half of this case and break writes.
+    const honest = await runMutate(root, req({
+      operation: "revise", artifact_id: doc.id, expected_etag: doc.etag,
+      cause_refs: [doc.cause], payload: payload({ body: "cited by an honest ref\n" }),
+    }));
+    assert.equal(honest.committed, true, "a cause naming this store's own owner must still resolve");
+
+    const foreign = { ...doc.cause, owner_id: FOREIGN };
+    assert.equal(foreign.artifact_id, doc.cause.artifact_id, "only the owner field may differ");
+    assert.equal(foreign.content_hash, doc.cause.content_hash);
+    assert.equal(foreign.revision, doc.cause.revision);
+
+    const committedDoc = honest.committed === true ? honest : undefined;
+    const result = await runMutate(root, req({
+      operation: "revise", artifact_id: doc.id,
+      expected_etag: committedDoc?.etag ?? doc.etag,
+      cause_refs: [foreign], payload: payload({ body: "would-be foreign-owner citation\n" }),
+    }));
+    assert.equal(result.committed, false,
+      "a cause_ref asserting another owner must not commit — it would write a false provenance " +
+      "edge into append-only records that nothing can later correct");
+    if (result.committed === false) assert.equal(result.code, "UNRESOLVED_CAUSE");
+
+    // The staged door, closed too: a source minted in this very batch, cited with a foreign owner.
+    const staged = await runMutate(root, req({
+      payload: payload({
+        new_sources: [{
+          artifact_id: "5b5b5b5b-5b5b-4b5b-8b5b-5b5b5b5b5b5b", content: "staged evidence\n",
+          original_path: "e.txt", title: "E", media_type: "text/plain",
+        }],
+      }),
+      cause_refs: [{ owner_id: FOREIGN, artifact_id: "5b5b5b5b-5b5b-4b5b-8b5b-5b5b5b5b5b5b", revision: null, content_hash: createHash("sha256").update(Buffer.from("staged evidence\n", "utf8")).digest("hex") }],
+    }));
+    assert.equal(staged.committed, false,
+      "the staged-record path resolves refs too, and must refuse a foreign owner the same way");
+  });
+}
+
 async function caseSelfReferenceCauseIsCycleRefused(): Promise<void> {
   await withRoot(async (root) => {
     const doc = await seedDocument(root);
@@ -315,6 +382,7 @@ const CASES: Readonly<Record<string, () => Promise<void>>> = {
   source_is_immutable_once_created: caseSourceIsImmutableOnceCreated,
   source_hash_change_is_refused: caseSourceHashChangeIsRefused,
   missing_cause_is_refused: caseMissingCauseIsRefused,
+  foreign_owner_cause_is_refused: caseForeignOwnerCauseIsRefused,
   self_reference_cause_is_cycle_refused: caseSelfReferenceCauseIsCycleRefused,
   provenance_correction_does_not_erase_original_edges: caseProvenanceCorrectionDoesNotEraseOriginalEdges,
 };

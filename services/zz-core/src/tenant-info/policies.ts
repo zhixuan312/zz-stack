@@ -154,11 +154,31 @@ export function invalid(message: string): MutationError {
 /** A reference resolves against whichever of the two record sets actually has it — never
  *  against `selfId`, which by definition has not been (and, for a new artifact, cannot yet
  *  have been) committed. That refusal is what turns a self-citing `cause_refs` entry into
- *  "does not resolve" rather than an accidental match. */
+ *  "does not resolve" rather than an accidental match.
+ *
+ *  FOUR IDENTITY COMPONENTS, FOUR CHECKS. `owner_id` used to be the one field a caller could
+ *  assert freely: this function compared artifact, revision and hash, and a ref naming a
+ *  FOREIGN owner alongside this store's correct artifact/revision/hash resolved `true`. The
+ *  request then committed, and the false assertion went permanently into the ContentRevision's
+ *  `cause_refs` and the `created` event's — append-only records, so nothing later can correct
+ *  it. `cause_refs` IS the provenance trail; an owner in it that is not the owner the artifact
+ *  lives under points a future reader at another tenant's store.
+ *
+ *  AND THE KERNEL WAS INCONSISTENT WITH ITSELF, which is what makes this a defect rather than
+ *  a design choice: `handleSupersede` (transitions.ts) already refuses a replacement whose
+ *  `owner_id` is not `ctx.owner_id`, as `NOT_FOUND_OR_FORBIDDEN`. Two paths, one field, two
+ *  answers.
+ *
+ *  It returns `false` rather than a distinct code deliberately — see `checkCauses` below:
+ *  `resolveRef` cannot see WHY a reference failed, only that it did, and "found but not
+ *  yours" is exactly the distinction that must not leak.
+ *
+ *  Found by the I-24 agent review, the first reader on this delivery who had built none of it. */
 export function resolveRef(
   ref: ArtifactRef, ctx: PolicyContext, staged: ReadonlyMap<string, StagedRecord>, selfId: string,
 ): boolean {
   if (ref.artifact_id === selfId) return false;
+  if (ref.owner_id !== ctx.owner_id) return false;
   const stagedRecord = staged.get(ref.artifact_id);
   if (stagedRecord) return stagedRecord.content_hash === ref.content_hash && stagedRecord.revision === ref.revision;
   const head = ctx.getHead(ref.artifact_id);

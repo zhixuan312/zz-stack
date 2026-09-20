@@ -18,7 +18,9 @@
  */
 import assert from "node:assert/strict";
 
+import { CURSOR_CASES } from "./retrieval-cursor.ts";
 import { LANE_CASES } from "./retrieval-lanes.ts";
+import { QUERY_CASES } from "./retrieval-query.ts";
 import {
   checkVisibility, collapseBeforeCap, resolveCorpora, resultKey, rrf,
 } from "../../services/zz-core/dist/tenant-info/retrieval.js";
@@ -205,10 +207,18 @@ const FUSION_CASES: Readonly<Record<string, () => Promise<void>>> = {
   shared_and_private_never_double_count_within_a_lane: caseSharedAndPrivateNeverDoubleCountWithinALane,
 };
 
+// ── I-18: the "query" and "cursor" case groups — grammar, wire response, pinned reads ──────
+//
+// `retrieval-query.ts` (`parseQuery`/`serializeResults`/`matchesArtifact`) and
+// `retrieval-cursor.ts` (provenance cursors, pinned dereference, read-your-write freshness)
+// are this task's own split, following the `retrieval-lanes.ts` pattern I-17 already set.
+
 const CASE_GROUPS: Readonly<Record<string, Readonly<Record<string, () => Promise<void>>>>> = {
   visibility: VISIBILITY_CASES,
   fusion: FUSION_CASES,
   lanes: LANE_CASES,
+  query: QUERY_CASES,
+  cursor: CURSOR_CASES,
 };
 
 interface CaseResult { readonly status: "passed" | "failed" | "not_run"; readonly reason?: string }

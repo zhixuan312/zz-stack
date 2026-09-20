@@ -53,7 +53,11 @@ import { z } from "zod";
 
 type RetrievalErrorCode = "INVALID_INPUT" | "NOT_FOUND_OR_FORBIDDEN";
 
-class RetrievalError extends Error {
+// Exported at I-18: `pinned-read.ts` (I-18's own split, see this file's tail) throws the same
+// error class for cursor/dereference refusals rather than inventing a second hierarchy, the
+// same reasoning this section's own comment already gives for carrying `code` in the first
+// place.
+export class RetrievalError extends Error {
   readonly code: RetrievalErrorCode;
   constructor(code: RetrievalErrorCode, message: string) {
     super(message);
@@ -93,7 +97,7 @@ interface CorpusRegistryEntry {
  *  descriptor, never the raw registry or an unauthenticated request. */
 export type CorpusDescriptor = CorpusRegistryEntry;
 
-interface RetrievalContext {
+export interface RetrievalContext {
   readonly owner_id: string;
   readonly shared_allowed: boolean;
 }
@@ -463,4 +467,233 @@ export function collapseBeforeCap<T>(rows: readonly RankedRow<T>[], cap: number)
     if (!seen.has(key)) seen.set(key, entry);
   }
   return [...seen.values()].slice(0, cap);
+}
+
+// ── I-18: query grammar and the actual wire response ────────────────────────────────────────
+//
+// The two functions the frozen check (`checks/tenant-query-syntax.ts`) imports directly from
+// THIS file — everything downstream of a parsed query (matcher, cursors, pinned reads,
+// freshness) lives in `pinned-read.ts`, importing FROM here, the same one-directional seam
+// `lanes.ts` (I-17) established.
+//
+// GRAMMAR RECOGNITION PRECEDES IDENTIFIER NORMALIZATION (Contract): `tokenize` recognizes
+// quotes, a leading `-` against the next scalar, and the bare word `OR` on the RAW token text,
+// before any identifier splitting (dot/underscore/slash/hyphen/colon — `packages/indexing`'s
+// job, never this one's) runs. A hyphen inside `plugin-judge` survives as one word; a dot
+// inside `zz.eval_finding` is never touched.
+
+export type QueryMode = "natural" | "websearch";
+
+/** The "complete boolean structure" the Contract asks for. `clauses` is an AND across its
+ *  top-level entries; `"or"` folds consecutive `OR`-joined operands into one alternatives
+ *  group. `"term".required` is `false` in natural mode (an unquoted word is a ranking hint) and
+ *  always `true` in websearch mode (which ANDs every word); `"phrase"` is always hard. */
+export type BooleanClause =
+  | { readonly kind: "term"; readonly value: string; readonly required: boolean }
+  | { readonly kind: "phrase"; readonly value: string }
+  | { readonly kind: "or"; readonly alternatives: readonly BooleanClause[] };
+
+export interface QueryAst {
+  readonly original_text: string;
+  readonly mode: QueryMode;
+  readonly phrases: readonly string[];
+  readonly exclusions: readonly string[];
+  readonly clauses: readonly BooleanClause[];
+  /** True once nothing is left to rank or require ("no query ... performs metadata browsing",
+   *  spec). Only the "no query" half: no stopword list exists in this checkout for PostgreSQL's
+   *  pinned `english` configuration, so a non-empty stopword-only query is NOT detected — a
+   *  named, carried-forward gap (the same reason `lanes.ts` declines pg_textsearch's DDL). */
+  readonly browse: boolean;
+}
+
+const MAX_QUERY_SCALARS = 2048;
+const MAX_PHRASE_SCALARS = 256;
+
+function isWhitespaceScalar(ch: string | undefined): boolean {
+  return ch === undefined || /\s/u.test(ch);
+}
+
+interface RawToken {
+  readonly kind: "word" | "phrase";
+  /** Raw text, unsplit and unnormalized: for `"word"`, after a leading `-` is stripped; for
+   *  `"phrase"`, the quoted content. */
+  readonly text: string;
+  readonly scalarStart: number;
+  readonly excluded: boolean;
+}
+
+/** Scans `scalars` left to right, recognizing quotes/exclusions/whitespace boundaries alone —
+ *  no lowercasing, no splitting on internal punctuation. An unterminated quote in natural mode
+ *  is `INVALID_INPUT` naming the opening quote's scalar offset; in websearch mode it is
+ *  PostgreSQL's documented tolerance (Text Search §12.3.3) — the phrase runs to end of input,
+ *  as if the string's end were an implicit closing quote. */
+function tokenize(scalars: readonly string[], mode: QueryMode): RawToken[] {
+  const tokens: RawToken[] = [];
+  const n = scalars.length;
+  let i = 0;
+  while (i < n) {
+    if (isWhitespaceScalar(scalars[i])) { i++; continue; }
+    const tokenStart = i;
+    let excluded = false;
+    if (scalars[i] === "-" && !isWhitespaceScalar(scalars[i + 1])) {
+      excluded = true;
+      i++;
+    }
+    if (scalars[i] === "\"") {
+      const contentStart = i + 1;
+      let j = contentStart;
+      while (j < n && scalars[j] !== "\"") j++;
+      if (j >= n) {
+        if (mode === "natural") {
+          throw new RetrievalError("INVALID_INPUT",
+            `unterminated quote at scalar offset ${tokenStart}`);
+        }
+        tokens.push({ kind: "phrase", text: scalars.slice(contentStart, n).join(""), scalarStart: tokenStart, excluded });
+        break;
+      }
+      tokens.push({ kind: "phrase", text: scalars.slice(contentStart, j).join(""), scalarStart: tokenStart, excluded });
+      i = j + 1;
+      continue;
+    }
+    let k = i;
+    while (k < n && !isWhitespaceScalar(scalars[k])) k++;
+    tokens.push({ kind: "word", text: scalars.slice(i, k).join(""), scalarStart: tokenStart, excluded });
+    i = k;
+  }
+  return tokens;
+}
+
+/** Natural's `OR` is the spec's own words — "uppercase OR" — matched case-sensitively; a
+ *  lowercase "or" is an ordinary word. Websearch matches case-insensitively, per PostgreSQL's
+ *  documented parser (Text Search §12.3.3: "the word `or` will be converted to the `|`
+ *  operator") — a documented reading, not a live differential run (no database access here). */
+function isOrKeyword(word: string, mode: QueryMode): boolean {
+  return mode === "natural" ? word === "OR" : word.toLowerCase() === "or";
+}
+
+interface ParsedClauses { readonly clauses: BooleanClause[]; readonly phrases: string[]; readonly exclusions: string[] }
+
+/** Folds `tokens` into the AND-of-(term|phrase|or) structure `QueryAst.clauses` carries. A
+ *  dangling `OR` — nothing before it, or nothing after it — contributes no operator and is
+ *  dropped rather than guessed at. Exclusions never enter `clauses` or an `OR` group — hard
+ *  conditions keep a `-`-prefixed operand in `exclusions` alone. */
+function buildClauses(tokens: readonly RawToken[], mode: QueryMode): ParsedClauses {
+  const phrases: string[] = [];
+  const exclusions: string[] = [];
+  const clauses: BooleanClause[] = [];
+  let pendingOr = false;
+  for (const tok of tokens) {
+    if (tok.kind === "word" && !tok.excluded && isOrKeyword(tok.text, mode)) {
+      if (clauses.length > 0) pendingOr = true;
+      continue;
+    }
+    let clause: BooleanClause;
+    if (tok.kind === "phrase") {
+      if ([...tok.text].length > MAX_PHRASE_SCALARS) {
+        throw new RetrievalError("INVALID_INPUT", `phrase exceeds ${MAX_PHRASE_SCALARS} scalar values`);
+      }
+      if (!tok.excluded) phrases.push(tok.text);
+      clause = { kind: "phrase", value: tok.text };
+    } else {
+      clause = { kind: "term", value: tok.text, required: mode === "websearch" };
+    }
+    if (tok.excluded) {
+      exclusions.push(tok.text);
+      pendingOr = false;
+      continue;
+    }
+    if (pendingOr && clauses.length > 0) {
+      const last = clauses[clauses.length - 1]!;
+      clauses[clauses.length - 1] = last.kind === "or"
+        ? { kind: "or", alternatives: [...last.alternatives, clause] }
+        : { kind: "or", alternatives: [last, clause] };
+      pendingOr = false;
+    } else {
+      clauses.push(clause);
+    }
+  }
+  return { clauses, phrases, exclusions };
+}
+
+/** Parses `text` under `mode`'s grammar — natural (new API default) or websearch (legacy
+ *  adapters' default). The 2048-scalar query limit applies before tokenizing; the 256-scalar
+ *  phrase limit is enforced per phrase inside `buildClauses` — "documented query/phrase length
+ *  limits still apply in both modes" (Contract). `original_text` is returned untouched. */
+export function parseQuery(text: string, mode: QueryMode): QueryAst {
+  const scalars = [...text];
+  if (scalars.length > MAX_QUERY_SCALARS) {
+    throw new RetrievalError("INVALID_INPUT", `query exceeds ${MAX_QUERY_SCALARS} scalar values`);
+  }
+  const tokens = tokenize(scalars, mode);
+  const { clauses, phrases, exclusions } = buildClauses(tokens, mode);
+  return {
+    original_text: text,
+    mode,
+    phrases,
+    exclusions,
+    clauses,
+    browse: clauses.length === 0 && phrases.length === 0 && exclusions.length === 0,
+  };
+}
+
+// ── I-18: the actual wire response ───────────────────────────────────────────────────────────
+//
+// `serializeResults` emits the spec's exact `SearchResponse` (schema version 2) directly — the
+// candidates it is handed are already `SearchResult`-shaped, so there is no helper-only
+// bounded/omitted wrapper and no separate "convert" step.
+
+const RESPONSE_BYTE_BUDGET = 24000;
+/** Fields a real search/browse run already knows (exhaustion from `lanes.ts`'s `search()`,
+ *  `mode_used` from `parseQuery`) — folded with `"response_budget"`, never replaced. */
+export interface ResultEnvelope {
+  readonly index_generation: string;
+  readonly indexed_through: Readonly<Record<string, number>>;
+  readonly candidate_total: number;
+  readonly mode_used: "natural" | "websearch" | "browse";
+  readonly incomplete: boolean;
+  readonly reasons: readonly string[];
+}
+
+/** Widened the same way `CorpusRegistryEntry`/`ResultIdentity` already are: the frozen check's
+ *  fixture rows carry no `as const`, so enum fields are plain `string` here, not
+ *  `SearchResultSchema`'s narrower unions — `safeParse` still proves the runtime shape. */
+interface WireResult {
+  readonly ref: { readonly owner_id: string; readonly artifact_id: string; readonly revision: number | null; readonly content_hash: string; readonly selector?: string };
+  readonly record_digest: string; readonly etag: string; readonly path: string; readonly title: string;
+  readonly artifact_class: string; readonly type: string; readonly scope: string; readonly shelf: string;
+  readonly gate_status: string | null; readonly knowledge_status: string | null; readonly profile: string;
+  readonly source_refs: readonly unknown[]; readonly source_refs_truncated: boolean; readonly source_refs_cursor: string | null;
+  readonly snippet: string; readonly snippet_byte_start: number; readonly snippet_byte_end: number;
+  readonly via: readonly string[]; readonly corpora: readonly string[]; readonly score: number;
+}
+
+/** Builds the JSON wire string for `SearchResponseSchema`, holding results+metadata+cursors to
+ *  at most 24000 UTF-8 bytes. Tries the full candidate list first; on overflow, drops one
+ *  trailing candidate at a time and re-measures — never stops mid-record. The request's own
+ *  `limit` (1–50) bounds `candidateResults.length` in production, so at most 51 stringify
+ *  passes. Truncation is disclosed: `incomplete: true`, `"response_budget"` in `reasons`, and
+ *  `withheld_candidates` counting exactly what this function withheld. */
+export function serializeResults(candidateResults: readonly WireResult[], envelope: ResultEnvelope): string {
+  for (let n = candidateResults.length; n >= 0; n--) {
+    const truncated = n < candidateResults.length;
+    const reasons = new Set(envelope.reasons);
+    if (truncated) reasons.add("response_budget");
+    const response = {
+      schema_version: 2 as const,
+      results: candidateResults.slice(0, n),
+      index_generation: envelope.index_generation,
+      indexed_through: envelope.indexed_through,
+      returned: n,
+      candidate_total: envelope.candidate_total,
+      withheld_candidates: candidateResults.length - n,
+      incomplete: envelope.incomplete || truncated,
+      reasons: [...reasons],
+      mode_used: envelope.mode_used,
+    };
+    const wire = JSON.stringify(response);
+    if (Buffer.byteLength(wire, "utf8") <= RESPONSE_BYTE_BUDGET) return wire;
+  }
+  // Even zero results overflow: every remaining byte is envelope metadata this function has
+  // nothing left to drop. Surfacing this beats emitting a wire string over the disclosed budget.
+  throw new RetrievalError("INVALID_INPUT", "response envelope metadata alone exceeds the response byte budget");
 }

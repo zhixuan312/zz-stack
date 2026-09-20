@@ -468,6 +468,9 @@ check("a commit manifest hashes over its own canonical fields, never over bytes 
 check("a mutation request hashes canonically regardless of key order, changes with its payload or expected_etag, and a commit outcome classifies to true/false/unknown exactly as the spec's publication/durability table says",
       runsCheck("tenant-kernel-codes.ts"));
 
+check("a semantic payload's canonical hash is stable under tag order/dupes, CRLF and sorted content_fields, and changes on every single-field edit the spec names",
+      runsCheck("tenant-revision-boundary.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

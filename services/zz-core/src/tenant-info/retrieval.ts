@@ -51,7 +51,14 @@ import { z } from "zod";
 // error hierarchy — `RESERVED_PAYLOAD_KEYS` in `@zz/contracts` makes the same "unknown/
 // disallowed field is a defect, not silently ignored input" argument for `MutationRequestSchema`.
 
-type RetrievalErrorCode = "INVALID_INPUT" | "NOT_FOUND_OR_FORBIDDEN";
+// `REGISTRY_MISCONFIGURED` is deliberately NOT `INVALID_INPUT`. The other two codes are both
+// verdicts on a CALLER: it sent a malformed request, or it asked for something it may not
+// have. This one is a verdict on the SERVER'S OWN configuration, and a caller can do nothing
+// about it and must never be told it did something wrong. It is also why the refusal throws
+// rather than returning an empty descriptor list: silently resolving nothing would turn a
+// misconfigured deployment into "this tenant has no corpora", which reads as an ordinary
+// empty result at every call site above this one.
+type RetrievalErrorCode = "INVALID_INPUT" | "NOT_FOUND_OR_FORBIDDEN" | "REGISTRY_MISCONFIGURED";
 
 // Exported at I-18: `pinned-read.ts` (I-18's own split, see this file's tail) throws the same
 // error class for cursor/dereference refusals rather than inventing a second hierarchy, the
@@ -69,7 +76,9 @@ export class RetrievalError extends Error {
 // ── registry, context and request shapes ────────────────────────────────────────────────────
 
 const RetrievalScopeSchema = z.enum(["current", "evidence", "history"]);
-type RetrievalScope = z.infer<typeof RetrievalScopeSchema>;
+/** Exported because `pinned-read.ts`'s `DereferenceTarget` is declared over it — the
+ *  visibility recheck moved there at the ceiling and its target type moved with it. */
+export type RetrievalScope = z.infer<typeof RetrievalScopeSchema>;
 
 /** One row of the server-owned registry `resolveCorpora` is handed — never read from a
  *  database by this function itself; the caller (a future wiring task) owns loading it.
@@ -135,6 +144,51 @@ function invalidRequest(request: unknown): never {
 }
 
 /**
+ * ONE PHYSICAL INDEX CARRIES ONE OWNER'S DOCUMENTS. A registry that points two owners at the
+ * same `index_name` is refused outright, before a single entry is read for scope.
+ *
+ * WHAT THIS CLOSES, and how it was found. `testing/tenant-info/isolation.ts`'s mutation case
+ * takes owner B's corpus, changes nothing but its `index_name` to owner A's, and measures what
+ * owner A then sees: A's returned `artifact_id`s are byte-identical before and after — the
+ * row-level `owner_id = $n` predicate is untouched and still perfectly correct — and A's bm25
+ * scores move anyway, because term and document frequencies live in the index structure the
+ * query names, not in the predicate that filters which rows come back. Every row-level check
+ * in this delivery passes on that configuration. So does `tenant-scope-predicates`.
+ *
+ * Which meant the delivery's most emphasised property — one tenant's writes cannot move
+ * another's ranking — rested on nothing but a registry nobody validated. The isolation suite
+ * could demonstrate the leak but could not name a code change that caused it, because there
+ * was no code to change: the invariant existed only as an assumption about configuration.
+ * This function is that invariant written down, which is what makes the leak reachable by a
+ * mutation test at all.
+ *
+ * ONE OWNER PER INDEX, NOT ONE CORPUS PER INDEX. The stricter rule would also refuse a single
+ * owner serving two scopes from one index, which leaks nothing across tenants and which
+ * nothing here has evidence against. This is exactly the property the mutation case proves is
+ * load-bearing, and no more.
+ *
+ * BEFORE THE SCOPE FILTER, deliberately. Checking only the entries a request happens to
+ * select would let a misconfigured registry resolve cleanly for `current` and refuse for
+ * `history`, so whether the deployment was safe would depend on what the caller asked for.
+ */
+function assertOneOwnerPerIndex(registry: readonly CorpusRegistryEntry[]): void {
+  const ownerByIndex = new Map<string, string>();
+  for (const entry of registry) {
+    const seen = ownerByIndex.get(entry.index_name);
+    if (seen !== undefined && seen !== entry.owner_id) {
+      throw new RetrievalError(
+        "REGISTRY_MISCONFIGURED",
+        `corpus registry points index ${JSON.stringify(entry.index_name)} at two owners ` +
+        `(${seen} and ${entry.owner_id}) — one physical index carries one owner's documents, ` +
+        "or their term statistics are shared and each one's writes move the other's scores",
+      );
+    }
+    ownerByIndex.set(entry.index_name, entry.owner_id);
+  }
+}
+
+
+/**
  * Resolves every corpus/scope/index combination `context` may query for `request` — the
  * ONLY function in this file (or, per the plan, anywhere in the retrieval path) that decides
  * "may this context see this owner's data at this scope". `request` is untrusted input:
@@ -156,6 +210,7 @@ export function resolveCorpora(
 ): CorpusDescriptor[] {
   const parsed = CorpusRequestSchema.safeParse(request);
   if (!parsed.success) invalidRequest(request);
+  assertOneOwnerPerIndex(registry);
 
   // `Set<string>`, not `Set<RetrievalScope>` — `entry.scope` is the registry's own widened
   // `string` field (see `CorpusRegistryEntry`'s comment), and membership here is compared
@@ -175,23 +230,23 @@ export function resolveCorpora(
   return out;
 }
 
-// ── visibility recheck: the real query every dereference/cursor read issues ────────────────
+// ── what every reader of a search table shares: a client, and the three table names ────────
+//
+// THE VISIBILITY RECHECK ITSELF LEFT during the registry-isolation fix, at the 700-line
+// ceiling — `DereferenceTarget`, `buildVisibilityQuery` and `checkVisibility` are in
+// `pinned-read.ts` now, beside the pinned/dereference reader that is their only caller in
+// this service. Which half moved was decided by the frozen checks, as it was for inventory.ts
+// and policies.ts before it: `tenant-fusion-arithmetic`, `tenant-query-syntax` and
+// `tenant-scope-predicates` pin `budgets`/`resultKey`/`rrf`, `parseQuery`/`serializeResults`
+// and `resolveCorpora` to THIS module by name, and a frozen check's bytes cannot be edited to
+// follow a symbol somewhere else. Nothing pinned `checkVisibility`, so it is what could go.
+//
+// `RetrievalClient` and `scopeTable` stayed because they are not the visibility path's: the
+// client shape is every lane's and every pinned read's, and one migration (070) names these
+// three tables while one function says so — `lanes.ts` resolves its lane tables through it.
 
 export interface RetrievalClient {
   query<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<{ rows: T[] }>;
-}
-
-/** What a caller is asking to dereference — an `ArtifactRef`-shaped target, not a search
- *  result: `scope` is supplied by the caller's own prior authorized resolution (which lane
- *  or scope it came from), never guessed here. */
-interface DereferenceTarget {
-  readonly owner_id: string;
-  readonly artifact_id: string;
-  readonly scope: RetrievalScope;
-  /** Required when `scope === "history"` — history identity is owner+artifact+revision
-   *  ("history includes revision/hash", spec), and `zz.search_history`'s own primary key
-   *  carries `revision` for exactly that reason. */
-  readonly revision?: number | null;
 }
 
 const SCOPE_TABLE: Readonly<Record<RetrievalScope, string>> = {
@@ -211,92 +266,6 @@ export function scopeTable(scope: string): string {
   return SCOPE_TABLE[scope];
 }
 
-interface VisibilityQuery {
-  readonly text: string;
-  readonly params: readonly unknown[];
-}
-
-/**
- * Builds the one statement `checkVisibility` runs — separated out so an isolated integration
- * case can assert on its text/params directly, and so a mutation test can remove the
- * `owner_id` conjunct from exactly this function and watch the behavioral case go red naming
- * `checkVisibility`, never a source-text scan of this file.
- *
- * `descriptor.corpus_key`/`descriptor.owner_id` are bound, never `target`'s own fields
- * directly — by the time this runs, `resolveCorpora` has already proven `descriptor.owner_id
- * === target.owner_id` for an authorized scope, but binding from the descriptor rather than
- * re-reading the caller's own object is what "the registry, not user input, determines SQL
- * identifiers; values remain bound parameters" asks for as a matter of which value the query
- * text is ever built from, not only which value it happens to equal. The TABLE, though, keys
- * off `target.scope` rather than `descriptor.scope` — the caller's own field carries the
- * narrow `RetrievalScope` type this closed 3-entry map is declared over, and `resolveCorpora`
- * having filtered on `scopes.has(entry.scope)` already guarantees `descriptor.scope ===
- * target.scope` structurally; typing the lookup off the narrower field avoids re-widening a
- * value this function never needed loosely typed in the first place.
- */
-function buildVisibilityQuery(descriptor: CorpusDescriptor, target: DereferenceTarget): VisibilityQuery {
-  const table = SCOPE_TABLE[target.scope]; // closed 3-entry map, never caller text
-  if (target.scope === "history") {
-    if (typeof target.revision !== "number") {
-      throw new RetrievalError("INVALID_INPUT", "a history dereference requires an explicit revision");
-    }
-    return {
-      text: `select corpus_key, owner_id, artifact_id, revision, content_hash from ${table} `
-        + "where corpus_key = $1 and owner_id = $2 and artifact_id = $3 and revision = $4",
-      params: [descriptor.corpus_key, descriptor.owner_id, target.artifact_id, target.revision],
-    };
-  }
-  return {
-    text: `select corpus_key, owner_id, artifact_id, revision, content_hash from ${table} `
-      + "where corpus_key = $1 and owner_id = $2 and artifact_id = $3",
-    params: [descriptor.corpus_key, descriptor.owner_id, target.artifact_id],
-  };
-}
-
-interface VisibilityRow {
-  readonly corpus_key: string;
-  readonly owner_id: string;
-  readonly artifact_id: string;
-  readonly revision: number;
-  readonly content_hash: string;
-}
-
-type VisibilityOutcome =
-  | { readonly ok: true; readonly row: VisibilityRow }
-  | { readonly ok: false; readonly code: "NOT_FOUND_OR_FORBIDDEN" };
-
-/**
- * Re-verifies one artifact is visible to `context` RIGHT NOW — "before response
- * serialization, direct dereference and cursor paging", per this task's own Contract. Two
- * gates, in order:
- *
- *   1. `resolveCorpora` against the SAME registry/context a search request would use, scoped
- *      to `target.scope` alone. No entry naming `target.owner_id` → `NOT_FOUND_OR_FORBIDDEN`
- *      with NO QUERY ISSUED — an unauthorized owner never reaches the database, exactly
- *      "excluded before ranking" applied to a single dereference rather than a result list.
- *   2. The real query `buildVisibilityQuery` produces, against the resolved descriptor's own
- *      `corpus_key`/`owner_id`. Empty rows → `NOT_FOUND_OR_FORBIDDEN` — the same code an
- *      unauthorized owner gets from step 1, so "public unauthorized and nonexistent reference
- *      targets share NOT_FOUND_OR_FORBIDDEN" holds whether the refusal came from the registry
- *      or from the table genuinely having nothing there (unpublished since the corpus was
- *      last indexed, or never existed at all).
- */
-export async function checkVisibility(
-  client: RetrievalClient,
-  context: RetrievalContext,
-  registry: readonly CorpusRegistryEntry[],
-  target: DereferenceTarget,
-): Promise<VisibilityOutcome> {
-  const authorized = resolveCorpora(context, { scopes: [target.scope] }, registry)
-    .find((descriptor) => descriptor.owner_id === target.owner_id);
-  if (!authorized) return { ok: false, code: "NOT_FOUND_OR_FORBIDDEN" };
-
-  const query = buildVisibilityQuery(authorized, target);
-  const result = await client.query<VisibilityRow>(query.text, query.params);
-  const row = result.rows[0];
-  if (!row) return { ok: false, code: "NOT_FOUND_OR_FORBIDDEN" };
-  return { ok: true, row };
-}
 
 // ── I-17: budgets, result-key identity and cross-corpus RRF fusion ─────────────────────────
 //

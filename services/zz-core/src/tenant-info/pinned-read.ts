@@ -25,8 +25,8 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import type { BooleanClause, CorpusDescriptor, QueryAst, RetrievalClient, RetrievalContext } from "./retrieval.js";
-import { checkVisibility, RetrievalError } from "./retrieval.js";
+import type { BooleanClause, CorpusDescriptor, QueryAst, RetrievalClient, RetrievalContext, RetrievalScope } from "./retrieval.js";
+import { resolveCorpora, RetrievalError, scopeTable } from "./retrieval.js";
 
 // ── artifact-level AND/OR/NOT, evaluated across passages/fields ────────────────────────────
 //
@@ -211,4 +211,122 @@ export async function waitForOwnStoreFreshness(
     indexedThrough = await refresh();
   }
   return { ready: true };
+}
+
+// ── the visibility recheck every dereference and cursor read issues ────────────────────────
+//
+// MOVED HERE FROM `retrieval.ts` at the 700-line ceiling, during the registry-isolation fix.
+// This file is `checkVisibility`'s only caller in the service — `dereferencePinned` below has
+// always gone through it — so the recheck now sits beside the read it guards instead of two
+// modules away. Which half moved was not a matter of taste: three frozen checks pin
+// `budgets`/`resultKey`/`rrf`, `parseQuery`/`serializeResults` and `resolveCorpora` to
+// `retrieval.js` BY NAME, and a frozen check's bytes cannot be edited to follow a symbol
+// somewhere else. Nothing pinned `checkVisibility`, so it is what could go.
+//
+// TWO SUBSTITUTIONS, BOTH BEHAVIOUR-PRESERVING AND BOTH DELIBERATE. The private `SCOPE_TABLE`
+// map stayed in `retrieval.ts` because `lanes.ts` resolves its lane tables through the same
+// exported `scopeTable` accessor; that accessor is the identical closed 3-entry lookup with a
+// fail-closed guard in front, so using it here removes a duplicated map rather than adding an
+// indirection. And the registry parameter is typed `CorpusDescriptor`, which `retrieval.ts`
+// declares as exactly `CorpusRegistryEntry` — the same type under the name this module can
+// reach.
+
+/** What a caller is asking to dereference — an `ArtifactRef`-shaped target, not a search
+ *  result: `scope` is supplied by the caller's own prior authorized resolution (which lane
+ *  or scope it came from), never guessed here. */
+interface DereferenceTarget {
+  readonly owner_id: string;
+  readonly artifact_id: string;
+  readonly scope: RetrievalScope;
+  /** Required when `scope === "history"` — history identity is owner+artifact+revision
+   *  ("history includes revision/hash", spec), and `zz.search_history`'s own primary key
+   *  carries `revision` for exactly that reason. */
+  readonly revision?: number | null;
+}
+
+interface VisibilityQuery {
+  readonly text: string;
+  readonly params: readonly unknown[];
+}
+
+/**
+ * Builds the one statement `checkVisibility` runs — separated out so an isolated integration
+ * case can assert on its text/params directly, and so a mutation test can remove the
+ * `owner_id` conjunct from exactly this function and watch the behavioral case go red naming
+ * `checkVisibility`, never a source-text scan of this file.
+ *
+ * `descriptor.corpus_key`/`descriptor.owner_id` are bound, never `target`'s own fields
+ * directly — by the time this runs, `resolveCorpora` has already proven `descriptor.owner_id
+ * === target.owner_id` for an authorized scope, but binding from the descriptor rather than
+ * re-reading the caller's own object is what "the registry, not user input, determines SQL
+ * identifiers; values remain bound parameters" asks for as a matter of which value the query
+ * text is ever built from, not only which value it happens to equal. The TABLE, though, keys
+ * off `target.scope` rather than `descriptor.scope` — the caller's own field carries the
+ * narrow `RetrievalScope` type this closed 3-entry map is declared over, and `resolveCorpora`
+ * having filtered on `scopes.has(entry.scope)` already guarantees `descriptor.scope ===
+ * target.scope` structurally; typing the lookup off the narrower field avoids re-widening a
+ * value this function never needed loosely typed in the first place.
+ */
+function buildVisibilityQuery(descriptor: CorpusDescriptor, target: DereferenceTarget): VisibilityQuery {
+  const table = scopeTable(target.scope); // closed 3-entry map, never caller text
+  if (target.scope === "history") {
+    if (typeof target.revision !== "number") {
+      throw new RetrievalError("INVALID_INPUT", "a history dereference requires an explicit revision");
+    }
+    return {
+      text: `select corpus_key, owner_id, artifact_id, revision, content_hash from ${table} `
+        + "where corpus_key = $1 and owner_id = $2 and artifact_id = $3 and revision = $4",
+      params: [descriptor.corpus_key, descriptor.owner_id, target.artifact_id, target.revision],
+    };
+  }
+  return {
+    text: `select corpus_key, owner_id, artifact_id, revision, content_hash from ${table} `
+      + "where corpus_key = $1 and owner_id = $2 and artifact_id = $3",
+    params: [descriptor.corpus_key, descriptor.owner_id, target.artifact_id],
+  };
+}
+
+interface VisibilityRow {
+  readonly corpus_key: string;
+  readonly owner_id: string;
+  readonly artifact_id: string;
+  readonly revision: number;
+  readonly content_hash: string;
+}
+
+type VisibilityOutcome =
+  | { readonly ok: true; readonly row: VisibilityRow }
+  | { readonly ok: false; readonly code: "NOT_FOUND_OR_FORBIDDEN" };
+
+/**
+ * Re-verifies one artifact is visible to `context` RIGHT NOW — "before response
+ * serialization, direct dereference and cursor paging", per this task's own Contract. Two
+ * gates, in order:
+ *
+ *   1. `resolveCorpora` against the SAME registry/context a search request would use, scoped
+ *      to `target.scope` alone. No entry naming `target.owner_id` → `NOT_FOUND_OR_FORBIDDEN`
+ *      with NO QUERY ISSUED — an unauthorized owner never reaches the database, exactly
+ *      "excluded before ranking" applied to a single dereference rather than a result list.
+ *   2. The real query `buildVisibilityQuery` produces, against the resolved descriptor's own
+ *      `corpus_key`/`owner_id`. Empty rows → `NOT_FOUND_OR_FORBIDDEN` — the same code an
+ *      unauthorized owner gets from step 1, so "public unauthorized and nonexistent reference
+ *      targets share NOT_FOUND_OR_FORBIDDEN" holds whether the refusal came from the registry
+ *      or from the table genuinely having nothing there (unpublished since the corpus was
+ *      last indexed, or never existed at all).
+ */
+export async function checkVisibility(
+  client: RetrievalClient,
+  context: RetrievalContext,
+  registry: readonly CorpusDescriptor[],
+  target: DereferenceTarget,
+): Promise<VisibilityOutcome> {
+  const authorized = resolveCorpora(context, { scopes: [target.scope] }, registry)
+    .find((descriptor) => descriptor.owner_id === target.owner_id);
+  if (!authorized) return { ok: false, code: "NOT_FOUND_OR_FORBIDDEN" };
+
+  const query = buildVisibilityQuery(authorized, target);
+  const result = await client.query<VisibilityRow>(query.text, query.params);
+  const row = result.rows[0];
+  if (!row) return { ok: false, code: "NOT_FOUND_OR_FORBIDDEN" };
+  return { ok: true, row };
 }

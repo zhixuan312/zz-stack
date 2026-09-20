@@ -22,8 +22,9 @@ import { CURSOR_CASES } from "./retrieval-cursor.ts";
 import { LANE_CASES } from "./retrieval-lanes.ts";
 import { QUERY_CASES } from "./retrieval-query.ts";
 import {
-  checkVisibility, collapseBeforeCap, resolveCorpora, resultKey, rrf,
+  collapseBeforeCap, resolveCorpora, resultKey, rrf,
 } from "../../services/zz-core/dist/tenant-info/retrieval.js";
+import { checkVisibility } from "../../services/zz-core/dist/tenant-info/pinned-read.js";
 
 const OWNER_P = "33333333-3333-4333-8333-333333333333";
 const OWNER_Q = "44444444-4444-4444-8444-444444444444";
@@ -58,9 +59,17 @@ function recordingClient(rows: readonly Row[]) {
   };
 }
 
+// ONE INDEX PER OWNER, and this fixture used to get that wrong. Both entries named
+// `index_name: "i"` — which is the configuration `assertOneOwnerPerIndex` (retrieval.ts) now
+// refuses, and which `testing/tenant-info/isolation.ts` demonstrates actually moves one
+// owner's bm25 scores with the other's writes. Nothing in this file ever depended on it: the
+// collision these cases are built to exercise is at the ROW level (two rows sharing a
+// corpus_key and artifact_id, separated only by `where owner_id = $n`), and
+// `buildVisibilityQuery` never reads `index_name` at all. The fixture was adversarial in the
+// dimension it meant to be and accidentally misconfigured in one it did not.
 const REGISTRY = [
-  { corpus_key: "q-current", owner_id: OWNER_Q, scope: "current", audience: "private", index_name: "i" },
-  { corpus_key: "p-current", owner_id: OWNER_P, scope: "current", audience: "private", index_name: "i" },
+  { corpus_key: "q-current", owner_id: OWNER_Q, scope: "current", audience: "private", index_name: "i_q" },
+  { corpus_key: "p-current", owner_id: OWNER_P, scope: "current", audience: "private", index_name: "i_p" },
 ];
 
 /** The corpus a context may not see never reaches a query at all — the registry gate refuses

@@ -51,7 +51,8 @@
  */
 import assert from "node:assert/strict";
 
-import { checkVisibility, resultKey, rrf } from "../../services/zz-core/dist/tenant-info/retrieval.js";
+import { resolveCorpora, resultKey, rrf } from "../../services/zz-core/dist/tenant-info/retrieval.js";
+import { checkVisibility } from "../../services/zz-core/dist/tenant-info/pinned-read.js";
 import type { CorpusDescriptor, RetrievalClient } from "../../services/zz-core/dist/tenant-info/retrieval.js";
 import { buildLexicalLaneQuery } from "../../services/zz-core/dist/tenant-info/lanes.js";
 
@@ -373,10 +374,51 @@ async function caseSharedIndexMisconfigurationMovesAScoresAndGoesRed(): Promise<
   assert.ok(verdict.issues.some((i) => /statistic/.test(i)), `expected a statistic-change issue, got: ${verdict.issues.join("; ")}`);
 }
 
+/**
+ * THE CODE GUARANTEE THE CASE ABOVE WAS MISSING. `caseSharedIndexMisconfigurationMoves…`
+ * proves the leak is real; on its own it also proved something uncomfortable — that the
+ * statistical-isolation property rested entirely on registry configuration, with no code
+ * anywhere refusing the configuration that breaks it. There was no code mutation capable of
+ * causing the leak, because the invariant was not written down.
+ *
+ * `assertOneOwnerPerIndex` (retrieval.ts) is that invariant, and this case is what makes it
+ * mutation-testable: remove the guard and this case goes red, which is exactly the loop the
+ * case above could describe but not close. The misconfigured registry here is built from the
+ * SAME `DESCRIPTOR_B_SHARED_INDEX` the leak case perturbs with, so the thing now refused is
+ * demonstrably the thing shown to move A's scores — not a neighbouring shape that merely
+ * looks like it.
+ */
+async function caseRegistryPointingTwoOwnersAtOneIndexIsRefused(): Promise<void> {
+  const misconfigured = [DESCRIPTOR_A, DESCRIPTOR_B_SHARED_INDEX];
+  assert.equal(misconfigured[0].index_name, misconfigured[1].index_name,
+    "this case is only meaningful if the two entries really do share one physical index");
+  assert.notEqual(misconfigured[0].owner_id, misconfigured[1].owner_id);
+
+  assert.throws(
+    () => resolveCorpora({ owner_id: OWNER_A, shared_allowed: false }, {}, misconfigured),
+    (err: unknown) => (err as { code?: string }).code === "REGISTRY_MISCONFIGURED",
+    "a registry pointing one index at two owners must be refused as server misconfiguration — " +
+    "not as INVALID_INPUT, which would blame a caller that did nothing wrong",
+  );
+
+  // The guard must refuse THIS and not simply everything: a correctly configured registry,
+  // one index per owner, still resolves — otherwise the case above would pass on a function
+  // that had stopped working entirely.
+  const correct = resolveCorpora({ owner_id: OWNER_A, shared_allowed: false }, {}, [DESCRIPTOR_A, DESCRIPTOR_B]);
+  assert.equal(correct.length, 1, "owner A's own current corpus still resolves when the registry is sound");
+  assert.equal(correct[0].owner_id, OWNER_A);
+
+  // Two entries for the SAME owner sharing an index are not a tenant leak and stay allowed —
+  // the guard is the narrow property the mutation case proves, not a general uniqueness rule.
+  const sameOwnerTwoScopes = [DESCRIPTOR_A, { ...DESCRIPTOR_A, corpus_key: "acme-history", scope: "history" }];
+  assert.doesNotThrow(() => resolveCorpora({ owner_id: OWNER_A, shared_allowed: false }, { scopes: ["current", "history"] }, sameOwnerTwoScopes));
+}
+
 const STATISTICS_CASES: Readonly<Record<string, () => Promise<void>>> = {
   seed_then_baseline_is_nonvacuous: caseSeedThenBaselineIsNonvacuous,
   isolated_indexes_leave_a_unchanged: caseIsolatedIndexesLeaveAUnchanged,
   shared_index_misconfiguration_moves_a_scores_and_goes_red: caseSharedIndexMisconfigurationMovesAScoresAndGoesRed,
+  registry_pointing_two_owners_at_one_index_is_refused: caseRegistryPointingTwoOwnersAtOneIndexIsRefused,
 };
 
 // ── the "identity" case group: identical paths across two teams never collide on one key ──

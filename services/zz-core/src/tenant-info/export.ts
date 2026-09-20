@@ -99,6 +99,21 @@ function wrapRaw(raw: string, reason: string): ParsedKnowledge {
 }
 
 /**
+ * Whether `raw` opens with a frontmatter block at all — the STRUCTURAL question, decided by
+ * the same framing this module's own parser uses rather than by a second regex somewhere else.
+ *
+ * WHY A CALLER NEEDS THIS SEPARATELY. `parseKnowledge` answers "no frontmatter" and "broken
+ * YAML" with the same `legacy-raw` wrapper, which is right for a KNOWLEDGE document, where
+ * frontmatter is mandatory and its absence is a defect. It is wrong for a MIGRATION, whose
+ * contract says in as many words that plain Markdown with no frontmatter is not automatically
+ * malformed YAML — there is no YAML there to be malformed. `legacy-import.ts` asks this first
+ * so it can tell a document that declared nothing from one whose declaration is broken.
+ */
+export function hasFrontmatter(raw: string): boolean {
+  return splitFrontmatter(raw) !== null;
+}
+
+/**
  * Parses raw OKF markdown (a `---`-fenced YAML frontmatter block, then a body) into a
  * `ParsedKnowledge` record. Import-safe: no filesystem or network access, pure function of its
  * one argument.

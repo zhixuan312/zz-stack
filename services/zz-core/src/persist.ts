@@ -25,7 +25,11 @@ import { indexDoc } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { oneLine, tableRow } from "./document-rules.js";
-import { mutate, type AuthContext } from "./tenant-info/mutations.js";
+import {
+  legacyArtifactId, legacyImportPolicy, legacyImportRequest, legacyLocatorRefusal,
+  prepareLegacyManifest,
+} from "./tenant-info/legacy-import.js";
+import { mutate, readArtifactHead, type AuthContext } from "./tenant-info/mutations.js";
 import { nativePolicy } from "./tenant-info/policies.js";
 
 import { type Chain, isoToday, stampEnvelope } from "./write-guards.js";
@@ -318,13 +322,17 @@ export function persistDocument(chain: Chain, root: string, relPath: string, tar
 // and that gap is reported rather than papered over. `mutate()` (I-8's `tenant-info/
 // mutations.ts`) refuses NOT_FOUND_OR_FORBIDDEN for any artifact_id it holds no commit for —
 // `readOwnerState` there replays only `.zz/commits/*.json` — and every one of the 527
-// documents on a live deployment has no such commit. Giving one a commit is `import_legacy`,
-// which `nativePolicy` (policies.ts) explicitly excludes ("that is migrate.ts's, not this
-// task's") and which does not exist yet: it is task I-20, three tasks after this one, per the
-// plan's own dependency order. Routing the tools above through `mutate()` before that import
-// exists would answer every write to an existing document with a refusal — the regression the
-// safety directive on this task names outright: "a document that is valid and writable today
-// must remain valid and writable."
+// documents on a live deployment has no such commit. Routing the tools above through
+// `mutate()` on that footing would answer every write to an existing document with a refusal —
+// the regression the safety directive names outright: "a document that is valid and writable
+// today must remain valid and writable."
+//
+// I-20 BUILT THE MISSING HALF, at the bottom of this file. Giving an existing document its
+// first commit is `import_legacy`, which `nativePolicy` (policies.ts) still excludes by design
+// and which `tenant-info/legacy-import.ts` now implements; `reviseDocumentAtPath` is the
+// path-addressed adapter that adopts before it revises, so a brownfield write succeeds instead
+// of refusing. The paragraph above is still why the tools are not switched over IN THIS FILE:
+// production authority for that cutover is a later task's, not an adapter's to take.
 //
 // What this task delivers instead: the one real, single-mutation-kernel entry point the
 // cutover task registers in place of the ad-hoc writes above, exercised end to end against a
@@ -466,6 +474,114 @@ export async function approveDocument(
       },
       cause_refs: [],
     },
+  });
+}
+
+// ── I-20: the adoption path, and the adapter the cutover actually registers ────────────────
+//
+// WHAT I-11 REPORTED, AND WHY IT IS FIXED HERE RATHER THAN THERE. The block above says the
+// adapters are not wired into the registered tools because `mutate()` refuses any artifact_id
+// it holds no commit for, and every existing document is one. That was true and the gate could
+// not see it: every suite in this delivery creates its artifacts fresh, so no case ever wrote
+// to an artifact the store had not itself just made. A green suite that only tests greenfield
+// writes cannot see a cutover that breaks brownfield ones.
+//
+// `reviseDocumentAtPath` is the missing half. A registered tool holds a PATH — that is what
+// `document_patch("xuan/plan.md")` is given — and `legacyArtifactId` turns that path into the
+// one identity this platform will ever give those bytes. If the kernel already holds that
+// artifact, this is an ordinary revise at its current etag. If it does not, and the bytes are
+// sitting on disk where the old write path left them, they are ADOPTED first: one
+// `import_legacy` commit that archives the original bytes untouched and records where they
+// came from, and only then the revise. Nothing is created from nothing and nothing is refused
+// for having existed before this store did.
+
+/** The legacy bytes for a locator, or `null` when the store holds no such file. The locator is
+ *  checked with the importer's own rule before the path is opened — one rule, not a second
+ *  slightly-different one here. */
+function readLegacyBytes(root: string, locator: string): Buffer | null {
+  if (legacyLocatorRefusal(locator) !== null) return null;
+  const target = join(root, ...locator.split("/"));
+  if (!existsSync(target)) return null;
+  return readFileSync(target);
+}
+
+/**
+ * Gives an artifact that predates this record store its first commit, from the bytes the old
+ * write path left on disk. Returns `null` when there is nothing at that locator to adopt —
+ * which is not an error: it is the ordinary answer for a document this store minted itself.
+ *
+ * Calling it twice is free. The importer's idempotency key is a digest of the manifest id, the
+ * locator and the original byte hash, so a second call presents the identical request under the
+ * identical key and `mutate()` replays the first commit's result without writing anything.
+ */
+export async function adoptLegacyDocument(ports: ArtifactPorts, locator: string): Promise<MutationOutcome | null> {
+  const bytes = readLegacyBytes(ports.root, locator);
+  if (bytes === null) return null;
+  const { manifest, blocking } = prepareLegacyManifest([{ path: locator, bytes }]);
+  const row = manifest.rows[0];
+  if (!row) {
+    const why = blocking.map((b) => `${b.code}: ${b.message}`).join("; ");
+    return { committed: false, code: "INVALID_INPUT", message: `${locator} cannot be adopted — ${why}` };
+  }
+  return mutate({
+    root: ports.root, auth: ports.auth, policy: legacyImportPolicy,
+    request: legacyImportRequest(ports.auth.owner_id, manifest, row, bytes),
+  });
+}
+
+/**
+ * THE PATH-ADDRESSED WRITE THE CUTOVER REGISTERS, and the only one that is safe to point
+ * `document_patch`/`document_revise` at. Adopts first when the artifact has no commit here and
+ * legacy bytes exist for it, then revises through the same `patchDocument` every native edit
+ * uses.
+ *
+ * `expected_etag` STILL WINS WHEN THE CALLER HAS ONE. A caller that read the document through
+ * this kernel presents the etag it saw and a stale one is refused exactly as before. The
+ * fallback is only for the case where no etag can exist: the very first write to bytes this
+ * store has just adopted, which no caller can have read a kernel etag for.
+ */
+export async function reviseDocumentAtPath(
+  ports: ArtifactPorts,
+  request: {
+    readonly locator: string; readonly seed: DocumentSeed;
+    readonly cause_refs: readonly ArtifactRef[]; readonly idempotency_key: string;
+    readonly expected_etag?: string;
+  },
+): Promise<MutationOutcome> {
+  const artifactId = legacyArtifactId(ports.auth.owner_id, request.locator);
+  const head = await readArtifactHead(ports.root, artifactId);
+
+  // THE FALLBACK ETAG COMES OFF THE ADOPTION, AND NOTHING ELSE, because the adoption is the
+  // one etag that does not move. `expected_etag` is part of what `requestHash` covers, so an
+  // adapter that synthesized the CURRENT head's etag would hand the kernel a different request
+  // every time the document changed — and a caller retrying a lost response under the same
+  // idempotency key would get IDEMPOTENCY_CONFLICT where it had earned a clean replay. The
+  // adoption replays off its own commit forever, so its etag is the same on the tenth call as
+  // on the first, and the retry is the replay it should be. Measured: the suite case
+  // `repeated_brownfield_write_is_one_write` went red on exactly that, with the current head's
+  // etag in this position.
+  //
+  // Adoption is only attempted when it could matter — the artifact has no commit, or the
+  // caller brought no etag and needs the one adoption establishes. A post-cutover caller that
+  // read the document and presents its etag never pays for this at all.
+  let adopted: MutationOutcome | null = null;
+  if (head === null || request.expected_etag === undefined) {
+    adopted = await adoptLegacyDocument(ports, request.locator);
+    if (adopted !== null && adopted.committed !== true) return adopted;
+  }
+  if (head === null && adopted === null) {
+    // No commit and no bytes: there is nothing here to revise and nothing to adopt. Saying so
+    // by name beats letting this fall through to the kernel's "expected_etag is required",
+    // which is true and tells the caller nothing about what is actually missing.
+    return {
+      committed: false, code: "NOT_FOUND_OR_FORBIDDEN",
+      message: `no artifact for ${request.locator} in this store, and no legacy bytes at that path to adopt — writing a new document is writeDocument's act`,
+    };
+  }
+  return patchDocument(ports, {
+    artifact_id: artifactId,
+    expected_etag: request.expected_etag ?? (adopted?.committed === true ? adopted.etag : undefined),
+    idempotency_key: request.idempotency_key, seed: request.seed, cause_refs: request.cause_refs,
   });
 }
 

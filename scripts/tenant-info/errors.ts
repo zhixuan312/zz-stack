@@ -22,7 +22,14 @@ export type CliErrorCode =
   // INVALID_ARGUMENTS, so before this line the named refusal was correct where it was tested
   // and invisible where it was used — a contract that holds only inside the process is a
   // contract nobody at a command line can rely on.
-  | "FRACTIONAL_FIXTURE_COUNT";
+  | "FRACTIONAL_FIXTURE_COUNT"
+  // THE TWO REFUSALS THAT STAND BETWEEN `migrate --apply` AND A LIVE STORE. Both are named
+  // rather than folded into INVALID_ARGUMENTS because the contract names them: "apply ...
+  // refuses live-source or ambiguous targets". A caller scripting a cutover has to be able to
+  // tell "you pointed me at a store something is writing" from "you spelled a flag wrong",
+  // and a shared code for both would make that distinction unreadable at the command line.
+  | "LIVE_SOURCE_REFUSED"
+  | "AMBIGUOUS_TARGET";
 
 export class CliError extends Error {
   readonly code: CliErrorCode;
@@ -51,6 +58,7 @@ export function failInvocation(err: CliError): never {
 const CLI_ERROR_CODES = new Set<string>([
   "WORKSPACE_REQUIRED", "WORKSPACE_INVALID", "WORKSPACE_UNSAFE",
   "UNKNOWN_SUITE", "INVALID_ARGUMENTS", "FRACTIONAL_FIXTURE_COUNT",
+  "LIVE_SOURCE_REFUSED", "AMBIGUOUS_TARGET",
 ]);
 
 export const isCliErrorCode = (v: unknown): v is CliErrorCode =>

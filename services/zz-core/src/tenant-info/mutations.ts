@@ -253,6 +253,28 @@ async function readOwnerState(root: string): Promise<OwnerState> {
   return { nextSequence, previousCommitHash, artifacts, idempotency };
 }
 
+/**
+ * One artifact's current head and the etag that goes with it, replayed off the commit log.
+ *
+ * WHY THIS IS EXPORTED. `readOwnerState` is this module's own bookkeeping and stays private,
+ * but an adapter routing a registered tool through `mutate()` genuinely needs one fact from
+ * it: whether this store holds the artifact at all, and at which etag. Without it, persist.ts
+ * said so itself — "Revision, content_hash, record_digest and etag are NOT derivable here
+ * without mutations.ts's owner-state replay" — and an adapter had to make the caller carry an
+ * etag it could not have for a document it has never written through this kernel. That is the
+ * lookup the adoption path is built on: no head means adopt, a head means revise at its etag.
+ *
+ * NO LOCK. This is a read of already-durable files; a caller that intends to WRITE what it
+ * read still goes through `mutate()`, which takes the lock and re-reads state under it, so
+ * nothing here can be used to skip the etag comparison that lock protects.
+ */
+export async function readArtifactHead(
+  root: string, artifactId: string,
+): Promise<(ArtifactHead & { readonly etag: string }) | null> {
+  const head = (await readOwnerState(root)).artifacts.get(artifactId);
+  return head ? { ...head, etag: etagOf(head) } : null;
+}
+
 // ── the policy boundary ──────────────────────────────────────────────────────────────────────
 
 export interface AuthContext {
@@ -384,11 +406,31 @@ export async function mutate(options: MutateOptions): Promise<MutationResult | M
       return replayFromManifest(existing.manifest, existing.sequence);
     }
 
-    if (request.artifact_id !== undefined && request.expected_etag === undefined) {
+    // ADOPTION IS THE ONE OPERATION THAT NAMES AN ARTIFACT THIS STORE HAS NO COMMIT FOR.
+    //
+    // Every other operation naming an `artifact_id` is editing something this store already
+    // holds, so it must present the etag it saw and it must resolve to a head. `import_legacy`
+    // is neither: it is the first commit an artifact that predates this store ever gets, and
+    // its identity is DETERMINED BY THE LEGACY LOCATOR rather than minted (which is why it
+    // names an id at all, where `create` may not). There is no etag to present, because there
+    // is nothing here yet to have read.
+    //
+    // This is the defect I-11 found and could not fix from its own edit surface: with these
+    // two rules applied to `import_legacy` as well, every write to each of the 527 documents
+    // already on a live deployment would answer NOT_FOUND_OR_FORBIDDEN the moment the
+    // registered tools routed through this kernel, because none of them has a commit here.
+    // The fix is not to loosen the identity rule for edits — it is to let the adoption path
+    // exist. A store that already holds the artifact refuses a second import as a duplicate
+    // identity, in `legacyImportPolicy`, where the locator is in scope to say so.
+    const adopting = request.operation === "import_legacy";
+    if (request.artifact_id !== undefined && request.expected_etag === undefined && !adopting) {
       return { committed: false, code: "INVALID_INPUT", message: "expected_etag is required for a mutation naming an existing artifact_id" };
     }
+    if (adopting && request.artifact_id === undefined) {
+      return { committed: false, code: "INVALID_INPUT", message: "import_legacy names the artifact_id its legacy locator determines" };
+    }
     const head = request.artifact_id ? state.artifacts.get(request.artifact_id) ?? null : null;
-    if (request.artifact_id !== undefined && request.operation !== "create" && !head) {
+    if (request.artifact_id !== undefined && request.operation !== "create" && !adopting && !head) {
       return { committed: false, code: "NOT_FOUND_OR_FORBIDDEN", message: `no artifact ${request.artifact_id} in owner ${options.auth.owner_id}` };
     }
     if (request.expected_etag !== undefined) {

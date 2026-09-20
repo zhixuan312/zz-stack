@@ -32,7 +32,7 @@ import { runFixtures } from "./inventory.ts";
 import { resolveSuite, runReadySuite, finalize, type VerifyProfile } from "./verify.ts";
 import { SUITE_NAMES, availableSuiteNames, type SuiteName } from "./suites.ts";
 import { runBenchmark, type BenchmarkProfile } from "./benchmark.ts";
-import { runMigrate } from "./migrate.ts";
+import { runMigrate, type MigrateArgs, type MigrateReceipt } from "./migrate.ts";
 import { runExport } from "./export.ts";
 
 interface DispatchResult {
@@ -120,22 +120,26 @@ async function dispatch(argv: string[]): Promise<DispatchResult> {
       return { receipt: runBenchmark(workspace, profile as BenchmarkProfile), ok: true };
     }
     case "migrate": {
-      const flags = parseFlags(rest, new Set(["target", "manifest"]), new Set(["apply"]));
+      const flags = parseFlags(rest, new Set(["source", "target", "manifest", "owner"]), new Set(["apply"]));
       const apply = flags.get("apply") === true;
-      const target = flags.get("target");
-      const manifest = flags.get("manifest");
-      if (apply && (typeof target !== "string" || typeof manifest !== "string")) {
+      const value = (name: string): string | undefined => {
+        const v = flags.get(name);
+        return typeof v === "string" ? v : undefined;
+      };
+      if (apply && (value("target") === undefined || value("manifest") === undefined)) {
         throw new CliError("INVALID_ARGUMENTS", "--apply requires --target PATH and --manifest PATH.");
       }
       const workspace = resolveWorkspace();
-      return {
-        receipt: runMigrate(workspace, {
-          apply,
-          target: typeof target === "string" ? target : undefined,
-          manifest: typeof manifest === "string" ? manifest : undefined,
-        }),
-        ok: true,
+      // `ok` COMES OFF THE RECEIPT, not from "the verb returned". A migration that carried
+      // eleven of twelve rows, or matched none of its bytes back out of the target, has run
+      // and has not succeeded — and the exit code is the only part of that a cutover script
+      // reads. Every other verb here already distinguishes the two.
+      const args: MigrateArgs = {
+        apply, source: value("source"), target: value("target"),
+        manifest: value("manifest"), owner: value("owner"),
       };
+      const receipt: MigrateReceipt = await runMigrate(workspace, args);
+      return { receipt, ok: receipt.ok };
     }
     case "export": {
       parseFlags(rest, new Set(), new Set());

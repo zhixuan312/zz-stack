@@ -483,6 +483,9 @@ check("an OKF round trip through the real YAML parser keeps unknown keys, never 
 check("the actual migrations directory names the migration slug exactly once, every numeric prefix is unique, and a duplicate or missing slug is refused",
       runsCheck("tenant-migration-shape.ts"));
 
+check("a legacy import through the real importer and the real kernel keeps every original byte, classifies malformed frontmatter as legacy-raw, leaves an undeclared original time null, and applying the same conversion manifest twice adds no identity, revision or event",
+      runsCheck("tenant-migration-losslessness.ts"));
+
 check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
       runsCheck("tenant-complete-text.ts"));
 

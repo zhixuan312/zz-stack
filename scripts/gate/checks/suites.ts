@@ -503,6 +503,9 @@ check("lane budgets are fixed functions of the limit that refuse a non-integer o
 check("grammar recognition precedes identifier normalization so a quoted phrase, an OR alternative and a leading exclusion survive intact, an unterminated natural-mode quote refuses by position while websearch tolerates it, and the actual serialized response stays within 24000 UTF-8 bytes with disclosed truncation",
       runsCheck("tenant-query-syntax.ts"));
 
+check("an isolation observation is refused as vacuous with no baseline results, and refused on a changed statistic, a changed score or leaked forbidden metadata, never only on a mismatched shape",
+      runsCheck("tenant-isolation-statistics.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

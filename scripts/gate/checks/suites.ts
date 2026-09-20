@@ -456,6 +456,9 @@ check("corpus planning arithmetic refuses a fractional fixture count, and the de
 check("the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
       runsCheck("tenant-info-qrels-integrity.ts"));
 
+check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, pg_textsearch release and actual preload membership",
+      runsCheck("postgres-image-pinned.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

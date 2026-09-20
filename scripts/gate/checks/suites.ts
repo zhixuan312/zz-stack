@@ -480,6 +480,11 @@ check("the adapter fixture's patch/approve enter the one mutation kernel — a m
 check("an OKF round trip through the real YAML parser keeps unknown keys, never turns verified_against into a fabricated verification event, and OKF conformance and native-profile validation report separate verdicts",
       runsCheck("okf-round-trip.ts"));
 
+check("the actual migrations directory names the migration slug exactly once, every numeric prefix is unique, and a duplicate or missing slug is refused",
+      runsCheck("tenant-migration-shape.ts"));
+
+check("a migration needing an extension declares it, and the runner still defers rather than taking the database down", runsCheck("migration-extension-declared.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

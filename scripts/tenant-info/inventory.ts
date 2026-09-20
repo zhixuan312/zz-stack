@@ -265,4 +265,48 @@ export function runFixtures(workspaceReal: string, args: FixturesArgs): Fixtures
   };
 }
 
+// ─────────────────────────────── migration name validation ────────────────────────────────
+
+const MIGRATION_NAME = /^(\d{3})_(.+)\.sql$/;
+
+interface MigrationNameValidation {
+  readonly ok: boolean;
+  readonly problems: readonly string[];
+}
+
+/**
+ * Two properties over a migration directory's actual filenames, asked at whatever moment the
+ * caller likes: every three-digit numeric prefix is unique, and `slug` names EXACTLY one of
+ * them. Neither is about ORDER — I-13's own contract says a migration need not remain the
+ * largest number forever, so "did this land at the next free target-branch number" is a
+ * separate, merge-time workflow check this function does not make. This one stays true
+ * forever after a merge; that one is only ever asked of a migration not yet merged.
+ *
+ * A filename that is not `<NNN>_<anything>.sql` is reported and otherwise ignored for the
+ * prefix-uniqueness count — it has no prefix to collide with anything.
+ */
+export function validateMigrationNames(filenames: readonly string[], slug: string): MigrationNameValidation {
+  const problems: string[] = [];
+  const byPrefix = new Map<string, string[]>();
+  const namingSlug: string[] = [];
+  for (const name of filenames) {
+    const m = MIGRATION_NAME.exec(name);
+    if (!m) {
+      problems.push(`${name} is not a well-formed <NNN>_<slug>.sql migration filename`);
+      continue;
+    }
+    const [, prefix, body] = m;
+    byPrefix.set(prefix, [...(byPrefix.get(prefix) ?? []), name]);
+    if (body === slug) namingSlug.push(name);
+  }
+  for (const [prefix, names] of byPrefix) {
+    if (names.length > 1) problems.push(`numeric prefix ${prefix} is reused by ${names.join(", ")}`);
+  }
+  if (namingSlug.length === 0) problems.push(`no migration names slug "${slug}"`);
+  if (namingSlug.length > 1) {
+    problems.push(`slug "${slug}" is named by more than one file: ${namingSlug.join(", ")}`);
+  }
+  return { ok: problems.length === 0, problems };
+}
+
 // ────────────────────────── edit-surface ownership ledger ──────────────────────────

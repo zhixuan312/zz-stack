@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
+import { validateMigrationNames } from '../scripts/tenant-info/inventory.ts';
+const slug = 'artifacts_revisions_events_and_scoped_search';
+const existing = readdirSync('services/gateway/migrations').filter(f => f.endsWith('.sql'));
+assert.equal(validateMigrationNames(existing,slug).ok,true);
+const mine = `070_${slug}.sql`;
+assert.equal(validateMigrationNames(['069_previous.sql',mine],slug).ok,true);
+assert.equal(validateMigrationNames(['069_previous.sql',mine,'071_future.sql'],slug).ok,true);
+assert.equal(validateMigrationNames(['069_previous.sql',mine,'070_collision.sql'],slug).ok,false);
+assert.equal(validateMigrationNames(['069_previous.sql'],slug).ok,false);
+assert.equal(validateMigrationNames([mine,`071_${slug}.sql`],slug).ok,false);
+console.log('tenant-migration-shape: ok');

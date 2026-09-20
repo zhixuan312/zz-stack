@@ -83,9 +83,46 @@ export async function initPlatformDb(): Promise<void> {
   const applied = new Set(
     (await pool.query<{ name: string }>("select name from zz.schema_migration")).rows.map((r) => r.name),
   );
+  // WHICH EXTENSIONS THIS CLUSTER COULD EVEN INSTALL, read once. A migration that needs one the
+  // server does not ship must not be attempted here — see the deferral below for what it costs
+  // when it is.
+  const available = new Set(
+    (await pool.query<{ name: string }>("select name from pg_available_extensions")).rows.map((r) => r.name),
+  );
+
   for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort()) {
     if (applied.has(file)) continue;
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
+
+    // A MIGRATION MAY DECLARE AN EXTENSION IT CANNOT RUN WITHOUT, and if this cluster cannot
+    // supply it the migration is DEFERRED — skipped, and deliberately NOT recorded as applied.
+    //
+    // WHAT THIS PREVENTS, precisely. The tenant-information migration needs pg_textsearch. The
+    // deployed platform database is PostgreSQL 16 with citext and plpgsql and nothing else, and
+    // the PostgreSQL 17 image that carries the extension arrives in a later, separately
+    // rehearsed cutover. Without this guard the first boot after that migration merged would
+    // fail `create extension`, roll back, un-set the pool and rethrow — and the caller logs and
+    // starts the server anyway, by a deliberate choice made elsewhere in this file. The result
+    // is not a crash anybody notices. It is the whole platform running with no database while
+    // reporting itself up, against a deployment holding 527 live documents.
+    //
+    // NOT RECORDED IS THE LOAD-BEARING HALF. Making the extension conditional inside the SQL
+    // would let the migration mark itself applied on a cluster where it did nothing, and
+    // `zz.schema_migration` travels with the logical restore into the new cluster — so it would
+    // never run there either, and the objects would simply never exist. Deferral leaves the
+    // ledger honest: the migration is still owed, and the first boot on a cluster that can
+    // supply the extension applies it.
+    //
+    // AND IT STOPS THE LOOP. A later migration may build on a deferred one's objects, so
+    // applying past a gap trades a loud, correct failure for a confusing one.
+    const needs = /^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/im.exec(sql)?.[1];
+    if (needs && !available.has(needs)) {
+      console.warn(`migration DEFERRED: ${file} requires the "${needs}" extension, which this ` +
+        `server does not offer. It is not recorded as applied and will run on a cluster that ` +
+        `can supply it. Migrations after it are deferred too.`);
+      break;
+    }
+
     const client = await pool.connect();
     try {
       await client.query("begin");

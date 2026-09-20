@@ -341,6 +341,58 @@ async function caseForeignOwnerCauseIsRefused(): Promise<void> {
   });
 }
 
+/**
+ * A STALE-REVISION CAUSE IS REFUSED, AND THE REFUSAL SAYS WHICH REVISION IS CURRENT — while a
+ * ref this owner cannot see stays generic.
+ *
+ * Both halves matter and they pull in opposite directions. The generic message exists so a
+ * caller cannot probe for another tenant's artifact ids by reading refusals; the specific one
+ * exists because telling an owner "you cited revision 1, the current revision is 2" about
+ * their own store discloses nothing they cannot already read, and without it a real,
+ * committed, present record is refused in the same words as a fabricated hash. The I-24 agent
+ * review hit that ambiguity and had to read the kernel to resolve it.
+ *
+ * The safety is structural: `resolveRef` refuses every foreign-owner ref before this branch is
+ * reachable, so a matching owner here means the caller owns the store being described.
+ */
+async function caseStaleRevisionCauseNamesTheCurrentRevision(): Promise<void> {
+  await withRoot(async (root) => {
+    const doc = await seedDocument(root);
+    const concept = await seedSource(root);
+    const stale = refFor(concept.id, null, concept.hash);
+
+    // Revise the cited artifact so the ref the caller holds is no longer head. A source has no
+    // revisions, so use the document itself as the cited artifact instead.
+    const revised = await runMutate(root, req({
+      operation: "revise", artifact_id: doc.id, expected_etag: doc.etag,
+      cause_refs: [stale], payload: payload({ body: "now at revision two\n" }),
+    }));
+    assert.equal(revised.committed, true, JSON.stringify(revised));
+    if (revised.committed !== true) return;
+    assert.equal(revised.revision, 2);
+
+    // Now cite revision 1 of that document — committed, present, and no longer head.
+    const staleDocRef = refFor(doc.id, 1, doc.hash);
+    const result = await runMutate(root, req({ cause_refs: [staleDocRef] }));
+    assert.equal(result.committed, false, "a cause must resolve against the current revision");
+    if (result.committed !== false) return;
+    assert.equal(result.code, "UNRESOLVED_CAUSE");
+    assert.match(result.message, /revision 1/,
+      "the refusal must name the revision the caller cited");
+    assert.match(result.message, /current revision, which is 2/,
+      "and the revision that is current — otherwise a present, committed, owned record is " +
+      "refused in the same words as a fabricated hash");
+
+    // A ref this caller does not own stays generic: no revision numbers, nothing to probe with.
+    const foreign = { ...staleDocRef, owner_id: "99999999-9999-4999-8999-999999999999" };
+    const foreignResult = await runMutate(root, req({ cause_refs: [foreign] }));
+    assert.equal(foreignResult.committed, false);
+    if (foreignResult.committed !== false) return;
+    assert.doesNotMatch(foreignResult.message, /current revision/,
+      "a foreign-owner ref must not learn anything about this store from the refusal");
+  });
+}
+
 async function caseSelfReferenceCauseIsCycleRefused(): Promise<void> {
   await withRoot(async (root) => {
     const doc = await seedDocument(root);
@@ -383,6 +435,7 @@ const CASES: Readonly<Record<string, () => Promise<void>>> = {
   source_hash_change_is_refused: caseSourceHashChangeIsRefused,
   missing_cause_is_refused: caseMissingCauseIsRefused,
   foreign_owner_cause_is_refused: caseForeignOwnerCauseIsRefused,
+  stale_revision_cause_names_the_current_revision: caseStaleRevisionCauseNamesTheCurrentRevision,
   self_reference_cause_is_cycle_refused: caseSelfReferenceCauseIsCycleRefused,
   provenance_correction_does_not_erase_original_edges: caseProvenanceCorrectionDoesNotEraseOriginalEdges,
 };

@@ -205,6 +205,31 @@ function checkCauses(
   }
   for (const ref of causeRefs) {
     if (!resolveRef(ref, ctx, staged, selfId)) {
+      // A CALLER CITING THEIR OWN ARTIFACT AT AN OLDER REVISION USED TO BE TOLD EXACTLY WHAT A
+      // CALLER CITING GARBAGE WAS TOLD, and the two are not the same mistake.
+      //
+      // `resolveRef` resolves against the HEAD revision. That is a real rule and it is
+      // deliberate — a cause records what the author actually read, and what they read was the
+      // current version — but it is invisible from the refusal, so an author who cited
+      // revision 1 after somebody revised the concept to revision 2 got "does not resolve to a
+      // known revision/hash" about a record that is committed, present and theirs. The I-24
+      // agent review hit exactly this and had to read the kernel to find out why.
+      //
+      // DISCLOSING IT LEAKS NOTHING, and that is true by construction rather than by care:
+      // `resolveRef` has already refused every ref whose `owner_id` is not this context's, so
+      // reaching this branch with a matching owner means the caller owns the store being
+      // described. The nonrevealing rule exists to stop a caller probing for ANOTHER tenant's
+      // artifact ids, and that path returns the generic message below, unchanged.
+      if (ref.owner_id === ctx.owner_id) {
+        const head = ctx.getHead(ref.artifact_id);
+        if (head && head.revision !== ref.revision) {
+          return {
+            committed: false, code: "UNRESOLVED_CAUSE",
+            message: `cause_refs entry for ${ref.artifact_id} names revision ${String(ref.revision)}, but a cause `
+              + `resolves against the current revision, which is ${String(head.revision)} — cite what you read`,
+          };
+        }
+      }
       return { committed: false, code: "UNRESOLVED_CAUSE", message: `cause_refs entry for ${ref.artifact_id} does not resolve to a known revision/hash` };
     }
   }

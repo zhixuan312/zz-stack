@@ -477,6 +477,9 @@ check("a subtype policy decision refuses source verify, knowledge approve and an
 check("the adapter fixture's patch/approve enter the one mutation kernel — a missing etag, a stale retry and a stale approval are each refused, an idempotent replay returns the original transaction, and the materialized read reflects exactly the committed edit",
       runsCheck("tenant-single-writer.ts"));
 
+check("an OKF round trip through the real YAML parser keeps unknown keys, never turns verified_against into a fabricated verification event, and OKF conformance and native-profile validation report separate verdicts",
+      runsCheck("okf-round-trip.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

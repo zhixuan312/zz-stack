@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zz-stack.dev/schemas/zz-knowledge-v1.json",
+  "title": "zz-knowledge-v1",
+  "description": "The native OKF profile for a ZZ knowledge concept. A record satisfying this schema is a native Decision/Rule/Fact/Defect exported by this platform. A record that does NOT satisfy it may still be a perfectly valid, importable OKF document — see 'legacy-okf' and 'legacy-raw' in services/zz-core/src/tenant-info/export.ts. Passing this schema is a structural fact only: it certifies neither that the concept's claim is true, nor that any person approved it — that is the platform's separate gate/approval workflow.",
+  "type": "object",
+  "required": ["type", "zz_profile", "title", "description", "zz_artifact_id", "generated"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["Decision", "Rule", "Fact", "Defect"],
+      "description": "The OKF concept type. Native concepts use exactly one of these four; any other value belongs to the 'legacy-okf' profile instead."
+    },
+    "zz_profile": {
+      "const": "zz-knowledge-v1",
+      "description": "Computed by the platform when a record is validated as native — never trusted from imported input. A foreign type carries 'legacy-okf'; malformed bytes carry 'legacy-raw'."
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "resource": {
+      "type": ["string", "null"],
+      "description": "The described underlying asset this concept is ABOUT. Never platform identity — that is zz_artifact_id."
+    },
+    "zz_artifact_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Stable platform identity for this concept. Never the described resource — that is 'resource'."
+    },
+    "generated": {
+      "type": "object",
+      "description": "Content-change time, not a competing timestamp field.",
+      "required": ["by", "at"],
+      "properties": {
+        "by": { "type": ["string", "null"] },
+        "at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": true
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "resource", "ref"],
+            "properties": {
+              "id": { "type": "string" },
+              "resource": { "type": "string" },
+              "ref": { "type": "object" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["unresolved"],
+            "additionalProperties": false,
+            "properties": { "unresolved": { "const": true } },
+            "description": "An unauthorized or unavailable source citation. Carries exactly this one key — never a ref, resource string or reason that would leak the citation's identity."
+          }
+        ]
+      }
+    },
+    "verified": {
+      "type": "array",
+      "description": "The CURRENT applicable verification event(s) only. A bare mapping (rather than a list) is accepted on import and normalized to a one-element list here; history lives in log.md, not in this field.",
+      "items": {
+        "type": "object",
+        "required": ["by", "at"],
+        "properties": {
+          "by": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "verified_against": {
+      "type": "string",
+      "description": "Subject-VERSION evidence from a foreign tool — preserved verbatim, never converted into a 'verified' event. Nobody performed that verification; this string does not assert that anybody did."
+    },
+    "stale_after": {
+      "type": "string",
+      "description": "Preserved exactly when supplied by the source document. Never required, never auto-filled by this platform."
+    },
+    "content_fields": {
+      "type": "object",
+      "description": "Native semantic extension fields (SemanticPayload.content_fields), carried through verbatim."
+    }
+  },
+  "additionalProperties": true
+}

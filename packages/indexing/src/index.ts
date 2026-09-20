@@ -38,6 +38,18 @@ import { documentBody, parseEnvelope } from "@zz/contracts";
 // reached by a deep import: `@zz/contracts` states the same rule about identity.ts and
 // alias.ts one line from its own top. A consumer imports `@zz/indexing`, not a path inside it.
 export { decisionRows, indexable, isoDate, type DecisionRow } from "./rules.js";
+// `zz-lexical-v1`, the versioned analyzer for the derived tables migration 070 created. NOT
+// called from `indexDoc`/`reindexTeam` below — those still write `zz.doc` exactly as they did
+// before this file existed, at the fixed 200,000-character cutoff this analyzer has no part
+// of. Re-exported here so the derived-table write path (whichever task wires
+// `zz.artifact_passage`/`zz.artifact_identifier`) imports one door, `@zz/indexing`, rather than
+// a deep path into it — the same reason `rules.js` is re-exported above.
+export {
+  ANALYZER_NAME, CURRENT_ANALYZER_VERSION, MAX_INPUT_BYTES, InputTooLargeError,
+  assertWithinInputLimit, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
+  passagesOf, identifierTokens, derivationFingerprint,
+  type Passage, type DerivationVersions,
+} from "./tenant-analysis.js";
 
 import { decisionRows, indexable, isoDate } from "./rules.js";
 

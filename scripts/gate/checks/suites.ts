@@ -483,6 +483,12 @@ check("an OKF round trip through the real YAML parser keeps unknown keys, never 
 check("the actual migrations directory names the migration slug exactly once, every numeric prefix is unique, and a duplicate or missing slug is refused",
       runsCheck("tenant-migration-shape.ts"));
 
+check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
+      runsCheck("tenant-complete-text.ts"));
+
+check("zz-lexical-v1 handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
+      runsCheck("tenant-passage-analysis.ts"));
+
 check("a migration needing an extension declares it, and the runner still defers rather than taking the database down", runsCheck("migration-extension-declared.ts"));
 
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {

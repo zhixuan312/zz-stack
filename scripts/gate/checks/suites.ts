@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { asRecord, codeOnly, envNamesIn, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
+import { generateJudgedDataset, judgedDatasetToJsonl } from "../../tenant-info/benchmark.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
  *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
@@ -451,6 +452,28 @@ check("a baseline receipt carries every required field with its measurement evid
 
 check("corpus planning arithmetic refuses a fractional fixture count, and the deterministic text generator hits its exact byte target",
       runsCheck("tenant-info-corpus-shape.ts"));
+
+check("the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
+      runsCheck("tenant-info-qrels-integrity.ts"));
+
+check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
+  // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
+  // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those
+  // hashes re-derivable rather than merely committed: `generateJudgedDataset` is the only
+  // producer, and this check is its only tracked caller, which is exactly the shape
+  // "nothing is exported that nobody imports" (hygiene.ts) asks every export to have.
+  const problems: string[] = [];
+  const { queries, qrels } = generateJudgedDataset();
+  const expected: [string, string][] = [
+    [join(root, "testing/tenant-info/queries.jsonl"), judgedDatasetToJsonl(queries)],
+    [join(root, "testing/tenant-info/qrels.jsonl"), judgedDatasetToJsonl(qrels)],
+  ];
+  for (const [path, generated] of expected) {
+    const committed = readFileSync(path, "utf8");
+    if (committed !== generated) problems.push(`${path.slice(root.length + 1)} no longer matches its generator`);
+  }
+  return problems.length ? problems.join("; ") : null;
+});
 
 // ── the two checks written as bash, unwired since the day they were written ───────────────
 //

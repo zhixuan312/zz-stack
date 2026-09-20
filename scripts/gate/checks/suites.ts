@@ -494,6 +494,9 @@ check("a migration needing an extension declares it, and the runner still defers
 check("the rebuild cache decision is exact equality, refuses no prior attempt as always stale, and changes on every one of a fingerprint's own named fields",
       runsCheck("tenant-rebuild-inputs.ts"));
 
+check("corpus resolution defaults to current, admits an explicit scope union, drops shared corpora when sharing is disallowed, and refuses an empty scope, an unknown scope or a caller-supplied owner/index override",
+      runsCheck("tenant-scope-predicates.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

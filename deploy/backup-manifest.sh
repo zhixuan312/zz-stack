@@ -118,19 +118,47 @@ fi
 # way to reporting a hash mismatch.
 hash_of() { sha256sum "$SET_DIR/$1" | cut -d' ' -f1; }
 
-# The canonical .zz record must be IN the artifacts archive, and this asks rather than asserts.
-# "Include the .zz record in protected backup/export rather than classifying it as disposable
-# telemetry" is the spec's sentence; a manifest that declared it present without looking would
-# be the fabrication the rehearsal is meant to catch.
+# WHAT `artifacts_include_canonical_record` ACTUALLY ASSERTS, and what it does not.
+#
+# The spec's sentence is "include the .zz record in protected backup/export rather than
+# classifying it as disposable telemetry". That is an instruction about what an archive must
+# not LEAVE OUT. It is not a claim that every store has a `.zz/` — and conflating the two was a
+# real defect here. This check began as `grep -q '\.zz'`, which refuses an archive containing
+# no `.zz` anywhere, and that is precisely the shape of every backup taken before cutover day:
+# the live owner stores have no record layout at all until an operator creates one
+# (deploy/init-record-layout.sh, and RESTORE-AND-CUTOVER.md step 5a). So the script would have
+# refused every real production set it will ever be pointed at, and the only way past it would
+# have been to hand-edit a manifest — which is the fabrication this whole path exists to refuse.
+#
+# A PRE-LAYOUT SET IS STILL A COMPLETE RESTORE TARGET. `.zz/blobs` and `.zz/commits` are two
+# empty directories, derived rather than data: restoring this set and re-running the init
+# reaches the identical state. Nothing is lost by backing a store up before it has one.
+#
+# So the teeth moved to where something can actually be wrong: a store that HAS a `.zz/` in the
+# archive and is missing `blobs` or `commits`. That is the half-initialised state, and it
+# refuses every write exactly as a missing layout does (record.ts's `preflightRefusal` requires
+# all three) while looking initialised to anybody listing the directory. A backup of it restores
+# a deployment that cannot be written to.
 art_listing="$(tar tzf "$SET_DIR/$art_file")"
-canonical=false
-grep -q '\.zz' <<<"$art_listing" && canonical=true
-[ "$canonical" = true ] || {
-  echo "FAIL: $art_file contains no .zz record. The manifest would have to declare" >&2
-  echo "  artifacts_include_canonical_record:false, which validateBackupManifest refuses —" >&2
-  echo "  correctly, because the canonical record is not reconstructible from anything else." >&2
-  exit 1
-}
+zz_roots="$(grep -c '/\.zz/\|^\./\?\.zz/' <<<"$art_listing" || true)"
+if [ "${zz_roots:-0}" -eq 0 ]; then
+  echo "  $art_file: no store carries a .zz/ layout — this set PREDATES the record layout."
+  echo "    That is the expected state before cutover, and the set is still a complete restore"
+  echo "    target. Restoring it gives stores that refuse writes with STORE_UNAVAILABLE until"
+  echo "    deploy/init-record-layout.sh has run on each one (RESTORE-AND-CUTOVER.md step 5a)."
+else
+  for required in blobs commits; do
+    grep -q "\.zz/$required" <<<"$art_listing" || {
+      echo "FAIL: $art_file carries a .zz/ layout with no $required/ directory." >&2
+      echo "  This is the half-initialised state. record.ts refuses every write to such a store" >&2
+      echo "  (STORE_UNAVAILABLE, all three directories required), so restoring this set would" >&2
+      echo "  produce a deployment that looks initialised and cannot be written to. Complete the" >&2
+      echo "  layout with deploy/init-record-layout.sh and take the backup again." >&2
+      exit 1
+    }
+  done
+  echo "  $art_file: $zz_roots .zz/ path(s), with blobs/ and commits/ both present"
+fi
 
 cat > "$manifest" <<JSON
 {

@@ -57,6 +57,14 @@ check("nothing is exported that nobody imports", () => {
   // far as tsc is concerned. In a repo with no external consumers it is dead code with a
   // door on it — admin.ts carried three: adminEvent, referenced nowhere at all, and
   // flowsFor and publicBase, exported while only ever called from the file defining them.
+  // CONSUMERS LIVE UNDER checks/ AND testing/ TOO, and leaving them out made this check report
+  // correct code as dead. A plan-authored gate check imports the symbol it was written to
+  // exercise; when that check is the only tracked caller — which is the normal case for a
+  // helper whose production use is internal to the file defining it — the export looked
+  // unimported and the gate went red on work that was right. Measured on I-3: `planCorpora`
+  // and `textFixture`, exported because the frozen check for that task imports them by name.
+  // Every other exclusion in this check carries a story; this omission carried none, which is
+  // what a blind spot looks like from the inside.
   const sources = [];
   sources.push(...sourceFiles(["services", "packages"], [".ts"])
     .filter((f) => !f.endsWith(".d.ts")).map((f) => join(root, f)));
@@ -82,7 +90,7 @@ check("nothing is exported that nobody imports", () => {
   // gap was latent rather than firing. Latent is the wrong thing to leave: this check's
   // finding is "delete this", and a probe-only export would have been reported as dead code
   // somebody then removed.
-  for (const f of sourceFiles(["scripts"], [".ts"])) {
+  for (const f of sourceFiles(["scripts", "checks", "testing"], [".ts"])) {
     text.set(join(root, f), withoutComments(readFileSync(join(root, f), "utf8")));
   }
 

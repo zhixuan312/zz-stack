@@ -6,7 +6,7 @@
  *
  * THREE ENV INPUTS the contract names directly — `ZZ_TENANT_INFO_BASELINE_DATABASE_URL` (a
  * restricted, read-only principal) and `ZZ_TENANT_INFO_STORE_ROOT` (a read-only snapshot,
- * expected to be the store's `teams/` directory — see `inventory.ts`'s `walkStore`) — plus
+ * expected to be the store's `teams/` directory — see `ledger.ts`'s `walkStore`) — plus
  * three more this task defines FOR "operator-provided runtime inspection access", which the
  * contract names as an input category without naming variables: `
  * ZZ_TENANT_INFO_RUNTIME_IMAGE_DIGEST`, `ZZ_TENANT_INFO_COMPOSE_PROJECT` and
@@ -31,7 +31,7 @@ import { safeWritePath } from "./workspace.ts";
 import {
   buildEditSurface, fileManifestHash, ownerInventory, unlistedChanges, walkStore,
   type EditSurfaceEntry,
-} from "./inventory.ts";
+} from "./ledger.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 

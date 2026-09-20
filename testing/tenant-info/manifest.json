@@ -1,0 +1,22 @@
+{
+  "generator_version": "1",
+  "full_scale": {
+    "total_records": 780000,
+    "total_one_mib_records": 520
+  },
+  "corpora": {
+    "primary_current": { "records": 150000, "one_mib": 100 },
+    "primary_evidence": { "records": 150000, "one_mib": 100 },
+    "primary_history": { "records": 150000, "one_mib": 100 },
+    "other_team_a": { "records": 150000, "one_mib": 100 },
+    "other_team_b": { "records": 150000, "one_mib": 100 },
+    "shared_current": { "records": 15000, "one_mib": 10 },
+    "shared_evidence": { "records": 15000, "one_mib": 10 }
+  },
+  "distribution_target": {
+    "mean_bytes": 8192,
+    "p95_bytes": 65536,
+    "tolerance": 0.05
+  },
+  "languages": ["en", "zh", "mixed"]
+}

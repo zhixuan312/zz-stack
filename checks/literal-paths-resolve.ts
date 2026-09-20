@@ -14,7 +14,7 @@ const fail: string[] = [];
 // ONE FILE IS DATA ABOUT A PLAN RATHER THAN CODE THAT DEREFERENCES A PATH, and it is named
 // here rather than left to work around the rule from the inside.
 //
-// `scripts/tenant-info/inventory.ts` carries the edit-surface ledger: a row per deliverable the
+// `scripts/tenant-info/ledger.ts` carries the edit-surface ledger: a row per deliverable the
 // approved specification declares, most of them FUTURE tasks' outputs that do not exist yet and
 // are not supposed to. This check exists to stop an import, a spawn or a read from outliving its
 // target, and a ledger row is none of those three — it is a description, and its paths being
@@ -25,7 +25,7 @@ const fail: string[] = [];
 // for every later reader, and once `+ TS` is an accepted idiom any real import can climb through
 // it. The rule is carved here, beside the planted-probe carve-out above it and for the same
 // reason — an exemption written where the rule lives keeps teaching the rule.
-const LEDGER = "scripts/tenant-info/inventory.ts";
+const LEDGER = "scripts/tenant-info/ledger.ts";
 
 const files = [...walk("scripts"), ...walk("checks")].filter((f) => f.endsWith(".ts"));
 for (const f of files) {

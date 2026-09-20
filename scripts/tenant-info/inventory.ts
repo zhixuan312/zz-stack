@@ -1,477 +1,268 @@
 /**
- * inventory.ts — the `fixtures` verb, and, from I-2, the repository's own edit-surface
- * ownership ledger.
+ * inventory.ts — the `fixtures` verb: the seven declared corpora, the deterministic generator
+ * behind them, and the arithmetic that refuses a scale it cannot honour.
  *
- * WHAT THE GENERATED CORPUS ACTUALLY CONTAINS is a later task's contract (I-3's own `Check:`
- * exists already, frozen, for when its turn comes — see `plan-approved.md`); `runFixtures`
- * below is still I-1's safe entry point, unchanged by this task.
+ * THE EDIT-SURFACE LEDGER MOVED OUT DURING I-3, into ledger.ts, and which half moved was not a
+ * free choice. This file was 698 lines of a measured, unexemptable 700-line ceiling with I-13's
+ * migration-name validation still owed to it, so something had to go — but two frozen
+ * plan-authored checks import `planCorpora`, `textFixture` and `validateMigrationNames` from
+ * THIS path by name, and a frozen check is not editable. So the symbols the checks pin stay and
+ * the ledger, which no check imports, is what left. Splitting the other way looked tidier and
+ * broke a check on the first run.
  *
- * THE LEDGER is new. `plan-approved.md`'s "Repository edit-surface ownership" table assigns
- * every path this whole initiative may touch to the task that owns it — I-2's contract reads
- * "Inventory maps every spec artifact path to its task, existence/classification result,
- * direct consumers, and generated input," and its technical AC reads "the complete
- * edit-surface ownership ledger is checked against that checkout, not inferred from a
- * filename's existence alone." `EDIT_SURFACE_LEDGER` is that table, transcribed; `classify`
- * is the "not inferred from existence alone" part — it cross-checks `fs.existsSync` against
- * this initiative's own git history (commits between the review reference and HEAD, each
- * tagged `I-<n>: ...` by convention — see `git log --oneline`), because a repository this old
- * has REUSED task numbers across earlier initiatives; scanning the whole history for `I-13:`
- * would match a commit that has nothing to do with this plan's I-13. Restricting the scan to
- * `reviewReferenceSha..HEAD` is what makes a match mean anything.
+ * NOTHING HERE READS REAL CONTENT. Every byte a corpus contains is invented from a seed, because
+ * these fixtures stand in for private team documents: a generator that sampled real material
+ * would put tenant content into an acceptance corpus and from there into a benchmark report.
  */
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { CliError } from "./errors.ts";
 import { safeWritePath } from "./workspace.ts";
+interface FixturesArgs { seed: number; scale: string }
 
-interface FixturesArgs {
-  seed: number;
-  scale: string;
+const GENERATOR_VERSION = "1";
+const ONE_MIB = 1048576;
+
+/** `planCorpora`'s own refusal, distinct from `CliError`: a fractional fixture count is a
+ *  property of the PLAN, not of one invocation, so it needs its own stable `code`. */
+class FractionalFixtureCountError extends Error {
+  readonly code = "FRACTIONAL_FIXTURE_COUNT" as const;
+}
+
+interface CorpusPlan { readonly records: number; readonly one_mib: number }
+
+/** The seven declared corpora's full-scale (`scale: 1`) record counts — matches the committed
+ *  public DEFINITION at `testing/tenant-info/manifest.json`, never a private run's numbers.
+ *  `1500` is fixed by that same definition: one 1-MiB fixture per 1500 records, every corpus,
+ *  every scale. */
+const BASE_CORPORA: Readonly<Record<string, number>> = {
+  primary_current: 150000, primary_evidence: 150000, primary_history: 150000,
+  other_team_a: 150000, other_team_b: 150000,
+  shared_current: 15000, shared_evidence: 15000,
+};
+
+/** `base * scale` can land a few ULPs off an integer even when the true answer is exact — a
+ *  tolerance, not raw `Number.isInteger`, is what tells a valid reduced scale apart from one
+ *  that actually produces a fractional fixture count. */
+const isWholeNumber = (n: number): boolean => Math.abs(n - Math.round(n)) < 1e-9;
+
+/**
+ * Each corpus's `{records, one_mib}` at `scale` (1 is full scale: 780,000 records including
+ * 520 exactly-1-MiB fixtures). A scale outside `(0, 1]` is an invalid invocation; a scale that
+ * leaves any single corpus with a fractional record or fixture count is refused separately —
+ * a reduced-scale corpus that rounds quietly is a different, undeclared corpus.
+ */
+export function planCorpora(scale: number): Record<string, CorpusPlan> {
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 1) {
+    throw new CliError("INVALID_ARGUMENTS", `scale must be a finite number in (0, 1], got ${scale}.`);
+  }
+  const plan: Record<string, CorpusPlan> = {};
+  for (const [corpus, base] of Object.entries(BASE_CORPORA)) {
+    const records = base * scale;
+    const oneMib = records / 1500;
+    if (!isWholeNumber(records) || !isWholeNumber(oneMib)) {
+      throw new FractionalFixtureCountError(
+        `scale ${scale} gives corpus "${corpus}" ${records} records / ${oneMib} one-MiB fixtures — not integral.`,
+      );
+    }
+    plan[corpus] = { records: Math.round(records), one_mib: Math.round(oneMib) };
+  }
+  return plan;
+}
+
+// ─────────────────────────────── deterministic fixture text ───────────────────────────────
+
+interface TextFixtureRequest {
+  readonly seed: number; readonly ordinal: number; readonly bytes: number;
+  readonly language: "en" | "zh" | "mixed";
+}
+
+/** mulberry32 — small, deterministic, no dependency; a repeatable stream, not crypto. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A 32-bit seed from a string key (FNV-1a), so `seed`/`ordinal`/`language` combine into one
+ *  PRNG state without the collisions naive addition would give (seed=1,ordinal=23 vs
+ *  seed=2,ordinal=13 under plain `seed+ordinal`). */
+function seedFrom(key: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+const EN_WORDS = [
+  "initiative", "document", "knowledge", "revision", "provenance", "tenant", "corpus", "fixture",
+  "retrieval", "isolation", "migration", "rebuild", "projection", "analysis", "benchmark", "manifest",
+  "baseline", "workspace", "artifact", "concept", "negative", "boundary", "edge", "case", "version",
+  "deprecated", "superseded", "glossary", "appendix", "threshold", "checkpoint", "ledger", "witness",
+];
+const EN_BYTES = EN_WORDS.map((w) => Buffer.byteLength(w, "utf8"));
+
+/** One deterministic codepoint from the CJK Unified Ideographs block (U+4E00-U+9FFF, always
+ *  3 bytes in UTF-8) — 20,992 of them is enough range that text does not visibly repeat. */
+function zhChar(rand: () => number): string {
+  return String.fromCodePoint(0x4e00 + Math.floor(rand() * 0x5200));
+}
+
+/**
+ * The deterministic generator behind every fixture record: the same request always returns
+ * the same string, exactly `bytes` UTF-8 bytes long. Content is drawn word-at-a-time until
+ * the next chunk would overshoot, then an ASCII `.` run — always 1 byte each — closes the
+ * exact remainder a word-at-a-time fill cannot land on precisely.
+ */
+export function textFixture(req: TextFixtureRequest): string {
+  const rand = mulberry32(seedFrom(`${req.seed}:${req.ordinal}:${req.language}`));
+  let out = "";
+  let usedBytes = 0;
+  while (usedBytes < req.bytes) {
+    const wantsEn = req.language === "en" || (req.language === "mixed" && rand() < 0.5);
+    let chunk: string;
+    let chunkBytes: number;
+    if (wantsEn) {
+      const i = Math.floor(rand() * EN_WORDS.length);
+      chunk = out.length === 0 ? EN_WORDS[i] : ` ${EN_WORDS[i]}`;
+      chunkBytes = (out.length === 0 ? 0 : 1) + EN_BYTES[i];
+    } else {
+      chunk = zhChar(rand);
+      chunkBytes = 3;
+    }
+    if (usedBytes + chunkBytes > req.bytes) break;
+    out += chunk;
+    usedBytes += chunkBytes;
+  }
+  return out + ".".repeat(req.bytes - usedBytes);
+}
+
+// ─────────────────────────────── corpus generation and manifest ───────────────────────────
+
+interface CorpusManifestEntry {
+  readonly record_count: number; readonly one_mib_fixture_count: number;
+  readonly mean_bytes: number; readonly p95_bytes: number; readonly total_bytes: number;
+  readonly histogram: Readonly<Record<string, number>>;
+  readonly file_hashes: readonly string[]; readonly hash: string;
+}
+
+// Upper bound `ONE_MIB - 1`, not `ONE_MIB`, so an exactly-1-MiB fixture (`size <= max`) lands
+// in the "1MiB" bucket rather than being counted as merely under it.
+const HISTOGRAM_BUCKETS: readonly (readonly [number, string])[] = [
+  [1024, "<1KiB"], [4096, "1-4KiB"], [16384, "4-16KiB"], [65536, "16-64KiB"],
+  [262144, "64-256KiB"], [ONE_MIB - 1, "256KiB-1MiB"], [Infinity, "1MiB"],
+];
+
+function histogramOf(sizes: readonly number[]): Record<string, number> {
+  const hist: Record<string, number> = {};
+  for (const [, label] of HISTOGRAM_BUCKETS) hist[label] = 0;
+  for (const size of sizes) {
+    const [, label] = HISTOGRAM_BUCKETS.find(([max]) => size <= max) ?? HISTOGRAM_BUCKETS[HISTOGRAM_BUCKETS.length - 1];
+    hist[label]++;
+  }
+  return hist;
+}
+
+/**
+ * Non-1-MiB record size, calibrated by Monte-Carlo simulation (see the task report, not
+ * asserted by a check here) so a full corpus's OVERALL mean/p95, 1-MiB fixtures included,
+ * land within 5% of the full-scale target (8192 / 65536 bytes). Two overlapping bands rather
+ * than one lognormal — a single lognormal cannot reach a p95/mean ratio of 8 without an
+ * unrealistically fat body — with the 65536 boundary INSIDE the large band's range rather
+ * than at its edge, so the empirical p95 does not hinge on which side of a hard cutoff
+ * sampling noise lands on. I-23 measures the real generated store; this only approximates it.
+ */
+function sampleBodyBytes(rand: () => number): number {
+  return rand() < 0.918
+    ? 256 + Math.floor(rand() * 3320)     // small: 256B-3.6KiB — most records
+    : 50000 + Math.floor(rand() * 40000); // large: 50-90KiB — straddles the 65536 p95 target
+}
+
+/**
+ * Generates one corpus's fixture files under `dir` (inside the validated workspace) and
+ * returns its measured manifest entry. These are Phase 1 records — neutral, seed-derived text
+ * with a predetermined identifier, not a native committed platform transaction; loading them
+ * through the fixture/import adapter is later work, once the kernel and projections exist.
+ */
+function generateCorpus(
+  dir: string, corpus: string, seed: number, records: number, oneMib: number,
+): CorpusManifestEntry {
+  mkdirSync(dir, { recursive: true });
+  const rand = mulberry32(seedFrom(`${seed}:${corpus}`));
+  const sizes: number[] = [];
+  const hashes: string[] = [];
+  const languages = ["en", "zh", "mixed"] as const;
+  for (let ordinal = 0; ordinal < records; ordinal++) {
+    const bytes = ordinal < oneMib ? ONE_MIB : sampleBodyBytes(rand);
+    const text = textFixture({ seed, ordinal, bytes, language: languages[ordinal % languages.length] });
+    writeFileSync(join(dir, `${corpus}-${String(ordinal).padStart(6, "0")}.txt`), text);
+    sizes.push(bytes);
+    hashes.push(createHash("sha256").update(text).digest("hex"));
+  }
+  const sorted = [...sizes].sort((a, b) => a - b);
+  const p95 = sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(0.95 * sorted.length) - 1))];
+  const totalBytes = sizes.reduce((a, b) => a + b, 0);
+  return {
+    record_count: records,
+    one_mib_fixture_count: oneMib,
+    mean_bytes: Math.round(totalBytes / records),
+    p95_bytes: p95,
+    total_bytes: totalBytes,
+    histogram: histogramOf(sizes),
+    file_hashes: hashes,
+    hash: createHash("sha256").update(hashes.join("\n")).digest("hex"),
+  };
 }
 
 interface FixturesReceipt {
-  verb: "fixtures";
-  seed: number;
-  scale: string;
-  generatedAt: string;
+  readonly verb: "fixtures"; readonly seed: number; readonly scale: number;
+  readonly generatedAt: string; readonly generator_version: string;
+  readonly total_records: number; readonly total_bytes: number; readonly manifest_path: string;
+  readonly corpora: Readonly<Record<string, Omit<CorpusManifestEntry, "file_hashes">>>;
 }
 
+/**
+ * Generates the seven declared corpora at `args.scale` under the validated workspace and
+ * writes the full measured manifest there — `<workspace>/fixtures-manifest.json`, never into
+ * this repository. That file, not the committed `testing/tenant-info/manifest.json` (the
+ * public DEFINITION this generator is built from, not a run's output), is where
+ * `file_hashes` and each corpus's aggregate hash actually live. The returned receipt carries
+ * the same per-corpus data minus `file_hashes`, which at full scale is tens of megabytes.
+ */
 export function runFixtures(workspaceReal: string, args: FixturesArgs): FixturesReceipt {
-  const receipt: FixturesReceipt = {
-    verb: "fixtures",
-    seed: args.seed,
-    scale: args.scale,
-    generatedAt: new Date().toISOString(),
+  const scale = Number(args.scale);
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 1) {
+    throw new CliError("INVALID_ARGUMENTS", `--scale must be a finite number in (0, 1], got "${args.scale}".`);
+  }
+  const plan = planCorpora(scale);
+  const corpora: Record<string, CorpusManifestEntry> = {};
+  for (const [corpus, { records, one_mib }] of Object.entries(plan)) {
+    corpora[corpus] = generateCorpus(join(workspaceReal, corpus), corpus, args.seed, records, one_mib);
+  }
+  const totalRecords = Object.values(corpora).reduce((a, c) => a + c.record_count, 0);
+  const totalBytes = Object.values(corpora).reduce((a, c) => a + c.total_bytes, 0);
+  const generatedAt = new Date().toISOString();
+  const full = {
+    verb: "fixtures" as const, seed: args.seed, scale, generatedAt,
+    generator_version: GENERATOR_VERSION, total_records: totalRecords, total_bytes: totalBytes, corpora,
   };
-  writeFileSync(safeWritePath(workspaceReal, "fixtures-manifest.json"), `${JSON.stringify(receipt, null, 2)}\n`);
-  return receipt;
+  const manifestPath = safeWritePath(workspaceReal, "fixtures-manifest.json");
+  writeFileSync(manifestPath, `${JSON.stringify(full, null, 2)}\n`);
+  const summaryCorpora: Record<string, Omit<CorpusManifestEntry, "file_hashes">> = {};
+  for (const [corpus, { file_hashes: _file_hashes, ...rest }] of Object.entries(corpora)) {
+    summaryCorpora[corpus] = rest;
+  }
+  return {
+    verb: "fixtures", seed: args.seed, scale, generatedAt, generator_version: GENERATOR_VERSION,
+    total_records: totalRecords, total_bytes: totalBytes, manifest_path: manifestPath, corpora: summaryCorpora,
+  };
 }
 
 // ────────────────────────── edit-surface ownership ledger ──────────────────────────
-
-interface LedgerEntry {
-  readonly path: string;
-  readonly task: string;
-  /** A second ledger row for a path another task already owns is not a collision — the plan
-   *  says explicitly "shared files can be extended by later listed tasks" and names several
-   *  (verify.ts by I-25, this very file by I-3 and I-13, the I-11 read adapters by I-18). This
-   *  row records that later touch rather than the path's primary ownership. */
-  readonly extension?: boolean;
-  /** True for a row the plan names as a build output of a canonical source elsewhere in the
-   *  ledger (a marketplace skill mirror) rather than a path anyone authors directly. */
-  readonly generatedFrom?: string;
-  /** True for a row the plan lists as an EXISTING file I-22 re-verifies at final
-   *  compatibility, not a file this initiative authors. */
-  readonly verifyOnly?: boolean;
-}
-
-// Paths are written plainly. Most rows below name FUTURE tasks' outputs that do not exist yet,
-// which is the normal state of a ledger describing a plan partway through; `checks/literal-
-// paths-resolve.ts` exempts this file by name for exactly that reason, so the rows can read as
-// what they are instead of being assembled at runtime to slip past a check.
-
-const braces = (task: string, prefix: string, names: readonly string[], suffix: string): LedgerEntry[] =>
-  names.map((name) => ({ path: `${prefix}${name}${suffix}`, task }));
-
-/**
- * `plan-approved.md`'s "Repository edit-surface ownership" table, one row expanded per
- * declared path. Grouped by task in the plan's own order; a comment marks each source row so
- * a later diff against the plan is legible.
- */
-const EDIT_SURFACE_LEDGER: readonly LedgerEntry[] = [
-  // I-1 — Safe command entry and check activation
-  { path: "package.json", task: "I-1" },
-  { path: "package-lock.json", task: "I-1" },
-  { path: "tsconfig.tooling.json", task: "I-1" },
-  { path: "scripts/tenant-info/cli.ts", task: "I-1" },
-  { path: "scripts/tenant-info/verify.ts", task: "I-1" },
-  { path: "checks/tenant-info-cli.ts", task: "I-1" },
-  { path: "catalog/sdlc/sdlc-flow/skills/sdlc-execute/SKILL.md", task: "I-1" },
-  { path: "marketplace/sdlc/skills/sdlc-execute/SKILL.md", task: "I-1",
-    generatedFrom: "catalog/sdlc/sdlc-flow/skills/sdlc-execute/SKILL.md" },
-  { path: "scripts/tenant-info/verify.ts", task: "I-25", extension: true }, // finalization
-
-  // I-2 — Read-only baseline and exact dependency inventory (this task)
-  { path: "scripts/tenant-info/baseline.ts", task: "I-2" },
-  { path: "scripts/tenant-info/inventory.ts", task: "I-2" },
-  { path: "checks/tenant-info-baseline-fields.ts", task: "I-2" },
-  { path: "scripts/tenant-info/inventory.ts", task: "I-3", extension: true },  // fixture exports
-  { path: "scripts/tenant-info/inventory.ts", task: "I-13", extension: true }, // migration-name validation
-
-  // I-3 — Deterministic corpora with separately measured manifests
-  { path: "testing/tenant-info/manifest.json", task: "I-3" },
-  { path: "checks/tenant-info-corpus-shape.ts", task: "I-3" },
-
-  // I-4 — Judged questions and an accountable review prerequisite
-  { path: "testing/tenant-info/queries.jsonl", task: "I-4" },
-  { path: "testing/tenant-info/qrels.jsonl", task: "I-4" },
-  { path: "scripts/tenant-info/benchmark.ts", task: "I-4" },
-  { path: "checks/tenant-info-qrels-integrity.ts", task: "I-4" },
-  { path: "scripts/tenant-info/benchmark.ts", task: "I-23", extension: true },
-
-  // I-5 — Pinned PostgreSQL 17 and exact-release feature proof
-  { path: "deploy/postgres/Dockerfile", task: "I-5" },
-  { path: "deploy/postgres/versions.lock.json", task: "I-5" },
-  { path: "deploy/postgres/postgresql.conf", task: "I-5" },
-  { path: "testing/tenant-info/deployment.ts", task: "I-5" },
-  { path: "Dockerfile", task: "I-5" },
-  { path: "deploy/docker-compose.build.yml", task: "I-5" },
-  { path: "scripts/release/build.ts", task: "I-5" },
-  { path: "checks/postgres-image-pinned.ts", task: "I-5" },
-  { path: "testing/tenant-info/deployment.ts", task: "I-21", extension: true },
-  { path: "scripts/release/build.ts", task: "I-21", extension: true },
-
-  // I-6 — Shared types and runtime validation
-  { path: "packages/contracts/src/tenant-information.ts", task: "I-6" },
-  { path: "packages/contracts/src/index.ts", task: "I-6" },
-  { path: "packages/contracts/package.json", task: "I-6" },
-  { path: "packages/indexing/package.json", task: "I-6" },
-  { path: "services/zz-core/package.json", task: "I-6" },
-  { path: "checks/tenant-information-contract.ts", task: "I-6" },
-
-  // I-7 — Durable record commits and publication boundaries
-  { path: "services/zz-core/src/tenant-info/record.ts", task: "I-7" },
-  { path: "testing/tenant-info/persistence.ts", task: "I-7" },
-  { path: "checks/tenant-record-durability.ts", task: "I-7" },
-  { path: "testing/tenant-info/persistence.ts", task: "I-8", extension: true },
-  { path: "testing/tenant-info/persistence.ts", task: "I-11", extension: true },
-
-  // I-8 — Coordinating kernel, concurrency and uncertain outcomes
-  { path: "services/zz-core/src/tenant-info/mutations.ts", task: "I-8" },
-  { path: "services/zz-core/src/tenant-info/recovery.ts", task: "I-8" },
-  { path: "checks/tenant-kernel-codes.ts", task: "I-8" },
-
-  // I-9 — Semantic revisions and authorized provenance
-  { path: "services/zz-core/src/tenant-info/policies.ts", task: "I-9" },
-  { path: "testing/tenant-info/model.ts", task: "I-9" },
-  { path: "checks/tenant-revision-boundary.ts", task: "I-9" },
-  { path: "testing/tenant-info/model.ts", task: "I-10", extension: true },
-  { path: "testing/tenant-info/model.ts", task: "I-11", extension: true },
-
-  // I-10 — Independent gate, knowledge and closure transitions
-  { path: "testing/tenant-info/lifecycle.ts", task: "I-10" },
-  { path: "services/zz-core/src/document-rules.ts", task: "I-10" },
-  { path: "services/zz-core/src/write-guards.ts", task: "I-10" },
-  { path: "services/zz-core/src/guards.ts", task: "I-10" },
-  { path: "services/zz-core/src/chain.ts", task: "I-10" },
-  { path: "services/zz-core/src/versions.ts", task: "I-10" },
-  { path: "services/zz-core/src/attest.ts", task: "I-10" },
-  { path: "services/zz-core/src/initiative-record.ts", task: "I-10" },
-  { path: "services/zz-core/src/tools/initiative-status.ts", task: "I-10" },
-  { path: "checks/tenant-lifecycle-matrix.ts", task: "I-10" },
-
-  // I-11 — Thin adapters with explicit safe-write contracts
-  { path: "services/zz-core/src/tools/artifacts.ts", task: "I-11" },
-  { path: "services/zz-core/src/tools/initiative-acts.ts", task: "I-11" },
-  { path: "services/zz-core/src/tools/knowledge.ts", task: "I-11" },
-  { path: "services/zz-core/src/persist.ts", task: "I-11" },
-  { path: "services/zz-core/src/paths.ts", task: "I-11" },
-  { path: "services/zz-core/src/server.ts", task: "I-11" },
-  { path: "services/zz-core/src/tools/initiative-open.ts", task: "I-11" },
-  { path: "services/zz-core/src/tools/initiative-close.ts", task: "I-11" },
-  { path: "checks/tenant-single-writer.ts", task: "I-11" },
-  ...[
-    "services/zz-core/src/tools/artifacts.ts", "services/zz-core/src/tools/initiative-acts.ts",
-    "services/zz-core/src/tools/knowledge.ts", "services/zz-core/src/persist.ts",
-    "services/zz-core/src/paths.ts", "services/zz-core/src/server.ts",
-    "services/zz-core/src/tools/initiative-open.ts", "services/zz-core/src/tools/initiative-close.ts",
-  ].map((path): LedgerEntry => ({ path, task: "I-18", extension: true })),
-  { path: "services/zz-core/src/server.ts", task: "I-21", extension: true }, // maintenance entry
-
-  // I-12 — OKF interoperability without fabricated history
-  { path: "services/zz-core/src/tenant-info/export.ts", task: "I-12" },
-  { path: "scripts/tenant-info/export.ts", task: "I-12" },
-  { path: "packages/contracts/schemas/zz-knowledge-v1.json", task: "I-12" },
-  { path: "testing/tenant-info/okf.ts", task: "I-12" },
-  { path: "checks/okf-round-trip.ts", task: "I-12" },
-
-  // I-13 — Forward migration and atomic derived projections
-  { path: "services/gateway/migrations/<NNN>_artifacts_revisions_events_and_scoped_search.sql", task: "I-13" },
-  { path: "packages/indexing/src/tenant-projections.ts", task: "I-13" },
-  { path: "services/zz-core/src/platform-db.ts", task: "I-13" },
-  { path: "services/gateway/src/db.ts", task: "I-13" },
-  { path: "testing/tenant-info/rebuild.ts", task: "I-13" },
-  { path: "checks/tenant-migration-shape.ts", task: "I-13" },
-  { path: "testing/tenant-info/rebuild.ts", task: "I-15", extension: true }, // completion
-
-  // I-14 — Complete text and versioned analysis
-  { path: "packages/indexing/src/tenant-analysis.ts", task: "I-14" },
-  { path: "packages/indexing/src/rules.ts", task: "I-14" },
-  { path: "checks/tenant-complete-text.ts", task: "I-14" },
-
-  // I-15 — Rebuild generations from canonical records
-  { path: "packages/indexing/src/tenant-rebuild.ts", task: "I-15" },
-  { path: "packages/indexing/src/index.ts", task: "I-15" },
-  { path: "services/zz-core/src/indexing.ts", task: "I-15" },
-  { path: "checks/tenant-rebuild-inputs.ts", task: "I-15" },
-
-  // I-16–I-19 — retrieval, built sequentially on the same path
-  { path: "services/zz-core/src/tenant-info/retrieval.ts", task: "I-16" },
-  { path: "services/zz-core/src/tenant-info/retrieval.ts", task: "I-17", extension: true },
-  { path: "services/zz-core/src/tenant-info/retrieval.ts", task: "I-18", extension: true },
-  { path: "services/zz-core/src/tenant-info/retrieval.ts", task: "I-19", extension: true },
-  { path: "checks/tenant-scope-predicates.ts", task: "I-16" },
-  { path: "checks/tenant-fusion-arithmetic.ts", task: "I-17" },
-  { path: "services/zz-core/src/tools/knowledge-search.ts", task: "I-18" },
-  { path: "testing/tenant-info/retrieval.ts", task: "I-18" },
-  { path: "checks/tenant-query-syntax.ts", task: "I-18" },
-  { path: "testing/tenant-info/isolation.ts", task: "I-19" },
-  { path: "checks/tenant-isolation-statistics.ts", task: "I-19" },
-
-  // I-20 — Lossless migration onto a separate record volume
-  { path: "services/zz-core/src/tenant-info/legacy-import.ts", task: "I-20" },
-  { path: "scripts/tenant-info/migrate.ts", task: "I-20" },
-  { path: "testing/tenant-info/migration.ts", task: "I-20" },
-  { path: "checks/tenant-migration-losslessness.ts", task: "I-20" },
-
-  // I-21 — Backup and cutover rehearsal, not a production switch
-  { path: "deploy/backup.sh", task: "I-21" },
-  { path: "deploy/docker-compose.yml", task: "I-21" },
-  { path: "deploy/.env.example", task: "I-21" },
-  { path: "deploy/README.md", task: "I-21" },
-  { path: "scripts/release.ts", task: "I-21" },
-  { path: "scripts/release/tool-chain.ts", task: "I-21" },
-  { path: "scripts/doctor/layers/data.ts", task: "I-21" },
-  { path: "scripts/ops/purge-probes.ts", task: "I-21" },
-  { path: "testing/reset-store.sh", task: "I-21" },
-  { path: "checks/backup-covers-the-undisposable.ts", task: "I-21" },
-
-  // I-22 — Compatible readers, truthful gate reports and nonrecursive registration
-  { path: "services/gateway/src/server.ts", task: "I-22" },
-  { path: "services/gateway/src/console/knowledge.ts", task: "I-22" },
-  { path: "services/gateway/src/client-package.ts", task: "I-22" },
-  { path: "services/gateway/src/package/skills.ts", task: "I-22" },
-  { path: "services/gateway/src/package/plugin-lock.ts", task: "I-22" },
-  { path: "services/gateway/src/console/overview.ts", task: "I-22" },
-  { path: "services/gateway/src/console/overview-metrics.ts", task: "I-22" },
-  { path: "services/gateway/src/runs.ts", task: "I-22" },
-  { path: "services/gateway/src/discussion.ts", task: "I-22" },
-  { path: "services/zz-core/src/eval/plugin-judge.ts", task: "I-22" },
-  { path: "testing/tenant-info/compatibility.ts", task: "I-22" },
-  { path: "checks/tenant-checks-registered.ts", task: "I-22" },
-  { path: "services/gateway/src/server.ts", task: "I-21", extension: true }, // maintenance entry
-  // "all remaining listed existing gate/check/client exerciser ... entries described below" —
-  // re-verified, not authored: existing gate producer, existing regression set, canonical skills.
-  ...["gate.ts"].map((n): LedgerEntry => ({ path: `scripts/${n}`, task: "I-22", verifyOnly: true })),
-  ...braces("I-22", "scripts/gate/", ["read", "run"], ".ts").map((e) => ({ ...e, verifyOnly: true })),
-  ...braces("I-22", "scripts/gate/checks/",
-    ["documents-guards", "documents-schema", "documents-lifecycle", "data-sql", "deploy-ops", "image", "suites"],
-    ".ts").map((e) => ({ ...e, verifyOnly: true })),
-  ...braces("I-22", "checks/",
-    ["document-rules", "revise-cause", "definition-rules", "initiative-open", "core-surface-19",
-     "alias-maps", "verification-stages-write", "skill-renames"], ".ts").map((e) => ({ ...e, verifyOnly: true })),
-  ...braces("I-22", "packages/tools/src/testing/",
-    ["chain-check", "chain-shelf", "manifest-audit", "tool-report"], ".ts").map((e) => ({ ...e, verifyOnly: true })),
-  ...braces("I-22", "skills/", ["zz-platform", "zz-handover", "zz-breakout"], "/SKILL.md")
-    .map((e) => ({ ...e, verifyOnly: true })),
-  ...braces("I-22", "catalog/zz/zz-access/skills/", ["zz-admin", "zz-migrate"], "/SKILL.md")
-    .map((e) => ({ ...e, verifyOnly: true })),
-  ...braces("I-22", "catalog/sdlc/sdlc-flow/skills/",
-    ["sdlc-flow", "sdlc-method", "sdlc-explore", "sdlc-investigate", "sdlc-recall", "sdlc-research",
-     "sdlc-spec", "sdlc-spec-audit", "sdlc-audit-criteria", "sdlc-plan", "sdlc-plan-audit", "sdlc-review"],
-    "/SKILL.md").map((e) => ({ ...e, verifyOnly: true })),
-  { path: "plugins.lock.json", task: "I-22", verifyOnly: true },
-
-  // I-23 — Full-scale benchmark and independent pass/fail evaluation
-  { path: "checks/benchmark-report-completeness.ts", task: "I-23" },
-
-  // I-25 — Final evidence assembly and release-readiness decision
-  { path: "docs/tenant-information-v4.md", task: "I-25" },
-  { path: "README.md", task: "I-25" },
-  { path: "ARCHITECTURE.md", task: "I-25" },
-  { path: "CHANGELOG.md", task: "I-25" },
-  { path: "checks/acceptance-covers-every-criterion.ts", task: "I-25" },
-  // I-24 — end-to-end reuse under agent review — declares no repository implementation output.
-];
-
-export interface EditSurfaceEntry {
-  readonly path: string;
-  readonly task: string;
-  readonly change: "created" | "modified" | "pending" | "missing";
-  readonly exists: boolean;
-  readonly coverage: string;
-  readonly evidence: string;
-}
-
-interface GitCommit {
-  readonly sha: string;
-  readonly subject: string;
-  readonly files: readonly string[];
-}
-
-/** Commits strictly between `reviewReferenceSha` and `HEAD`, oldest first, each with the
- *  files it touched — restricted to this range so a reused task number from an earlier
- *  initiative (this repository has more than one "I-13:") never gets credited to this plan. */
-function thisInitiativesCommits(repoRoot: string, reviewReferenceSha: string): GitCommit[] {
-  const run = (args: string[]) => execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" });
-  const shas = run(["log", "--reverse", "--format=%H", `${reviewReferenceSha}..HEAD`])
-    .split("\n").filter(Boolean);
-  return shas.map((sha) => {
-    const subject = run(["log", "-1", "--format=%s", sha]).trim();
-    const files = run(["show", "--name-only", "--format=", sha]).split("\n").filter(Boolean);
-    return { sha, subject, files };
-  });
-}
-
-/** Whether `path` exists, resolving the one pattern the ledger carries (a migration filename
- *  with an unassigned sequence number) against what is actually on disk. */
-function resolveExistence(repoRoot: string, path: string): { exists: boolean; resolvedPath: string } {
-  if (path.includes("<NNN>")) {
-    const dir = join(repoRoot, path.slice(0, path.indexOf("<NNN>")).replace(/[^/]*$/, ""));
-    const suffix = path.slice(path.lastIndexOf("_"));
-    if (!existsSync(dir)) return { exists: false, resolvedPath: path };
-    const hit = readdirSync(dir).find((f) => f.endsWith(suffix));
-    return hit ? { exists: true, resolvedPath: join(relative(repoRoot, dir), hit).split(sep).join("/") }
-               : { exists: false, resolvedPath: path };
-  }
-  return { exists: existsSync(join(repoRoot, path)), resolvedPath: path };
-}
-
-const TASK_COVERAGE: Readonly<Record<string, string>> = {
-  "I-1": "safe command entry and check activation", "I-2": "read-only baseline and dependency inventory",
-  "I-3": "deterministic corpora with separately measured manifests",
-  "I-4": "judged questions and an accountable review prerequisite",
-  "I-5": "pinned PostgreSQL 17 and exact-release feature proof",
-  "I-6": "shared types and runtime validation", "I-7": "durable record commits and publication boundaries",
-  "I-8": "coordinating kernel, concurrency and uncertain outcomes",
-  "I-9": "semantic revisions and authorized provenance",
-  "I-10": "independent gate, knowledge and closure transitions",
-  "I-11": "thin adapters with explicit safe-write contracts",
-  "I-12": "OKF interoperability without fabricated history",
-  "I-13": "forward migration and atomic derived projections", "I-14": "complete text and versioned analysis",
-  "I-15": "rebuild generations from canonical records", "I-16": "authorized corpus and scope resolution",
-  "I-17": "four lanes and cross-corpus fusion", "I-18": "mode-aware parsing and the actual wire response",
-  "I-19": "real isolation and nonvacuous statistics observations",
-  "I-20": "lossless migration onto a separate record volume",
-  "I-21": "backup and cutover rehearsal, not a production switch",
-  "I-22": "compatible readers, truthful gate reports and nonrecursive registration",
-  "I-23": "full-scale benchmark and independent pass/fail evaluation",
-  "I-24": "end-to-end reuse under agent review",
-  "I-25": "final evidence assembly and release-readiness decision",
-};
-
-/**
- * The technical AC's "checked against that checkout, not inferred from a filename's
- * existence alone": for every ledger row, look up whether THIS initiative's own commits
- * (between `reviewReferenceSha` and HEAD) created or touched it, and let that — not just
- * `fs.existsSync` — decide `change`. A path a done task's commit does not touch is `missing`
- * even though some earlier, unrelated initiative may have left a file at that name; a path no
- * commit in range has produced yet is `pending`, which is the ledger simply describing the
- * plan's remaining work rather than reporting a defect.
- */
-export function buildEditSurface(repoRoot: string, reviewReferenceSha: string): EditSurfaceEntry[] {
-  let commits: GitCommit[] = [];
-  let gitAvailable = true;
-  try {
-    commits = thisInitiativesCommits(repoRoot, reviewReferenceSha);
-  } catch {
-    gitAvailable = false;
-  }
-  const doneTasks = new Set(
-    commits.map((c) => /^(I-\d+):/.exec(c.subject)?.[1]).filter((t): t is string => t !== undefined),
-  );
-  return EDIT_SURFACE_LEDGER.map((entry) => {
-    const { exists, resolvedPath } = resolveExistence(repoRoot, entry.path);
-    const coverage = entry.verifyOnly
-      ? `${TASK_COVERAGE[entry.task] ?? entry.task} (existing file, re-verified)`
-      : entry.generatedFrom
-      ? `${TASK_COVERAGE[entry.task] ?? entry.task} (generated from ${entry.generatedFrom})`
-      : TASK_COVERAGE[entry.task] ?? entry.task;
-    if (!gitAvailable) {
-      return { path: entry.path, task: entry.task, exists, coverage,
-        change: exists ? "modified" : "pending",
-        evidence: `git history unavailable in this checkout; existence only: fs.existsSync("${resolvedPath}") = ${exists}` };
-    }
-    const touching = commits.filter((c) => c.files.includes(resolvedPath));
-    let change: EditSurfaceEntry["change"];
-    let evidence: string;
-    if (!exists) {
-      change = doneTasks.has(entry.task) ? "missing" : "pending";
-      evidence = doneTasks.has(entry.task)
-        ? `${entry.task} has a commit in ${reviewReferenceSha.slice(0, 12)}..HEAD but "${resolvedPath}" is absent`
-        : `no commit in ${reviewReferenceSha.slice(0, 12)}..HEAD touches "${resolvedPath}" yet; ${entry.task} not yet run`;
-    } else if (touching.length === 0) {
-      change = "modified"; // exists, but not from this initiative's own commit range
-      evidence = `"${resolvedPath}" exists but predates ${reviewReferenceSha.slice(0, 12)} or was not committed by this initiative`;
-    } else {
-      const first = touching[0];
-      change = first.subject.startsWith(`${entry.task}:`) ? "created" : "modified";
-      evidence = `${touching.length} commit(s) touch "${resolvedPath}" in range, first ${first.sha.slice(0, 12)} "${first.subject}"`;
-    }
-    return { path: entry.path, task: entry.task, exists, coverage, change, evidence };
-  });
-}
-
-/**
- * Every path this initiative's own commits (`reviewReferenceSha..HEAD`) have actually
- * changed, that the ledger does NOT declare — "an unlisted required edit is blocking" from
- * I-2's contract. Pattern rows (the one `<NNN>` migration) are matched by suffix so a real
- * migration filename does not read as unlisted.
- */
-export function unlistedChanges(repoRoot: string, reviewReferenceSha: string): string[] {
-  const changed = execFileSync("git", ["diff", "--name-only", `${reviewReferenceSha}..HEAD`],
-    { cwd: repoRoot, encoding: "utf8" }).split("\n").filter(Boolean);
-  const declared = new Set(EDIT_SURFACE_LEDGER.map((e) => resolveExistence(repoRoot, e.path).resolvedPath));
-  return changed.filter((f) => !declared.has(f));
-}
-
-// ────────────────────────── store manifest (owner/path/byte/hash) ──────────────────────────
-
-interface FileManifestRow {
-  readonly owner: string;
-  readonly path: string;
-  readonly bytes: number;
-  readonly hash: string;
-}
-
-/**
- * `ZZ_TENANT_INFO_STORE_ROOT` is expected to point at the store's `teams/` directory (see
- * `services/zz-core/src/paths.ts`'s `ARTIFACTS_DIR/teams/<slug>`) — each immediate child is
- * one team, which is the "owner" the spec's "complete owner/path/byte/hash manifests" and
- * `owner_inventory` mean: a tenant, not an OS file uid. `.git` and other dot-entries are
- * skipped, matching what the store itself refuses to write (see `paths.ts`'s `safeName`).
- */
-export function walkStore(storeRoot: string): FileManifestRow[] {
-  // A real `teams/` directory holds team-slug directories, never a literal child also named
-  // `teams` — that shape means the operator pointed `ZZ_TENANT_INFO_STORE_ROOT` one level too
-  // high (at `ARTIFACTS_DIR` instead of `ARTIFACTS_DIR/teams`), which would otherwise silently
-  // report a team named "teams" holding everyone's files instead of blocking on the mistake.
-  if (existsSync(join(storeRoot, "teams"))) {
-    throw new Error(`"${storeRoot}" contains a "teams" entry — point ZZ_TENANT_INFO_STORE_ROOT ` +
-      'at the "teams" directory itself, not its parent');
-  }
-  const rows: FileManifestRow[] = [];
-  for (const owner of readdirSync(storeRoot, { withFileTypes: true })) {
-    if (!owner.isDirectory() || owner.name.startsWith(".")) continue;
-    const ownerRoot = join(storeRoot, owner.name);
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.name.startsWith(".")) continue;
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) { walk(full); continue; }
-        if (!entry.isFile()) continue;
-        const bytes = statSync(full).size;
-        const hash = createHash("sha256").update(readFileSync(full)).digest("hex");
-        rows.push({ owner: owner.name, path: relative(storeRoot, full).split(sep).join("/"), bytes, hash });
-      }
-    };
-    walk(ownerRoot);
-  }
-  return rows.sort((a, b) => (a.owner === b.owner ? a.path.localeCompare(b.path) : a.owner.localeCompare(b.owner)));
-}
-
-/** A deterministic fingerprint of the whole manifest: the capture timestamp must never be
- *  part of it (I-2's contract: "a changed capture timestamp does not invalidate unchanged
- *  semantic/file hashes"), so this hashes only owner/path/bytes/hash tuples, sorted. */
-export function fileManifestHash(rows: readonly FileManifestRow[]): string {
-  const canonical = rows.map((r) => JSON.stringify(r)).join("\n");
-  return createHash("sha256").update(canonical).digest("hex");
-}
-
-export function ownerInventory(rows: readonly FileManifestRow[]): { owner_id: string; files: number }[] {
-  const counts = new Map<string, number>();
-  for (const r of rows) counts.set(r.owner, (counts.get(r.owner) ?? 0) + 1);
-  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([owner_id, files]) => ({ owner_id, files }));
-}

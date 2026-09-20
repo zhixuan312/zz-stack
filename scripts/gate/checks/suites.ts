@@ -449,6 +449,9 @@ check("tenant-info's workspace and suite guards refuse what they say they refuse
 check("a baseline receipt carries every required field with its measurement evidence, and never a credential",
       runsCheck("tenant-info-baseline-fields.ts"));
 
+check("corpus planning arithmetic refuses a fractional fixture count, and the deterministic text generator hits its exact byte target",
+      runsCheck("tenant-info-corpus-shape.ts"));
+
 // ── the two checks written as bash, unwired since the day they were written ───────────────
 //
 // Both passed every time somebody typed their name and neither was ever registered, which is

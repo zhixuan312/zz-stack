@@ -24,7 +24,7 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { CliError, failInvocation } from "./errors.ts";
+import { CliError, failInvocation, isCliErrorCode, type CliErrorCode } from "./errors.ts";
 import { resolveWorkspace } from "./workspace.ts";
 import { parseFlags, requireFlag, type FlagValue } from "./args.ts";
 import { runBaseline, validateBaseline } from "./baseline.ts";
@@ -165,8 +165,17 @@ if (isMain) {
     })
     .catch((err: unknown) => {
       if (err instanceof CliError) failInvocation(err);
+      // A THROWN VALUE THAT ALREADY NAMES ITSELF KEEPS ITS NAME. `planCorpora` refuses a scale
+      // demanding a fraction of a 1-MiB fixture with its own `FRACTIONAL_FIXTURE_COUNT`, which
+      // the contract names and the frozen check asserts — and the catch-all below used to
+      // relabel it `INVALID_ARGUMENTS` on the way out, so the refusal was correct in process
+      // and invisible at the command line. Anything carrying a code this CLI recognises is
+      // reported as itself; everything else is still an invalid invocation.
+      const code = err instanceof Error && "code" in err && isCliErrorCode((err as { code: unknown }).code)
+        ? (err as { code: CliErrorCode }).code
+        : "INVALID_ARGUMENTS";
       process.stderr.write(
-        `${JSON.stringify({ code: "INVALID_ARGUMENTS", message: err instanceof Error ? err.message : String(err) })}\n`,
+        `${JSON.stringify({ code, message: err instanceof Error ? err.message : String(err) })}\n`,
       );
       process.exit(2);
     });

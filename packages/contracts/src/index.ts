@@ -24,6 +24,36 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
 
+// The tenant-information artifact, revision, event, mutation and search contracts — types AND
+// the zod schemas that actually validate untrusted input against them, through the one door
+// every other consumer uses. `semanticFields` and `mutationErrorCodes` are each declared once,
+// there, so nothing downstream restates SemanticPayload's field set or the mutation error code
+// list as a second, driftable copy.
+export {
+  ArtifactClassSchema, type ArtifactClass,
+  KnowledgeTypeSchema, type KnowledgeType,
+  KnowledgeStatusSchema, type KnowledgeStatus,
+  GateStatusSchema, type GateStatus,
+  EdgeKindSchema, type EdgeKind,
+  ArtifactRefSchema, type ArtifactRef,
+  semanticFields,
+  SemanticPayloadSchema, type SemanticPayload,
+  SourceCitationSchema, type SourceCitation,
+  ContentRevisionSchema, type ContentRevision,
+  ArtifactEventKindSchema, type ArtifactEventKind,
+  ArtifactEventSchema, type ArtifactEvent,
+  SourceCaptureSchema, type SourceCapture,
+  MutationOpSchema, type MutationOp,
+  mutationErrorCodes,
+  MutationRequestSchema, type MutationRequest,
+  MutationResultSchema, type MutationResult,
+  MutationErrorSchema, type MutationError,
+  MutationIndeterminateSchema, type MutationIndeterminate,
+  MutationOutcomeSchema, type MutationOutcome,
+  SearchResultSchema, type SearchResult,
+  SearchResponseSchema, type SearchResponse,
+} from "./tenant-information.js";
+
 /**
  * The frontmatter block at the head of a document: `[0]` is the whole block including both
  * fences, `[1]` the lines between them.

@@ -15,6 +15,7 @@
     "clean": "tsc -b --clean",
     "gate": "node scripts/gate.ts",
     "doctor": "node scripts/doctor.ts",
+    "tenant-info": "node scripts/tenant-info/cli.ts",
     "set-version": "node scripts/set-version.ts",
     "release": "node scripts/release.ts",
     "rollback": "node scripts/release.ts --rollback",

@@ -200,7 +200,12 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             always implied, recomputed from their own stored marks through
             judge-score.ts — it never invents the initiative link, which is
             genuinely absent on those rows), manifests.ts (where the packages are, read by
-            both) and build-image.sh (the runtime image, from the lockfile). The
+            both) and build-image.sh (the runtime image, from the lockfile).
+            tenant-info/ is `npm run tenant-info` — cli.ts's six verbs (baseline,
+            fixtures, verify, benchmark, migrate, export), each requiring a workspace
+            outside this checkout and none of them running anything at import time,
+            with verify.ts resolving the ten named suites a `verify --suite` or
+            `--finalize` run dispatches. The
             day-2 ops tools are npm scripts over packages/tools/src/ops/:
             set-credential, probe-block, register-skills (what we OFFER, from
             the catalog into zz.skill — a file cannot be joined against five

@@ -443,6 +443,9 @@ check("the written record matches the delivered surface, and no document outgrew
 check("a renamed plugin still resolves, and the updater's copy of the map is the contract's",
       runsCheck("plugin-alias.ts"));
 
+check("tenant-info's workspace and suite guards refuse what they say they refuse, and its CLI carries no import-time side effects",
+      runsCheck("tenant-info-cli.ts"));
+
 // ── the two checks written as bash, unwired since the day they were written ───────────────
 //
 // Both passed every time somebody typed their name and neither was ever registered, which is

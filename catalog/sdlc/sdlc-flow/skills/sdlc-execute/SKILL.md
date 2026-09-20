@@ -1,6 +1,6 @@
 ---
 name: sdlc-execute
-version: 1.1
+version: 1.2
 description: Build what the approved plan describes — one subagent per task, in plan order, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
 when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Local runtimes only (Claude Code)."
 ---
@@ -8,11 +8,13 @@ when_to_use: "plan.md exists, has been audited, and the person has approved it. 
 # sdlc-execute
 
 <!-- Design note: nothing here materialises a task's checks, scores them, or commits for
-     you. The caller does all three — write every check file first, run them after each
-     task, and let the person decide whether the work is committed. Two rules below are
-     load-bearing because both have cost real work: a check that could not RUN is not a
-     check that FAILED, and a task that fails the same way twice usually means the plan is
-     wrong rather than the worker. -->
+     you. The caller does all three — freeze every check up front, activate only the one
+     whose task is about to be dispatched, run them after each task, and let the person
+     decide whether the work is committed. Three rules below are load-bearing because all
+     three have cost real work: a check that could not RUN is not a check that FAILED, a
+     task that fails the same way twice usually means the plan is wrong rather than the
+     worker, and a future task's check sitting in the gate's own discovery path before that
+     task exists is a defect the gate itself will report against the wrong task. -->
 
 **Read `sdlc-method` first.** This stage is unusual in the same way `sdlc-explore` is: the work
 is dispatched, the orchestration is not.
@@ -32,13 +34,27 @@ approved, stop and say so.
 creates a branch or a worktree; work lands in the checkout you are in. On a non-git target,
 edits happen in place with no commit, and that is fine — say so rather than inventing a repo.
 
-**3. Materialise the plan's checks.** For every task that declares a `Check:` path with a fenced
-source block, **write that file first, verbatim, at that path.** You are the only thing standing
-between a check and a worker that finds it inconvenient — nothing re-creates a weakened check
-from the plan afterwards.
+**3. Freeze every check, then activate them one at a time.** For every task that declares a
+`Check:` path with a fenced source block, freeze its exact bytes now — a verbatim copy kept
+**outside wherever the target's own checks get discovered** (a target with a gate that scans a
+`checks/` directory, a CI config, a test runner — whatever finds and runs them there), alongside
+the hash you will verify it against later. Outside the checkout entirely is simplest, and safest
+where you are not certain what the target discovers. You are the only thing standing between a
+check and a worker that finds it inconvenient — nothing re-creates a weakened check from the
+plan afterwards.
 
-Write them all up front, before dispatching anything. A check that appears after the worker has
-been told what "done" means is a check the worker has already routed around.
+Freeze them all up front, before dispatching anything. Then, immediately before dispatching a
+task, **activate only that task's own check**: write its frozen bytes, unchanged, to its
+declared path. No other task's check is written yet — a check placed where checks get
+discovered before its own task exists is a check discovery will surface against the wrong task,
+and a check some other automated rule may demand be registered before anyone has been told to
+register it.
+
+After the task finishes, and again before you dispatch the next one, compare the active file's
+bytes to its frozen copy. The worker may register the active check in the gate; it may not
+alter it, and a hash mismatch is the task failing regardless of what else it reports. A check
+that appears after the worker has been told what "done" means is a check the worker has already
+routed around — activating on time is exactly as load-bearing as activating only the one file.
 
 ## Dispatching a task
 
@@ -122,7 +138,9 @@ reality is expected — but it is also not "done". Name the outstanding task ids
 
 ❌ **Dispatching all tasks at once.** They are sequential; later ones build on earlier ones.
 
-❌ **Materialising a check after dispatching its task.** Write every check first.
+❌ **Activating a check after dispatching its task, or activating more than the one whose turn it
+is.** Freeze every check first; activate one at a time, immediately before its own task, never
+before.
 
 ❌ **Reading the worker's report instead of running the check.** The report is a claim.
 

@@ -26,24 +26,38 @@
  *
  * SCOPE. `create`, `revise`, `move`, `attach_input`, `disposition_input` and
  * `correct_provenance` are native here. `approve`, `verify`, `set_knowledge_status`,
- * `publish`, `unpublish`, `supersede` and `import_legacy` are gate/knowledge/legacy
- * transitions the ledger gives to I-10 (`document-rules.ts`, `guards.ts`, `attest.ts`,
- * `versions.ts`) and to `migrate.ts` — this policy reports them `INVALID_INPUT` by name
- * rather than guess at rules this task was not given.
- */
+ * `publish`, `unpublish` and `supersede` are I-10's independent gate/knowledge/closure
+ * transitions, bound through `decideTransition` below. Only `import_legacy` remains
+ * unhandled — that is `migrate.ts`'s, not this task's.
+ *
+ * `PolicyContext.getHead` (I-8's, outside this task's edit surface) resolves only
+ * `revision`/`content_hash`/`head_event_sequence` — no durable `artifact_class`, no committed
+ * revision's `cause_refs`/`sources`, no flow declaration. So: a state operation's class is the
+ * CALLER's declared value, checked only structurally against `head.revision === null`;
+ * `recordDigestOf` folds in `head_event_sequence` rather than the spec's provenance-set/flow-
+ * contract digest (see its own comment); and `decideTransition` never authorizes by role —
+ * `nativePolicy` passes `actor_authorized: true` since `ctx.actor` is already authenticated. */
 import { randomUUID, createHash } from "node:crypto";
 
 import {
   semanticFields,
   SemanticPayloadSchema,
-  SourceCitationSchema, type SourceCitation,
-  ContentRevisionSchema, type ContentRevision,
-  ArtifactEventSchema, type ArtifactEvent, type ArtifactEventKind,
-  SourceCaptureSchema, type SourceCapture,
-  type ArtifactRef, type MutationRequest, type MutationError,
+  SourceCitationSchema,
+  type SourceCitation,
+  ContentRevisionSchema,
+  type ContentRevision,
+  ArtifactEventSchema,
+  type ArtifactEvent,
+  type ArtifactEventKind,
+  SourceCaptureSchema,
+  type SourceCapture,
+  type ArtifactRef,
+  type MutationRequest,
+  type MutationError,
 } from "@zz/contracts";
 
 import type { ArtifactHead, Policy, PolicyContext, PolicyOutcome } from "./mutations.js";
+import { handleLifecycleTransition, handleSupersede } from "./transitions.js";
 
 // ── canonicalization: the one definition of "the same content" ─────────────────────────────
 
@@ -131,7 +145,7 @@ export function isNoOp(a: Record<string, unknown>, b: Record<string, unknown>): 
 
 interface StagedRecord { readonly content_hash: string; readonly revision: number | null }
 
-function invalid(message: string): MutationError {
+export function invalid(message: string): MutationError {
   return { committed: false, code: "INVALID_INPUT", message };
 }
 
@@ -139,7 +153,7 @@ function invalid(message: string): MutationError {
  *  against `selfId`, which by definition has not been (and, for a new artifact, cannot yet
  *  have been) committed. That refusal is what turns a self-citing `cause_refs` entry into
  *  "does not resolve" rather than an accidental match. */
-function resolveRef(
+export function resolveRef(
   ref: ArtifactRef, ctx: PolicyContext, staged: ReadonlyMap<string, StagedRecord>, selfId: string,
 ): boolean {
   if (ref.artifact_id === selfId) return false;
@@ -431,6 +445,30 @@ const STATE_EVENT_KIND: Partial<Record<MutationRequest["operation"], ArtifactEve
   correct_provenance: "provenance_corrected",
 };
 
+/** `governing_flow_slots`, when declared, names the paths a flow-bound role may occupy (this
+ *  kernel tracks no flow binding of its own). Absent, a move is freeform; present, the target
+ *  must stay in the same initiative and a declared slot, or it orphans a prerequisite/gate. */
+function moveRefusal(payload: Record<string, unknown>): MutationError | null {
+  const from = typeof payload.from === "string" ? payload.from : null;
+  const to = typeof payload.to === "string" ? payload.to : null;
+  const slotsRaw = payload.governing_flow_slots;
+  if (from === null || to === null || slotsRaw === undefined) return null;
+  if (!Array.isArray(slotsRaw) || slotsRaw.some((s) => typeof s !== "string")) {
+    return invalid("governing_flow_slots, when present, must be an array of strings");
+  }
+  const slots = slotsRaw as string[];
+  const sameInitiative = to.split("/")[0] === from.split("/")[0];
+  const inDeclaredSlot = slots.some((slot) => to === slot || to.startsWith(`${slot}/`));
+  if (!sameInitiative || !inDeclaredSlot) {
+    return {
+      committed: false, code: "GATE_REFUSED",
+      message: `move to "${to}" leaves the governing flow's declared slots (${slots.join(", ")}) — ` +
+        "refused rather than orphaning this document's prerequisite or gate",
+    };
+  }
+  return null;
+}
+
 /**
  * `move`, `attach_input`, `disposition_input` and `correct_provenance` share one shape: they
  * never touch `payload`'s semantic fields, so `data` carries the caller's payload verbatim
@@ -442,6 +480,10 @@ const STATE_EVENT_KIND: Partial<Record<MutationRequest["operation"], ArtifactEve
  */
 function handleStateEvent(request: MutationRequest, ctx: PolicyContext, head: ArtifactHead, kind: ArtifactEventKind): PolicyOutcome {
   const artifactId = request.artifact_id as string;
+  if (kind === "moved") {
+    const moveError = moveRefusal(request.payload);
+    if (moveError) return { ok: false, error: moveError };
+  }
   const causeError = checkCauses(request.cause_refs, ctx, new Map(), artifactId);
   if (causeError) return { ok: false, error: causeError };
 
@@ -461,7 +503,82 @@ function handleStateEvent(request: MutationRequest, ctx: PolicyContext, head: Ar
   };
 }
 
-// ── the dispatcher ───────────────────────────────────────────────────────────────────────
+// ── I-10: the independent gate/knowledge/closure transition matrix ─────────────────────────
+
+/** Everything `decideTransition` judges, flattened. Fields are plain `string`/`number`/
+ *  `boolean` rather than the narrower `ArtifactClass`/`MutationOp` unions: the frozen check
+ *  builds this object as a literal with no `as const`, and a narrower type would fail that
+ *  check's own typecheck rather than exercise the decision. Unknown values refuse at runtime. */
+interface TransitionContext {
+  readonly artifact_class: string; readonly operation: string; readonly actor_authorized: boolean;
+  readonly gate_declared: boolean; readonly current_revision: number; readonly expected_revision: number;
+  readonly record_digest: string; readonly expected_record_digest: string; readonly reason: string;
+}
+
+interface TransitionDecision { readonly accepted: boolean; readonly code?: MutationError["code"] }
+
+function refusedTransition(code: MutationError["code"]): TransitionDecision {
+  return { accepted: false, code };
+}
+
+/** Which classes each lifecycle op accepts, before authorization/gate/revision checks — the
+ *  spec's matrix as a table. `revise` appears only for the one fact owned here: a source
+ *  never accepts one; every other class's `revise` is `handleRevise`'s decision. */
+const OPERATION_CLASSES: Readonly<Record<string, ReadonlySet<string>>> = {
+  approve: new Set(["work_document"]),
+  verify: new Set(["work_document", "knowledge_concept"]),
+  set_knowledge_status: new Set(["knowledge_concept"]),
+  publish: new Set(["work_document", "knowledge_concept"]),
+  unpublish: new Set(["work_document", "knowledge_concept"]),
+  supersede: new Set(["knowledge_concept"]),
+};
+
+const ARTIFACT_CLASSES = new Set(["source", "work_document", "knowledge_concept"]);
+
+/** The real subtype-policy decision: a class alone never authorizes a transition. Checked in
+ *  the order the frozen check exercises it — structural class/operation refusals first (they
+ *  hold regardless of authorization, gate or revision state), then authorization, then the
+ *  gate declaration `approve` alone requires, then revision and digest binding. A wrong
+ *  expected digest OR revision refuses — never one checked and the other assumed. */
+export function decideTransition(context: TransitionContext): TransitionDecision {
+  const { artifact_class: artifactClass, operation } = context;
+  if (!ARTIFACT_CLASSES.has(artifactClass)) return refusedTransition("INVALID_INPUT");
+
+  // A source accepts no gate and no lifecycle. Its own immutability refusal is named
+  // distinctly from every other refusal this matrix reports.
+  if (operation === "revise" && artifactClass === "source") return refusedTransition("SOURCE_IMMUTABLE");
+
+  const allowedClasses = OPERATION_CLASSES[operation];
+  if (!allowedClasses || !allowedClasses.has(artifactClass)) return refusedTransition("INVALID_INPUT");
+
+  if (!context.actor_authorized) return refusedTransition("NOT_FOUND_OR_FORBIDDEN");
+  if (operation === "approve" && !context.gate_declared) return refusedTransition("GATE_REFUSED");  // NOT A TOOL: the MutationOp, not document_approve
+  if (context.current_revision !== context.expected_revision) return refusedTransition("REVISION_CONFLICT");
+  if (context.record_digest !== context.expected_record_digest) return refusedTransition("REVISION_CONFLICT");
+  return { accepted: true };
+}
+
+/** The record digest a lifecycle transition binds to. The spec's formula also folds in the
+ *  effective provenance-reference set and a work document's flow-contract digest; neither is
+ *  reachable from `PolicyContext.getHead` (I-8's, outside this edit surface), which exposes
+ *  only `content_hash`/`head_event_sequence` — no committed revision's `cause_refs` and no
+ *  flow declaration. Folding `head_event_sequence` in is the safe substitute: EVERY committed
+ *  event advances it, so this digest invalidates a stale approval/verification at least as
+ *  often as the spec's formula would (never less) — at the named cost of also invalidating
+ *  across an event the spec would have left alone (a bare `moved`), a false "re-approve this"
+ *  rather than a false "still current". */
+export function recordDigestOf(head: Pick<ArtifactHead, "content_hash" | "head_event_sequence">): string {
+  return createHash("sha256").update(`${head.content_hash}:${head.head_event_sequence}`, "utf8").digest("hex");
+}
+
+export const SHA256_RE = /^[0-9a-f]{64}$/;
+export type LifecycleOp = "approve" | "verify" | "set_knowledge_status" | "publish" | "unpublish";  // NOT A TOOL: MutationOp union members
+export const LIFECYCLE_EVENT_KIND: Readonly<Record<LifecycleOp, ArtifactEventKind>> = {
+  approve: "approved", verify: "verified", set_knowledge_status: "status_changed",
+  publish: "published", unpublish: "unpublished",
+};
+
+const LIFECYCLE_OPS = new Set<string>(["approve", "verify", "set_knowledge_status", "publish", "unpublish"]);  // NOT A TOOL: MutationOp names
 
 export const nativePolicy: Policy = (request, ctx) => {
   if (request.operation === "create") return handleCreate(request, ctx);
@@ -476,5 +593,8 @@ export const nativePolicy: Policy = (request, ctx) => {
   const kind = STATE_EVENT_KIND[request.operation];
   if (kind) return handleStateEvent(request, ctx, head, kind);
 
-  return { ok: false, error: invalid(`operation "${request.operation}" is not handled by the native tenant-information policy — it is I-10's or later`) };
+  if (LIFECYCLE_OPS.has(request.operation)) return handleLifecycleTransition(request, ctx, head, request.operation as LifecycleOp);
+  if (request.operation === "supersede") return handleSupersede(request, ctx, head);
+
+  return { ok: false, error: invalid(`operation "${request.operation}" is not handled by the native tenant-information policy — it is migrate.ts's import_legacy`) };
 };

@@ -95,13 +95,28 @@ const EXEMPT = new Set([
 // where a central allowlist would be a list nobody prunes and nobody reads.
 const MARKER = /NOT A TOOL:/;
 
+// ONE FILE CANNOT CARRY THE MARKER, and it is named here rather than folded into EXEMPT above,
+// because EXEMPT means "this file's subject IS the rename" and this file's subject is not.
+//
+// `checks/tenant-lifecycle-matrix.ts` is a plan-authored check whose bytes are frozen before
+// execution and hash-verified before and after every task: the whole point is that a worker
+// cannot find a check inconvenient and soften it, so nobody — including this repository's own
+// conventions — may edit it afterwards. It writes `operation:'approve'`, the kernel's mutation
+// verb, which `alias.ts` also knows as the renamed MCP tool `document_approve`.
+//
+// The word is right and the marker is impossible, so the exemption goes where the rule is
+// stated. It is a single named path rather than a pattern: the day a second frozen check needs
+// this, somebody should have to write down why, which is the property the marker convention
+// exists to preserve.
+const FROZEN_WITHOUT_MARKERS = new Set(["checks/tenant-lifecycle-matrix.ts"]);
+
 const TREES = ["services", "packages", "scripts", "checks", "catalog", "marketplace", "skills",
                "testing"];
 const CODE = /\.(ts|tsx|mjs|js)$/;
 const YAML = /\.ya?ml$/;
 
 for (const p of TREES.flatMap((t) => walk(t))) {
-  if (!/\.(ts|tsx|mjs|js|json|md|ya?ml|sh)$/.test(p) || EXEMPT.has(p)) continue;
+  if (!/\.(ts|tsx|mjs|js|json|md|ya?ml|sh)$/.test(p) || EXEMPT.has(p) || FROZEN_WITHOUT_MARKERS.has(p)) continue;
   const lines = readFileSync(p, "utf8").split("\n");
   let inBlock = false;
   for (let i = 0; i < lines.length; i++) {

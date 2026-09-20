@@ -471,6 +471,9 @@ check("a mutation request hashes canonically regardless of key order, changes wi
 check("a semantic payload's canonical hash is stable under tag order/dupes, CRLF and sorted content_fields, and changes on every single-field edit the spec names",
       runsCheck("tenant-revision-boundary.ts"));
 
+check("a subtype policy decision refuses source verify, knowledge approve and an undeclared work gate by name, and binds approval/verification to the actual revision and record digest",
+      runsCheck("tenant-lifecycle-matrix.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

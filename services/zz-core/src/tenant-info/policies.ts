@@ -56,6 +56,8 @@ import {
   type MutationError,
 } from "@zz/contracts";
 
+import { assertWithinInputLimit, InputTooLargeError } from "@zz/indexing";
+
 import type { ArtifactHead, Policy, PolicyContext, PolicyOutcome } from "./mutations.js";
 import { handleLifecycleTransition, handleSupersede } from "./transitions.js";
 
@@ -274,6 +276,40 @@ function prepareSemanticChange(
 ): SemanticPreparation | MutationError {
   const rawPayload = request.payload;
   const canonical = canonicalPayload(rawPayload);
+
+  // THE 8-MiB KERNEL GATE, and until this line it did not exist as behaviour.
+  //
+  // `assertWithinInputLimit` and `MAX_INPUT_BYTES` were built by I-14, exported, and
+  // mutation-tested by a frozen check — and every reference to either one in the whole
+  // checkout belonged to that check. `PAYLOAD_TOO_LARGE` has been one of the twelve declared
+  // mutation error codes since I-6 and was emitted by nothing. A contract with no
+  // implementation on both halves at once: the limit could not refuse anything and the code
+  // could not be returned. I-14 named the absence in its own commit — "NOT called from
+  // record.ts, whichever task owns it needs one line" — and no task was ever assigned it.
+  //
+  // MEASURED ON THE CANONICAL PAYLOAD, which is what the code is named after. Every text a
+  // revision carries is in there — title, description, body, tags, resource, content_fields —
+  // so no field list here can drift out of step with `semanticFields`. The JSON structure
+  // costs a few hundred bytes against a ceiling of eight million.
+  //
+  // BEFORE SCHEMA VALIDATION, deliberately: refusing an oversized payload should not depend on
+  // it also being well-formed, and the cheap byte count should run before any work proportional
+  // to the content.
+  //
+  // LEGACY CONTENT IS EXEMPT BY CONSTRUCTION, not by a flag. `import_legacy` never reaches this
+  // function — the dispatcher at the bottom of this file routes it out by name — so oversized
+  // material that predates the limit is preserved and indexed exactly as the migration
+  // exception requires, and there is no boolean anyone can pass to get a new write past it.
+  try {
+    assertWithinInputLimit(Buffer.byteLength(canonicalJson(canonical), "utf8"));
+  } catch (err) {
+    if (!(err instanceof InputTooLargeError)) throw err;
+    return {
+      committed: false, code: "PAYLOAD_TOO_LARGE",
+      message: `payload is ${err.actualBytes} bytes, over the ${err.allowedBytes}-byte limit for new artifact text`,
+    };
+  }
+
   const parsedPayload = SemanticPayloadSchema.safeParse(canonical);
   if (!parsedPayload.success) {
     return invalid(`payload failed semantic validation: ${parsedPayload.error.issues.map((i) => i.message).join("; ")}`);

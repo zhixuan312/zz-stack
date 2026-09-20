@@ -512,6 +512,9 @@ check("an isolation observation is refused as vacuous with no baseline results, 
 check("the acceptance profile blocks a suite on a case that never ran and on a receipt it cannot read case by case, leaves the integration profile unchanged, and keeps a block distinct from a failure",
       runsCheck("acceptance-profile-refuses-unrun-cases.ts"));
 
+check("new artifact text over 8 MiB is refused through the real adapter with PAYLOAD_TOO_LARGE, the stored content is untouched, and an under-limit write still commits",
+      runsCheck("payload-too-large-is-refused.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

@@ -118,11 +118,25 @@ export async function runReadySuite(
 ): Promise<SuiteOutcome> {
   const mod = (await import(pathToFileURL(modulePath).href)) as SuiteModule;
   const outcome = await mod.run({ cases });
+  // A SUITE THAT SAYS IT IS BLOCKED IS BLOCKED, NOT FAILED — at either profile.
+  //
+  // A suite reports `passed: false` for two different reasons and says which in its own
+  // detail: an assertion ran and went red, or the suite could not do its job at all and
+  // declares `detail.status === "blocked"`. Reading only the boolean collapsed those, and the
+  // collapse was visible: `verify --suite deployment` reported "failed" on a checkout where
+  // nothing was wrong, because `versions.lock.json` still carries the unverified pins I-5
+  // deliberately recorded as placeholders. Nobody reading that word would have guessed it
+  // meant "the operator has not resolved the image pins yet".
+  //
+  // The same distinction `blockedAtAcceptance` draws below, applied one level up. A failure is
+  // a fact about the system; a block is a fact about the run.
+  const declaredBlocked = typeof outcome.detail === "object" && outcome.detail !== null
+    && (outcome.detail as { status?: unknown }).status === "blocked";
   const result: SuiteOutcome = {
     suite: name,
     module: modulePath,
     partial: cases !== undefined,
-    status: outcome.passed ? "passed" : "failed",
+    status: outcome.passed ? "passed" : (declaredBlocked ? "blocked" : "failed"),
     detail: outcome.detail,
   };
   return profile === "acceptance" ? blockedAtAcceptance(result) : result;

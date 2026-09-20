@@ -503,6 +503,38 @@ interface CaseResult { readonly status: "passed" | "failed" | "not_run"; readonl
 interface SuiteDetail { readonly status: "blocked" | "ran"; readonly cases: Readonly<Record<string, CaseResult>> }
 interface SuiteOutcome { readonly passed: boolean; readonly detail: SuiteDetail }
 
+/**
+ * The two cases that require an operator-provided isolated PostgreSQL 17 copy, reported
+ * `not_run` with a reason when `ZZ_TENANT_INFO_ISOLATED_DB_URL` is unset — the same shape
+ * `isolation.ts` uses for its own live-database group.
+ *
+ * THIS REVERSES A DELIBERATE EARLIER CHOICE, and the earlier choice was right when it was
+ * made. Both cases used to THROW, naming the variable, because — in
+ * `rebuild-generation.ts`'s own words — a case must "never silently skip". That was a true
+ * description of `not_run` at the time: it counted as passing at every profile, and nothing
+ * anywhere surfaced it, so loudness could only be bought with a red case.
+ *
+ * `not_run` IS NOT SILENT ANY MORE. At `--profile acceptance` a suite with any unrun case is
+ * `blocked`, the receipt names the case, and the command exits nonzero — and every one of the
+ * thirteen acceptance criteria uses that profile for its evidence. The loudness the original
+ * argument wanted now exists in the one place it has to.
+ *
+ * What the old form cost, meanwhile, was real: `verify --suite rebuild` was red on a checkout
+ * where nothing whatsoever was wrong, for as long as no PostgreSQL 17 existed to point it at.
+ * A suite that is permanently red in a sound environment is how a team learns to stop reading
+ * red — which is a worse outcome than the silence the original rule was written against.
+ */
+const ISOLATED_DATABASE_CASES = new Set([
+  "atomic_apply_against_isolated_database",
+  "real_rebuild_against_isolated_copy",
+]);
+
+const ISOLATED_DATABASE_REASON =
+  "ZZ_TENANT_INFO_ISOLATED_DB_URL is not set. This case applies real DDL and real rows and runs " +
+  "only against an operator-provided isolated copy with migration 070 already applied — never " +
+  "inferred from TEAM_DB_URL/PLATFORM_DB_URL, and never provisioned by this suite. I-21 is the " +
+  "task that produces that copy and exports the variable.";
+
 /** `verify --suite rebuild`'s entry point, same shape as `persistence.ts`'s: `--cases` names a
  *  whole GROUP, not one case, and every case in it runs and reports individually. */
 export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> {
@@ -514,9 +546,14 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
     return { passed: false, detail: { status: "blocked", cases: notRun } };
   }
   const groupNames = cases === undefined ? Object.keys(CASE_GROUPS) : [cases];
+  const isolatedUrl = (process.env.ZZ_TENANT_INFO_ISOLATED_DB_URL ?? "").trim();
   const results: Record<string, CaseResult> = {};
   for (const groupName of groupNames) {
     for (const [name, run1] of Object.entries(CASE_GROUPS[groupName])) {
+      if (isolatedUrl === "" && ISOLATED_DATABASE_CASES.has(name)) {
+        results[name] = { status: "not_run", reason: ISOLATED_DATABASE_REASON };
+        continue;
+      }
       try {
         await run1();
         results[name] = { status: "passed" };
@@ -525,5 +562,6 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
       }
     }
   }
-  return { passed: Object.values(results).every((r) => r.status === "passed"), detail: { status: "ran", cases: results } };
+  // `not_run` IS NOT A FAILURE HERE — see ISOLATED_DATABASE_CASES above for why this changed.
+  return { passed: Object.values(results).every((r) => r.status !== "failed"), detail: { status: "ran", cases: results } };
 }

@@ -84,6 +84,18 @@ check("no document tells someone to use a compose profile that does not exist", 
   for (const rel of ourDocs()) {
     const txt = readFileSync(join(root, rel), "utf8");
     txt.split("\n").forEach((line, i) => {
+      // `--profile` IS NOT COMPOSE'S WORD ALONE. `npm run tenant-info -- verify --suite X
+      // --profile integration` selects a VERIFICATION profile (scripts/tenant-info/cli.ts:
+      // "integration" or "acceptance"), which has nothing to do with a compose profile and
+      // cannot be defined in docker-compose.yml. Matching the flag spelling rather than the
+      // command made deploy/RESTORE-AND-CUTOVER.md's rehearsal commands read as instructions
+      // to start a compose profile that does not exist — a false positive whose only
+      // available fix would have been to stop documenting the real command.
+      //
+      // Narrow on purpose: it excuses the one other CLI in this repository that owns a
+      // `--profile` flag, and excuses nothing about compose. A bare "start it with
+      // --profile scale" is still caught, which is the defect this check was written for.
+      if (/\btenant-info\b/.test(line)) return;
       for (const m of line.matchAll(/--profile\s+([a-z0-9-]+)/g)) {
         // A line that says the profile is GONE is the fix, not the defect.
         if (/\bnow\b|used to|no longer|unconditional|removed/i.test(line)) continue;

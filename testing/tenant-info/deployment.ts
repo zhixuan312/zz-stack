@@ -25,13 +25,37 @@
  * shared_preload_libraries membership. BM25 parameters, explicit-index queries and per-corpus
  * statistics need the extension's own verified DDL, which does not exist in this checkout —
  * inventing plausible-looking SQL for them would be the same fabrication as a fake digest, so
- * they are reported `not_run` rather than guessed. Restore and cutover are I-21's, always
- * `not_run` here regardless of profile.
+ * they are reported `not_run` rather than guessed.
+ *
+ * I-21 ADDED THE OTHER TWO THIRDS OF THIS SUITE, and changed what the pin gate blocks.
+ *
+ * `validateBackupManifest` is this file's third export and its second offline half: which
+ * components a protected backup must carry before a restore may begin. It lives HERE, rather
+ * than beside the rest of the rehearsal in `deployment-cutover.ts`, because
+ * `checks/backup-covers-the-undisposable.ts` is frozen at this import path — the check pins
+ * the symbol to the file by name and cannot be edited to follow it elsewhere.
+ *
+ * The eight-step restore/cutover procedure itself is in `deployment-cutover.ts`: pure
+ * predicates over a drain, a matched release unit and a forward recovery, plus the two live
+ * cases that need an isolated PostgreSQL 17 copy and protected backup bytes. The predicates
+ * run here on every invocation as the `offline` group — they used to not exist, and before
+ * I-21 this module returned at the pin gate having executed nothing at all, which made a
+ * broken rule and an unbuilt image the same word in the receipt. They are different facts now:
+ * a failing offline case reports `ran` (and reads as FAILED), an unresolved pin reports
+ * `blocked`. `deploy/RESTORE-AND-CUTOVER.md` is what an operator runs to make the two live
+ * cases execute for real.
  */
+import assert from "node:assert/strict";
 import { execFileSync, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  caseDrainedMatchedSwitchPreservesTheFirstResumedWrite,
+  caseProtectedBackupRestoresIntoACleanTarget,
+  evaluateDrain, evaluateForwardRecovery, evaluateMatchedUnit, isolatedDatabaseRefusal,
+} from "./deployment-cutover.ts";
 
 interface ImageInputs {
   readonly lock: unknown;
@@ -200,6 +224,114 @@ export function validateImageInputs(input: ImageInputs): ValidationResult {
   return { ok: issues.length === 0, issues };
 }
 
+// ──────────────────────────── the protected backup manifest ───────────────────────────────
+
+/** The five component kinds the contract names, and the whole of what "undisposable" means
+ *  on this platform. Each is here because losing it loses something no restart brings back:
+ *
+ *    database            identity truth — principals, teams, PATs, installs, grants, events
+ *    artifacts           every team's documents and knowledge, including the canonical .zz record
+ *    git                 the portable per-team history, which is what a team keeps if they leave
+ *    credentials         each person's own building-block keys, which exist nowhere else
+ *    configuration_keys  the encrypted configuration and key material the rest is useless without
+ *
+ *  `deploy/backup.sh` writes four of them and `deploy/backup-manifest.sh` derives the fifth
+ *  and the manifest. A manifest short one kind is refused below, which is the point: the
+ *  refusal is how a backup that quietly stopped covering something becomes visible. */
+const BACKUP_COMPONENT_KINDS = [
+  "database", "artifacts", "git", "credentials", "configuration_keys",
+] as const;
+
+interface ManifestResult {
+  readonly ok: boolean;
+  readonly issues: readonly string[];
+}
+
+/** A locator is `protected:` plus a bare name — no directory, no host, no userinfo, no query.
+ *  THAT IS A SECRECY RULE, NOT A TIDINESS ONE. The contract's own words are that backup
+ *  reports never print secret values or unredacted credentials, and the most natural way for
+ *  one to arrive in a report is a "locator" that is really a connection string. Refusing the
+ *  shape at the boundary means no code downstream has to remember to redact: `@`, `:` and `/`
+ *  simply cannot appear, so there is nothing to leak. */
+const LOCATOR_RE = /^protected:[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * Whether a backup manifest describes something that can actually be restored — the gate
+ * `caseProtectedBackupRestoresIntoACleanTarget` passes before it touches a byte, and what
+ * `checks/backup-covers-the-undisposable.ts` (frozen) drives.
+ *
+ * WHAT A `true` HERE IS AND IS NOT. It is a well-formed manifest: five kinds, a protected
+ * locator and a syntactically valid SHA-256 each, the canonical record declared present, a
+ * compose project named. It is NOT restoration evidence, and the distinction is the same one
+ * `validateImageInputs` above draws about a digest — nothing offline can tell a real hash
+ * from a well-formed fake one. A manifest that passes here and was never restored has proved
+ * that somebody filled in a form. Only the live case, which re-hashes the actual bytes and
+ * then interrogates the restored database, proves a backup exists.
+ *
+ * NO ISSUE EVER ECHOES A VALUE. `validateImageInputs` reports `JSON.stringify(value)`, which
+ * is right for a digest and wrong here: a malformed manifest is exactly where a credential
+ * shows up, and an error message is a thing that gets pasted into a ticket. Every issue below
+ * names the field and the kind and stops there.
+ */
+export function validateBackupManifest(report: unknown): ManifestResult {
+  if (!isRecord(report)) return { ok: false, issues: ["the manifest must be an object"] };
+  const issues: string[] = [];
+
+  // THIS VALIDATOR ONLY EVER BLESSES A REHEARSAL. "This task does not freeze or switch
+  // production; H3 production authority is sought only after I-25 readiness" — encoded, so
+  // that a manifest aimed at the live deployment cannot pass through the rehearsal's own gate.
+  if (report.scope !== "isolated-rehearsal") {
+    issues.push('scope must be "isolated-rehearsal" — this validator admits no other scope');
+  }
+
+  if (typeof report.compose_project !== "string" || report.compose_project.trim() === "") {
+    issues.push("compose_project must name the Compose project the volume IDs were resolved from");
+  }
+
+  // "Artifacts include the canonical .zz record" — declared explicitly rather than inferred
+  // from the artifacts component being present, because the component is a volume archive and
+  // whether the record is inside it is a separate fact somebody has to have checked.
+  if (report.artifacts_include_canonical_record !== true) {
+    issues.push("artifacts_include_canonical_record must be true — the canonical .zz record is protected backup material, not disposable telemetry");
+  }
+
+  const components = report.components;
+  if (!Array.isArray(components)) {
+    return { ok: false, issues: [...issues, "components must be an array"] };
+  }
+
+  const seen = new Set<string>();
+  components.forEach((component, index) => {
+    if (!isRecord(component)) { issues.push(`component ${index} must be an object`); return; }
+    const kind = component.kind;
+    if (typeof kind !== "string" || !(BACKUP_COMPONENT_KINDS as readonly string[]).includes(kind)) {
+      issues.push(`component ${index} declares no recognised kind`);
+      return;
+    }
+    if (seen.has(kind)) issues.push(`the ${kind} component is declared more than once`);
+    seen.add(kind);
+
+    if (typeof component.locator !== "string" || !LOCATOR_RE.test(component.locator)) {
+      issues.push(`the ${kind} component's locator must be "protected:" plus a bare name carrying no path, host or credential`);
+    } else if (component.locator.includes("deploy_zz-artifacts")) {
+      // "No hardcoded deploy_zz-artifacts volume name" — the contract names this literal, so
+      // so does the rule. A volume ID that was typed rather than resolved is wrong on every
+      // host whose Compose project is not `deploy`, and silently wrong.
+      issues.push(`the ${kind} component's locator hardcodes the deploy_zz-artifacts volume name instead of resolving it from the Compose project`);
+    }
+
+    if (typeof component.sha256 !== "string" || !SHA256_HEX_RE.test(component.sha256)) {
+      issues.push(`the ${kind} component's sha256 must be 64 lowercase hex characters`);
+    }
+  });
+
+  for (const kind of BACKUP_COMPONENT_KINDS) {
+    if (!seen.has(kind)) issues.push(`the manifest declares no ${kind} component`);
+  }
+
+  return { ok: issues.length === 0, issues };
+}
+
 // ─────────────────────────────────── the "deployment" suite ───────────────────────────────
 
 interface CaseResult {
@@ -222,13 +354,159 @@ interface SuiteOutcome {
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DEPLOY_DIR = join(repoRoot, "deploy", "postgres");
 
-/** The dependency-proof case group the technical AC names, minus restore/cutover — those
- *  are I-21's, always `not_run` from this module regardless of `cases`. */
+/** The dependency-proof case group the technical AC names. `restore` and `cutover` are no
+ *  longer deferred out of this module — I-21 wrote them, and they live in the two groups
+ *  below. */
 const EXTENSION_CASES = [
   "extension_load", "bm25_parameters", "explicit_index_queries",
   "per_corpus_statistics", "update_delete", "restart",
 ] as const;
-const DEFERRED_CASES = ["restore", "cutover"] as const;
+
+/**
+ * THE OFFLINE GROUP, AND WHY IT EXISTS AS A GROUP AT ALL.
+ *
+ * Until I-21 this module returned from the unverified-pin gate before running anything, so
+ * every case in the suite was `not_run` on this checkout and the suite had no executable
+ * content whatsoever. That was honest about the image pins and wrong about everything else:
+ * the rules deciding whether a backup covers the undisposable, whether a drain actually
+ * drained, whether a switch was one matched unit and whether a resumed write survived are all
+ * decidable from a checkout alone, and a rule that never executes is a rule nobody can break
+ * on purpose to find out whether it works.
+ *
+ * So these run always, at either profile, pins or no pins. They are the half of the eight-step
+ * procedure that is judgement rather than infrastructure.
+ */
+const OFFLINE_CASES: Readonly<Record<string, () => void>> = {
+  backup_manifest_covers_every_undisposable_component: () => {
+    const kinds = [...BACKUP_COMPONENT_KINDS];
+    const good = {
+      scope: "isolated-rehearsal",
+      components: kinds.map((kind, i) => ({ kind, locator: `protected:set-${i}.tar.gz`, sha256: "b".repeat(64) })),
+      artifacts_include_canonical_record: true,
+      compose_project: "zz",
+    };
+    assert.equal(validateBackupManifest(good).ok, true, "a complete manifest must validate");
+    for (const kind of kinds) {
+      const short = { ...good, components: good.components.filter((c) => c.kind !== kind) };
+      assert.equal(validateBackupManifest(short).ok, false, `a manifest missing ${kind} must be refused`);
+    }
+    assert.equal(validateBackupManifest({ ...good, artifacts_include_canonical_record: false }).ok, false);
+    assert.equal(validateBackupManifest({ ...good, scope: "production" }).ok, false,
+      "this validator admits only an isolated rehearsal");
+  },
+  backup_manifest_refuses_a_locator_that_could_carry_a_secret: () => {
+    const base = {
+      scope: "isolated-rehearsal",
+      artifacts_include_canonical_record: true,
+      compose_project: "zz",
+    };
+    const withLocator = (locator: string) => ({
+      ...base,
+      components: BACKUP_COMPONENT_KINDS.map((kind, i) => ({
+        kind, locator: kind === "database" ? locator : `protected:set-${i}.tar.gz`, sha256: "c".repeat(64),
+      })),
+    });
+    const secret = "protected:postgres://zz:s3cr3t-value@db.example.com/zz";
+    const result = validateBackupManifest(withLocator(secret));
+    assert.equal(result.ok, false, "a locator carrying a connection string must be refused");
+    // AND THE REFUSAL MUST NOT REPEAT IT. This is the rule that makes "backup reports never
+    // print a secret value" true of the validator's own output, which is the one place it is
+    // easiest to forget — an issue string is a thing people paste into tickets.
+    for (const issue of result.issues) {
+      assert.equal(issue.includes("s3cr3t-value"), false, "an issue echoed the credential it was refusing");
+    }
+    assert.equal(validateBackupManifest(withLocator("protected:deploy_zz-artifacts.tar.gz")).ok, false,
+      "a locator hardcoding the deploy_zz-artifacts volume name must be refused");
+  },
+  drain_refuses_a_writer_that_never_stopped: () => {
+    const drained = {
+      mutation_paths: [
+        { kind: "request", maintenance: true, in_flight: 0 },
+        { kind: "background", maintenance: true, in_flight: 0 },
+        { kind: "legacy_client", maintenance: true, in_flight: 0 },
+      ],
+      active_writers: 0,
+      file_commit_watermark: "f".repeat(40),
+      platform_snapshot_boundary: "0/3A2F1C8",
+    };
+    assert.equal(evaluateDrain(drained).ok, true, "a complete drain must be accepted");
+    assert.equal(evaluateDrain({ ...drained, active_writers: 1 }).ok, false);
+    assert.equal(
+      evaluateDrain({ ...drained, mutation_paths: drained.mutation_paths.filter((p) => p.kind !== "background") }).ok,
+      false, "a drain that never looked at background work has not drained every mutation path");
+    assert.equal(
+      evaluateDrain({
+        ...drained,
+        mutation_paths: drained.mutation_paths.map((p) => p.kind === "legacy_client" ? { ...p, in_flight: 2 } : p),
+      }).ok, false, "an old client with writes in flight blocks the freeze");
+    assert.equal(evaluateDrain({ ...drained, file_commit_watermark: "not-a-commit" }).ok, false);
+  },
+  matched_unit_refuses_a_reused_volume_or_an_in_place_major_upgrade: () => {
+    const matched = {
+      old_unit: {
+        app_image_digest: `sha256:${"1".repeat(64)}`, database_identity: "zz-pg16-old",
+        artifact_volume: "zz_zz-artifacts", read_only: true,
+      },
+      new_unit: {
+        app_image_digest: `sha256:${"2".repeat(64)}`, database_identity: "zz-pg17-new",
+        artifact_volume: "zz_zz-artifacts-v4", postgres_major: 17, data_directory_reused: false,
+      },
+      volumes_resolved_from_compose_project: true,
+      outbound_integrations_disabled: true,
+    };
+    assert.equal(evaluateMatchedUnit(matched).ok, true, "a genuinely matched unit must be accepted");
+    assert.equal(evaluateMatchedUnit({
+      ...matched, new_unit: { ...matched.new_unit, artifact_volume: matched.old_unit.artifact_volume },
+    }).ok, false, "reusing the old artifact volume is not a cutover");
+    assert.equal(evaluateMatchedUnit({
+      ...matched, new_unit: { ...matched.new_unit, data_directory_reused: true },
+    }).ok, false, "mounting an existing data directory into a new major is never a restore");
+    assert.equal(evaluateMatchedUnit({
+      ...matched, new_unit: { ...matched.new_unit, postgres_major: 16 },
+    }).ok, false);
+    assert.equal(evaluateMatchedUnit({
+      ...matched, old_unit: { ...matched.old_unit, read_only: false },
+    }).ok, false, "the old deployment must stay isolated read-only");
+    assert.equal(evaluateMatchedUnit({ ...matched, volumes_resolved_from_compose_project: false }).ok, false);
+    assert.equal(evaluateMatchedUnit({
+      ...matched, new_unit: { ...matched.new_unit, artifact_volume: "deploy_zz-artifacts" },
+    }).ok, false, "the hardcoded volume name is refused wherever it appears");
+  },
+  forward_recovery_refuses_a_lost_post_resume_write: () => {
+    const recovered = {
+      strategy: "forward_recovery",
+      target_postgres_major: 17,
+      resume_boundary_at: "2026-09-20T03:17:00Z",
+      post_resume_write_ref: "tx-first-after-resume",
+      recovered_write_refs: ["tx-first-after-resume", "tx-second"],
+      new_file_commits: ["a".repeat(40)],
+      recovered_file_commits: ["a".repeat(40)],
+      platform_db_changes_preserved: true,
+    };
+    assert.equal(evaluateForwardRecovery(recovered).ok, true);
+    assert.equal(evaluateForwardRecovery({ ...recovered, recovered_write_refs: ["tx-second"] }).ok, false,
+      "a recovery that dropped the first resumed write is the failure the rehearsal exists to find");
+    assert.equal(evaluateForwardRecovery({ ...recovered, strategy: "rollback_to_old_snapshot" }).ok, false,
+      "returning to the old snapshot after writes resumed drops every resumed write");
+    assert.equal(evaluateForwardRecovery({ ...recovered, target_postgres_major: 16 }).ok, false);
+    assert.equal(evaluateForwardRecovery({ ...recovered, recovered_file_commits: [] }).ok, false,
+      "preserving the database and losing the git commits loses a team's history");
+    assert.equal(evaluateForwardRecovery({ ...recovered, platform_db_changes_preserved: false }).ok, false);
+  },
+  the_isolated_database_url_is_never_the_live_cluster: () => {
+    const live = "postgres://zz@platform/zz";
+    assert.notEqual(isolatedDatabaseRefusal({}), null, "an unset URL must refuse, not default");
+    assert.notEqual(
+      isolatedDatabaseRefusal({ ZZ_TENANT_INFO_ISOLATED_DB_URL: live, TEAM_DB_URL: live }), null,
+      "the isolated copy is never TEAM_DB_URL");
+    assert.notEqual(
+      isolatedDatabaseRefusal({ ZZ_TENANT_INFO_ISOLATED_DB_URL: live, PLATFORM_DB_URL: live }), null,
+      "the isolated copy is never PLATFORM_DB_URL");
+    assert.equal(
+      isolatedDatabaseRefusal({ ZZ_TENANT_INFO_ISOLATED_DB_URL: "postgres://zz@isolated/zz_rehearsal", TEAM_DB_URL: live }),
+      null, "a genuinely separate copy is accepted");
+  },
+};
 
 function readDeployFiles(): ImageInputs {
   return {
@@ -252,12 +530,28 @@ function notRun(reason: string): CaseResult {
   return { status: "not_run", reason };
 }
 
+/** The four case groups `--cases` selects from. The plan's own rehearsal command is
+ *  `--cases restore,cutover`, so a comma-separated list of groups is accepted; the acceptance
+ *  profile rejects `--cases` outright (cli.ts), which is where "partial cases never pass a
+ *  whole business AC" is actually enforced. */
+const GROUP_NAMES = ["offline", "extension", "restore", "cutover"] as const;
+
 /**
- * `verify --suite deployment`'s entry point. Blocks before touching docker whenever the lock
- * still carries an unresolved pin — "missing information is a blocked result, not an
- * invitation to invent a value" is the contract's own sentence, and this is what makes that
- * true in code rather than only in prose. Only past that gate does it build the pinned image,
- * start it, and check the three things the spec names by name.
+ * `verify --suite deployment`'s entry point.
+ *
+ * THE ORDER OF THE THREE VERDICTS BELOW IS THE WHOLE DESIGN, and it changed with I-21.
+ *
+ * A failing offline case reports `ran`, which the CLI renders as FAILED. An unresolved image
+ * pin, with nothing failing, reports `blocked`. Those are different facts and they used to be
+ * the same one: this module returned at the pin gate before executing anything, so a broken
+ * rule and an unbuilt image were indistinguishable — both came back "blocked", and the broken
+ * rule was the one nobody would have found. Running the offline group first, and letting a
+ * real failure outrank the block, is what separates them.
+ *
+ * "Missing information is a blocked result, not an invitation to invent a value" still holds
+ * exactly where it did: no docker is spawned while a pin is unverified, no database is
+ * touched without an operator setting the variable that names one, and neither absence is
+ * ever reported as a pass.
  */
 export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> {
   const inputs = readDeployFiles();
@@ -266,36 +560,80 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
     return { passed: false, detail: { status: "blocked", issues: validation.issues } };
   }
 
-  const lock = inputs.lock as Record<string, unknown>;
-  const unverified = unverifiedFields(lock);
-  const allCaseNames = [...EXTENSION_CASES, ...DEFERRED_CASES];
-  if (unverified.length > 0) {
+  const selected = cases === undefined
+    ? [...GROUP_NAMES]
+    : cases.split(",").map((c) => c.trim()).filter((c) => c !== "");
+  const unknown = selected.filter((c) => !(GROUP_NAMES as readonly string[]).includes(c));
+  if (unknown.length > 0) {
+    const everyCase = [
+      ...Object.keys(OFFLINE_CASES), ...EXTENSION_CASES, "restore", "cutover",
+    ];
     return {
       passed: false,
       detail: {
         status: "blocked",
-        unverified,
-        cases: Object.fromEntries(
-          allCaseNames.map((c) => [c, notRun("versions.lock.json still carries an unverified pin")]),
-        ),
+        cases: Object.fromEntries(everyCase.map((name) => [
+          name, notRun(`only the "${GROUP_NAMES.join('", "')}" case groups exist`),
+        ])),
       },
     };
   }
 
-  // UNREACHABLE FROM THIS CHECKOUT TODAY: every `*_verified` flag above is false, so the
+  const results: Record<string, CaseResult> = {};
+
+  // ── offline: always executed, pins or no pins ─────────────────────────────────────────
+  if (selected.includes("offline")) {
+    for (const [name, body] of Object.entries(OFFLINE_CASES)) {
+      try {
+        body();
+        results[name] = { status: "passed" };
+      } catch (err) {
+        results[name] = { status: "failed", reason: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  }
+
+  // ── restore and cutover: real bytes and a real isolated database, or an honest not_run ──
+  if (selected.includes("restore")) {
+    results.restore = await caseProtectedBackupRestoresIntoACleanTarget(validateBackupManifest);
+  }
+  if (selected.includes("cutover")) {
+    results.cutover = await caseDrainedMatchedSwitchPreservesTheFirstResumedWrite();
+  }
+
+  const lock = inputs.lock as Record<string, unknown>;
+  const unverified = unverifiedFields(lock);
+  const wantsExtension = selected.includes("extension");
+
+  if (wantsExtension && unverified.length > 0) {
+    // EVERY MISSING PRECONDITION AT ONCE. Naming only the next blocker makes an operator
+    // discover the list one rerun at a time.
+    for (const c of EXTENSION_CASES) {
+      results[c] = notRun(
+        `versions.lock.json still carries unverified pins (${unverified.join(", ")}) — no image is built `
+        + "and no container is started while any pin is a placeholder");
+    }
+  }
+
+  const anyFailed = Object.values(results).some((r) => r.status === "failed");
+  if (!wantsExtension || unverified.length > 0) {
+    // A REAL FAILURE OUTRANKS A BLOCK. Blocked means "we could not look"; if something we DID
+    // look at went red, that is what the receipt has to say.
+    const status = anyFailed ? "ran" as const : "blocked" as const;
+    const detail: SuiteDetail = status === "blocked"
+      ? { status, unverified, cases: results }
+      : { status, cases: results };
+    return { passed: false, detail };
+  }
+
+  // UNREACHABLE FROM THIS CHECKOUT TODAY: every `*_verified` flag in the lock is false, so the
   // block above always returns first here. It becomes reachable once an operator has
   // resolved every field versions.lock.json's "unverified_fields" lists and flipped its
   // matching `*_verified` flag to true — never by this task, which ran none of it.
-  const results: Record<string, CaseResult> = {};
-  for (const c of DEFERRED_CASES) results[c] = notRun("restore/cutover rehearsal is I-21's, not this dependency proof");
   for (const c of EXTENSION_CASES) {
     results[c] = c === "extension_load"
       ? notRun("pending build")
       : notRun("requires the extension's verified DDL from the feature report, not guessed here");
-  }
-
-  if (cases !== undefined && cases !== "extension") {
-    return { passed: false, detail: { status: "blocked", cases: results } };
   }
 
   const tag = `zz-postgres-dependency-proof:${process.pid}`;

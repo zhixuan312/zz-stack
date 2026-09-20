@@ -459,6 +459,9 @@ check("the judged dataset holds its exact category/language/split counts, no fam
 check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, pg_textsearch release and actual preload membership",
       runsCheck("postgres-image-pinned.ts"));
 
+check("a backup manifest is refused when it is missing any of the five undisposable component kinds, when the canonical record is not included, or when a component's hash is malformed",
+      runsCheck("backup-covers-the-undisposable.ts"));
+
 check("the artifact reference and semantic payload schemas reject malformed input and agree on the one semantic-field order",
       runsCheck("tenant-information-contract.ts"));
 

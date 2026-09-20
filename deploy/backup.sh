@@ -73,11 +73,12 @@ umask 077
 db_file="$BACKUP_DIR/zz-db-$STAMP.sql.gz"
 art_file="$BACKUP_DIR/zz-artifacts-$STAMP.tar.gz"
 cred_file="$BACKUP_DIR/zz-credentials-$STAMP.tar.gz"
+conf_file="$BACKUP_DIR/zz-config-$STAMP.tar.gz"
 
 # EVERY FILE THIS RUN WRITES, NAMED ONCE. Two things walk this list — the cleanup below and
 # the prune at the end — and a fifth backup added above is covered by both by having been
 # added, rather than by somebody remembering two more lines.
-FILES=("$db_file" "$art_file" "$cred_file")
+FILES=("$db_file" "$art_file" "$cred_file" "$conf_file")
 
 # A FAILED RUN MUST NOT LEAVE A FILE THAT READS AS A BACKUP.
 #
@@ -100,6 +101,42 @@ cleanup() {
   done
 }
 trap cleanup EXIT INT TERM
+
+# THE FOURTH THING, AND THE ONE THAT MAKES THE OTHER THREE USABLE.
+#
+# deploy/.env holds POSTGRES_PASSWORD, COMPOSE_PROJECT_NAME and the rest of this deployment's
+# configuration, and it is gitignored — so it exists on this host and in no repository
+# anywhere. Restoring the database, the documents and the credential volume onto a fresh host
+# without it leaves you holding a dump you cannot open and a compose project whose volume
+# names you have to guess. It was missing from this script for as long as the script existed,
+# for the same reason the credential volume was: nobody loses it until they lose the host.
+#
+# IT RUNS FIRST, ON PURPOSE. Every other step here talks to docker; this one reads three local
+# files. Putting it before the database dump means the cheapest step with the fewest moving
+# parts is the one that fails on a broken host, while the cleanup trap still has nothing to
+# delete. The reverse order would risk an untested step discarding three good backups, which
+# is the incident this file's own header records twice.
+#
+# THE ARCHIVE IS AS SECRET AS .env IS. Same treatment as the credential archive below: mode
+# 600, and the closing NOTE says so.
+echo "[$(date -u +%FT%TZ)] backing up configuration and keys -> $conf_file"
+[ -f "$HERE/.env" ] || { echo "FAIL: $HERE/.env does not exist — it carries this deployment's database password and compose project, and a restore without it is a dump nobody can open"; exit 1; }
+conf_members=(".env")
+for optional in Caddyfile docker-compose.yml; do
+  [ -f "$HERE/$optional" ] && conf_members+=("$optional")
+done
+tar czf "$conf_file" -C "$HERE" "${conf_members[@]}"
+chmod 600 "$conf_file"
+# Read back, like every other archive here: a backup that was never read is a guess.
+#
+# THE LISTING IS CAPTURED BEFORE IT IS SEARCHED, for the reason this file learned on
+# 2026-08-23 and wrote down beside the database check below: `tar tzf | grep -q` exits at the
+# first match, tar then takes SIGPIPE, and `set -o pipefail` makes that the pipeline's status
+# — so the archive that CONTAINS .env is the one reported as missing it, intermittently. A
+# here-string reads the whole listing and cannot lose that race.
+conf_listing="$(tar tzf "$conf_file")" || { echo "FAIL: $(basename "$conf_file") does not list — the archive is corrupt or truncated"; exit 1; }
+grep -qx '\(\./\)\?\.env' <<<"$conf_listing" || { echo "FAIL: $(basename "$conf_file") does not contain .env"; exit 1; }
+echo "  $(basename "$conf_file"): ${#conf_members[@]} configuration file(s) read back"
 
 echo "[$(date -u +%FT%TZ)] backing up database -> $db_file"
 # --clean --if-exists so the dump restores over an existing database
@@ -252,6 +289,9 @@ ok=1
 for kept in "${FILES[@]}"; do
   find "$BACKUP_DIR" -name "$(basename "${kept/$STAMP/*}")" -mtime "+$KEEP_DAYS" -delete
 done
-echo "[$(date -u +%FT%TZ)] done. db=$((db_size/1024))KB artifacts=$((art_size/1024))KB credentials=$((cred_size/1024))KB, keeping ${KEEP_DAYS}d"
+conf_size=$(stat -c %s "$conf_file")
+echo "[$(date -u +%FT%TZ)] done. db=$((db_size/1024))KB artifacts=$((art_size/1024))KB credentials=$((cred_size/1024))KB config=$((conf_size/1024))KB, keeping ${KEEP_DAYS}d"
 echo "NOTE: $BACKUP_DIR is on the same host as the data it protects — copy it off-host to survive disk loss."
 echo "NOTE: zz-credentials-*.tar.gz holds each person's building-block API keys in plaintext, exactly as the volume does. Treat a copy of it as you would the keys themselves."
+echo "NOTE: zz-config-*.tar.gz holds deploy/.env, which carries the database password. Same treatment."
+echo "NOTE: ./deploy/backup-manifest.sh turns one dated set into the manifest a restore rehearsal validates before it touches a byte."

@@ -474,6 +474,9 @@ check("a semantic payload's canonical hash is stable under tag order/dupes, CRLF
 check("a subtype policy decision refuses source verify, knowledge approve and an undeclared work gate by name, and binds approval/verification to the actual revision and record digest",
       runsCheck("tenant-lifecycle-matrix.ts"));
 
+check("the adapter fixture's patch/approve enter the one mutation kernel — a missing etag, a stale retry and a stale approval are each refused, an idempotent replay returns the original transaction, and the materialized read reflects exactly the committed edit",
+      runsCheck("tenant-single-writer.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

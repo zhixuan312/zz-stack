@@ -24,8 +24,12 @@ import { rmSync } from "node:fs";
 
 import type { ArtifactRef } from "@zz/contracts";
 
+import {
+  captureSource, patchDocument, approveDocument, readDocumentBody, toOutcomeView, writeDocument,
+  type ArtifactPorts, type MutationOutcomeView,
+} from "../../services/zz-core/dist/persist.js";
 import { mutate, type AuthContext } from "../../services/zz-core/dist/tenant-info/mutations.js";
-import { nativePolicy } from "../../services/zz-core/dist/tenant-info/policies.js";
+import { nativePolicy, recordDigestOf } from "../../services/zz-core/dist/tenant-info/policies.js";
 import { makeStoreRoot } from "./persistence.ts";
 
 const AUTH: AuthContext = { owner_id: "55555555-5555-4555-8555-555555555555", actor: "model-suite" };
@@ -345,4 +349,92 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
     }
   }
   return { passed: Object.values(results).every((r) => r.status === "passed"), detail: { status: "ran", cases: results } };
+}
+
+// ── I-11: createAdapterFixture — real registered handlers, real kernel, disposable store ───
+//
+// `checks/tenant-single-writer.ts` (frozen) imports this by name. It wraps `persist.ts`'s own
+// captureSource/writeDocument/patchDocument/approveDocument/readDocumentBody — the real
+// adapters, bound to the real `mutate()`/`nativePolicy` kernel — over a fresh `makeStoreRoot()`
+// this fixture alone owns; it supplies only the `auth` port those functions accept, never a
+// second mutate()/policy call of its own. `seedDocument` captures one real fixture source and
+// keeps it as the default cause for every edit made afterward, so a check exercising `patch`/
+// `approve` never has to (and never may) pass an empty `cause_refs` to get past CAUSE_REQUIRED.
+
+interface AdapterRef {
+  readonly ref: ArtifactRef;
+  readonly etag: string;
+  readonly record_digest: string;
+  readonly artifact_id: string;
+}
+
+interface AdapterFixture {
+  seedDocument(input: { readonly body: string }): Promise<AdapterRef>;
+  patch(request: {
+    readonly ref: ArtifactRef; readonly body: string;
+    readonly expected_etag?: string; readonly idempotency_key: string;
+  }): Promise<MutationOutcomeView>;
+  // NOT A TOOL: this fixture method mirrors the kernel's own `approve` MutationOp — the MCP
+  // tool it will eventually stand behind is document_approve.
+  approve(request: {
+    readonly ref: ArtifactRef; readonly record_digest: string;
+    readonly expected_etag?: string; readonly idempotency_key: string;
+  }): Promise<MutationOutcomeView>;
+  // `string | undefined`, not `string`: the frozen check reads `.artifact_id` straight off a
+  // `MutationOutcomeView` (optional on the type, since it does not apply to every outcome)
+  // with no narrowing of its own — `undefined` is refused here at runtime, not at the type.
+  read(artifactId: string | undefined): Promise<{ readonly body: string }>;
+  // NOT A TOOL: releases this fixture's own disposable store — no door registers a `close`.
+  close(): Promise<void>;
+}
+
+export async function createAdapterFixture(): Promise<AdapterFixture> {
+  const root = makeStoreRoot();
+  const ports: ArtifactPorts = { root, auth: { owner_id: randomUUID(), actor: "adapter-fixture" } };
+  let defaultCause: ArtifactRef | null = null;
+
+  function requireCause(): ArtifactRef {
+    if (!defaultCause) throw new Error("createAdapterFixture: seedDocument must run before an edit");
+    return defaultCause;
+  }
+
+  return {
+    async seedDocument({ body }) {
+      const source = await captureSource(ports, {
+        content: `fixture-source-${randomUUID()}\n`, original_path: "fixture.txt",
+        title: "Fixture source", media_type: "text/plain",
+      }, `fixture-source-${randomUUID()}`);
+      if (source.committed !== true) throw new Error(`createAdapterFixture: source capture failed: ${JSON.stringify(source)}`);
+      const cause: ArtifactRef = {
+        owner_id: ports.auth.owner_id, artifact_id: source.artifact_id, revision: null, content_hash: source.content_hash,
+      };
+      defaultCause = cause;
+      const created = await writeDocument(ports, { body }, [cause], `fixture-doc-${randomUUID()}`);
+      if (created.committed !== true) throw new Error(`createAdapterFixture: seedDocument failed: ${JSON.stringify(created)}`);
+      return {
+        ref: { owner_id: ports.auth.owner_id, artifact_id: created.artifact_id, revision: created.revision, content_hash: created.content_hash },
+        etag: created.etag, artifact_id: created.artifact_id,
+        record_digest: recordDigestOf({ content_hash: created.content_hash, head_event_sequence: created.commit_sequence ?? 0 }),
+      };
+    },
+    patch: async (request) => toOutcomeView(await patchDocument(ports, {
+      artifact_id: request.ref.artifact_id, expected_etag: request.expected_etag,
+      idempotency_key: request.idempotency_key, seed: { body: request.body }, cause_refs: [requireCause()],
+    })),
+    approve: async (request) => toOutcomeView(await approveDocument(ports, {
+      artifact_id: request.ref.artifact_id, expected_etag: request.expected_etag,
+      idempotency_key: request.idempotency_key, reason: "adapter fixture approval",
+      expected_revision: request.ref.revision ?? 0, expected_record_digest: request.record_digest,
+    })),
+    async read(artifactId) {
+      if (!artifactId) throw new Error("createAdapterFixture: read requires an artifact_id");
+      const doc = readDocumentBody(root, artifactId);
+      if (!doc) throw new Error(`createAdapterFixture: no materialized document for ${artifactId}`);
+      return doc;
+    },
+    // NOT A TOOL: same as the interface method above — this releases the fixture's own store.
+    async close() {
+      rmSync(root, { recursive: true, force: true });
+    },
+  };
 }

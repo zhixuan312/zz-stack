@@ -1,8 +1,11 @@
 /**
  * Writing a document down, and the four records that go with it.
  *
- * `persistDocument` is the only way bytes reach the store, and it is one function because
- * each of the things it does afterwards was once a line somebody had to remember: the
+ * `persistDocument` is the only way bytes reach the store THROUGH THE TOOLS REGISTERED TODAY
+ * (document_write/patch, source_add, and the initiative acts) — see this file's bottom
+ * section for the second, kernel-routed way bytes reach a DISPOSABLE store, and why it is not
+ * yet the same tools' way of reaching this one. It remains one function for the tools above
+ * because each of the things it does afterwards was once a line somebody had to remember: the
  * version snapshot taken at an approval, the activity entry, the ledger row on a close, and
  * the commit that makes the store a history a team can walk away with.
  *
@@ -14,11 +17,16 @@ import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { ENVELOPE_BLOCK, parseCaller, parseEnvelope } from "@zz/contracts";
+import {
+  ENVELOPE_BLOCK, parseCaller, parseEnvelope,
+  type ArtifactRef, type MutationError, type MutationIndeterminate, type MutationResult,
+} from "@zz/contracts";
 import { indexDoc } from "@zz/indexing";
 import { requestHeaders } from "@zz/mcp-http";
 
 import { oneLine, tableRow } from "./document-rules.js";
+import { mutate, type AuthContext } from "./tenant-info/mutations.js";
+import { nativePolicy } from "./tenant-info/policies.js";
 
 import { type Chain, isoToday, stampEnvelope } from "./write-guards.js";
 
@@ -302,4 +310,173 @@ export function persistDocument(chain: Chain, root: string, relPath: string, tar
   commitStore(root, parseCaller(requestHeaders()).email, act, relPath);
   void indexDoc(root, relPath, stamped);
   return stamped;
+}
+
+// ── I-11: adapters that route through the tenant-info mutation kernel ──────────────────────
+//
+// THESE ARE NOT WIRED INTO document_write/document_patch/document_approve/source_add ABOVE,
+// and that gap is reported rather than papered over. `mutate()` (I-8's `tenant-info/
+// mutations.ts`) refuses NOT_FOUND_OR_FORBIDDEN for any artifact_id it holds no commit for —
+// `readOwnerState` there replays only `.zz/commits/*.json` — and every one of the 527
+// documents on a live deployment has no such commit. Giving one a commit is `import_legacy`,
+// which `nativePolicy` (policies.ts) explicitly excludes ("that is migrate.ts's, not this
+// task's") and which does not exist yet: it is task I-20, three tasks after this one, per the
+// plan's own dependency order. Routing the tools above through `mutate()` before that import
+// exists would answer every write to an existing document with a refusal — the regression the
+// safety directive on this task names outright: "a document that is valid and writable today
+// must remain valid and writable."
+//
+// What this task delivers instead: the one real, single-mutation-kernel entry point the
+// cutover task registers in place of the ad-hoc writes above, exercised end to end against a
+// disposable store by `createAdapterFixture()` in testing/tenant-info/model.ts (checks/
+// tenant-single-writer.ts). `auth` is the one port these functions accept — the caller
+// identity `parseCaller(requestHeaders())` resolves for the tools above is passed in here
+// instead, so a fixture can supply a fixed one. A clock and export ports are deliberately NOT
+// threaded through: `mutate()` derives `at` internally and never accepts a `CommitExports`
+// (`record.ts`'s own optional projectToDatabase/exportToGit), and both are I-8's file, outside
+// this task's edit surface — wiring either here would mean editing mutations.ts.
+
+export interface ArtifactPorts {
+  readonly root: string;
+  readonly auth: AuthContext;
+}
+
+/** The semantic fields a document write may set. Anything omitted gets exactly the default
+ *  `canonicalPayload` (policies.ts) would apply to a missing field — this never invents a
+ *  second set of defaults. */
+interface DocumentSeed {
+  readonly body: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly type?: string;
+  readonly tags?: readonly string[];
+  readonly resource?: string | null;
+  readonly content_fields?: Record<string, unknown>;
+}
+
+function documentPayload(seed: DocumentSeed): Record<string, unknown> {
+  const payload: Record<string, unknown> = { body: seed.body };
+  if (seed.title !== undefined) payload.title = seed.title;
+  if (seed.description !== undefined) payload.description = seed.description;
+  if (seed.type !== undefined) payload.type = seed.type;
+  if (seed.tags !== undefined) payload.tags = seed.tags;
+  if (seed.resource !== undefined) payload.resource = seed.resource;
+  if (seed.content_fields !== undefined) payload.content_fields = seed.content_fields;
+  return payload;
+}
+
+export type MutationOutcome = MutationResult | MutationError | MutationIndeterminate;
+
+/** A flat, always-shaped view of `MutationOutcome` for a caller that reads a field without
+ *  first narrowing the discriminated union — exactly what a JSON reply to an MCP client (or a
+ *  check exercising this adapter layer with no type guard of its own) needs. Every field the
+ *  spec's structured mutation metadata names is present on the type; a field that does not
+ *  apply to this particular outcome's `committed` value is simply absent, never a fabricated
+ *  default standing in for it. */
+export interface MutationOutcomeView {
+  readonly committed: true | false | "unknown";
+  readonly code?: string;
+  readonly message?: string;
+  readonly transaction_id?: string | null;
+  readonly idempotency_key?: string;
+  readonly artifact_id?: string;
+  readonly revision?: number | null;
+  readonly content_hash?: string;
+  readonly etag?: string;
+  readonly commit_sequence?: number | null;
+  readonly projection?: "current" | "pending";
+  readonly history_export?: "current" | "pending";
+}
+
+export function toOutcomeView(outcome: MutationOutcome): MutationOutcomeView {
+  return { ...outcome };
+}
+
+/** `source_add`'s eventual kernel entry point: one immutable capture, never revised. */
+export async function captureSource(
+  ports: ArtifactPorts,
+  input: { readonly content: string; readonly original_path: string; readonly title: string; readonly media_type: string },
+  idempotencyKey: string,
+): Promise<MutationOutcome> {
+  return mutate({
+    root: ports.root, auth: ports.auth, policy: nativePolicy,
+    request: {
+      operation: "create", idempotency_key: idempotencyKey, artifact_class: "source",
+      payload: { content: input.content, original_path: input.original_path, title: input.title, media_type: input.media_type },
+      cause_refs: [],
+    },
+  });
+}
+
+/** `document_write`'s eventual kernel entry point for a NEW document. `causeRefs` must
+ *  already resolve to a committed (or same-batch-staged) record — an empty list is refused
+ *  CAUSE_REQUIRED by the kernel's own policy, never defaulted here. */
+export async function writeDocument(
+  ports: ArtifactPorts, seed: DocumentSeed, causeRefs: readonly ArtifactRef[], idempotencyKey: string,
+): Promise<MutationOutcome> {
+  return mutate({
+    root: ports.root, auth: ports.auth, policy: nativePolicy,
+    request: {
+      operation: "create", idempotency_key: idempotencyKey, artifact_class: "work_document",
+      payload: documentPayload(seed), cause_refs: causeRefs,
+    },
+  });
+}
+
+/** `document_patch`/`document_revise`'s eventual kernel entry point. `expected_etag` has no
+ *  default: an omitted one is the safety-related compatibility error the spec names, never a
+ *  value this function invents to let a stale request through. */
+export async function patchDocument(
+  ports: ArtifactPorts,
+  request: {
+    readonly artifact_id: string; readonly expected_etag?: string; readonly idempotency_key: string;
+    readonly seed: DocumentSeed; readonly cause_refs: readonly ArtifactRef[];
+  },
+): Promise<MutationOutcome> {
+  return mutate({
+    root: ports.root, auth: ports.auth, policy: nativePolicy,
+    request: {
+      operation: "revise", artifact_id: request.artifact_id, expected_etag: request.expected_etag,
+      idempotency_key: request.idempotency_key, artifact_class: "work_document",
+      payload: documentPayload(request.seed), cause_refs: request.cause_refs,
+    },
+  });
+}
+
+/** `document_approve`'s eventual kernel entry point. Binds to the revision AND record digest
+ *  the caller presents as current — `decideTransition` (policies.ts) refuses either one stale,
+ *  never approving content or provenance the caller has not actually seen. */
+export async function approveDocument(
+  ports: ArtifactPorts,
+  request: {
+    readonly artifact_id: string; readonly expected_etag?: string; readonly idempotency_key: string;
+    readonly reason: string; readonly expected_revision: number; readonly expected_record_digest: string;
+  },
+): Promise<MutationOutcome> {
+  return mutate({
+    root: ports.root, auth: ports.auth, policy: nativePolicy,
+    request: {
+      // NOT A TOOL: the kernel's own MutationOp value — the MCP tool this adapter will
+      // eventually stand behind is document_approve.
+      operation: "approve", artifact_id: request.artifact_id, expected_etag: request.expected_etag,
+      idempotency_key: request.idempotency_key, artifact_class: "work_document",
+      payload: {
+        reason: request.reason, expected_revision: request.expected_revision,
+        expected_record_digest: request.expected_record_digest, gate_declared: true,
+      },
+      cause_refs: [],
+    },
+  });
+}
+
+/** `document_read`/`document_present`'s eventual kernel entry point for a pinned artifact_id:
+ *  the materialized body `record.ts` already wrote to `documents/<artifact_id>.md` on the last
+ *  committed create/revise. Revision, content_hash, record_digest and etag are NOT derivable
+ *  here without `mutations.ts`'s owner-state replay (`readOwnerState`, unexported and outside
+ *  this task's edit surface) — a caller that needs those already holds them on the
+ *  `MutationResult` a create/revise/approve just returned; this only re-reads the bytes. */
+export function readDocumentBody(root: string, artifactId: string): { readonly body: string } | null {
+  const target = join(root, "documents", `${artifactId}.md`);
+  if (!existsSync(target)) return null;
+  return { body: readFileSync(target, "utf8") };
 }

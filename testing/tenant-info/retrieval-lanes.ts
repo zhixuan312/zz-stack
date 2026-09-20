@@ -256,7 +256,54 @@ async function caseSearchDisclosesInspectionBudgetExhaustion(): Promise<void> {
   assert.ok((outcome.reasons as readonly IncompleteReason[]).includes("inspection_budget"));
 }
 
+/**
+ * THE CONSEQUENCE RRF EXISTS FOR, asserted in the composed function rather than in the
+ * arithmetic. `checks/tenant-fusion-arithmetic.ts` proves `rrf()` computes reciprocal-rank
+ * sums correctly over lane lists it is handed directly. These three cases prove `search()`
+ * issues the lane queries. Between the two sat an untested join: that `search()` hands the
+ * lane lists to `rrf()` in a way that preserves which lane found what.
+ *
+ * A wiring bug there is invisible to both existing layers — label every list with the same
+ * lane name, or build one list per corpus instead of per lane, and the arithmetic is still
+ * correct and the queries are still issued, while multi-lane agreement stops counting for
+ * anything. What would be lost is the whole reason there are four lanes.
+ *
+ * So: B is the TOP result of the lexical lane and is found by nothing else. A is second in
+ * that same lane, and is also found by exact and by fuzzy. A must outrank B — three lanes at
+ * middling rank beat one lane at rank 1, which is the trade RRF is chosen to make.
+ *
+ * `via` is asserted too, because the score alone could come out right by accident while the
+ * provenance a caller reads is wrong.
+ */
+async function caseSearchRanksMultiLaneAgreementAboveOneLaneTopHit(): Promise<void> {
+  const common = { revision: 1, corpus_key: DESCRIPTOR_P.corpus_key, scope: "current", tags: [] };
+  const rowA = { ...common, owner_id: OWNER_P, artifact_id: ARTIFACT_A, content_hash: "a".repeat(64) };
+  const rowB = { ...common, owner_id: OWNER_P, artifact_id: ARTIFACT_B, content_hash: "b".repeat(64) };
+  const { client } = fakeStore({
+    // lexical returns B first, A second — B is the single-lane leader.
+    lexicalRows: [rowB, rowA],
+    // A alone is reachable by the exact lane and by the fuzzy lane.
+    identifierRows: [{ ...rowA, normalized_text: "alpha" }],
+    fuzzyRows: [rowA],
+  });
+  const query: AnalyzedQuery = { exactCandidates: ["alpha"], fuzzyCandidate: "alpa", lexicalQuery: "widget" };
+  const outcome = await search(client, [DESCRIPTOR_P], query, EMPTY_PREDICATES, 15);
+
+  assert.equal(outcome.candidates.length, 2, "both artifacts must survive — this is about order, not filtering");
+  const [first, second] = outcome.candidates;
+  assert.equal(first!.identity.artifact_id, ARTIFACT_A,
+    "an artifact three lanes agree on must outrank the single-lane leader — otherwise the lane " +
+    "lists are reaching rrf() without their lane identity and the four lanes are one lane");
+  assert.equal(second!.identity.artifact_id, ARTIFACT_B);
+  assert.ok(first!.score > second!.score,
+    `the ordering must come from the fused score, not from a stable sort: ${first!.score} vs ${second!.score}`);
+  assert.deepEqual([...first!.via].sort(), ["exact", "fuzzy", "lexical"],
+    "the winner's provenance must name all three lanes that found it");
+  assert.deepEqual([...second!.via], ["lexical"]);
+}
+
 export const LANE_CASES: Readonly<Record<string, () => Promise<void>>> = {
+  search_ranks_multi_lane_agreement_above_one_lane_top_hit: caseSearchRanksMultiLaneAgreementAboveOneLaneTopHit,
   exact_lane_owner_predicate_separates_colliding_rows: caseExactLaneOwnerPredicateSeparatesCollidingRows,
   lexical_lane_owner_predicate_separates_colliding_rows: caseLexicalLaneOwnerPredicateSeparatesCollidingRows,
   fuzzy_lane_owner_predicate_separates_colliding_rows: caseFuzzyLaneOwnerPredicateSeparatesCollidingRows,

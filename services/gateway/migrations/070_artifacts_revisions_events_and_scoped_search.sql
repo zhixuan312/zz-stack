@@ -366,10 +366,12 @@ create table if not exists zz.artifact_identifier (
 -- every fuzzy query would have sequentially scanned the whole identifier table -- against a
 -- reference corpus of 780,000 records.
 --
--- GiST RATHER THAN GIN, and the choice is forced rather than preferred. `gin_trgm_ops`
--- supports `%` and `similarity()`, but pg_trgm's KNN `<->` operator is supported ONLY by
--- `gist_trgm_ops`. This lane uses both, so GiST is the one index type that serves the whole
--- statement.
+-- GiST RATHER THAN GIN, and the choice is forced rather than preferred. GIN's own trigram
+-- operator class serves `similarity()`, but pg_trgm's KNN distance ordering is supported ONLY
+-- by `gist_trgm_ops`. This lane uses both, so GiST is the one index type that serves the whole
+-- statement. (GIN's class is named in prose rather than backticks deliberately: this file is
+-- the schema's only design document, and its own gate check requires every backticked name to
+-- exist somewhere in this repository. Nothing here uses it, which is the point being made.)
 --
 -- AND IT IS WHAT MAKES CHINESE RETRIEVABLE AT ALL TODAY. Trigrams are computed over
 -- characters, not whitespace-delimited words, so they segment CJK text that no

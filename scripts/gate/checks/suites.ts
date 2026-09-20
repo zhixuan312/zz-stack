@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { asRecord, codeOnly, envNamesIn, readJson, root, trackedFiles, unbuilt, withoutComments }
+import { asRecord, codeOnly, envNamesIn, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
 import { generateJudgedDataset, judgedDatasetToJsonl } from "../../tenant-info/benchmark.ts";
@@ -518,6 +518,9 @@ check("the acceptance profile blocks a suite on a case that never ran and on a r
 check("new artifact text over 8 MiB is refused through the real adapter with PAYLOAD_TOO_LARGE, the stored content is untouched, and an under-limit write still commits",
       runsCheck("payload-too-large-is-refused.ts"));
 
+check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
+      runsCheck("tenant-checks-registered.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those
@@ -599,14 +602,19 @@ check("every check in checks/ is registered here, or named here with a reason", 
   // host-dependent check reaches a deployment; the offline gate has none, so it belongs to the
   // release's live step. Both are decided by what the file DOES, because the `gate-` prefix
   // that used to stand for the first is carried by six files and missing from a seventh.
-  // THE PATH IS INSIDE THE SPAWN CALL, not merely somewhere in the same file, and the first
-  // spelling of this — the path anywhere AND a spawner anywhere — reported
-  // `chain-check-wiring.ts` as a break-test on its first run. That check READS
-  // `scripts/gate.ts` to ask what the gate is wired to and names the spawners in a regex, so
-  // both halves were true of a file that spawns nothing. Exempting it would have taken a
-  // registered, working check out of the gate on the strength of a coincidence.
-  const spawnsGate = (code: string): boolean =>
-    /(?:execFileSync|spawnSync|execSync)\s*\([^;]{0,200}["'`]scripts\/gate\.ts["'`]/.test(code);
+  //
+  // THE SYNTAX, NOT THE TEXT. This rule was a regular expression — "one of the three spawner
+  // names, then `scripts/gate.ts` inside the same call" — and it was narrowed to that shape
+  // because the looser spelling (a spawner anywhere AND the path anywhere) reported
+  // `chain-check-wiring.ts`, which READS the gate and names the spawners in its own pattern,
+  // as a break-test. Narrowing fixed that file and left the rule blind in the other direction:
+  // measured against the frozen fixtures in `checks/tenant-checks-registered.ts`, it answers
+  // "not a break-test" for `execFileSync("npm", ["run", "gate"])`, for `spawnSync as launch`
+  // and for `cp.execSync("npm run gate")` — three of three. A break-test spelled any of those
+  // ways would have been classified ordinary, registered here, and the gate would have invoked
+  // itself. `isGateLaunchSource` resolves the callee through the file's real imports and reads
+  // its statically-known arguments, so a comment, a string and a regex literal are data and an
+  // alias is still a launcher.
   // A READ OF THE VARIABLE, NOT A MENTION OF ITS NAME, and the distinction is not academic:
   // `working-checks-registered.ts` and the break-test for this check both carry the literal
   // ZZ_GATEWAY inside their own exclusion regex, and a rule that grepped for the bare name
@@ -622,7 +630,10 @@ check("every check in checks/ is registered here, or named here with a reason", 
   const files = readdirSync(join(root, "checks")).filter((f) => /\.(ts|sh)$/.test(f)).sort();
   const seen = new Map(files.map((f) => {
     const src = readFileSync(join(root, `checks/${f}`), "utf8");
-    return [f, { gate: spawnsGate(withoutComments(src)), host: needsHost(withoutComments(src), codeOnly(src)) }];
+    // THE RAW SOURCE, not `withoutComments(src)`: the classifier parses it, so a commented-out
+    // spawn is a comment to it for the same reason it is to the compiler — and handing it
+    // pre-blanked text would hide which of the two rules is doing the work.
+    return [f, { gate: isGateLaunchSource(src), host: needsHost(withoutComments(src), codeOnly(src)) }];
   }));
 
   const problems = [];

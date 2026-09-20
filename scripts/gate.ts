@@ -14,8 +14,19 @@
  *
  *   node scripts/gate.ts            # all checks
  *   node scripts/gate.ts --quiet    # only failures
+ *   node scripts/gate.ts --report PATH   # ALSO write a machine-readable execution report
  *
  * Exit 0 = safe to release. Non-zero = do not.
+ *
+ * `--report` is optional and changes nothing else: stdout, the exit codes and every check are
+ * what they are without it. PATH must resolve OUTSIDE this repository — the report names every
+ * check discovered, executed, skipped and failed, which is private acceptance evidence rather
+ * than a repository deliverable, and a report written into the tree would be hashed into the
+ * next run's own `source_tree_sha256`. `scripts/gate/run.ts` refuses an inside path at startup.
+ *
+ * A GATE INSIDE A GATE IS REFUSED, at runtime, before `marketplace.ts` regenerates anything —
+ * see the `ZZ_GATE_RUNNING` guard in `gate/run.ts`, which this file's very first import pulls
+ * in ahead of every check module.
  *
  * THIS FILE IS AN ORDER, NOT A LIST. Every check lives in `gate/checks/<subject>.ts`,
  * grouped by what it is about, and each module registers its own checks when it is

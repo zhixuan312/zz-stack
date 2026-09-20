@@ -22,6 +22,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// THE COMPILER'S OWN PARSER, for `isGateLaunchSource` below. It is already this repository's
+// typechecker (`npm run build`, `npm run typecheck:tooling`) and already a devDependency, so
+// nothing new is installed to read a syntax tree — and the alternative, another regular
+// expression over source text, is the thing that function exists to stop being.
+import ts from "typescript";
+
 const COMMENTS = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/;
 
 const REGEX = /(?<=[=(,:[!&|?{};]\s*)\/(?![*\/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^\/\\\n])+\/[dgimsuvy]*/;
@@ -103,6 +109,15 @@ export const doctorSource = subjectSource(["scripts/doctor"], [".ts"],
 export const gateOwnSource = (rel: string): boolean =>
   rel === "scripts/gate.ts" || rel.startsWith("scripts/gate/");
 
+/** The captured text of a `check("…")` title read as SOURCE, turned into the string the check
+ *  actually registers. One title in this gate is written `"the console\'s version …"` — a
+ *  backslash a double-quoted literal does not need and JavaScript drops — so the name read off
+ *  the file and the name `check()` was called with differed by one character. Nothing noticed
+ *  while the only question asked of this list was how LONG it is; the execution report asks
+ *  which names ran, and that comparison reported a check that ran as skipped. */
+const asWritten = (raw: string): string =>
+  raw.replace(/\\(.)/g, (_, ch: string) => ({ n: "\n", t: "\t", r: "\r" }[ch] ?? ch));
+
 /**
  * Every check this gate registers, by name, in the order the modules declare them.
  *
@@ -115,7 +130,136 @@ export const gateOwnSource = (rel: string): boolean =>
 export const gateCheckNames = (): string[] =>
   sourceFiles(["scripts/gate/checks"], [".ts"])
     .flatMap((f) => [...readFileSync(join(root, f), "utf8").matchAll(/^check\("(.+?)",/gm)]
-      .map((m) => m[1]));
+      .map((m) => asWritten(m[1])));
+
+// ── classifying a check file: does it LAUNCH the gate, or only talk about launching it ──────
+//
+// A check that spawns `scripts/gate.ts` is a break-test: registering one makes the gate invoke
+// itself, forever. Registration therefore has to tell the two kinds apart, and it used to do it
+// with a regular expression over the file's text with comments stripped. That regex was wrong
+// in both directions on files this repository actually contains.
+//
+// FALSE POSITIVE, measured: `chain-check-wiring.ts` READS `scripts/gate.ts` to ask what the gate
+// is wired to, and names `execFileSync|spawnSync|execSync` inside its own pattern. Both halves
+// of "a spawner, and the gate's path" were true of a file that spawns nothing, and exempting it
+// would have taken a registered, working check out of the gate on a coincidence. The regex was
+// then narrowed to "the path INSIDE the call", which fixed that one file and is still text.
+//
+// FALSE NEGATIVE, structural: the same narrowing cannot see `const launch = spawnSync` or an
+// argument built one line above the call, and it cannot see that a `gate` word inside a string
+// literal or a regex literal is data. Stripping comments only removes one of the three places a
+// word can hide. This function reads the SYNTAX instead: a call expression whose callee actually
+// resolves to a `node:child_process` launcher through the file's own imports, and whose
+// statically-resolvable arguments actually name this repository's gate.
+//
+// IT IS PURE AND IMPORT-SAFE — one string in, one boolean out, no filesystem and no process — so
+// `checks/tenant-checks-registered.ts` can import it and drive it over source fixtures.
+
+const CHILD_PROCESS_SPECIFIERS = new Set(["child_process", "node:child_process"]);
+const LAUNCHERS = new Set(["exec", "execFile", "execFileSync", "execSync", "fork", "spawn", "spawnSync"]);
+
+/** `npm run gate` and `node scripts/gate.ts` are the two spellings this repository's break-tests
+ *  actually use, in either the argv-array form or one whole command line in a single string. */
+function literalsNameTheGate(literals: readonly string[]): boolean {
+  const flat = literals.map((l) => l.trim());
+  const isGatePath = (word: string): boolean => /(^|\/)scripts\/gate\.ts$/.test(word);
+  const isNpm = (word: string): boolean => /(^|\/)npm(\.cmd)?$/.test(word);
+  for (const text of flat) {
+    if (isGatePath(text)) return true;
+    const words = text.split(/\s+/);
+    if (words.length < 2) continue;                       // a bare argv entry, judged below
+    if (words.some(isGatePath)) return true;
+    if (words.some((w, i) => w === "run" && words[i + 1] === "gate" && isNpm(words[i - 1] ?? ""))) return true;
+  }
+  // The argv-array form: the program in one argument, `run` and `gate` in the next. `gate` is
+  // compared whole — `checks/gate-catches-unregistered.ts` is an argument this must not match.
+  if (!flat.some(isNpm)) return false;
+  return flat.some((w, i) => w === "run" && flat[i + 1] === "gate");
+}
+
+/**
+ * Whether `sourceText` — one TypeScript/JavaScript module's source — actually launches this
+ * repository's gate as a child process.
+ *
+ * A word in a comment, a string or a regex literal is data and never counts; a call is counted
+ * only when its callee resolves through this module's own imports to a `node:child_process`
+ * launcher (named, aliased, namespace or default) and its arguments, resolved through
+ * single-assignment `const` string/array bindings in the same file, name `npm run gate` or
+ * `scripts/gate.ts`.
+ *
+ * WHAT IT DOES NOT SEE, named rather than implied: a launcher reached through `require()`, a
+ * command assembled at runtime, or a spawn of something that spawns the gate. Static analysis
+ * cannot prove those absent, which is why `scripts/gate.ts` ALSO carries a runtime guard that
+ * refuses a nested gate before it writes anything.
+ */
+export function isGateLaunchSource(sourceText: string): boolean {
+  const source = ts.createSourceFile("gate-launch-probe.ts", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+  // Pass one: what the file's own imports call the launchers, and which `const` names hold
+  // statically-known strings.
+  const launcherLocals = new Map<string, string>();   // local name → child_process export
+  const namespaceLocals = new Set<string>();          // `import * as cp` / default import of the module
+  const constStrings = new Map<string, string[]>();
+
+  const stringOf = (node: ts.Node): string | null =>
+    ts.isStringLiteralLike(node) ? node.text
+      : ts.isNoSubstitutionTemplateLiteral(node) ? node.text : null;
+
+  const collect = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
+        && CHILD_PROCESS_SPECIFIERS.has(node.moduleSpecifier.text)) {
+      const clause = node.importClause;
+      if (clause?.name) namespaceLocals.add(clause.name.text);          // default import of a CJS module
+      const bindings = clause?.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) namespaceLocals.add(bindings.name.text);
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          const exported = (element.propertyName ?? element.name).text;
+          if (LAUNCHERS.has(exported)) launcherLocals.set(element.name.text, exported);
+        }
+      }
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const single = stringOf(node.initializer);
+      if (single !== null) constStrings.set(node.name.text, [single]);
+      else if (ts.isArrayLiteralExpression(node.initializer)) {
+        const parts = node.initializer.elements.map(stringOf).filter((s): s is string => s !== null);
+        if (parts.length > 0) constStrings.set(node.name.text, parts);
+      }
+      // `const launch = spawnSync` — an alias made by assignment rather than by import.
+      else if (ts.isIdentifier(node.initializer) && launcherLocals.has(node.initializer.text)) {
+        launcherLocals.set(node.name.text, launcherLocals.get(node.initializer.text)!);
+      }
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(source);
+
+  // Pass two: every call whose callee is one of those launchers, read for what it actually runs.
+  let launches = false;
+  const literalsUnder = (node: ts.Node, out: string[]): string[] => {
+    const single = stringOf(node);
+    if (single !== null) out.push(single);
+    else if (ts.isIdentifier(node)) out.push(...(constStrings.get(node.text) ?? []));
+    else ts.forEachChild(node, (child) => { literalsUnder(child, out); });
+    return out;
+  };
+  const isLauncherCallee = (callee: ts.Expression): boolean => {
+    if (ts.isIdentifier(callee)) return launcherLocals.has(callee.text);
+    return ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
+      && namespaceLocals.has(callee.expression.text) && LAUNCHERS.has(callee.name.text);
+  };
+  const inspect = (node: ts.Node): void => {
+    if (!launches && ts.isCallExpression(node) && isLauncherCallee(node.expression)) {
+      const literals: string[] = [];
+      for (const argument of node.arguments) literalsUnder(argument, literals);
+      if (literalsNameTheGate(literals)) launches = true;
+    }
+    if (!launches) ts.forEachChild(node, inspect);
+  };
+  inspect(source);
+  return launches;
+}
 
 /**
  * What git tracks, or null outside a checkout.

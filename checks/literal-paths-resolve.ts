@@ -35,6 +35,21 @@ for (const f of files) {
     if (/^\s*\*/.test(line) || /^\s*\/\//.test(line)) return;      // prose
     for (const m of line.matchAll(/["'`]((?:\.{0,2}\/)?(?:scripts|checks|testing)\/[A-Za-z0-9._\/-]+\.(?:ts|mjs))["'`]/g)) {
       const spec = m[1];
+      // A PATH INSIDE A STRING THAT IS ITSELF INSIDE A STRING IS A FIXTURE, NOT A REFERENCE.
+      //
+      // `checks/tenant-checks-registered.ts` hands `isGateLaunchSource` whole fragments of
+      // TypeScript as data — `'import { execFileSync } ...; execFileSync("node",
+      // ["checks/example.ts"]);'` — and nothing in that file ever opens, imports or spawns
+      // checks/example.ts. It is the source text a classifier is asked to read, the way a
+      // regex fixture is the text a matcher is asked to read, and demanding that it exist
+      // would demand this repository carry a file whose whole purpose is to be a plausible
+      // name. The rule is lexical and narrow: the inner quote is inside an unclosed outer one
+      // on the same line. A real import, spawn or read is never nested that way, so this
+      // exempts no site the check exists to hold.
+      const before = line.slice(0, m.index);
+      const unclosed = (quote: string): boolean =>
+        (before.match(new RegExp(`(?<!\\\\)${quote}`, "g")) ?? []).length % 2 === 1;
+      if (unclosed("'") || unclosed("`")) continue;
       if (spec.endsWith(".mjs")) { fail.push(`${f}:${i + 1} names ${spec}, which no longer exists`); continue; }
       // A PLANTED PROBE IS MEANT TO BE ABSENT. Break-tests write a file, run the gate against it
       // and rmSync it in the same process; `zz-temp-` is this repository's marker for that.

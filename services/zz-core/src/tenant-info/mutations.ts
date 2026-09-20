@@ -185,7 +185,10 @@ export interface ArtifactHead {
   readonly content_hash: string;
 }
 
-function etagOf(head: ArtifactHead): string {
+/** Exported at I-22: the search response carries an `etag` per result, and a second spelling of
+ *  "revision, colon, head sequence" in the retrieval path would be a second thing to keep in
+ *  step with this one. */
+export function etagOf(head: ArtifactHead): string {
   return `${head.revision ?? 0}:${head.head_event_sequence}`;
 }
 

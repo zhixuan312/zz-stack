@@ -11,6 +11,31 @@
  * `scope: "platform"` and a node on the team's without it, so a result that did not say which
  * sent readers to `document_read` with the wrong argument and answered "does not exist" — the
  * failure two knowledge nodes on this deployment record having already happened.
+ *
+ * ── I-22: WHERE THE TENANT-INFORMATION SEARCH PATH IS, AND WHY IT IS NOT YET THIS HANDLER ───
+ *
+ * `services/zz-core/src/tenant-info/search.ts`'s `searchTenantInformation` composes the whole
+ * tenant-information retrieval stack — `parseQuery` → `loadCorpusRegistry` → `resolveCorpora` →
+ * the four lanes and RRF in `search()` → `matchesArtifact` → `serializeResults`. Until it
+ * existed, every one of those pieces was reachable only from a test that called it directly.
+ * It was written HERE, in the integration target the approved specification declares
+ * ("services/zz-core/src/tools/knowledge-search.ts, change: modified"), and moved one directory
+ * over when this file reached 703 lines against a measured 700-line ceiling — at the seam this
+ * file's own banner had already drawn between the two stores it would have read from.
+ *
+ * THE LIVE `knowledge_search` HANDLER STILL READS `zz.doc`/`zz.knowledge_node`, DELIBERATELY,
+ * and repointing it is a cutover step rather than a wiring step. Migration 070 — which creates
+ * `zz.artifact`, `zz.artifact_event` and the three `zz.search_*` projections this new path
+ * queries — declares `-- requires-extension: pg_textsearch` and `-- requires-extension:
+ * pg_trgm` in its own header, and `services/gateway/src/db.ts` DEFERS a migration whose
+ * extension the cluster cannot supply: skipped, not recorded as applied. On the deployment this
+ * platform actually runs, those tables therefore do not exist, and nothing has ever projected a
+ * row into them (`packages/indexing/src/tenant-rebuild.ts` is the only writer, and it runs
+ * against an isolated target generation). A handler pointed at them today would answer
+ * `relation "zz.search_current" does not exist` for every caller — turning the one tool that
+ * reads this team's documents into an outage, with the documents themselves untouched and
+ * unreachable. The switch belongs to the rehearsed cutover (I-20's conversion and I-21's
+ * backup/cutover), after which this file keeps ONE query path, not two behind a flag.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";

@@ -16,6 +16,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
+import { isGateLaunchSource } from "../scripts/gate/read.ts";
+
 const fail = [];
 const suites = readFileSync("scripts/gate/checks/suites.ts", "utf8");
 // TWO SPELLINGS OF "REGISTERED", both live. Newer checks go through the `runsCheck` helper;
@@ -28,9 +30,12 @@ const registered = new Set([
   ...[...suites.matchAll(/["'`]checks\/([A-Za-z0-9._-]+\.ts)["'`]/g)].map((m) => m[1]),
 ]);
 
-// `gate-*.mjs` SPAWN scripts/gate.ts to prove a planted defect turns it red. Running one here
+// A BREAK-TEST SPAWNS scripts/gate.ts to prove a planted defect turns it red. Running one here
 // would run the whole gate inside the gate, and registering one would make the gate invoke
-// itself forever. The prefix is the marker for that class and is checked, not assumed.
+// itself forever. The `gate-` prefix used to be the marker for that class and is no longer
+// consulted: it is carried by six files and was missing from a seventh, and `isGateLaunchSource`
+// below answers the question the prefix was standing in for. suites.ts holds the convention to
+// its meaning from the other side — a file named for a break-test that launches nothing.
 const SELF = "working-checks-registered.ts";
 
 // A DECLARED EXEMPTION COUNTS AS REGISTRATION, and reading it from suites.ts rather than
@@ -55,9 +60,16 @@ const declared = new Set(
     .matchAll(/\[\s*"([A-Za-z0-9._-]+\.(?:ts|sh))"\s*,\s*\n?\s*"/g)].map((m) => m[1]));
 
 for (const f of readdirSync("checks").filter((f) => f.endsWith(".ts"))) {
-  if (f === SELF || registered.has(f) || declared.has(f) || f.startsWith("gate-")) continue;
+  if (f === SELF || registered.has(f) || declared.has(f)) continue;
   const src = readFileSync(`checks/${f}`, "utf8");
-  if (/scripts\/gate\.ts/.test(src) && /spawnSync|execFileSync/.test(src)) continue;
+  // THE SAME CLASSIFIER REGISTRATION USES, not a second one that agrees with it today.
+  //
+  // This line read `/scripts\/gate\.ts/.test(src) && /spawnSync|execFileSync/.test(src)` — a
+  // looser rule than the one suites.ts applied, and both were text. Two rules for one question
+  // is two answers waiting to diverge, and the spellings they diverge on are the ones a
+  // break-test is most likely to use: `execFileSync("npm", ["run", "gate"])`, an aliased
+  // import, a namespace import. Running one of those here runs the whole gate inside the gate.
+  if (isGateLaunchSource(src)) continue;
   // A host-dependent check cannot pass offline, so it fails and exempts itself — but skip it
   // explicitly rather than waiting 30s for ssh to time out inside the gate.
   if (/\bssh\b|docker exec|ZZ_GATEWAY|ZZ_PAT/.test(src)) continue;

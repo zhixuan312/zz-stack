@@ -18,8 +18,9 @@
  */
 import assert from "node:assert/strict";
 
+import { LANE_CASES } from "./retrieval-lanes.ts";
 import {
-  checkVisibility, resolveCorpora,
+  checkVisibility, collapseBeforeCap, resolveCorpora, resultKey, rrf,
 } from "../../services/zz-core/dist/tenant-info/retrieval.js";
 
 const OWNER_P = "33333333-3333-4333-8333-333333333333";
@@ -144,8 +145,70 @@ const VISIBILITY_CASES: Readonly<Record<string, () => Promise<void>>> = {
   request_cannot_smuggle_owner_or_index: caseRequestCannotSmuggleOwnerOrIndex,
 };
 
+// ── I-17: the "fusion" case group — dedup-before-cap and cross-corpus RRF arithmetic ────────
+//
+// `checks/tenant-fusion-arithmetic.ts` is frozen and drives `rrf`/`budgets`/`resultKey` on
+// opaque string keys; it cannot see whether a REAL pipeline collapses passages before or after
+// applying a lane's cap, because it never builds a `RankedRow`. These cases exercise
+// `collapseBeforeCap` and `rrf` the way the real orchestrator (I-17's `lanes.ts`) actually
+// calls them, on fixtures shaped like real lane output — the mutation the task's own report
+// calls out (cap-then-dedup) fails one of these by distinct-artifact COUNT, not incidentally.
+
+const OWNER_A = "55555555-5555-4555-8555-555555555555";
+
+function passageIdentity(artifactSuffix: string, revision = 1): { identity: { owner_id: string; artifact_id: string; revision: number; content_hash: string; scope: string }; row: { artifact: string } } {
+  const artifactId = `66666666-6666-4666-8666-${artifactSuffix.padStart(12, "0")}`;
+  return {
+    identity: { owner_id: OWNER_A, artifact_id: artifactId, revision, content_hash: "c".repeat(64), scope: "current" },
+    row: { artifact: artifactSuffix },
+  };
+}
+
+/** THE CASE THE MUTATION TEST NAMES. Artifact A contributes three ranked passages before
+ *  artifact B, C, D each contribute one. Dedup-before-cap over a cap of 4 keeps one row per
+ *  artifact and returns all four distinct artifacts (A, B, C, D). Capping first — the
+ *  mutation this task's report asks to be provoked and observed — would slice to A's three
+ *  passages plus B, collapsing to only two distinct artifacts: "a page of results that is
+ *  really three documents". The assertion is on the distinct-artifact COUNT, not on any
+ *  particular row surviving, so it fails for that reason and no other. */
+async function caseDedupCollapsesPassagesBeforeTheCap(): Promise<void> {
+  const rows = [
+    passageIdentity("000000000001"), passageIdentity("000000000001"), passageIdentity("000000000001"),
+    passageIdentity("000000000002"), passageIdentity("000000000003"), passageIdentity("000000000004"),
+  ];
+  const collapsed = collapseBeforeCap(rows, 4);
+  const distinctArtifacts = new Set(collapsed.map((r) => resultKey(r.identity)));
+  assert.equal(distinctArtifacts.size, 4,
+    "dedup-before-cap must return four distinct artifacts, not the first four ranked rows");
+  assert.equal(collapsed.length, 4);
+}
+
+/** The same artifact ranked #1 in both a private and a shared corpus, within the SAME lane,
+ *  must contribute once to that lane's fused score — "the same artifact in private and shared
+ *  corpus contributes at most once per lane, taking the better local contribution" (retrieval
+ *  contract). A mutation that summed per-corpus contributions instead of taking their max
+ *  would double the private/shared artifact's score relative to one that appeared in only one
+ *  corpus; this case fails on that exact doubling, not on an incidental total. */
+async function caseSharedAndPrivateNeverDoubleCountWithinALane(): Promise<void> {
+  const lists = [
+    { lane: "lexical", corpus: "private", keys: ["shared-artifact", "private-only"] },
+    { lane: "lexical", corpus: "shared", keys: ["shared-artifact"] },
+  ];
+  const scores = new Map(rrf(lists).map((x) => [x.key, x.score]));
+  assert.ok(Math.abs(scores.get("shared-artifact")! - 1 / 61) < 1e-12,
+    "an artifact ranked #1 in both its private and shared corpus contributes once per lane, at its best rank");
+  assert.ok(Math.abs(scores.get("private-only")! - 1 / 62) < 1e-12);
+}
+
+const FUSION_CASES: Readonly<Record<string, () => Promise<void>>> = {
+  dedup_collapses_passages_before_the_cap: caseDedupCollapsesPassagesBeforeTheCap,
+  shared_and_private_never_double_count_within_a_lane: caseSharedAndPrivateNeverDoubleCountWithinALane,
+};
+
 const CASE_GROUPS: Readonly<Record<string, Readonly<Record<string, () => Promise<void>>>>> = {
   visibility: VISIBILITY_CASES,
+  fusion: FUSION_CASES,
+  lanes: LANE_CASES,
 };
 
 interface CaseResult { readonly status: "passed" | "failed" | "not_run"; readonly reason?: string }

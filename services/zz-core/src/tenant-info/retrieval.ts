@@ -88,8 +88,10 @@ interface CorpusRegistryEntry {
 }
 
 /** `CorpusDescriptor` is deliberately the same shape as a registry entry — `resolveCorpora`
- *  never adds or drops a field, it only filters which entries this context may see. */
-type CorpusDescriptor = CorpusRegistryEntry;
+ *  never adds or drops a field, it only filters which entries this context may see. Exported
+ *  for `lanes.ts` (I-17's own file): every lane builder takes one already-authorized
+ *  descriptor, never the raw registry or an unauthenticated request. */
+export type CorpusDescriptor = CorpusRegistryEntry;
 
 interface RetrievalContext {
   readonly owner_id: string;
@@ -171,7 +173,7 @@ export function resolveCorpora(
 
 // ── visibility recheck: the real query every dereference/cursor read issues ────────────────
 
-interface RetrievalClient {
+export interface RetrievalClient {
   query<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<{ rows: T[] }>;
 }
 
@@ -193,6 +195,17 @@ const SCOPE_TABLE: Readonly<Record<RetrievalScope, string>> = {
   evidence: "zz.search_evidence",
   history: "zz.search_history",
 };
+
+/** The same closed 3-entry map `buildVisibilityQuery` keys off internally, exported so
+ *  `lanes.ts`'s lane builders resolve the identical table name rather than repeating this
+ *  mapping — one migration (070) names these three tables; one function says so. Plain
+ *  `string` in, fail-closed on anything outside the three scopes this schema actually has. */
+export function scopeTable(scope: string): string {
+  if (scope !== "current" && scope !== "evidence" && scope !== "history") {
+    throw new RetrievalError("INVALID_INPUT", `no search table for scope ${JSON.stringify(scope)}`);
+  }
+  return SCOPE_TABLE[scope];
+}
 
 interface VisibilityQuery {
   readonly text: string;
@@ -279,4 +292,175 @@ export async function checkVisibility(
   const row = result.rows[0];
   if (!row) return { ok: false, code: "NOT_FOUND_OR_FORBIDDEN" };
   return { ok: true, row };
+}
+
+// ── I-17: budgets, result-key identity and cross-corpus RRF fusion ─────────────────────────
+//
+// The three pure functions the frozen check (`checks/tenant-fusion-arithmetic.ts`) drives —
+// `budgets`, `resultKey`, `rrf` — plus `collapseBeforeCap`, the primitive that makes "passage/
+// alias collapse precedes unique-artifact caps" true in code rather than only in prose. Lane
+// SQL (exact/BM25/fuzzy/graph) and the orchestrator that calls them live in `lanes.ts`
+// (I-17's own split of this file, cleared with the plan owner once `retrieval.ts` was going to
+// exceed the 700-line ceiling with I-18 still to land after it) and consume every export below.
+
+/** The four recall lanes, in a fixed order — never the order a caller's `laneLists` happens to
+ *  arrive in. `rrf` sums each lane's own max-over-corpora contribution, and summing floats in
+ *  a fixed lane order (rather than Map insertion order, which tracks input order) is what
+ *  makes `rrf(lists)` and `rrf([...lists].reverse())` produce bit-identical scores — addition
+ *  of more than two floats is not associative in general, so "the same inputs produce the same
+ *  order" needs a fixed summation order, not just a correct total. */
+const LANE_ORDER = ["exact", "lexical", "fuzzy", "graph"] as const;
+
+export interface LaneBudgets {
+  readonly exact: number;
+  readonly lexical: number;
+  readonly fuzzy: number;
+  readonly graph: number;
+}
+
+/**
+ * `exact=min(50,5L)`, `lexical=min(1000,max(200,20L))`, `fuzzy=min(500,max(100,10L))`,
+ * `graph=min(200,max(50,5L))` — the spec's fixed functions of the result limit, verbatim.
+ * `L` must be an integer 1–50; every other value (including `NaN`, which fails every
+ * comparison and would otherwise silently produce budgets of `NaN`) is refused rather than
+ * clamped, matching "invalid limit fails" in this task's own Contract.
+ */
+export function budgets(L: number): LaneBudgets {
+  if (!Number.isInteger(L) || L < 1 || L > 50) {
+    throw new RetrievalError("INVALID_INPUT", `limit must be an integer between 1 and 50, got ${L}`);
+  }
+  return {
+    exact: Math.min(50, 5 * L),
+    lexical: Math.min(1000, Math.max(200, 20 * L)),
+    fuzzy: Math.min(500, Math.max(100, 10 * L)),
+    graph: Math.min(200, Math.max(50, 5 * L)),
+  };
+}
+
+/** The fields `resultKey` reads — deliberately plain `string` for `scope`, not the narrower
+ *  `RetrievalScope` union, for the same reason `CorpusRegistryEntry`'s own fields are widened
+ *  above: the frozen check builds `row` as an object literal with no `as const`, and a
+ *  narrower field type here fails `typecheck:tooling` on the check itself rather than exercise
+ *  this function's runtime decision. An unrecognized scope is refused, fail-closed. */
+export interface ResultIdentity {
+  readonly owner_id: string;
+  readonly artifact_id: string;
+  readonly revision: number;
+  readonly content_hash: string;
+  readonly scope: string;
+}
+
+/**
+ * Scope-specific owner-qualified identity — "current/evidence identity is owner+artifact;
+ * history additionally includes revision/hash" (this task's own Contract, and the retrieval
+ * contract's own sentence). Two passages or aliases of the SAME artifact collapse to the same
+ * key here, before any lane budget is ever applied — that ordering is `collapseBeforeCap`'s
+ * job, not this function's, but this is the identity it collapses on.
+ */
+export function resultKey(record: ResultIdentity): string {
+  const { owner_id, artifact_id, revision, content_hash, scope } = record;
+  if (scope !== "current" && scope !== "evidence" && scope !== "history") {
+    throw new RetrievalError("INVALID_INPUT", `resultKey does not recognize scope ${JSON.stringify(scope)}`);
+  }
+  return scope === "history"
+    ? `${scope}:${owner_id}:${artifact_id}:${revision}:${content_hash}`
+    : `${scope}:${owner_id}:${artifact_id}`;
+}
+
+/** One lane's ranked key list for one authorized corpus — `lane`/`corpus` deliberately plain
+ *  `string`, the same widening `resultKey.scope` uses and for the same reason: the frozen
+ *  check builds these as object literals with no `as const`. */
+export interface LaneKeyList {
+  readonly lane: string;
+  readonly corpus: string;
+  readonly keys: readonly string[];
+}
+
+export interface FusedResult {
+  readonly key: string;
+  readonly score: number;
+}
+
+/**
+ * Reciprocal rank fusion, k=60, over positions alone — never a raw lane score, because scores
+ * from independent corpora (or independent ranking methods) are not on a comparable scale;
+ * that is the whole reason the lanes are fused by RRF rather than by summing whatever each one
+ * happened to return. For result key `d`:
+ *
+ *   score(d) = sum over lanes l of [ max over corpora c of 1 / (60 + r(l,c,d)) ]
+ *
+ * where `r(l,c,d)` is `d`'s 1-based rank within lane `l`'s list for corpus `c`. A key repeated
+ * within one list uses its FIRST rank (the lane's own best local position for it), and a lane
+ * takes the BEST of its per-corpus contributions rather than summing them — "the same artifact
+ * in private and shared corpus contributes at most once per lane" (retrieval contract). Ties
+ * break on `key` ascending; a richer tie-break (tag overlap, then owner/artifact/revision) needs
+ * the actual records this function never sees, and lives one level up in `lanes.ts`'s
+ * orchestrator, which has them.
+ */
+export function rrf(laneLists: readonly LaneKeyList[]): FusedResult[] {
+  const perLane = new Map<string, Map<string, number>>();
+  for (const list of laneLists) {
+    const firstRank = new Map<string, number>();
+    list.keys.forEach((key, index) => {
+      if (!firstRank.has(key)) firstRank.set(key, index + 1);
+    });
+    let corpusMax = perLane.get(list.lane);
+    if (!corpusMax) {
+      corpusMax = new Map<string, number>();
+      perLane.set(list.lane, corpusMax);
+    }
+    for (const [key, rank] of firstRank) {
+      const contribution = 1 / (60 + rank);
+      const best = corpusMax.get(key);
+      if (best === undefined || contribution > best) corpusMax.set(key, contribution);
+    }
+  }
+
+  // Sum in LANE_ORDER, plus any lane the caller passed that isn't one of the four named ones
+  // (sorted, appended after) — so an unrecognized lane name still fuses deterministically
+  // rather than being silently dropped, while the four real lanes always sum in the same order
+  // regardless of `laneLists`' own order.
+  const laneNames = [...perLane.keys()];
+  const orderedLanes = [
+    ...LANE_ORDER.filter((l) => perLane.has(l)),
+    ...laneNames.filter((l) => !(LANE_ORDER as readonly string[]).includes(l)).sort(),
+  ];
+
+  const totals = new Map<string, number>();
+  for (const lane of orderedLanes) {
+    const corpusMax = perLane.get(lane);
+    if (!corpusMax) continue;
+    for (const [key, contribution] of corpusMax) {
+      totals.set(key, (totals.get(key) ?? 0) + contribution);
+    }
+  }
+
+  return [...totals.entries()]
+    .map(([key, score]) => ({ key, score }))
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)));
+}
+
+/** One raw row a lane query returned, ordered by that lane's own local rank (position in the
+ *  array is the rank `collapseBeforeCap` reads) — `identity` is what `resultKey` collapses on;
+ *  the row itself carries whatever a lane needs downstream (tags for tie-break, etc). */
+export interface RankedRow<T> {
+  readonly identity: ResultIdentity;
+  readonly row: T;
+}
+
+/**
+ * Collapses passages/aliases of the same artifact to one entry — keeping the row at the BEST
+ * (lowest) local rank — and only THEN slices to `cap`. Doing it in the other order is exactly
+ * the mutation this task's report calls out: cap first and a page of "cap" results can really
+ * be one artifact's first `cap` passages, or `cap` aliases of two or three real artifacts. This
+ * function is deliberately the one place that ordering happens, so a mutation swapping the two
+ * steps has exactly one call site to touch and exactly one suite case to fail against.
+ */
+export function collapseBeforeCap<T>(rows: readonly RankedRow<T>[], cap: number): RankedRow<T>[] {
+  const seen = new Map<string, RankedRow<T>>();
+  for (const entry of rows) {
+    const key = resultKey(entry.identity);
+    if (!seen.has(key)) seen.set(key, entry);
+  }
+  return [...seen.values()].slice(0, cap);
 }

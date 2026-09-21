@@ -187,11 +187,18 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     // What must still hold is that every migration NOT gated on an absent extension applies,
     // and the deferral is contiguous — db.ts breaks the loop at the first deferred file, so a
     // later one is not silently skipped past.
-    const deferred = migrationFiles.filter((f) => {
-      const sql = readFileSync(join(root, "services/gateway/migrations", f), "utf8");
-      return /^--\s*requires-extension:\s*[a-z0-9_]+\s*$/im.test(sql);
-    });
-    const migrations = migrationFiles.length - deferred.length;
+    // THE DEFERRAL IS CONTIGUOUS, and that is db.ts's own behaviour rather than an assumption
+    // here: it BREAKS the loop at the first migration whose extension the cluster cannot
+    // supply, because a later migration may build on a deferred one's objects and applying
+    // past a gap trades a loud, correct failure for a confusing one. So everything AFTER the
+    // first deferred file is skipped too, whatever it declares — my first version of this
+    // counted only the files carrying a directive and expected 071 to apply behind a deferred
+    // 070.
+    const sorted = [...migrationFiles].sort();
+    const firstDeferred = sorted.findIndex((f) => /^--\s*requires-extension:\s*[a-z0-9_]+\s*$/im
+      .test(readFileSync(join(root, "services/gateway/migrations", f), "utf8")));
+    const deferred = firstDeferred === -1 ? [] : sorted.slice(firstDeferred);
+    const migrations = firstDeferred === -1 ? sorted.length : firstDeferred;
     let applied = 0;
     for (let i = 0; ; i++) {
       // In a try, because for the first few seconds this asks about a table the gateway has

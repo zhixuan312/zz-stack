@@ -443,9 +443,9 @@ async function caseAudienceIsPublishedOnlyWhenEveryArtifactIs(): Promise<void> {
     "one artifact whose latest transition is unpublished makes the whole corpus private");
   assert.equal(byKey.get("never_published")?.audience, "private");
   assert.equal(byKey.get("empty")?.audience, "private", "an empty grant is not a grant");
-  assert.equal(byKey.get("all_published")?.index_name, "zz.search_current_all_published",
-    "index_name is the partition ensureCorpus attaches, not a name invented for the field");
-  assert.equal(byKey.get("one_withdrawn")?.index_name, "zz.search_evidence_one_withdrawn");
+  assert.equal(byKey.get("all_published")?.index_name, "zz_search_current_all_published_bm25",
+    "index_name is the BM25 INDEX ensureCorpus builds on that corpus's partition — not the partition itself, which is what this asserted until a real PostgreSQL 17 refused the pair: `to_bm25query`'s second argument names an index, and the partition name is a different object");
+  assert.equal(byKey.get("one_withdrawn")?.index_name, "zz_search_evidence_one_withdrawn_bm25");
 }
 
 /** The statement itself is read for the one thing a fixture cannot prove: that the audience

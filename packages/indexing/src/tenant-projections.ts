@@ -368,5 +368,22 @@ export async function ensureCorpus(client: ProjectionClient, corpusKey: string):
       `create index if not exists ${table.replace(".", "_")}_tsv on ${table} using gin (to_tsvector('english', raw_body))`);
     await client.query(
       `create index if not exists ${table.replace(".", "_")}_tags on ${table} using gin (tags)`);
+    // THE BM25 INDEX, ON THE CONCRETE PARTITION — which is the whole reason these partitions
+    // exist. `to_bm25query(query, index_name)` requires the named index to be on the relation
+    // being scanned, and the alternative it offers when that is not true is automatic index
+    // resolution: the IDF would then come from whichever index the planner chose, across
+    // whatever rows it covers, which is exactly the cross-tenant statistics leak this delivery
+    // proved is invisible to every row-level check. One corpus, one partition, one index.
+    //
+    // DDL verified against the built image rather than read from a README: PostgreSQL 17.11
+    // with pg_textsearch 1.4.0 accepted this statement and reported `k1=1.20, b=0.75`.
+    //
+    // `text_config='english'` matches the stock tsvector fallback on the same partition. It is
+    // also the limit of what this extension can do for Chinese: text_config names a POSTGRESQL
+    // text search configuration, and none of the built-in ones segments CJK. Chinese and mixed
+    // content is served by the GiST trigram index on zz.artifact_identifier, which segments by
+    // character rather than by whitespace.
+    await client.query(
+      `create index if not exists ${table.replace(".", "_")}_bm25 on ${table} using bm25 (raw_body) with (text_config='english')`);
   }
 }

@@ -362,7 +362,14 @@ async function caseEnsureCorpusProvisionsAllThreeSearchParents(): Promise<void> 
     assert.ok(recorder.calls.some((c) => c.includes(`partition of ${parent} for values in ('acme_team')`)),
       `ensureCorpus must attach a partition of ${parent}`);
   }
-  assert.equal(recorder.calls.length, 9, "3 search parents × (partition + tsv index + tags index)");
+  // The bm25 index is the fourth statement per parent, and it is the one the partitions exist
+  // for: `to_bm25query(query, index_name)` requires the named index to be on the relation being
+  // scanned, so a per-corpus BM25 index on a concrete partition is what keeps one tenant's term
+  // statistics out of another's ranking. Verified against PostgreSQL 17.11 with pg_textsearch
+  // 1.4.0, which accepted the DDL and reported k1=1.20, b=0.75.
+  assert.ok(recorder.calls.some((c) => /using bm25 \(raw_body\) with \(text_config='english'\)/.test(c)),
+    "ensureCorpus must build the per-corpus BM25 index, not leave the corpus to a parent index");
+  assert.equal(recorder.calls.length, 12, "3 search parents × (partition + tsv index + tags index + bm25 index)");
 }
 
 // ── integration: applyCommit against an operator-provided isolated copy ────────────────────

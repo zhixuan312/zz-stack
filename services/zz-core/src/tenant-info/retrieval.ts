@@ -265,8 +265,6 @@ export function scopeTable(scope: string): string {
   }
   return SCOPE_TABLE[scope];
 }
-
-
 // ── I-17: budgets, result-key identity and cross-corpus RRF fusion ─────────────────────────
 //
 // The three pure functions the frozen check (`checks/tenant-fusion-arithmetic.ts`) drives —

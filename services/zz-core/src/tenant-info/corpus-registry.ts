@@ -18,8 +18,9 @@
  * request fault is the caller's.
  */
 import {
-  RetrievalError, scopeTable, type CorpusDescriptor, type RetrievalClient,
+  RetrievalError, type CorpusDescriptor, type RetrievalClient,
 } from "./retrieval.js";
+import { corpusBm25Index } from "./lanes.js";
 
 // ── the corpus registry, loaded rather than assumed ────────────────────────────────────────
 
@@ -101,7 +102,11 @@ export async function loadCorpusRegistry(client: RetrievalClient): Promise<Corpu
   for (const row of rows) {
     const total = Number(row.artifacts);
     const published = Number(row.published_artifacts);
-    const index_name = `${scopeTable(row.scope)}_${row.corpus_key}`;
+    // THE BM25 INDEX NAME, not the partition's. `to_bm25query`'s second argument is an INDEX,
+    // and this computed a partition name — one field standing for two different objects, which
+    // a real PostgreSQL 17 refused the first time the lane ran: "index ... is not on column
+    // raw_body". `corpusBm25Index` spells it the way `ensureCorpus` creates it.
+    const index_name = corpusBm25Index(row.scope, row.corpus_key);
     const seen = ownerByIndex.get(index_name);
     if (seen !== undefined && seen !== row.owner_id) {
       throw new RetrievalError("REGISTRY_MISCONFIGURED",

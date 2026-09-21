@@ -30,6 +30,7 @@
  * start inside a gate as well, because a static rule cannot see every way a launch is built.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -138,6 +139,24 @@ function runGate(repo: string, reportPath: string): GateRun {
   return { verdict: parsed.verdict, exit: r.status ?? -1, failed: parsed.failed_ids, ms };
 }
 
+/** A file's sha256, or null where it is not there — the absence is itself the answer a
+ *  staleness comparison needs, so it is returned rather than thrown. */
+function fileDigest(path: string): string | null {
+  try { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
+  catch { return null; }
+}
+
+/** How many checks the gate actually registers across the declared FILES, counted the way
+ *  `gateCheckNames()` counts them. Rows here are per check; this is the number a reader needs
+ *  to see that the declared files carry many more checks than this plan added. */
+function registeredCheckCount(repo: string, declared: readonly string[]): number {
+  let n = 0;
+  for (const f of declared) {
+    n += (readFileSync(join(repo, f), "utf8").match(/^check\("/gm) ?? []).length;
+  }
+  return n;
+}
+
 /**
  * What a check's subject IS, from its path, so a reader can tell the row kinds apart.
  *
@@ -216,14 +235,21 @@ function main(): void {
   const alreadyRed = new Set(baseline.failed);
 
   const declared = declaredChecks(ws.repo);
-  const byCheck = new Map<string, MutationSpec>();
-  for (const s of SPECS) byCheck.set(s.check, s);
+  // ONE ROW PER REGISTERED CHECK, NOT PER FILE. Thirty-two of the declared files register
+  // more than one check, and a file-shaped roster lets a single mutation stand in for all of
+  // them — which is how a report can satisfy a coverage check whose name promises per-check
+  // evidence while providing per-file evidence. Rows may therefore share a `check` path; each
+  // carries its own `target`, and the mutation for one must fail THAT one.
+  const specsFor = new Map<string, MutationSpec[]>();
+  for (const s of SPECS) specsFor.set(s.check, [...(specsFor.get(s.check) ?? []), s]);
   const wanted = only.length ? declared.filter((d) => only.includes(d)) : declared;
 
   const results = [];
-  for (const [i, file] of wanted.entries()) {
-    const spec = byCheck.get(file);
-    const head = `  [${i + 1}/${wanted.length}] ${file}`;
+  const planned = wanted.reduce((n, f) => n + Math.max(1, (specsFor.get(f) ?? []).length), 0);
+  let i = 0;
+  for (const file of wanted) {
+    for (const spec of specsFor.get(file) ?? [null]) {
+    const head = `  [${++i}/${planned}] ${file}`;
     if (!spec) {
       console.log(`${head} — NO SPEC`);
       results.push({
@@ -270,6 +296,8 @@ function main(): void {
       baseline_red: alreadyRed.has(spec.target),
       failed_ids: run.failed, new_failures: newly,
       snapshot_tree_sha256: ws.digest, subject_kind: subjectKind(spec.subject),
+      check_sha256: fileDigest(join(ws.repo, file)),
+      subject_sha256: fileDigest(join(ws.repo, spec.subject)),
       restored_digest: digest, digest_matches: digest === ws.digest,
       duration_ms: run.ms, caveat: spec.caveat ?? null, apply_error: applyError,
       prebuild_failed: prebuildError !== null, prebuild_error: prebuildError,
@@ -278,13 +306,19 @@ function main(): void {
       console.error(`      RESTORE FAILED — the tree did not come back to ${ws.digest}`);
       process.exit(3);
     }
+    }
   }
 
   // A `--only` run TOPS UP the report it finds rather than replacing it. The coverage check
   // demands a row for every declared check, so a narrow re-run that wrote only its own rows
   // would turn a green report into a report claiming sixty-four checks were never covered.
   let carried: { check: string }[] = [];
-  let priorGuards: unknown = null;
+  // CARRIED FORWARD BY EVERY RUN, not only a top-up. A full run rebuilds the report object
+  // from scratch, so guard receipts it did not read would vanish from the artifact without
+  // anything saying they had — the same silent shortening a `--only` run is refused for.
+  let priorGuards: unknown = existsSync(out)
+    ? (JSON.parse(readFileSync(out, "utf8")) as { guards?: unknown }).guards ?? null
+    : null;
   if (only.length) {
     // A TOP-UP ADDS; IT NEVER SHORTENS. The coverage check demands a row for every declared
     // check, so a narrow re-run that dropped rows would turn a green report into one claiming
@@ -293,7 +327,6 @@ function main(): void {
     if (!existsSync(out)) die(`--only tops up an existing report and ${out} does not exist`);
     const prior = JSON.parse(readFileSync(out, "utf8")) as
       { results: { check: string }[]; guards?: unknown };
-    priorGuards = prior.guards ?? null;
     carried = prior.results.filter((r) => !wanted.includes(r.check));
     const produced = new Set([...carried, ...results].map((r) => r.check));
     const lost = prior.results.map((r) => r.check).filter((c) => !produced.has(c));
@@ -306,6 +339,34 @@ function main(): void {
     for (const r of missed) console.log(`      ${r.check} -> ${r.subject}`);
     if (!keep) execFileSync("rm", ["-rf", workAt]);
     process.exit(missed.length ? 4 : 0);
+  }
+
+  // IS EACH ROW STILL ABOUT THIS TREE? A row certifies that a named check, as those bytes,
+  // failed on a planted defect. Nothing in the frozen coverage check reads a commit or a
+  // digest, so a report produced against any tree at any time satisfies it forever. The
+  // binding therefore lives here: every row carries the check file's sha256 as it was when the
+  // row was measured, and each is compared against the live checkout before anything is
+  // written. A row THIS RUN produced that has already drifted means the tree moved underneath
+  // the run, and that is refused rather than recorded. A carried row that has drifted is
+  // marked, because the fix is to re-run that one row rather than to discard sixty others.
+  const rows = [...carried, ...results] as Record<string, unknown>[];
+  const drifted: string[] = [];
+  for (const row of rows) {
+    const live = fileDigest(join(root, String(row.check)));
+    const was = row.check_sha256 ?? null;
+    row.live_check_sha256 = live;
+    row.stale = was !== null && live !== was;
+    if (row.stale) drifted.push(`${row.check} (${row.target ?? "no target"})`);
+  }
+  const mine = new Set(results.map((r) => r.check));
+  const driftedInThisRun = drifted.filter((d) => mine.has(d.split(" (")[0]));
+  if (driftedInThisRun.length) {
+    die(`the check files moved while this run was measuring them: ${driftedInThisRun.join(", ")}` +
+      " — the rows would describe bytes that are no longer there, so nothing was written");
+  }
+  if (drifted.length) {
+    console.log(`\n  ${drifted.length} carried row(s) describe a check file that has since ` +
+      `changed; re-run each with --only:\n      ${drifted.join("\n      ")}`);
   }
 
   mkdirSync(dirname(out), { recursive: true });
@@ -337,6 +398,24 @@ function main(): void {
         "defect planted in a shared package never reaches the check that imports it.",
       failed_means:
         "the target check is in this run's failed_ids and was NOT in the baseline's",
+      rows_are_per_registered_check:
+        "One row per registered check(), not per check FILE. That distinction is load-bearing: " +
+        `the ${declared.length} declared files register ${registeredCheckCount(ws.repo, declared)} ` +
+        "checks between them, and thirty-odd files register more than one — so a file-shaped " +
+        "roster would let one mutation stand in for every check in its file. Rows may share a " +
+        "`check` path; each names its own `target`, and a mutation that only trips a SIBLING " +
+        "check in the same file is a failed experiment, not evidence about the target.",
+      what_this_artifact_is_not_evidence_about:
+        "Every check this PLAN adds. The declared files also carry pre-existing checks that " +
+        "predate this plan and have no row here, so a reader must not read a green report as " +
+        "evidence that every check the gate registers has been shown able to fail.",
+      binding_to_the_tree:
+        "Each row carries `check_sha256` — the check file's bytes when the row was measured — " +
+        "and `live_check_sha256`/`stale` from the moment the report was written. NOTHING " +
+        "ENFORCES THIS: the coverage check reads neither, so a stale report still satisfies " +
+        "it, and that is a gap rather than a design. What the runner does enforce is narrower " +
+        "and worth having: it refuses to write at all if a check file moved while this run was " +
+        "measuring it, and it names any carried row whose check has changed since.",
     },
     results: [...carried, ...results].sort((a, b) => a.check < b.check ? -1 : 1),
     guards: guardsBlock(priorGuards, null),

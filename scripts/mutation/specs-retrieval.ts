@@ -75,6 +75,51 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
       "caller's, so a restriction no native table carries is silently dropped rather than refused",
   },
   {
+    // THE SECOND CHECK IN THIS FILE. Rows are per registered check, not per file: its sibling
+    // above only ever exercises an UNMAPPABLE filter, which returns before a stage is planned,
+    // so a mutation aimed at this one cannot be satisfied by tripping that one.
+    check: "scripts/gate/checks/scope-filters-survive-lanes.ts",
+    target: "a tag restriction reaches every lane, rescue and page",
+    subject: "packages/indexing/src/search-plan.ts",
+    find: "  const appliedFilters = { tag: filters.tag !== undefined } as const;",
+    replace: "  const appliedFilters = { tag: false } as const;",
+    planted: "every planned stage reports that it applied no tag restriction, so a caller's " +
+      "narrowing is carried nowhere and nothing downstream can tell that it was dropped",
+  },
+  {
+    check: "scripts/gate/checks/text-search-config-agreement.ts",
+    target: "the native-projection index is still the only text-search configuration outside the agreement",
+    subject: "packages/indexing/src/tenant-projections.ts",
+    find: "using gin (to_tsvector('english', raw_body))",
+    replace: "using gin (to_tsvector('english', body))",
+    planted: "the one site excluded from the body_tsv agreement stops being the raw-prose " +
+      "index it was excused for and points at the column the agreement governs, which is the " +
+      "move that would silently put a second configuration in charge of body_tsv",
+  },
+  {
+    check: "scripts/gate/checks/text-search-config-agreement.ts",
+    target: "no file names a text-search configuration except the one constant that defines them",
+    subject: "packages/indexing/src/index.ts",
+    find: "${bodyTsvSql(19)})",
+    replace: "to_tsvector('simple', $19))",
+    planted: "a write path spells its own text-search configuration inline instead of taking " +
+      "it from the one constant, which is how the read and write halves drifted apart before",
+  },
+  {
+    check: "scripts/gate/checks/text-search-config-agreement.ts",
+    target: "the read path queries with the configuration the write path stored a latin term through",
+    subject: "services/zz-core/src/tools/knowledge-search.ts",
+    find: "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.latin);",
+    // THE OTHER HALF OF THE SAME CONSTANT, not a bare literal. Writing `"simple"` here left
+    // `TEXT_SEARCH_CONFIG` imported and unused, so the build went red beside the row and a
+    // red build means a row cannot be taken at face value — this planted defect is the read
+    // path reaching for the Han configuration, which is a thing the code could plausibly do.
+    replace: "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.han);",
+    planted: "the read path parses an ascii query through a non-stemming configuration while " +
+      "the write path stored the word stemmed, so an English word whose stem differs from its " +
+      "surface form stops being findable with no error and nothing in the row to see",
+  },
+  {
     check: "scripts/gate/checks/snippet-byte-ranges.ts",
     target: "a snippet addresses original bytes and never splits a CJK character or an emoji",
     subject: "packages/indexing/src/snippet.ts",

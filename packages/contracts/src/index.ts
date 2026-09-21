@@ -279,11 +279,20 @@ export const verdictFromProse = (said: string): string | null => {
  * open forever". initiative_close() derives this word from `disposition: abandoned`.
  *
  * It was a bare `/^abandoned$/` in one of those places and a literal in the other. The
- * derivation is annotated `(typeof OUTCOMES)[number]` so the compiler holds it; the regex was
- * held by nothing, and renaming the word would have left every stopped initiative refused at
- * a gate it can never pass — the deadlock the exemption exists to prevent, arrived at by a
- * rename. */
-export const OUTCOME_STOPPED: (typeof OUTCOMES)[number] = "abandoned";
+ * derivation is held to OUTCOMES by the compiler; the regex was held by nothing, and renaming
+ * the word would have left every stopped initiative refused at a gate it can never pass — the
+ * deadlock the exemption exists to prevent, arrived at by a rename.
+ *
+ * `satisfies` AND NOT AN ANNOTATION, WHICH IS A DIFFERENCE THAT REACHES A CALLER. Both forms
+ * check membership of OUTCOMES, and that check is the whole point of naming it here — but an
+ * annotation also WIDENS the constant to all three words, and this one is not three words, it
+ * is one. `initiative_close` builds its input schema as `z.enum(["finished", OUTCOME_STOPPED])`,
+ * so under the annotation that tool's disposition inferred as all four words, and the kernel's
+ * `deriveOutcome`, whose disposition is the two a caller may actually send, could not be handed
+ * it. The service re-derived the outcome inline instead. `satisfies` keeps the membership check
+ * and keeps the literal type, so the schema infers the two words it accepts and the kernel is
+ * reachable from the tool that needs it. */
+export const OUTCOME_STOPPED = "abandoned" satisfies (typeof OUTCOMES)[number];
 
 /** The verdict fields. `document_approve()` and `initiative_close()` stamp them from the session; a hand write
  * is refused, because only the session knows who is calling and what day it is. */

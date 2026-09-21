@@ -11,7 +11,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OUTCOMES, OUTCOME_STOPPED, parseCaller, parseEnvelope } from "@zz/contracts";
+import { OUTCOME_STOPPED, deriveOutcome, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -137,12 +137,10 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         }
       }
 
-      // Typed from OUTCOMES so the compiler holds this to the contract's vocabulary. It is
-      // the one place the platform DERIVES an outcome, so it names all three words by
-      // necessity — but naming them and being checked against them are different things, and
-      // without the annotation a typo here would have shipped a word nothing else accepts.
       // The outcome is derived below, once the closing document has been read: whether anybody
-      // signed off is a fact ON that document, not only an argument to this call.
+      // signed off is a fact ON that document, not only an argument to this call. It is
+      // derived BY `deriveOutcome` in `@zz/contracts`, which is the one place the platform
+      // holds that rule — this file names none of the three words and cannot.
       const probe = join(initiative, "probe.md");
       const chain = chainFor(root, probe);
       // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
@@ -265,10 +263,29 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // acceptor put "accepted_by" on a record whose outcome is that nobody got what they
       // wanted, which is the contradiction this tool refuses in the other direction.
       const signedBy = disposition === OUTCOME_STOPPED || reason ? "" : (acceptor || who.email);
-      // Typed from OUTCOMES so the compiler holds this to the contract's vocabulary. It is the
-      // one place the platform DERIVES an outcome, so it names all three words by necessity.
-      const outcome: (typeof OUTCOMES)[number] = disposition === OUTCOME_STOPPED ? OUTCOME_STOPPED
-        : signedBy ? "accepted" : "delivered";
+      // THE KERNEL DERIVES THE OUTCOME. This service does not, and this line is the call.
+      //
+      // It used to re-derive it here — `stopped ? stopped : signedBy ? "accepted" : "delivered"`
+      // — under a comment claiming to be "the one place the platform DERIVES an outcome". That
+      // stopped being true when `deriveOutcome` landed in `@zz/contracts`: the rule then had two
+      // implementations, the gate checked the kernel's, and nothing checked that the copy this
+      // service actually runs agreed with it. Two implementations of one rule agree until the
+      // day one of them is edited.
+      //
+      // WHAT IS STILL THIS SERVICE'S OWN, and why the argument is `signedBy` and not `acceptor`.
+      // Who counts as having signed off is a policy about AUTHORITY and it belongs here: closing
+      // is the sign-off, so the closer signs unless they name somebody else, and a
+      // `no_signoff_reason` says nobody did. `signedBy` above is that policy's answer. The
+      // kernel's rule is the narrower one — does an acceptor exist — and it is the only thing
+      // being asked for below.
+      const outcome = deriveOutcome({ disposition, accepted_by: signedBy });
+      // The kernel returns null rather than guessing at a disposition it does not know. The
+      // schema above refuses one first, so no caller can reach this — but the refusal is what
+      // the kernel's contract says to do with a null, and inventing a finished outcome for an
+      // unrecognised word is exactly the flattering record it exists to prevent.
+      if (outcome === null) {
+        return text(`ERROR: no outcome can be derived from a disposition of ${JSON.stringify(disposition)}.`);
+      }
       doc = putEnvelopeField(doc, "outcome", outcome);
       doc = putEnvelopeField(doc, "closed_by", who.email);
       if (signedBy) doc = putEnvelopeField(doc, "accepted_by", signedBy);

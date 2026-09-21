@@ -92,6 +92,7 @@ import "./gate/checks/benchmark-report-slices.ts";
 import "./gate/checks/search-read-synthesis.ts";
 import "./gate/checks/mutation-coverage.ts";
 import "./gate/checks/activation-runbook.ts";
+import "./gate/checks/trial-analyzer-agreement.ts";
 import "./gate/checks/write-path-analysis.ts";
 import "./gate/checks/rederivation-generation.ts";
 import "./gate/checks/retrieval-serializer.ts";

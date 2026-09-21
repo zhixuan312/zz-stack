@@ -168,6 +168,16 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "Chinese is answered in English and the reader is handed a language they did not use",
   },
   {
+    check: "scripts/gate/checks/trial-analyzer-agreement.ts",
+    target: "the recall trial's analyzer finds the same Han terms as zz-lexical-v2",
+    subject: "packages/contracts/src/recall-trial-corpus.ts",
+    find: "      if (i + 1 < scalars.length) terms.push(scalars[i] + scalars[i + 1]);",
+    replace: "      if (i + 2 < scalars.length) terms.push(scalars[i] + scalars[i + 2]);",
+    planted: "the trial's copy of the analyzer pairs scalars the real one keeps apart and " +
+      "drops the pairs it ranks, so the two implementations of one segmentation disagree on " +
+      "what is adjacent — the drift this check exists to notice",
+  },
+  {
     check: "scripts/gate/checks/runtime-adapter-portability.ts",
     target: "a second runtime adapter runs the same protocol with a different event format",
     subject: "packages/contracts/src/adapters/conformance.ts",

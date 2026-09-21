@@ -39,7 +39,7 @@
  * `{ latin: "english", han: "simple" }` precisely because a prose tokenizer cannot segment an
  * unspaced Han run: the whole of the Chinese question analyses to one token under it, matches
  * nothing, and comes back as a clean empty. A trial that quietly leaned on such a tokenizer
- * would be demonstrating that defect rather than the repair, so `analyze` below emits Han
+ * would be demonstrating that defect rather than the repair, so `trialAnalyze` below emits Han
  * unigrams and adjacent Han bigrams the way `zz-lexical-v2` does, and `searchCorpus` takes its
  * analyzer as a parameter so the probe can substitute the broken one and watch the difference.
  * `@zz/indexing` is NOT imported for it — this package has one dependency and adding a
@@ -136,8 +136,23 @@ function latinWords(text: string): readonly string[] {
  * `zz-lexical-v2`'s shape: Han unigrams, overlapping adjacent Han bigrams, and Latin content
  * words. Over Unicode SCALARS (`Array.from`), so a supplementary-plane Han character is one
  * term and not two surrogates' worth.
+ *
+ * EXPORTED SO THE AGREEMENT CAN BE MEASURED RATHER THAN ASSERTED IN THIS COMMENT. The header
+ * above says this reproduces what `zz-lexical-v2` does, and `@zz/indexing` cannot be imported
+ * from here to make that true by construction — the layering forbids it, and that part is
+ * legitimate. What is not legitimate is a second implementation of one rule with nothing
+ * watching the two: that is exactly how the write path and the backfill drifted apart, and
+ * `scripts/gate/checks/rederivation-generation.ts` exists because of it. A gate check may
+ * import from both packages, so the Han half of this function is checked against the real
+ * analyzer's; this name is on the package door for that check and for no other caller.
+ *
+ * THE LATIN HALF IS DELIBERATELY NARROWER AND IS NOT THE SAME RULE. `zz-lexical-v2` hands the
+ * backend every word run unstemmed and unfiltered, and lets the pinned `english` configuration
+ * stop and stem them. This fixture has no backend, so it lowercases, drops the question-shaped
+ * words in {@link CARRIES_NO_TOPIC}, and reads ASCII runs only. Those are fixture decisions
+ * about a corpus, not claims about the analyzer.
  */
-function analyze(text: string): readonly string[] {
+export function trialAnalyze(text: string): readonly string[] {
   const terms: string[] = [...latinWords(text)];
   for (const run of hanRuns(text)) {
     const scalars = Array.from(run);
@@ -448,7 +463,7 @@ function excerptOf(doc: TrialDocument): string {
 export function searchCorpus(
   corpus: TrialCorpus,
   query: string,
-  analyzer: TrialAnalyzer = analyze,
+  analyzer: TrialAnalyzer = trialAnalyze,
 ): TrialSearch {
   const queryTerms = analyzer(query);
   const queryBigrams = hanBigrams(queryTerms);

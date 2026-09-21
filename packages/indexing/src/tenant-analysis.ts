@@ -1,5 +1,12 @@
 /**
- * The versioned text analyzer for the tenant-information corpus: `zz-lexical-v1`.
+ * The versioned text analyzer for the tenant-information corpus: `zz-lexical-v2`.
+ *
+ * This line said `zz-lexical-v1` until 2026-09-22, after `ANALYZER_NAME` below had already
+ * been bumped — so the header of the file that OWNS the analyzer's identity named a version
+ * the file itself no longer exported. `ANALYZER_NAME` is the answer to "which version is
+ * this build"; this sentence is prose about it, and prose about a value goes stale silently.
+ * Where `zz-lexical-v1` still appears below it is provenance — what v1 did, and what v2
+ * kept — not a claim about what this file exports.
  *
  * Three pure functions, all byte-offset-safe and language-agnostic in the same way: they take
  * a string and never a filesystem path or a database row, so every property below is testable

@@ -83,18 +83,24 @@ Two of these rows are worth spelling out, because the honest answer is narrower 
 available artifact makes it look.
 
 **`parity_evidence` is not the mutation report.** `testing/mutation-report.json` is real and it
-is good: 66 rows, baseline passed with zero failures, every check going red under its planted
-defect, 79 substitutions, no zero-replacement row, and each row's tree restored byte-identical.
+is good: at commit `fa975c4`, **68 rows — one per declared check, nothing uncovered** — baseline
+passed with zero failures, every check going red under its planted defect, 158 substitutions, no
+zero-replacement row, and each row's tree restored byte-identical.
 
-Two things about it should not be rounded off. It was taken across **three trees, not one** — 60
-rows against `40fcce444a020890`, 5 against `08594336104462fc`, 1 against `3ac24313cc359494`. Every
-row names the digest it was measured against, which is what makes that honest rather than
-misleading; but the report's top-level `snapshot_tree_sha256` is the last of the three, and 65 of
-its 66 rows were not measured against it. Quoting that one field as the run's digest would be a
-single-snapshot claim the run does not support. And its **coverage is short**: 66 rows against
-the 68 check files under `scripts/gate/checks/` at the time of this reading. The two uncovered
-are `mutation-coverage.ts`, re-planted after a mutation runner restored its snapshot over the
-checkout, and `activation-runbook.ts`, the check that reads this runbook.
+One thing about it should not be rounded off. It was taken across **two trees, not one** — 67
+rows against `0ccd5970c9151f4d` and 1 against `53806f4a3d1947`, the authorised top-up that added
+`activation-runbook.ts` (the check that reads this runbook) after it landed too late for the main
+run's snapshot. Every row names the digest it was measured against, which is what makes that
+honest rather than misleading; but the report's top-level `snapshot_tree_sha256` is the second of
+the two, and 67 of its 68 rows were not measured against it. Quoting that one field as the run's
+digest would be a single-snapshot claim the run does not support.
+
+> **This passage was wrong once, and the reason is worth keeping.** It described a 66-row report
+> across three trees with two checks uncovered. That report was superseded by a consolidating run
+> and a top-up, and this prose was not re-opened; a closing reviewer caught it by parsing both
+> artifacts. The gate could not — `scripts/gate/checks/activation-runbook.ts` validates the
+> runbook's *shape* and never compares a written reading against the artifact it cites. **A number
+> copied out of an artifact is a claim with an expiry date, and nothing here enforces it.**
 
 What it establishes is that this gate's declared checks **discriminate** — each one notices when
 the thing it guards breaks. That is a fact about the checks. It is not a fact about whether a
@@ -127,10 +133,12 @@ a real registry, a real upstream repository and a real built image. The ninth,
 should be struck from the specification rather than filled, because this repository vendors no
 OKF reference to digest.
 
-> **A stale document to be aware of.** `RESTORE-AND-CUTOVER.md` section 3 says that lock "still
-> carries placeholder pins — every `*_verified` flag is `false`", and section 7's table inherits
-> that premise. That text is stale and contradicts the lock file. Read the lock, not the prose
-> about it. Correcting that document was outside the task that wrote this one.
+> **A stale document, since corrected.** `RESTORE-AND-CUTOVER.md` section 3 used to say that lock
+> "still carries placeholder pins — every `*_verified` flag is `false`", and section 7's table
+> inherited the premise. Both were corrected at `fa975c4`: section 3 now records eight of nine
+> flags true, names the ninth as unresolvable by design rather than outstanding, and tells a
+> reader to prefer the lock file if the two ever disagree again. Kept rather than deleted, because
+> the pattern it caught is the one that then caught the passage above.
 
 ---
 

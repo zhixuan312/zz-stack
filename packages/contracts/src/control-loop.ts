@@ -600,3 +600,13 @@ export { trial } from "./recall-trial.js";
 // The negative control for the four computed flags above, including faulted local copies of
 // computations that no input can make the real ones perform.
 export { recallTrialProbe, type RecallTrialProbeRow } from "./recall-trial-probe.js";
+
+// THE TRIAL'S OWN ANALYZER, ON THE DOOR SO ITS AGREEMENT WITH `zz-lexical-v2` IS MEASURABLE.
+// The corpus needs Han segmentation and this package sits BELOW `@zz/indexing`, so it cannot
+// import the real analyzer and keeps a copy of the Han half — the layering forces that and it
+// is legitimate. What is not is leaving the two unwatched: `rederivation-generation.ts` exists
+// because two implementations of one weighting drifted apart, and this is the same shape one
+// directory over. A gate check may import from both packages, so this name is here for that
+// check to hold the copy to the original. Nothing else names it; the fixture reaches it as
+// `searchCorpus`'s default analyzer, inside its own module.
+export { trialAnalyze } from "./recall-trial-corpus.js";

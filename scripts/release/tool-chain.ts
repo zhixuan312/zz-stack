@@ -23,7 +23,7 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 
-import { IMAGE, die, log, root, run } from "../deployment.ts";
+import { IMAGE, die, log, reapLeaked, root, run } from "../deployment.ts";
 import { postgresService } from "./postgres-service.ts";
 
 /** A throwaway name per process, so two releases on one machine cannot collide. */
@@ -55,6 +55,9 @@ export function walkToolChain(version: string | undefined): void {
   // Registered BEFORE anything starts, like the sql-check stack: a die() between here and the
   // teardown would otherwise leave three containers running on whoever ran the release.
   process.on("exit", drop);
+  // An exit handler cannot run when the process is killed outright, so anything a previous
+  // release left under this prefix goes first. See reapLeaked().
+  reapLeaked("zz-chain-");
   try {
     // A NETWORK, NOT LINKS, because two of these names are load-bearing. zz-core answers only
     // the hosts in TRUSTED_PEERS, which defaults to `cred-proxy` — the compose service name the

@@ -115,10 +115,17 @@ export async function initPlatformDb(): Promise<void> {
     // A MIGRATION MAY DECLARE AN EXTENSION IT CANNOT RUN WITHOUT, and if this cluster cannot
     // supply it the migration is DEFERRED — skipped, and deliberately NOT recorded as applied.
     //
-    // WHAT THIS PREVENTS, precisely. The tenant-information migration needs pg_textsearch. The
-    // deployed platform database is PostgreSQL 16 with citext and plpgsql and nothing else, and
-    // the PostgreSQL 17 image that carries the extension arrives in a later, separately
-    // rehearsed cutover. Without this guard the first boot after that migration merged would
+    // WHAT THIS PREVENTED, precisely, and why it stays. The tenant-information migration needs
+    // pg_textsearch. When it merged, the deployed platform database was PostgreSQL 16 with
+    // citext and plpgsql and nothing else; the PostgreSQL 17 image carrying the extension
+    // arrived in a later, separately rehearsed cutover, which happened on 2026-09-21. So today
+    // NOTHING DEFERS — every migration applies on the deployment and on the release's own
+    // rehearsal, which runs the same image and treats a deferral there as release-blocking.
+    //
+    // This guard is not therefore spent. It is what makes the NEXT extension safe to introduce:
+    // a migration declaring one the cluster has not got is skipped instead of taking the
+    // platform down, and the release says which one before an operator ever sees it. Without it
+    // the first boot after such a migration merged would
     // fail `create extension`, roll back, un-set the pool and rethrow — and the caller logs and
     // starts the server anyway, by a deliberate choice made elsewhere in this file. The result
     // is not a crash anybody notices. It is the whole platform running with no database while

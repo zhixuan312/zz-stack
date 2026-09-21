@@ -185,3 +185,35 @@ export function asExecError(err: unknown): ExecError {
     typeof v === "string" ? v : Buffer.isBuffer(v) ? v.toString("utf8") : undefined;
   return { message, stdout: text(r.stdout), stderr: text(r.stderr) };
 }
+
+/**
+ * Removes containers a PREVIOUS release left behind, by the name prefix that release gave them.
+ *
+ * The two rehearsal stacks — the SQL check and the tool-chain walk — name their containers
+ * `<prefix><pid>` and register `process.on("exit", …)` to tear them down. That covers a normal
+ * exit and a `die()`. It does not cover SIGKILL, a crashed terminal or a laptop that slept
+ * through the run, and `exit` handlers cannot be made to.
+ *
+ * FOUND BY LOOKING, not by a check: `docker rmi postgres:16-alpine` refused because a container
+ * was using it — `zz-sqlcheck-pg-56824`, started 2026-09-09 and still running twelve days later,
+ * beside a gateway on `zz-stack:0.21.5` and a third from an older scheme. A leaked Postgres is
+ * mostly a nuisance; a leaked GATEWAY eleven versions behind is the shape of a real incident
+ * this project has already had once, where a forgotten local container kept writing with old
+ * code. Both of these were harmless — `--link` aliases and an RFC 2606 address, never anything
+ * of production's — and that was luck rather than design.
+ *
+ * Safe to run unconditionally because these names belong to no one else: the PID in them is
+ * from a process that is gone, and a release does not run concurrently with another.
+ */
+export function reapLeaked(prefix: string): void {
+  let names: string[];
+  try {
+    names = run("docker", ["ps", "-a", "--filter", `name=^${prefix}`, "--format", "{{.Names}}"])
+      .split("\n").map((n) => n.trim()).filter(Boolean);
+  } catch { return; }                       // no docker, or nothing to list — the caller's own start will say so
+  if (names.length === 0) return;
+  warn(`  reaping ${names.length} container(s) a previous release left behind: ${names.join(", ")}`);
+  for (const n of names) {
+    try { run("docker", ["rm", "-f", n], { stdio: ["ignore", "ignore", "ignore"] }); } catch { /* already gone */ }
+  }
+}

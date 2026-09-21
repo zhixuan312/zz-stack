@@ -9,7 +9,9 @@
 //
 // Measured on this deployment while writing the tenant-information migration: PostgreSQL 16.15
 // with exactly `citext` and `plpgsql` installed, and a migration needing `pg_textsearch` whose
-// PostgreSQL 17 image arrives in a later, separately rehearsed cutover.
+// PostgreSQL 17 image arrived in a later, separately rehearsed cutover — done on 2026-09-21.
+// The deployment now runs that image and defers nothing; this pair is what keeps the NEXT
+// extension from taking the platform down between the migration merging and the image shipping.
 //
 // TWO HALVES, BOTH REQUIRED. A migration naming `create extension` must carry a
 // `-- requires-extension: <name>` directive, and the runner must still read it. Either alone is

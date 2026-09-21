@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { execFileSync, execSync } from "node:child_process";
 import { join } from "node:path";
 
-import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, root, run, step } from "../deployment.ts";
+import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, reapLeaked, root, run, step } from "../deployment.ts";
 import { dryRun, version } from "./config.ts";
 import { postgresService } from "./postgres-service.ts";
 import type { DashboardResolution } from "./dashboard.ts";
@@ -163,6 +163,10 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     // Registered BEFORE anything starts. A die() between here and the teardown below would
     // otherwise leave two containers running on whoever ran the release.
     process.on("exit", drop);
+    // And an exit handler does not run when the process is killed, so a previous release's
+    // containers are reaped by name first — see reapLeaked() for the twelve-day-old pair that
+    // showed this was not theoretical.
+    reapLeaked("zz-sqlcheck-");
     const pgsvc = postgresService(root);
     run("docker", ["run", "-d", "--name", pg, "-e", "POSTGRES_USER=zz",
                    "-e", "POSTGRES_PASSWORD=sqlcheck", "-e", "POSTGRES_DB=zz",

@@ -454,13 +454,13 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
     // into `zz-access`, listed by `claude plugin list` and pointing at a door that had
     // stopped answering, with nothing saying why.
     //
-    // AND IT IS NOT THE WHOLE JOB, which is why `/zz-core:update` leads. Refreshing the shelf
+    // AND IT IS NOT THE WHOLE JOB, which is why `/zz-access:update` leads. Refreshing the shelf
     // updates NO plugin: each one is resolved against the marketplace's copy, so a person who
     // runs only this is told, truthfully, that everything is up to date — at the version they
     // already had. This text said exactly that one command for as long as it existed, which
     // is the same failure mma shipped and had to name in its own release notes.
     refresh: [
-      `/zz-core:update    # the shelf AND every plugin you have, in the order that works`,
+      `/zz-access:update  # the shelf AND every plugin you have, in the order that works`,
       `# or, by hand — and the order is not optional:`,
       `claude plugin marketplace update ${MARKETPLACE}`,
       `claude plugin update zz-core@${MARKETPLACE} # ...and each plugin you installed`,

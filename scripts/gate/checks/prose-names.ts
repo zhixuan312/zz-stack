@@ -23,9 +23,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { commentsOnly, firstOf, root, sourceFiles } from "../read.ts";
+import { commentsOnly, firstOf, root, sourceFiles, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
-import { catalogPackages, claimsOurs, claimsPreRename, everyShippedSkill, platformSurface } from "../facts.ts";
+import { NAMING, catalogPackages, claimsOurs, claimsPreRename, everyShippedSkill, flows, platformSurface } from "../facts.ts";
 
 /** The trees whose `.md` files are shipped to somebody. `marketplace/` is build output and is
  *  swept anyway: it is what an installer actually receives, and a name that reaches it without
@@ -166,5 +166,71 @@ check("no shipped prose names a skill no plugin ships", () => {
   // `zz-okr` and the rest — every one inside a paragraph explaining the defect that removing
   // it caused. That is a check's history, correct as written; a rule demanding it be deleted
   // would delete the reason the rule exists.
+  return firstOf(bad, 12);
+});
+
+check("no shipped prose types a slash command the plugin does not declare", () => {
+  // `/zz-core:update` and `/zz-core:doctor` were what `client_setup` told every new person to
+  // type. Both commands are real and both belong to ZZ-ACCESS — its manifest declares them and
+  // `checks/skill-homes.ts` has held that line for the skills behind them the whole time. The
+  // prose was never checked against either. A person following the first instruction they are
+  // ever given typed a command that does not exist and got nothing back, in the onboarding
+  // text, which is the worst place in this repository to be wrong: it is read by the one
+  // person who cannot tell whether the fault is theirs.
+  //
+  // IT SWEEPS SOURCE, NOT ONLY MARKDOWN, and that is the point rather than thoroughness. The
+  // defect lived in `services/gateway/src/package/describe.ts` — a TypeScript file that BUILDS
+  // the setup text at runtime, inside a template literal. A check reading `.md` alone would
+  // have swept the whole tree, reported nothing, and left the one wrong sentence where it was.
+  //
+  // COMMENTS ARE EXCLUDED, and the exclusion is what makes the rest of it usable. Measured
+  // before it was added: the only hits in the whole tree were three comments quoting a wrong
+  // form in order to explain why it is wrong — two about the `-flow` derivation that makes
+  // `/sdlc:flow` out of a flow called `sdlc-flow`, and this check's own paragraph above. A
+  // rule that forbade those would delete the reason each one exists. `withoutComments` keeps
+  // strings and template literals, which is precisely where prose destined for a person lives.
+  //
+  // THE PREFIX IS DERIVED THROUGH NAMING.pluginName, the same rule client-package.ts publishes
+  // with, because the plugin a person types is not the flow's name: `sdlc-flow` ships as
+  // `sdlc`. Re-deriving it here would make this check disagree with the thing it checks.
+  //
+  // THE PLUGIN MUST BE ONE OF OURS FOR THIS TO FIRE. An unfamiliar prefix is somebody else's
+  // command or a path that happens to rhyme with one, and neither is this check's business —
+  // so a new plugin never becomes a false finding.
+  if (NAMING.error || !NAMING.pluginName) return NAMING.error ?? "NAMING has no pluginName";
+  const shortOf = NAMING.pluginName;
+  const declared = new Map<string, Set<string>>();
+  for (const p of flows) {
+    let manifest: unknown;
+    try { manifest = JSON.parse(readFileSync(join(p.dir, "flow.json"), "utf8")); } catch { continue; }
+    const m = manifest as { name?: string; commands?: Record<string, unknown> };
+    if (typeof m.name !== "string") continue;
+    declared.set(shortOf(m.name), new Set(Object.keys(m.commands ?? {})));
+  }
+  if (declared.size < 3) return `only ${declared.size} catalog manifests yielded a command list — this check has nothing to compare against`;
+
+  const SLASH = /\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*):([a-z][a-z0-9]*(?:-[a-z0-9]+)*)/g;
+  const files = [...sourceFiles(PROSE, [".md"]), ...sourceFiles(["services", "scripts", "packages"], [".ts"])];
+  if (files.length < 50) return `only ${files.length} files were swept — this check is not reaching the tree`;
+  const bad: string[] = [];
+  let cited = 0;
+  for (const rel of files) {
+    const raw = readFileSync(join(root, rel), "utf8");
+    const text = rel.endsWith(".ts") ? withoutComments(raw) : raw;
+    for (const match of text.matchAll(SLASH)) {
+      const [, plugin, command] = match;
+      const commands = declared.get(plugin);
+      if (commands === undefined) continue;          // not one of ours
+      cited++;
+      if (commands.has(command)) continue;
+      const owner = [...declared].find(([, set]) => set.has(command))?.[0];
+      bad.push(`${rel} types \`/${plugin}:${command}\`, which ${plugin} does not declare`
+               + (owner ? ` — ${owner} does` : ""));
+    }
+  }
+  // A SWEEP THAT MATCHES NOTHING IS NOT A PASS. This repository types its own commands
+  // constantly; finding zero citations would mean the pattern or the file set is wrong, and
+  // "no bad ones" would be the most confident empty answer available.
+  if (cited === 0) return "no slash command of ours was cited anywhere in the swept tree — the pattern is not matching";
   return firstOf(bad, 12);
 });

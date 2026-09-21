@@ -91,12 +91,21 @@ export function describePackage(pkg: ClientPackage, target: string): string {
   ];
 
   // THE BASELINE'S OWN COMMANDS COME FIRST, and they are listed whether or not a flow is
-  // installed — they are the three that work on an empty account. `/zz-core:doctor` especially:
-  // the moment this setup text is wrong about anything, it is the thing that says so, and a
-  // person whose install did not take is exactly the person who cannot reach a flow to ask.
+  // installed — they work on an empty account, because zz-core and zz-access are both
+  // required. `/zz-access:doctor` especially: the moment this setup text is wrong about
+  // anything, it is the thing that says so, and a person whose install did not take is
+  // exactly the person who cannot reach a flow to ask.
+  //
+  // BOTH ARE ZZ-ACCESS'S, and both said `/zz-core:` here until 2026-09-21. `zz-core` owns the
+  // record — documents, knowledge, gates; `zz-access` owns your access to it, which is what
+  // your client's setup and its currency are. `checks/skill-homes.ts` has held that line for
+  // the skills themselves the whole time, and this prose was never checked against it. A
+  // person following the first instruction they are given typed a command that does not
+  // exist and got nothing — in the onboarding text, which is the worst place to be wrong,
+  // because it is read by the one person with no way to tell whether the fault is theirs.
   lines.push(
-    `\`/zz-core:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
-    `\`/zz-core:update\` brings every ZZ plugin you have up to date, in one command.`,
+    `\`/zz-access:doctor\` checks this machine can reach the platform, and names the fix when it cannot.`,
+    `\`/zz-access:update\` brings every ZZ plugin you have up to date, in one command.`,
     ``,
   );
 

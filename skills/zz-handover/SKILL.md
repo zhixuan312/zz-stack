@@ -123,6 +123,27 @@ do not re-run the judgement, add candidates that were not in the document, or ch
 line says because more time has passed. Once every line is minted, this pass is done; there
 is nothing further to write.
 
+**The one exception: a line that has become FALSE is minted as what is true, and says so.**
+Not a changed judgement — a changed fact. A proposed node may assert something checkable
+about the world ("review.md does not state X", "the old volume is still mounted"), and
+between the approval and this pass somebody may have acted on the handover and made it
+untrue. That is the handover WORKING. Transcribing the sentence anyway would put a false
+statement into the store, and a knowledge base is worth exactly what its worst entry is
+worth — a node nobody can trust is more expensive than no node.
+
+So: **check each factual assertion before you mint it, rather than assuming the world stood
+still.** Where one has moved, keep the node's subject and substance as approved, correct only
+the falsified fact, and record the change in the node itself — including that the handover is
+what caused it, which is usually the more useful lesson than the fact. Then say plainly, in
+your report, which line you altered and why, so a person can put it back if they disagree.
+This is the narrowest possible door: it opens for a fact you verified is now wrong, and never
+for a judgement you would make differently today.
+
+Observed the first time this pass ran for real, on 2026-09-21: a proposed node said
+`review.md` did not state a discrepancy, the initiative's owner read the draft handover and
+revised `review.md` to state it, and minting the approved sentence unchanged would have
+shelved a falsehood produced by the document doing its job.
+
 **Anything else — `handover.md` exists but is still `draft` or awaiting the stakeholder.**
 There is nothing for this skill to do. It is a human gate; do not re-run the judgement to
 "check", and do not mint team nodes early because the wait is long. `initiative_status` reports

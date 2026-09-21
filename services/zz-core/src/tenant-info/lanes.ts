@@ -167,7 +167,7 @@ export function buildExactLaneQuery(
  * agree and nothing would notice if they drifted: the partition is `<parent>_<key>` and an
  * index on it is that name with dots flattened, plus a suffix.
  */
-function corpusPartition(scope: string, corpusKey: string): string {
+export function corpusPartition(scope: string, corpusKey: string): string {
   return `${scopeTable(scope)}_${corpusKey}`;
 }
 

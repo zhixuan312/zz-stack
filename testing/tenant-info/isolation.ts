@@ -55,6 +55,7 @@ import { resolveCorpora, resultKey, rrf } from "../../services/zz-core/dist/tena
 import { checkVisibility } from "../../services/zz-core/dist/tenant-info/pinned-read.js";
 import type { CorpusDescriptor, RetrievalClient } from "../../services/zz-core/dist/tenant-info/retrieval.js";
 import { buildLexicalLaneQuery } from "../../services/zz-core/dist/tenant-info/lanes.js";
+import { LIVE_CASES, LIVE_DB_ENV } from "./isolation-live.ts";
 
 // ── validateIsolationObservation: the pure comparator the frozen check drives ──────────────
 
@@ -513,7 +514,6 @@ const PUBLICATION_CASES: Readonly<Record<string, () => Promise<void>>> = {
 // uses for the identical gap. `ZZ_TENANT_INFO_ISOLATED_DB_URL` is the SAME env var
 // `rebuild.ts`'s `atomic_apply_against_isolated_database` case already uses — one name for "an
 // operator-provided isolated copy", not a second one for the same requirement.
-const LIVE_DB_ENV = "ZZ_TENANT_INFO_ISOLATED_DB_URL";
 const LIVE_POSTGRES_CASES = ["real_pg17_statistical_isolation", "real_pg17_bm25_score_expression"] as const;
 
 function liveNotRunReason(): string {
@@ -529,6 +529,7 @@ function liveNotRunReason(): string {
     + "\"real pg_textsearch scores/statistics\" cannot be produced from anything committed here yet, "
     + `even with ${LIVE_DB_ENV} set. This is a named contract gap, not a guessed pass.`;
 }
+
 
 // ── suite entry point ───────────────────────────────────────────────────────────────────────
 
@@ -573,8 +574,20 @@ export async function run({ cases }: { cases?: string }): Promise<SuiteOutcome> 
     }
   }
   if (cases === undefined || cases === "live-postgres") {
-    const reason = liveNotRunReason();
-    for (const name of LIVE_POSTGRES_CASES) results[name] = { status: "not_run", reason };
+    const url = (process.env[LIVE_DB_ENV] ?? "").trim();
+    if (!url) {
+      const reason = liveNotRunReason();
+      for (const name of LIVE_POSTGRES_CASES) results[name] = { status: "not_run", reason };
+    } else {
+      for (const [name, run1] of Object.entries(LIVE_CASES)) {
+        try {
+          await run1();
+          results[name] = { status: "passed" };
+        } catch (err) {
+          results[name] = { status: "failed", reason: err instanceof Error ? err.message : String(err) };
+        }
+      }
+    }
   }
 
   const passed = Object.values(results).every((r) => r.status !== "failed");

@@ -33,6 +33,61 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [Unreleased]
+
+**Tenant information gets a shape of its own, and a way to say whether it is finished.**
+
+A tenant's artifacts now carry owner-qualified identity that survives a move, references that
+pin a revision and its content hash rather than a path, and a clean line between a content
+revision and an attributed event — so an approval binds the text it was given and never comes
+to cover later text. Retrieval runs four lanes scoped per corpus and fuses after ranking,
+because a global index filtered afterwards still lets another tenant's private corpus move
+your statistics. Projections and the search index are derived and rebuildable from the
+canonical files without inventing identity or dates.
+
+**`npm run tenant-info` is the one entry point,** with six verbs and a workspace that must
+resolve outside the checkout. That requirement is not a convenience: this platform holds a
+team's real documents and sources, and a verification run that defaulted to writing beside the
+checkout would be one mistake away from them. The path is resolved through `realpathSync` and
+refused if it lands inside the repository, directly or through a symlink that only looks like
+it points elsewhere.
+
+**The acceptance profile stops a suite passing on cases it did not run.** Suites deliberately
+treat an unreachable live database as non-blocking, which is right while you are working and
+exactly wrong when you are deciding. At the acceptance profile an unrun case blocks its suite,
+and so does a receipt that cannot be read case by case — a suite that cannot show what it ran
+cannot show it ran everything.
+
+**`blocked` and `failed` are different answers and stay different.** A failure is an assertion
+that ran and went red, which is a fact about the system. A block is the absence of evidence,
+which is a fact about the run. Two separate defects in this work collapsed them in the two
+possible directions, and reading either report would have told somebody the opposite of the
+truth: that a correct deployment pin was broken, and that an untested isolation boundary was
+proved.
+
+**`tenant-info verify --finalize` decides readiness, and runs outside the gate.** It
+computes the candidate's binding over the working tree rather than `HEAD`, spawns a fresh full
+gate, runs all ten suites and the benchmark as the exact commands the specification names,
+resolves every piece of evidence by reading and hashing the actual file, reconciles the frozen
+check set, the independent break-tests and the edit-surface ledger by name rather than by
+count, and only then decides. `verified` on an evidence entry is constructed by that resolver
+and is never accepted as an assertion: a report naming ten files with plausible hashes and
+nothing on disk behind them resolves to ten unverified entries.
+
+The gate never reads the report it writes. A gate that came to depend on its own final
+acceptance verdict would be a gate that passes because it passed — so the decision is a pure
+function the gate drives over synthetic inputs, and everything that touches a real file lives
+on the other side of a file boundary.
+
+**It does not say this is ready, and it should not be read as though it might.** No
+PostgreSQL 17 with `pg_textsearch` exists anywhere in this work; the deployment lock carries
+nine placeholder pins written by a task with no registry access; four suites and every
+benchmark release target are blocked on infrastructure that has never been stood up. A
+readiness result would also not be permission to cut over — the production freeze is a
+separate decision, taken afterwards, by the person who operates it.
+
+See `services/zz-core/src/tenant-info/README.md`.
+
 ## [0.60.0] — 2026-09-19
 
 **An evaluation stops telling you what to do, and says what it found.**

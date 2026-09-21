@@ -16,7 +16,7 @@ identity, a team's document store, and the rules about who may write what.
 result to be auditable by someone who was not in the room.
 
 ```bash
-npm install && npm run gate     # 282 offline checks, a few seconds
+npm install && npm run gate     # every offline check, a few seconds
 ```
 
 **Start there.** The gate is the most useful thing in this repository: every check
@@ -134,6 +134,11 @@ docs/       written for somebody who does not work on this every day.
             finished: a deck that reports progress is wrong the week after it
             is shown, and invites an argument about percentages instead of
             about design.
+            tenant-information-v4.md is the tenant-information delivery: what
+            it added, how each of its thirteen acceptance criteria is proved,
+            and what is still outstanding before it can be released. It does
+            not state that it is ready — readiness is recomputed by
+            `tenant-info verify --finalize` from whatever is on disk.
 testing/    the shell around the engines: eval-step.sh (every requirement in
             the corpus through ONE step, each in its own initiative, keeping
             what it produced), reset-store.sh (archives a corpus's initiatives

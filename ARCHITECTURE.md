@@ -175,6 +175,16 @@ knows the others.
 | `npm run gate` | is this checkout correct | the repository, offline | before anything |
 | `release.ts --preflight` | is this release worth starting | the checkout and the host, read-only | before a release |
 | `npm run doctor` | where does the deployment stop matching this checkout | both sides, layer by layer | any time, outage included |
+| `tenant-info verify --finalize` | is a whole delivery's evidence complete | every receipt, hashed, outside the checkout | once, at the end of a delivery |
+
+**The fourth one runs OUTSIDE the gate, and the gate never reads what it writes.** It spawns
+the gate as one of its inputs, so registering it as a check would make the gate invoke itself;
+more importantly, a gate that came to depend on its own final acceptance report would be a
+gate that passes because it passed. The split is a file boundary: `assessAcceptance` in
+`scripts/tenant-info/verify.ts` is a pure function of observations, which the gate DOES drive
+over synthetic inputs, and everything that reads a real file or spawns a real command is in
+`scripts/tenant-info/acceptance.ts`, which the gate never calls. `services/zz-core/src/tenant-info/README.md`
+describes what it decides and how to read its report.
 
 They are not three lists. The doctor's layers ARE the release's step-5 verification — the
 release selects `host`, `doors`, `contract`, `data` and owns no probe of its own, and the gate

@@ -29,7 +29,8 @@ import { resolveWorkspace } from "./workspace.ts";
 import { parseFlags, requireFlag, type FlagValue } from "./args.ts";
 import { runBaseline, validateBaseline } from "./baseline.ts";
 import { runFixtures } from "./inventory.ts";
-import { resolveSuite, runReadySuite, finalize, type VerifyProfile } from "./verify.ts";
+import { resolveSuite, runReadySuite, type VerifyProfile } from "./verify.ts";
+import { finalize } from "./acceptance.ts";
 import { SUITE_NAMES, availableSuiteNames, type SuiteName } from "./suites.ts";
 import { runBenchmark, type BenchmarkProfile, type BenchmarkReceipt } from "./benchmark-report.ts";
 import { runMigrate, type MigrateArgs, type MigrateReceipt } from "./migrate.ts";
@@ -66,8 +67,12 @@ async function dispatchVerify(flags: Map<string, FlagValue>): Promise<DispatchRe
   }
   const workspace = resolveWorkspace();
   if (finalizeFlag) {
+    // `ok` IS `ready`, AND NOTHING ELSE IS. A finalization that ran to completion, wrote a
+    // structurally perfect report and found four suites blocked has succeeded as a command and
+    // has not produced a release — exactly the distinction `benchmark` above draws, on the one
+    // receipt where getting it wrong would exit 0 on a delivery nobody may ship.
     const result = await finalize(workspace);
-    return { receipt: result, ok: result.status === "passed" };
+    return { receipt: result, ok: result.ready };
   }
   const name = suite as string;
   if (!SUITE_NAMES.includes(name as SuiteName)) {

@@ -148,6 +148,27 @@ function readSnapshot(source: string): { path: string; bytes: Buffer }[] {
 
 export interface ClassificationInventory {
   readonly manifest_id: string;
+  /** THE CORPUS THIS INVENTORY IS ABOUT, without which the numbers below answer nothing.
+   *
+   *  `selected_count: 0` with `review_required: false` is exactly the shape the contract names
+   *  as a valid H2 resolution — "a recorded zero-selected/no-review inventory permits lossless
+   *  legacy carry-forward without fictitious approval." It is also exactly what this verb
+   *  produces over a three-row fixture snapshot in a temp directory, and the two were
+   *  BYTE-INDISTINGUISHABLE IN KIND: every other field is a count or a relative path, and a
+   *  relative path from a fixture reads like a relative path from a real corpus. Nothing in
+   *  the file said which one it described.
+   *
+   *  A reviewer asked to resolve a human gate needs both halves and had neither in usable
+   *  form. `manifest_id` was already a corpus HASH — `manifestIdOf` digests every row's path,
+   *  content hash and profile, so two corpora cannot share one — but a hash is an identity,
+   *  not a description: it cannot say that this was the production artifact volume rather than
+   *  somebody's scratch directory.
+   *
+   *  Found by the I-25 finalizer, which now refuses to resolve H2 from an inventory carrying
+   *  no binding to the material it describes — correctly, and it will keep blocking until a
+   *  real conversion is run, because this field makes the receipt CAPABLE of answering the
+   *  question without answering it. */
+  readonly source_root: string;
   readonly profiles: Readonly<Record<string, number>>;
   /** How many rows a reviewer SELECTED for native semantic conversion. A mechanical
    *  carry-forward selects none, and that is a complete answer. */
@@ -165,11 +186,12 @@ export interface ClassificationInventory {
  * reviewer decision to act on — so every row is carried forward as legacy and
  * `selected_count` is 0.
  */
-export function classifyMigration(manifest: LegacyConversionManifest): ClassificationInventory {
+export function classifyMigration(manifest: LegacyConversionManifest, sourceRoot: string): ClassificationInventory {
   const profiles: Record<string, number> = {};
   for (const row of manifest.rows) profiles[row.profile] = (profiles[row.profile] ?? 0) + 1;
   return {
     manifest_id: manifest.manifest_id,
+    source_root: sourceRoot,
     profiles,
     selected_count: 0,
     review_required: false,
@@ -272,7 +294,7 @@ export async function runMigrate(workspaceReal: string, args: MigrateArgs): Prom
 
   const manifestPath = writeProtected(workspaceReal, "migration-manifest.json", manifest);
   const reports = [
-    writeProtected(workspaceReal, "classification.json", classifyMigration(manifest)),
+    writeProtected(workspaceReal, "classification.json", classifyMigration(manifest, source)),
     writeProtected(workspaceReal, "parity.json", { mode: args.apply ? "apply" : "dry-run", manifest_id: manifest.manifest_id, rows: parity }),
   ];
 

@@ -447,15 +447,22 @@ async function caseSecondManifestMayNotReimportTheSameLocator(): Promise<void> {
 
 /** A mechanical carry-forward selects no native conversions, so the classification inventory
  *  records `selected_count: 0` / `review_required: false`. That is a complete answer, not
- *  missing evidence, and it does not block the mechanical rows. */
+ *  missing evidence, and it does not block the mechanical rows.
+ *
+ *  AND IT SAYS WHAT IT COUNTED OVER. `source_root` is asserted here because without it those
+ *  two numbers are the same bytes whether they describe a production corpus or three invented
+ *  files in a temp directory — which is exactly the shape the contract accepts as resolving a
+ *  human gate. A `selected_count: 0` that cannot name its corpus resolves nothing. */
 async function caseNoSelectedConversionsIsNotMissingEvidence(): Promise<void> {
   const { classifyMigration } = await import("../../scripts/tenant-info/migrate.ts");
   const bytes = Buffer.from(CRLF_DOC);
   const { manifest } = prepareLegacyManifest([{ path: "a.md", bytes }]);
-  const inventory: ClassificationInventory = classifyMigration(manifest);
+  const inventory: ClassificationInventory = classifyMigration(manifest, "/fixture/source-root");
   assert.equal(inventory.selected_count, 0);
   assert.equal(inventory.review_required, false);
   assert.equal(inventory.profiles["legacy-okf"], 1);
+  assert.equal(inventory.source_root, "/fixture/source-root",
+    "the inventory must record the corpus it counted over — a bare zero resolves no gate");
 }
 
 // ── the suite entry point ───────────────────────────────────────────────────────────────────

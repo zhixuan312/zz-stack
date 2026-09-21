@@ -527,6 +527,15 @@ check("a benchmark report is refused when its scale is forged, its corpus distri
 check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
       runsCheck("tenant-checks-registered.ts"));
 
+// THE ORDINARY GATE NEVER READS THE ACTUAL ACCEPTANCE REPORT, and this line is the closest it
+// comes to the subject. `assessAcceptance` is a pure function of synthetic observations, so
+// running it here costs nothing and proves nothing about whether this delivery is ready — it
+// proves only that the decision function refuses the eight shapes of bad report below. The
+// real report is assembled, hashed and judged by `verify --finalize`, which runs OUTSIDE this
+// gate precisely so that a gate can never come to depend on its own final verdict.
+check("the acceptance decision needs all thirteen criteria, the spec's own method for each, a matching binding, verified evidence and a gate that actually executed — and a wholly failed report is still structurally valid",
+      runsCheck("acceptance-covers-every-criterion.ts"));
+
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
   // bytes nobody can reproduce is a rubber stamp, not a review — this is what makes those

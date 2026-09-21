@@ -176,11 +176,59 @@ export function registerKnowledgeSearch(server: McpServer): void {
                    from ${SOURCE} where ${cond.join(" and ")}
                    order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
                    limit ${CANDIDATE_CAP}`;
-      const pooled = (await p.query(sql, args)).rows as KbRow[];
+      let lexical = (await p.query(sql, args)).rows as KbRow[];
+
+      /* AND FOUND NOTHING, so ask the same question with OR before answering "nothing is known".
+       *
+       * `websearch_to_tsquery` joins unquoted terms with AND. That is the right default — it is
+       * what makes a precise question precise — and it is why a LONG question returns an empty
+       * set: thirteen words require one document containing all thirteen. The caller reads
+       * "nothing is known about this", which is a different and much worse claim than "no single
+       * document says all of that at once".
+       *
+       * MEASURED, not supposed. 43 of one person's 269 real searches came back empty — 16% — and
+       * none of them was a near-miss. Re-running three of them with the terms joined by `|`
+       * returned 33, 7 and 58 candidates against the same corpus and the same index. The
+       * documents were there the whole time; the conjunction hid them.
+       *
+       * ONLY WHERE THE ANSWER WAS OTHERWISE EMPTY, so no query that works today can be made
+       * worse by this. A broadened pool is still ranked by ts_rank_cd, which rewards matched
+       * terms appearing close together, so a document matching six of seven terms outranks one
+       * matching a single common word — and it is still fused with the tag and evidence lanes
+       * rather than replacing them.
+       *
+       * AND THE CALLER IS TOLD. Every row from a broadened pool carries `via: ["lexical-broad"]`
+       * and the response says so, because "no document contains all of this, here is what
+       * contains most of it" is a different answer from a match, and a reader who cannot tell
+       * them apart will cite the second as the first.
+       *
+       * A single-token query is skipped: with one term, OR and AND are the same question.
+       *
+       * `tokens` is split on `[^a-z0-9]+`, so no tsquery operator can survive into the string
+       * this builds — and it is bound as a parameter regardless.
+       */
+      let broadened = false;
+      if (query && lexical.length === 0 && tokens.length > 1) {
+        const bArgs: unknown[] = [[team, KNOWLEDGE_TEAM]];
+        const bPut = (v: unknown) => { bArgs.push(v); return `$${bArgs.length}`; };
+        const bCond = ["team_slug = any($1::text[])"];
+        applyFilters((c) => bCond.push(c), bPut);
+        const bq = bPut(tokens.join(" | "));
+        bCond.push(`body_tsv @@ to_tsquery('english', ${bq})`);
+        lexical = (await p.query(
+          `select ${COLS}, ts_rank_cd(body_tsv, to_tsquery('english', ${bq})) as rank,
+                  ts_headline('english', body, to_tsquery('english', ${bq}),
+                    'MaxFragments=2, MaxWords=28, MinWords=12, FragmentDelimiter=" … ",
+                     StartSel=**, StopSel=**') as snippet
+             from ${SOURCE} where ${bCond.join(" and ")}
+            order by rank desc, updated_at desc
+            limit ${CANDIDATE_CAP}`, bArgs)).rows as KbRow[];
+        broadened = lexical.length > 0;
+      }
 
       /* Retrieve by TAG as its own list, not as a re-ranking of the lexical one.
        *
-       * The tag signal was computed from `pooled` — the lexical hits — so it could only
+       * The tag signal was computed from the lexical hits themselves, so it could only
        * reorder documents full-text had already found, never surface one it had missed.
        * That is precisely the case tags exist for: a node tagged `booking` does not
        * necessarily contain the word someone typed. Fusing a list drawn from another list
@@ -217,11 +265,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * it was learned from, and that is the edge this store has: a node that cites the same
        * initiative as a strong hit is about the same work even when it shares no vocabulary.
        * Bounded by (seeds x their evidence), fetched in one targeted query — never a scan. */
-      const seen = new Set([...pooled, ...tagged].map((r) => `${r.initiative}/${r.path}`));
+      const seen = new Set([...lexical, ...tagged].map((r) => `${r.initiative}/${r.path}`));
       // Seeds come from BOTH retrieved lists: a node found only by its tags is as good a
       // starting point for the evidence graph as one found by its words.
       const seedInitiatives = [...new Set(
-        [...pooled.slice(0, 10), ...tagged.slice(0, 10)].flatMap((r) => [...(r.evidence ?? []), r.initiative]),
+        [...lexical.slice(0, 10), ...tagged.slice(0, 10)].flatMap((r) => [...(r.evidence ?? []), r.initiative]),
       )];
       let neighbours: KbRow[] = [];
       if (query && seedInitiatives.length) {
@@ -248,7 +296,7 @@ export function registerKnowledgeSearch(server: McpServer): void {
         e.score += 1 / (RRF_K + i + 1); e.via.add(via); fused.set(k, e);
       });
 
-      fuse(pooled, "lexical");
+      fuse(lexical, broadened ? "lexical-broad" : "lexical");
       fuse(tagged, "tag");
       fuse(neighbours, "evidence");
 
@@ -308,6 +356,9 @@ export function registerKnowledgeSearch(server: McpServer): void {
             return `${row.shelf}:${row.initiative}/${row.path}`;
           }),
           ranked_total: ranked.length, filters: { type, status, initiative, flow, tags },
+          // Whether the conjunction found nothing and the OR pass rescued the query. This is
+          // the rate the fix exists to move, and it is unmeasurable after the fact without it.
+          broadened,
         },
       });
 
@@ -318,8 +369,13 @@ export function registerKnowledgeSearch(server: McpServer): void {
         returned: results.length,
         withheld: ranked.length - results.length,
         superseded_in_results: superseded,
-        note:
-          ranked.length > results.length
+        // A BROADENED ANSWER SAYS SO FIRST. It is the more surprising fact about the result
+        // set, and a reader who takes it for a match will cite documents that do not together
+        // say what was asked.
+        note: broadened
+          ? "No document contains all of those terms together. These match SOME of them, best first — "
+            + "treat them as leads rather than as an answer, and narrow the question to confirm one."
+          : ranked.length > results.length
             ? `${ranked.length - results.length} lower-ranked results not shown — ask a narrower question to see them.`
             : undefined,
         results,

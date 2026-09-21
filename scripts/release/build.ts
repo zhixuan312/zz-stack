@@ -173,7 +173,25 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     run("docker", ["run", "-d", "--name", gw, "--link", `${pg}:postgres`, "-e", "SERVICE=gateway",
                    "-e", "TEAM_DB_URL=postgresql://zz:sqlcheck@postgres:5432/zz",
                    "-e", "GATEWAY_PUBLIC_URL=https://sql-check.invalid", `${IMAGE}:${version}`]);
-    const migrations = readdirSync(join(root, "services/gateway/migrations")).filter((f) => f.endsWith(".sql")).length;
+    const migrationFiles = readdirSync(join(root, "services/gateway/migrations")).filter((f) => f.endsWith(".sql"));
+    // A MIGRATION MAY DECLARE AN EXTENSION THIS THROWAWAY POSTGRES CANNOT SUPPLY, and the
+    // gateway then DEFERS it — skipped, deliberately not recorded as applied, and applied by
+    // the first boot on a cluster that can supply it. `db.ts` explains why at length: a
+    // migration attempted where its extension is absent throws, rolls back, un-sets the pool
+    // and rethrows, and the caller starts the server anyway — the platform serving with no
+    // database while reporting itself healthy.
+    //
+    // So "applied === files" is the wrong bar and was failing this release on its own safety
+    // feature. Migration 070 needs pg_textsearch, which exists in no image this project has
+    // built yet; the dry run's disposable Postgres is exactly a cluster that cannot supply it.
+    // What must still hold is that every migration NOT gated on an absent extension applies,
+    // and the deferral is contiguous — db.ts breaks the loop at the first deferred file, so a
+    // later one is not silently skipped past.
+    const deferred = migrationFiles.filter((f) => {
+      const sql = readFileSync(join(root, "services/gateway/migrations", f), "utf8");
+      return /^--\s*requires-extension:\s*[a-z0-9_]+\s*$/im.test(sql);
+    });
+    const migrations = migrationFiles.length - deferred.length;
     let applied = 0;
     for (let i = 0; ; i++) {
       // In a try, because for the first few seconds this asks about a table the gateway has
@@ -193,7 +211,8 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
       }
       execSync("sleep 1");
     }
-    log(`  ${migrations} migrations apply to an empty database`);
+    log(`  ${migrations} migrations apply to an empty database`
+        + (deferred.length ? `; ${deferred.length} deferred on a declared extension this image cannot supply: ${deferred.join(", ")}` : ""));
     try {
       // The host's build, because the image has the sources but no psql to reach the database
       // with. The tree is clean and on master by now, so these ARE the release's queries.

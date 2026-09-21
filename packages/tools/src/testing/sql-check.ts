@@ -106,6 +106,41 @@ function queriesIn(file: string, root: string): Found[] {
   });
 }
 
+/**
+ * The relations a migration creates that this database was never given a chance to create,
+ * because the migration DECLARES an extension and `services/gateway/src/db.ts` defers any
+ * migration whose extensions the server cannot supply — skipped, and deliberately not recorded
+ * as applied. See that file for what the alternative costs: a migration attempted where its
+ * extension is absent throws, rolls back, un-sets the pool and rethrows, and the gateway starts
+ * anyway, serving with no database while reporting itself healthy.
+ *
+ * DERIVED, NEVER ASSERTED, and that is the whole safety of it. This reads the migration files
+ * and collects `create table`/`create index` targets only from files carrying a
+ * `-- requires-extension:` line, then only excuses a PREPARE that failed with `relation "X"
+ * does not exist` for an X in that set. Delete the directive and the queries fail again.
+ * Reference a table nobody creates and it fails. Name a module path and it would excuse
+ * everything in that module forever, which is why no module path appears here.
+ *
+ * The skip is still REPORTED every run, with this reason, because this file's own rule is that
+ * a checker which quietly skips what is hard reads exactly like one that found nothing wrong.
+ */
+function deferredRelations(root: string): Map<string, string> {
+  const dir = join(root, "services/gateway/migrations");
+  const out = new Map<string, string>();
+  let files: string[];
+  try { files = readdirSync(dir).filter((f) => f.endsWith(".sql")); } catch { return out; }
+  for (const file of files) {
+    const sql = readFileSync(join(dir, file), "utf8");
+    const needs = [...sql.matchAll(/^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/gim)].map((m) => m[1]);
+    if (!needs.length) continue;
+    const code = sql.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+    for (const m of code.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?([a-z0-9_."]+)/gi)) {
+      out.set(m[1].replace(/"/g, ""), `${file} declares ${needs.join(" and ")}, which this database does not offer, so it was deferred`);
+    }
+  }
+  return out;
+}
+
 function main(): number {
   const { flags } = parseArgs(process.argv.slice(2));
   const psql = flags.get("psql") || DEFAULT_PSQL;
@@ -135,6 +170,8 @@ function main(): number {
                "  this needs an EMPTY database the gateway has migrated — schema, not data.");
   }
 
+  const deferred = deferredRelations(root);
+  const deferredSkips: string[] = [];
   checkable.forEach((q, n) => {
     const name = `zzchk_${n}`;
     // DEALLOCATE in the same input, so a run leaves the session as it found it and the name
@@ -143,11 +180,21 @@ function main(): number {
     if (!r.ok) {
       const msg = r.error.split("\n").filter((l) => /^(ERROR|DETAIL|HINT):/.test(l)).join(" ")
                   || r.error.split("\n")[0] || "refused";
-      failures.push(`${q.file}:${q.line} — ${msg}`);
+      const missing = /relation "([^"]+)" does not exist/.exec(msg)?.[1];
+      const why = missing ? deferred.get(missing) : undefined;
+      if (why) deferredSkips.push(`${q.file}:${q.line} — needs ${missing}: ${why}`);
+      else failures.push(`${q.file}:${q.line} — ${msg}`);
     }
   });
 
   console.log(`\n  ${checkable.length} of ${found.length} queries prepared against the live schema.`);
+
+  if (deferredSkips.length) {
+    console.log(`\n  ${deferredSkips.length} query(ies) name a relation a DEFERRED migration would have created.`);
+    console.log("  These are unproven here and stay unproven until this platform runs a database that can");
+    console.log("  supply the declared extension. They are not evidence of anything working:");
+    for (const d of deferredSkips) console.log(`    ${d}`);
+  }
 
   if (skipped.length) {
     console.log(`\n  ${skipped.length} not checkable, and why:`);

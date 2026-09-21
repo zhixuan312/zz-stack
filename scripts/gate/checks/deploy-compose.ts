@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import { asRecord, between, gateOwnSource, readJson, root, sourceFiles, trackedFiles, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
+import { postgresService } from "../../release/postgres-service.ts";
 import { ourDocs } from "../facts.ts";
 
 check("compose resolves with NO environment at all", () => {
@@ -391,4 +392,41 @@ check("every path the Dockerfile copies is a path that exists", () => {
   }
   if (!copies) return "the Dockerfile has no COPY this check could read — it is measuring nothing";
   return bad.length ? bad.join("; ") : null;
+});
+
+check("the postgres image compose runs is the one the lock file pins", () => {
+  // ONE SOURCE FOR THE DATABASE IMAGE, because two release steps now start it from here.
+  // `scripts/release/postgres-service.ts` reads the `postgres` service out of compose so the
+  // release rehearses against the image the deployment runs — the SQL check migrates an empty
+  // one and PREPAREs every query in the tree against the schema it leaves behind, and the
+  // tool-chain walk stands the whole platform on it. Both used to hardcode `postgres:16-alpine`,
+  // which cannot carry pg_textsearch, so migration 070 was deferred on every release and the
+  // search partitions and BM25 index were checked nowhere but production.
+  //
+  // Reading it from compose fixes the drift between the release and the deployment. It leaves
+  // one: compose and `deploy/postgres/versions.lock.json` are both descriptions of that image,
+  // and the lock is what `checks/postgres-image-pinned.ts` validates the Dockerfile against. If
+  // the tag says 17.11 and the lock says something else, one of them is describing an image
+  // nobody runs, and nothing else in this repository compares them.
+  //
+  // The tag is asserted to CONTAIN both versions rather than to equal a reconstructed string.
+  // A registry path and a naming convention are not this check's business; what it is about is
+  // that the numbers agree.
+  const { image } = postgresService(root);
+  const rel = "deploy/postgres/versions.lock.json";
+  const lock = asRecord(readJson(rel), rel);
+  const pg = String(lock.postgres_version ?? "");
+  const pgts = String(lock.pg_textsearch_tag ?? "").replace(/^v/, "");
+  if (!pg || !pgts) return `${rel} names no postgres_version or pg_textsearch_tag`;
+  const tag = image.slice(image.lastIndexOf(":") + 1);
+  if (tag === image) {
+    return `compose runs \`${image}\`, which carries no tag — the release would rehearse against whatever :latest is that day`;
+  }
+  const wrong: string[] = [];
+  if (!tag.includes(pg)) wrong.push(`the lock pins PostgreSQL ${pg}`);
+  if (!tag.includes(pgts)) wrong.push(`the lock pins pg_textsearch v${pgts}`);
+  if (wrong.length) {
+    return `compose runs \`${image}\` but ${wrong.join(" and ")} — the release rehearses on one image `
+      + "and the Dockerfile is validated against the other";
+  }
 });

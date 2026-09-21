@@ -191,10 +191,18 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD — openssl rand -hex 16}
       - POSTGRES_DB=${POSTGRES_DB:-zz}
     volumes:
-      # A NEW VOLUME, NEVER THE PG16 DATA DIRECTORY. PostgreSQL 17 cannot start on a
-      # PostgreSQL 16 data directory, and reusing the name would either refuse to boot or --
-      # worse -- invite somebody to "fix" it by deleting the old cluster. `postgres-data` is
-      # kept, untouched and frozen at the cutover, and is the rollback.
+      # THE NAME CARRIES THE MAJOR VERSION, and that is not cosmetic. PostgreSQL 17 cannot
+      # start on a PostgreSQL 16 data directory; a shared name would either refuse to boot or
+      # -- worse -- invite somebody to "fix" it by deleting the cluster underneath it. The
+      # next major gets `postgres-data-18` and the same logical dump-and-restore, which is
+      # also what rebuilds every index under the new collation.
+      #
+      # THE PG16 VOLUME IS GONE, and so is rolling back by editing this file. It was kept
+      # frozen for the first day after the 2026-09-21 cutover and removed once its logical
+      # dump had been restored into a throwaway database and diffed table by table against
+      # this cluster -- 33 tables, every row count equal or higher. Recovery is now FORWARD,
+      # from ~/zz-backups on the host: the hourly dumps are the record, and a restore into a
+      # fresh volume is the procedure. See deploy/RESTORE-AND-CUTOVER.md.
       - postgres-data-17:/var/lib/postgresql/data
     ports: ["${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"]   # bind to a tailscale IP to make the DB tailnet-only
     # The only healthcheck in this file, and it earns its place: it is what `depends_on`
@@ -214,6 +222,5 @@ services:
 
 volumes:
   cred-data:
-  postgres-data:      # PostgreSQL 16, frozen at the 2026-09-21 cutover — the rollback
   postgres-data-17:
   zz-artifacts:

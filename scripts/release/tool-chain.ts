@@ -24,6 +24,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 import { IMAGE, die, log, root, run } from "../deployment.ts";
+import { postgresService } from "./postgres-service.ts";
 
 /** A throwaway name per process, so two releases on one machine cannot collide. */
 const tag = (what: string): string => `zz-chain-${what}-${process.pid}`;
@@ -62,9 +63,15 @@ export function walkToolChain(version: string | undefined): void {
     // it was asked to trust. On a network every alias resolves for everybody, which is what the
     // deployment's own compose network does.
     run("docker", ["network", "create", net]);
+    // THE DEPLOYMENT'S OWN DATABASE IMAGE, read from compose — see postgres-service.ts. This
+    // walk stands the real platform up and calls it, so standing it on a cluster offering
+    // different extensions walks a chain the deployment does not have. Its command comes along
+    // too: the image ships `shared_buffers = 8GB` from the specification's reference settings,
+    // and compose is where that is cut down to something a release host can map.
+    const pgsvc = postgresService(root);
     run("docker", ["run", "-d", "--name", pg, "--network", net, "--network-alias", "postgres",
                    "-e", "POSTGRES_USER=zz", "-e", "POSTGRES_PASSWORD=chaincheck",
-                   "-e", "POSTGRES_DB=zz", "postgres:16-alpine"]);
+                   "-e", "POSTGRES_DB=zz", pgsvc.image, ...pgsvc.command]);
     waitFor("postgres", () => {
       try { run("docker", ["exec", pg, "pg_isready", "-U", "zz", "-d", "zz"]); return true; } catch { return false; }
     }, 60);

@@ -22,6 +22,7 @@ import { join } from "node:path";
 
 import { DASH_IMAGE, DASH_SRC, IMAGE, PLATFORM, die, log, root, run, step } from "../deployment.ts";
 import { dryRun, version } from "./config.ts";
+import { postgresService } from "./postgres-service.ts";
 import type { DashboardResolution } from "./dashboard.ts";
 import { walkToolChain } from "./tool-chain.ts";
 
@@ -162,8 +163,10 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
     // Registered BEFORE anything starts. A die() between here and the teardown below would
     // otherwise leave two containers running on whoever ran the release.
     process.on("exit", drop);
+    const pgsvc = postgresService(root);
     run("docker", ["run", "-d", "--name", pg, "-e", "POSTGRES_USER=zz",
-                   "-e", "POSTGRES_PASSWORD=sqlcheck", "-e", "POSTGRES_DB=zz", "postgres:16-alpine"]);
+                   "-e", "POSTGRES_PASSWORD=sqlcheck", "-e", "POSTGRES_DB=zz",
+                   pgsvc.image, ...pgsvc.command]);
     for (let i = 0; ; i++) {
       try { run("docker", ["exec", pg, "pg_isready", "-U", "zz", "-d", "zz"]); break; } catch {
         if (i > 60) die("the throwaway postgres never became ready");
@@ -174,31 +177,28 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
                    "-e", "TEAM_DB_URL=postgresql://zz:sqlcheck@postgres:5432/zz",
                    "-e", "GATEWAY_PUBLIC_URL=https://sql-check.invalid", `${IMAGE}:${version}`]);
     const migrationFiles = readdirSync(join(root, "services/gateway/migrations")).filter((f) => f.endsWith(".sql"));
-    // A MIGRATION MAY DECLARE AN EXTENSION THIS THROWAWAY POSTGRES CANNOT SUPPLY, and the
-    // gateway then DEFERS it — skipped, deliberately not recorded as applied, and applied by
-    // the first boot on a cluster that can supply it. `db.ts` explains why at length: a
-    // migration attempted where its extension is absent throws, rolls back, un-sets the pool
-    // and rethrows, and the caller starts the server anyway — the platform serving with no
-    // database while reporting itself healthy.
+    // EVERY MIGRATION APPLIES, and a deferral here is a release-blocking failure.
     //
-    // So "applied === files" is the wrong bar and was failing this release on its own safety
-    // feature. Migration 070 needs pg_textsearch, which exists in no image this project has
-    // built yet; the dry run's disposable Postgres is exactly a cluster that cannot supply it.
-    // What must still hold is that every migration NOT gated on an absent extension applies,
-    // and the deferral is contiguous — db.ts breaks the loop at the first deferred file, so a
-    // later one is not silently skipped past.
-    // THE DEFERRAL IS CONTIGUOUS, and that is db.ts's own behaviour rather than an assumption
-    // here: it BREAKS the loop at the first migration whose extension the cluster cannot
-    // supply, because a later migration may build on a deferred one's objects and applying
-    // past a gap trades a loud, correct failure for a confusing one. So everything AFTER the
-    // first deferred file is skipped too, whatever it declares — my first version of this
-    // counted only the files carrying a directive and expected 071 to apply behind a deferred
-    // 070.
-    const sorted = [...migrationFiles].sort();
-    const firstDeferred = sorted.findIndex((f) => /^--\s*requires-extension:\s*[a-z0-9_]+\s*$/im
-      .test(readFileSync(join(root, "services/gateway/migrations", f), "utf8")));
-    const deferred = firstDeferred === -1 ? [] : sorted.slice(firstDeferred);
-    const migrations = firstDeferred === -1 ? sorted.length : firstDeferred;
+    // This used to expect fewer. A migration may declare `-- requires-extension: <name>`, and
+    // `db.ts` DEFERS it when the cluster cannot supply that extension — skipped, deliberately
+    // not recorded as applied, and left for the first boot on a cluster that can. That is the
+    // right behaviour for the runner: a migration attempted where its extension is absent
+    // throws, rolls back, un-sets the pool and rethrows, and the caller starts the server
+    // anyway, which is the platform serving with no database while reporting itself healthy.
+    //
+    // It was the wrong bar for a RELEASE, because the throwaway Postgres was
+    // `postgres:16-alpine` while the deployment ran an image built to carry pg_textsearch. So
+    // the rehearsal deferred 070 and 071 every time, the search partitions and the BM25 index
+    // were never created here, and `sql-check` went on to EXCUSE every query that named a
+    // relation those migrations would have made. The release reported a pass over exactly the
+    // DDL nobody had checked. The old code even counted the deferral correctly — the
+    // arithmetic was right and the database was wrong.
+    //
+    // This now starts the image `deploy/docker-compose.yml` names, so the rehearsal's cluster
+    // and the deployment's cluster offer the same extensions. Nothing may be deferred there:
+    // if it is, the deployment will defer it too, and the operator should hear that from the
+    // release rather than from a production boot.
+    const migrations = migrationFiles.length;
     let applied = 0;
     for (let i = 0; ; i++) {
       // In a try, because for the first few seconds this asks about a table the gateway has
@@ -210,16 +210,31 @@ export function buildAndSmoke({ dash, dashVersion }: { dash: DashboardResolution
       } catch { applied = 0; }
       if (applied >= migrations) break;
       if (i > 90) {
-        // The gateway's own log says WHY it stopped — a bad URL, a refused connection, a
-        // migration that threw. Without it this reports a count and leaves the reader to
-        // rediscover the reason by hand.
+        // NAME THE MIGRATIONS, not just the shortfall. The commonest way to arrive here is now
+        // a deferral — a migration declaring an extension the deployment's own image does not
+        // carry — and "applied 69 of 71" sends the reader to the logs to work out which two
+        // and why. Ask the database which ones it recorded, diff, and print each missing file
+        // beside whatever extension it declares.
+        let recorded = new Set<string>();
+        try {
+          recorded = new Set(run("docker", ["exec", pg, "psql", "-U", "zz", "-d", "zz", "-tAc",
+                                            "select name from zz.schema_migration"]).trim().split("\n"));
+        } catch { /* the database may not be answering at all; the log below still says so */ }
+        const missing = [...migrationFiles].sort().filter((f) => !recorded.has(f)).map((f) => {
+          const needs = /^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/im
+            .exec(readFileSync(join(root, "services/gateway/migrations", f), "utf8"))?.[1];
+          return `    ${f}${needs ? ` — declares ${needs}, which ${pgsvc.image} did not supply` : ""}`;
+        });
         const why = run("docker", ["logs", "--tail", "20", gw], { stdio: ["ignore", "pipe", "pipe"] });
-        die(`the gateway applied ${applied} of ${migrations} migrations to an empty database:\n${why}`);
+        die(`the gateway applied ${applied} of ${migrations} migrations to an empty database.\n`
+            + `  Not applied:\n${missing.join("\n")}\n`
+            + "  A migration deferred against the deployment's OWN image will be deferred in the\n"
+            + "  deployment too. Either the image must carry the extension, or the migration must not\n"
+            + `  declare it.\n${why}`);
       }
       execSync("sleep 1");
     }
-    log(`  ${migrations} migrations apply to an empty database`
-        + (deferred.length ? `; ${deferred.length} deferred on a declared extension this image cannot supply: ${deferred.join(", ")}` : ""));
+    log(`  all ${migrations} migrations apply to an empty ${pgsvc.image}, none deferred`);
     try {
       // The host's build, because the image has the sources but no psql to reach the database
       // with. The tree is clean and on master by now, so these ARE the release's queries.

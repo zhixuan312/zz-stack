@@ -121,15 +121,17 @@ export {
 // sorted dependency pins — and none is caller-supplied, because a grant a caller can describe is
 // a bearer permission wearing a server record's name. `INTERNAL_GRANT_ISSUANCE` is the one
 // spelling of the name, so nothing downstream can register a second.
+//
+// THE ENGINE ITSELF IS NOT ON THIS DOOR, and that is the point rather than an omission.
+// `issueControlGrant`, `claimAgainstGrant`, `createGrantStore` and `canonicalTarget` are
+// reached only by `control-grant-fixture.ts` beside them, which is what a consumer outside
+// this package is given: a driveable stand-in, never the minting function. Publishing them
+// here would put the one operation this release refuses to register within one import of
+// anybody who can write `@zz/contracts`. The three digest helpers are narrower still — they
+// are private to `control-grant.ts`, because every one of them is a step in a derivation the
+// handler re-runs rather than a question a caller is entitled to ask.
 export {
   INTERNAL_GRANT_ISSUANCE,
-  canonicalTarget,
-  claimAgainstGrant,
-  createGrantStore,
-  dependencySnapshotRef,
-  effectDigest,
-  issueControlGrant,
-  profileDigest,
   type ApprovedIssuer,
   type ClaimOutcome,
   type ControlDecision,
@@ -287,6 +289,9 @@ export { resolveEndpoint } from "./local-transport.js";
 // instead fed the model NAME to the port as an observed identity would have the port comparing
 // a vendor's self-report against a pin — green on every test, verifying nothing.
 export { jevAdapter } from "./adapters/jev.js";
+// What a caller needs to ASK through it and to READ what came back: how one question's reply is
+// to be validated, and the record plus validated readings each reply becomes.
+export type { JevAnswerOptions, JevParseResult } from "./adapters/jev.js";
 
 // THE RUNTIME ADAPTER PORT, and the second adapter that is the only reason it can be called
 // one. A dispatch returns a work id and cannot report a completion — `completed` is typed
@@ -295,28 +300,35 @@ export { jevAdapter } from "./adapters/jev.js";
 // A lease expiry never proves a worker stopped, which is why `lease_expiry_proves_stop` is
 // typed `false`. The last line of a feed is the last activity observed, so `Observation` pairs
 // its completeness with its receipt and names its elapsed field for the floor it is. An
-// unsupported capability is DECLARED (`simulated: false`) and `admitToRuntime` decides whether
-// the work may run at all.
-export {
-  ASSET_ROLES, CANCEL_STATES, OBSERVED_COMPLETENESS, PORT_PROTOCOL, RECEIPT_ASSURANCE,
-  RUNTIME_CAPABILITIES, RUNTIME_OPERATIONS, STOP_EVIDENCE, admitToRuntime, cancelStrength,
-  declarationDigest, type CapabilityDeclaration,
-  type AssetRole, type BoundAsset, type CancelOutcome, type CancelRequest, type CancelState,
-  type CancellationLimits, type CompletionReceipt, type DeclaredUnsupported,
-  type DispatchAck, type DispatchRequest, type EventFormatIdentity, type LoadMethodRequest,
-  type MethodBinding, type Observation, type ObservedCompleteness, type ObservedEvent,
-  type ObserveRequest, type ReceiptAssurance, type ResumeOutcome, type ResumeRequest,
-  type RuntimeAdapter, type RuntimeAdmission, type RuntimeCapabilities,
-  type RuntimeCapability, type StopEvidence, type TaskProfile,
+// unsupported capability is DECLARED (`simulated: false`) and admission decides whether the
+// work may run at all.
+//
+// THE PORT PUBLISHES SHAPES HERE AND NOTHING ELSE. Its vocabularies, its digest and its
+// admission rule are named by `claude-code.ts`, `batch-queue.ts` and `conformance.ts` beside
+// it and by nothing outside this package — a contract's own implementations are not its
+// consumers. A consumer meets all three through `runConformance` below, which is the form in
+// which they are meant to be met: an adapter judged against its own declaration, rather than
+// a set of constants a caller could re-implement the judgement from.
+export type {
+  CapabilityDeclaration,
+  AssetRole, BoundAsset, CancelOutcome, CancelRequest, CancelState,
+  CancellationLimits, CompletionReceipt, DeclaredUnsupported,
+  DispatchAck, DispatchRequest, EventFormatIdentity, LoadMethodRequest,
+  MethodBinding, Observation, ObservedCompleteness, ObservedEvent,
+  ObserveRequest, ReceiptAssurance, ResumeOutcome, ResumeRequest,
+  RuntimeAdapter, RuntimeAdmission, RuntimeCapabilities,
+  RuntimeCapability, StopEvidence, TaskProfile,
 } from "./adapters/port.js";
 
 // WHAT A PIECE OF WORK CONSUMED, under one rule stated in the data: a record is counted
 // exactly when no ancestor of it is marked as already including its descendants. Where an
 // ancestry cannot be resolved the record is excluded BY NAME and the total drops to
-// `floor_only` — a lower bound that says it is one.
-export {
-  summariseUsage,
-  type UsageCompleteness, type UsageRecord, type UsageTotal,
+// `floor_only` — a lower bound that says it is one. The rule runs where the records are read:
+// each adapter calls it while turning its runtime's own accounting into a `UsageTotal`, so a
+// consumer is handed the total and never the counting. Publishing the counter beside the total
+// would offer a second way to arrive at a different number.
+export type {
+  UsageCompleteness, UsageRecord, UsageTotal,
 } from "./adapters/usage.js";
 
 // EVERY RUNTIME ADAPTER THIS RELEASE SHIPS, and the protocol all of them are driven through.
@@ -327,42 +339,6 @@ export {
   adapters, runConformance,
   type ConformanceReport,
 } from "./adapters/conformance.js";
-
-// What an arm COST, and the one answer this refuses: zero, for something nobody measured.
-// `total` is `number | null`; `partial` carries a `known_subtotal` that is never called a
-// total; pricing is not billing, and `BillingUncertainty` keeps the gap visible.
-export {
-  accountFor, costOf,
-  type BackendAccount, type BackendRun, type BillingUncertainty, type CostCompleteness,
-  type CostEstimate, type CostInput, type RateCard,
-} from "./eval-cost.js";
-
-// The unit being measured: what a reviewer could legitimately see at the case's cutoff, whether
-// the case may be counted at all, and how big a slice has to be before it can decide anything.
-export {
-  adjudicate, eligibilityOf, sliceAdequacy, sliceKey, SAMPLE_ADEQUACY_RULE_REF,
-  type Adequacy, type AdjudicatedLabel, type Adjudicator, type EligibilityVerdict,
-  type EvalCase, type EvalSlice, type EvidenceRef, type HistoricalContext,
-  type LabelStatus, type ReviewerLabel,
-} from "./eval-case.js";
-
-// The A/B/C comparison design and the permission it does not carry. `isStrawman` is computed
-// from what an arm actually is; `activationAllowed` is derived from a named blocker list, while
-// `draftingAllowed` is never blocked — you may write the procedure without permission to run it.
-export {
-  armsOf, assembleProtocol, conclude, outcomesOf, reuseHeldOutForTuning, AGREEMENT_METRIC,
-  type ArmId, type ArmSliceOutcome, type ArmSpec, type CaseInventory, type Conclusion,
-  type ConclusionKind, type EvalArm, type EvaluationProtocol, type Faithfulness,
-  type Limit, type MethodDescription, type ProtocolDraft,
-} from "./eval-protocol.js";
-
-// The instantiated protocol for the assessor question. No arm has run; nothing in it is a
-// measurement, and that is the state it is meant to be in.
-export { protocol } from "./eval-protocol-instance.js";
-
-// Each detector watched on a healthy subject and on a faulted one — including a healthy fixture
-// that reaches `activationAllowed === true`, so the gating is shown not to be a blanket refusal.
-export { evalProtocolProbe, type ProbeRow } from "./eval-protocol-probe.js";
 
 // WHETHER A STEP MAY ADVANCE, and the four measurements that are real and are not grounds.
 // Bytes added, rounds elapsed, a model's confidence in itself, an aggregate score — each is
@@ -388,10 +364,20 @@ export {
 // has no step list and cannot name one, which is what keeps the kernel generic. A step entered
 // without its entry evidence returns the missing kinds; a call against a superseded revision is
 // refused and carries the current one; `needs_revisit` is COMPUTED from the outcome the
-// controller already holds, never set by a caller.
+// controller already holds, never set by a caller. `admitEntry` is the entry rule itself,
+// exported beside the controller because a caller with no execution to hang the question on —
+// a guard on a single write — must not have to fabricate an identity and a revision, and must
+// not keep a second copy of the rule instead. Evidence is required at a STANDARD, and a
+// requirement can be DISCHARGED on a named ground rather than met; which standard applies and
+// what grounds exist are caller-supplied facts, like every other input here.
 export {
+  admitEntry,
   createController,
   type ControlState,
+  type EntryAdmission,
+  type EntryWaiver,
+  type EvidenceStanding,
+  type EvidenceStandard,
   type ExecutionIdentity,
   type ExecutionProfile,
   type OutcomeState,
@@ -404,6 +390,7 @@ export {
   type StageSettlement,
   type StageSettlementResult,
   type StepContract,
+  type UnmetRequirement,
 } from "./stage-control.js";
 
 // The negative control. Each rule above is exercised twice — silent on a healthy subject, firing
@@ -443,6 +430,7 @@ export {
   type AuditRecord,
   type AuditRefusal,
   type Finding,
+  type FindingClosure,
   type FindingDisposition,
   type FindingDispute,
   type FindingInput,

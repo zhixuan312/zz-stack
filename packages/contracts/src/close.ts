@@ -250,8 +250,9 @@ const NO_STAGES: readonly StageRecord[] = Object.freeze([]);
  *
  * WHAT A BARE CALL ASSUMES ABOUT GATES, and why. `{ disposition }` alone is not refused, and
  * its gate posture is recorded as `unstated` rather than as either of the other two. The rule
- * is that work whose DECLARED gates are unrecorded may not be closed — and a caller that says
- * nothing has declared no gate to this call, so there is nothing unrecorded to refuse over.
+ * is that work claiming to have FINISHED with its DECLARED gates unrecorded may not be closed
+ * — and a caller that says nothing has declared no gate to this call, so there is nothing
+ * unrecorded to refuse over.
  * Writing `gatesRecorded ?? true` instead would have the record assert, on behalf of a caller
  * who said nothing, that gates were recorded; writing `?? false` would make work that
  * declared no gates unclosable. Both invent a fact. The third value costs a word in the
@@ -287,7 +288,20 @@ export function closeInitiative(request: CloseRequest): CloseRecord {
         "the way any document is corrected; the disposition that closed the work is not written twice",
     );
   }
-  if (gatePosture === "unrecorded") {
+  // AND ONLY WORK THAT CLAIMS TO HAVE FINISHED IS REFUSED OVER A GATE.
+  //
+  // Work that STOPPED is precisely work whose gates were never passed, so applying this to it
+  // leaves two exits and no third: approve a gate nobody agreed to, or leave the work open for
+  // ever — and the second is the state a close exists to end. A platform that enforces the
+  // same rule on the write path learned this the expensive way and says so where it enforces
+  // it: "STOP OUTCOMES ARE EXEMPT, and they have to be." That is a requirement about what
+  // `abandoned` MEANS rather than a local concession, so it belongs beside the rule it bounds.
+  //
+  // THE POSTURE IS STILL RECORDED EITHER WAY, and only the refusal turns on the disposition.
+  // What the caller said about the gates is a fact about the record whichever way the work
+  // ended, and an abandoned close carrying `unrecorded` is saying something true and worth a
+  // later reader's time. Collapsing the observation into the refusal would lose it.
+  if (gatePosture === "unrecorded" && disposition === "finished") {
     refusals.push("a declared gate is unrecorded, so what it was meant to hold has not been established");
   }
 

@@ -68,17 +68,21 @@ async function typedThresholds(dims: Dim[], facts: string): Promise<Applied[]> {
   });
   const answers = await askTyped(facts, questions);
   return dims.map((d, i) => {
-    const a = answers[`t${i}`];
-    if (!a || a.type !== "noul") {
+    // THE PROBABILITY AS THE ADAPTER VALIDATED IT. `askTyped` refuses the whole set if any
+    // line came back as anything but a probability between 0 and 1, so the null branch below
+    // is now unreachable through the service and is kept as the answer to a line that somehow
+    // carries none -- ABSENT IS NOT MET, which is the rule the fallback path states too.
+    const p = answers[`t${i}`]?.readings.probability ?? null;
+    if (p === null) {
       return { dimension: d.name, meets: false, fact: "the typed judge returned no answer for this line" };
     }
     return {
       dimension: d.name,
-      meets: a.noul > 0.5,
-      fact: `the typed judge put ${Math.round(a.noul * 100)}% on this line holding, ` +
+      meets: p > 0.5,
+      fact: `the typed judge put ${Math.round(p * 100)}% on this line holding, ` +
             `read against: ${d.threshold}`,
-      confidence: Math.round(Math.abs(a.noul - 0.5) * 200) / 100,
-      probabilities: { met: a.noul, unmet: Math.round((1 - a.noul) * 100) / 100 },
+      confidence: Math.round(Math.abs(p - 0.5) * 200) / 100,
+      probabilities: { met: p, unmet: Math.round((1 - p) * 100) / 100 },
     };
   });
 }

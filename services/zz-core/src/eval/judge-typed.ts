@@ -60,15 +60,19 @@ export async function markTyped(dims: Dim[], artifact: string): Promise<Mark[]> 
   const answers = await askTyped(artifact, questions);
   const marks: Mark[] = [];
   for (const [i, d] of dims.entries()) {
+    // THE READINGS, NOT THE BODY. `askTyped` has already refused anything the adapter would
+    // not validate, so a figure that arrives here is on the scale this dimension declared and
+    // a distribution that arrives here is over levels it declared. A dimension with no score
+    // is skipped rather than defaulted, for the reason it always was: a mark nobody made.
     const a = answers[`d${i}`];
-    if (!a || a.type !== "score") continue;
+    if (!a || a.readings.score === null) continue;
     marks.push({
       dimension: d.name,
-      score: toOneBased(a.score),
+      score: toOneBased(a.readings.score),
       cite: "",
       why: "",
-      confidence: a.confidence,
-      probabilities: a.probabilities,
+      confidence: a.readings.confidence ?? undefined,
+      probabilities: a.readings.distribution ?? undefined,
     });
   }
   return marks;

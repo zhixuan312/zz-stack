@@ -76,12 +76,19 @@ const PROFILE_REF = "fixture://profile/seven-step";
 
 /** Seven bound contracts. Each step after the first requires the one before it to have left
  *  evidence behind, which is what makes the missing-entry-evidence row a real entry and not a
- *  contrived one. */
+ *  contrived one.
+ *
+ *  THE SECOND STEP DEMANDS RATIFICATION AND THE REST DEMAND A RECORD, so the two standards are
+ *  both under test here rather than one of them being a constant nothing exercises. A profile
+ *  whose every requirement sat at the same standard would pass identically against an
+ *  implementation that ignored the field. */
 const STEP_CONTRACTS: readonly StepContract[] = Object.freeze(
   Array.from({ length: 7 }, (_, i): StepContract => Object.freeze({
     step: `s${i + 1}`,
     intendedChange: `the change step ${i + 1} is bound to make`,
-    entryEvidence: i === 0 ? Object.freeze([]) : Object.freeze([`ground-from-s${i}`]),
+    entryEvidence: i === 0
+      ? Object.freeze([])
+      : Object.freeze([{ kind: `ground-from-s${i}`, standard: i === 1 ? "ratified" as const : "recorded" as const }]),
     gates: Object.freeze([`gate-s${i + 1}`]),
   })),
 );
@@ -198,13 +205,36 @@ const kindOf = (a: StageAdmission): RefusalKind | null => refusalOf(a)?.kind ?? 
 /** The controller's own refusals, and the state it computes rather than accepts. */
 function controllerRows(): StageControlProbeRow[] {
   const c: StageController = createController(PROFILE);
-  const first = c.admit({ identity: IDENTITY, step: "s1", revision: 0, evidenceHeld: [] });
-  const ungrounded = c.admit({ identity: IDENTITY, step: "s2", revision: 0, evidenceHeld: [] });
-  const grounded = c.admit({ identity: IDENTITY, step: "s2", revision: 0, evidenceHeld: ["ground-from-s1"] });
-  const unknown = c.admit({ identity: IDENTITY, step: "s8", revision: 0, evidenceHeld: [] });
+  const first = c.admit({ identity: IDENTITY, step: "s1", revision: 0, evidenceHeld: [], waivers: [] });
+  const ungrounded = c.admit({ identity: IDENTITY, step: "s2", revision: 0, evidenceHeld: [], waivers: [] });
+  const grounded = c.admit({
+    identity: IDENTITY, step: "s2", revision: 0, waivers: [],
+    evidenceHeld: [{ kind: "ground-from-s1", standard: "ratified" }],
+  });
+  // s2 demands RATIFICATION, so a recorded holding of the very kind it names is not enough —
+  // and the refusal has to say which of the two situations this is.
+  const unratified = c.admit({
+    identity: IDENTITY, step: "s2", revision: 0, waivers: [],
+    evidenceHeld: [{ kind: "ground-from-s1", standard: "recorded" }],
+  });
+  // s3 demands only a RECORD, and the same recorded holding satisfies it. Both rows run
+  // against one controller, so neither can be explained by a difference in anything else.
+  const recorded = c.admit({
+    identity: IDENTITY, step: "s3", revision: 0, waivers: [],
+    evidenceHeld: [{ kind: "ground-from-s2", standard: "recorded" }],
+  });
+  // The ground nobody will now produce, discharged on a named fact rather than refused for
+  // ever — and a waiver naming a DIFFERENT kind discharges nothing.
+  const WAIVER = { kind: "ground-from-s1", ground: "the execution this step belongs to was concluded" };
+  const waived = c.admit({ identity: IDENTITY, step: "s2", revision: 0, evidenceHeld: [], waivers: [WAIVER] });
+  const misaimed = c.admit({
+    identity: IDENTITY, step: "s2", revision: 0, evidenceHeld: [],
+    waivers: [{ kind: "ground-from-s6", ground: WAIVER.ground }],
+  });
+  const unknown = c.admit({ identity: IDENTITY, step: "s8", revision: 0, evidenceHeld: [], waivers: [] });
   const foreign = c.admit({
     identity: { executionRef: IDENTITY.executionRef, profileRef: "fixture://profile/other" },
-    step: "s1", revision: 0, evidenceHeld: [],
+    step: "s1", revision: 0, evidenceHeld: [], waivers: [],
   });
 
   // Every bound step resolved through this one controller, each at the revision the last one
@@ -215,6 +245,7 @@ function controllerRows(): StageControlProbeRow[] {
     const request: StageEntry = {
       identity: IDENTITY, step, revision: at,
       evidenceHeld: STEP_CONTRACTS.flatMap((s) => [...s.entryEvidence]),
+      waivers: [],
     };
     if (!c.admit(request).admitted) continue;
     const conclusion: StageSettlement = {
@@ -265,6 +296,30 @@ function controllerRows(): StageControlProbeRow[] {
       [stateOf(reopened) === "needs_revisit" && stateOf(fresh) === "not_established",
         "settling it again with a gap open computes needs_revisit, while a step that never " +
         "held stays not_established"]),
+    // THE HEALTHY HALF IS THE ONE THAT COSTS SOMETHING HERE. An implementation that demanded
+    // ratification of everything would fire on the faulted column and be unusable: it would
+    // refuse, for ever, every step whose ground nothing ever ratifies — and "for ever" is
+    // exact, because no further act exists that could change the answer.
+    row("evidence subject to no ratification is judged by a ratification that never comes",
+      [recorded.admitted,
+        "a step demanding a record is admitted on a recorded holding, with nothing to approve " +
+        "it and nothing that ever will"],
+      [kindOf(unratified) === "missing_entry_evidence"
+        && refusalOf(unratified)?.unmet[0]?.held === "recorded"
+        && refusalOf(unratified)?.unmet[0]?.required === "ratified",
+        "a step demanding ratification is refused on the same holding, and the refusal reports " +
+        "what was held rather than calling it absent — an implementation that compared " +
+        "membership alone would admit both and this row would MISS"]),
+    row("a discharged requirement is admitted with no ground on the record",
+      [waived.admitted && (waived.admitted ? waived.waived : []).length === 1
+        && (waived.admitted ? waived.waived[0].ground : "") === WAIVER.ground,
+        "the requirement is discharged and the admission carries the ground it was discharged " +
+        "on, so it is never read as an admission granted on evidence"],
+      [kindOf(misaimed) === "missing_entry_evidence"
+        && (refusalOf(misaimed)?.missingEvidence.includes("ground-from-s1") ?? false)
+        && (waived.admitted ? waived.waived : []).length > 0,
+        "a waiver naming a different kind discharges nothing, so the ground has to match the " +
+        "requirement it excuses rather than standing as a blanket exemption"]),
   ];
 }
 

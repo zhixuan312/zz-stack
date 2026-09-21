@@ -17,7 +17,7 @@
  *
  * ACTIVATION IS DERIVED, NEVER READ. {@link blockers} computes the list of preconditions that
  * are not met, from their eight `state` values and from nothing else, and "may activate" is the
- * emptiness of that list. `packages/contracts/src/eval-protocol.ts` argues this for the
+ * emptiness of that list. The assessor protocol argued this for the
  * assessor protocol and is where the shape comes from: a field somebody could set to true is a
  * field somebody will set to true. So there is no field. {@link waiveImmunity} is the
  * behavioural proof rather than the promise — it re-derives against a copy of the document

@@ -11,7 +11,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { OUTCOME_STOPPED, deriveOutcome, parseCaller, parseEnvelope } from "@zz/contracts";
+import { OUTCOME_STOPPED, closeInitiative, parseCaller, parseEnvelope } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -137,10 +137,11 @@ export function registerInitiativeCloseTool(server: McpServer): void {
         }
       }
 
-      // The outcome is derived below, once the closing document has been read: whether anybody
-      // signed off is a fact ON that document, not only an argument to this call. It is
-      // derived BY `deriveOutcome` in `@zz/contracts`, which is the one place the platform
-      // holds that rule — this file names none of the three words and cannot.
+      // The close is performed below, once the closing document has been read: whether anybody
+      // signed off, whether the work was already closed and whether its gates were recorded are
+      // facts ON the store, not only arguments to this call. It is performed BY
+      // `closeInitiative` in `@zz/contracts`, which is the one place the platform holds those
+      // rules — this file names none of the three outcome words and cannot.
       const probe = join(initiative, "probe.md");
       const chain = chainFor(root, probe);
       // A FREEFORM INITIATIVE CLOSES TOO, and the caller says on what.
@@ -198,6 +199,38 @@ export function registerInitiativeCloseTool(server: McpServer): void {
               `ERROR: ${initiative} holds documents but none its flow declares, so the close ` +
               "has nowhere it belongs by default. Name one: `document: \"<name>.md\"`.");
           }
+          // AND IT CLOSES ONCE, like every other initiative.
+          //
+          // This path wrote `_open.json` again and answered success, so the one act the
+          // platform refuses to perform twice was performed twice here and nothing said so.
+          // It looked harmless because the second write is the same bytes — but "an
+          // initiative closes once" is a rule about the ACT, not about the diff, and a path
+          // exempt from it is a path where a caller cannot tell a close from a no-op.
+          //
+          // The kernel is the one that refuses, from the fact this reads back: no gate posture
+          // is passed because an initiative holding no document declares no gate to anybody.
+          //
+          // `abandoned_at` IS THE MARKER, AND IT MUST BE THE SAME ONE initiative_status READS.
+          // That branch tests `rec?.abandoned_at` and prints `abandoned_by ?? null` beside it,
+          // so the date is what says an abandon happened and the name is what says who. Asking
+          // `abandoned_by` here instead would have made the two disagree on a record carrying
+          // one and not the other — `openRecord` casts whatever JSON it finds and validates no
+          // field, so that record is a shape this platform can meet. The direction of the
+          // disagreement is what makes it worth a line: status would go on offering a close
+          // while this refused it, which is the platform instructing an act its own gate
+          // refuses — the trap gateCheck's comment records already paying for once.
+          const undo = closeInitiative({ disposition, already: Boolean(rec.abandoned_at) });
+          if (!undo.ok) {
+            return text(
+              `ERROR: ${undo.refusals.join("; ")}.\n\n${initiative} holds no document and was ` +
+              `already abandoned on ${rec.abandoned_at}` +
+              // Named only when the record names somebody. "abandoned by undefined" is not a
+              // fact about who did it, it is this sentence reporting its own missing field.
+              `${rec.abandoned_by ? `, by ${rec.abandoned_by}` : ""}, on its own open record. ` +
+              "Nothing here is left to mark. If that was wrong, record WHY as a journal " +
+              "node against this initiative — a correction somebody can find beats a second " +
+              "write nobody can.");
+          }
           recordAbandoned(root, initiative, who.email);
           logActivity(root, `${initiative}/${OPEN_RECORD}`,
             { user: who.email, action: "initiative_close", initiative, outcome: OUTCOME_STOPPED });
@@ -236,14 +269,6 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // If a close was genuinely wrong, that is a fact about the record worth writing down —
       // a journal node saying so, not a quiet overwrite.
       const already = parseEnvelope(doc).outcome;
-      if (already) {
-        return text(
-          `ERROR: ${initiative} is already closed as \`${already}\`, and an initiative closes ` +
-          "once. The ledger row was appended at that close and is what the team's counts read, " +
-          "so changing the document now would leave the two disagreeing. If that close was " +
-          "wrong, record WHY as a journal node against this initiative — a correction somebody " +
-          "can find beats an overwrite nobody can.");
-      }
       // CLOSING IS THE SIGN-OFF, and the closer is the person who signed.
       //
       // Every call carries a person's authority — a session is a principal, and an agent calls
@@ -263,26 +288,72 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // acceptor put "accepted_by" on a record whose outcome is that nobody got what they
       // wanted, which is the contradiction this tool refuses in the other direction.
       const signedBy = disposition === OUTCOME_STOPPED || reason ? "" : (acceptor || who.email);
-      // THE KERNEL DERIVES THE OUTCOME. This service does not, and this line is the call.
+      // THE KERNEL CLOSES THE WORK. This service reads the facts back and renders the sentence.
       //
-      // It used to re-derive it here — `stopped ? stopped : signedBy ? "accepted" : "delivered"`
-      // — under a comment claiming to be "the one place the platform DERIVES an outcome". That
-      // stopped being true when `deriveOutcome` landed in `@zz/contracts`: the rule then had two
-      // implementations, the gate checked the kernel's, and nothing checked that the copy this
-      // service actually runs agreed with it. Two implementations of one rule agree until the
-      // day one of them is edited.
+      // It used to re-derive the outcome here — `stopped ? stopped : signedBy ? "accepted" :
+      // "delivered"` — under a comment claiming to be "the one place the platform DERIVES an
+      // outcome". That stopped being true when the rule landed in `@zz/contracts`, and calling
+      // `deriveOutcome` closed that half. THE OTHER HALF WAS STILL HERE: whether the work had
+      // already been closed, and whether its declared gates were recorded, are refusals
+      // `closeInitiative` models — so the platform held one rule in the kernel and two beside
+      // it, and the gate could only ever check the one it could see.
+      //
+      // `already` is a FACT READ BACK OFF THE STORE, not an opinion: the kernel holds no
+      // filesystem, refuses on it, and never writes it.
+      //
+      // WHAT IS DELIBERATELY NOT SENT, and it is the interesting half. `closeInitiative` also
+      // refuses over `gatesRecorded`, and this call does not supply it — not because the rule
+      // is unwanted but because it already has an owner, and a rule with two owners has none.
+      // `closeCheck`, one call below in documentGuards, answers exactly this question through
+      // `admitEntry`: the flow's gated documents that were written, all approved, waived for a
+      // stop. A copy here computed the same predicate from the same two functions, and two
+      // implementations of one rule agree until the day one is edited.
+      //
+      // THE WRITE PATH IS THE RIGHT OWNER, which is why the copy went rather than the original.
+      // documentGuards exists because these checks were once listed at each call site, so
+      // "every new write path started with none of them and got whichever ones its author
+      // remembered". A gate rule enforced HERE is a rule a second tool that writes an outcome
+      // would not inherit; enforced there, nothing can write a closed document past it. The
+      // record's `gatePosture` is `unstated` as a result, which is what this call honestly has
+      // to say about gates: it declares none, so there is nothing unrecorded to refuse over.
       //
       // WHAT IS STILL THIS SERVICE'S OWN, and why the argument is `signedBy` and not `acceptor`.
       // Who counts as having signed off is a policy about AUTHORITY and it belongs here: closing
       // is the sign-off, so the closer signs unless they name somebody else, and a
       // `no_signoff_reason` says nobody did. `signedBy` above is that policy's answer. The
-      // kernel's rule is the narrower one — does an acceptor exist — and it is the only thing
-      // being asked for below.
-      const outcome = deriveOutcome({ disposition, accepted_by: signedBy });
-      // The kernel returns null rather than guessing at a disposition it does not know. The
-      // schema above refuses one first, so no caller can reach this — but the refusal is what
-      // the kernel's contract says to do with a null, and inventing a finished outcome for an
-      // unrecognised word is exactly the flattering record it exists to prevent.
+      // kernel's rule is the narrower one — does an acceptor exist.
+      const record = closeInitiative({
+        disposition,
+        accepted_by: signedBy,
+        no_signoff_reason: reason || null,
+        already: Boolean(already),
+      });
+      if (!record.ok) {
+        // THE KERNEL REFUSED, AND THIS PUTS BACK WHAT IT COULD NOT KNOW.
+        //
+        // Its sentences are general on purpose: it holds no initiative name and no word already
+        // on the document. So its refusals are printed as it wrote them and what this service
+        // can add is added after them — keyed on the FACT IT SUPPLIED rather than on the
+        // kernel's wording, because a branch that matched its prose would be a second copy of
+        // its rules and would go quiet the day one of them is reworded.
+        //
+        // ONE FACT, SO ONE BRANCH. `already` is the only thing this call tells the kernel that
+        // the kernel cannot say back in full, and a list built to hold one string is a shape
+        // kept for a second entry nobody has.
+        return text(`ERROR: ${record.refusals.join("; ")}.` + (already
+          ? `\n\n${initiative} is already closed as \`${already}\`. The ledger row was appended ` +
+            "at that close and is what the team's counts read, so changing the document now " +
+            "would leave the two disagreeing. If that close was wrong, record WHY as a journal " +
+            "node against this initiative — a correction somebody can find beats an overwrite " +
+            "nobody can."
+          : ""));
+      }
+      // The kernel returns null rather than guessing at a disposition it does not know, and a
+      // null is one of the refusals above — so `ok` being true has already settled this. The
+      // schema refuses an unknown disposition before either of them. What is left is the
+      // compiler, which cannot see any of that, and a refusal is the only honest thing to write
+      // under a branch that says the outcome is missing.
+      const outcome = record.outcome;
       if (outcome === null) {
         return text(`ERROR: no outcome can be derived from a disposition of ${JSON.stringify(disposition)}.`);
       }

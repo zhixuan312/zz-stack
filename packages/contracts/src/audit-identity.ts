@@ -48,10 +48,24 @@
 import { type CheckState } from "./check-state.js";
 
 
-/** The four dispositions a finding can stand at, matching the spec's gap disposition set.
- *  `disputed` is not a worse `open` — it is the state where two rounds disagree and both
- *  records stand, which is a different thing for a reader to act on. */
-export type FindingDisposition = "open" | "resolved" | "deferred" | "disputed";
+/** The two dispositions a finding can stand at: it is open, or something ran and passed.
+ *
+ *  THIS CARRIED FOUR AND CONSTRUCTED TWO. `deferred` and `disputed` were never produced by any
+ *  code in this repository — not by a function here, not by the probe, not by the gate check —
+ *  and the comment that justified them named "the spec's gap disposition set", which does not
+ *  exist: `GAP_KINDS` in gap-routing.ts is six unrelated kinds and no document or migration
+ *  names a four-value disposition set anywhere.
+ *
+ *  Each was a second copy of a word that already meant something else. `deferred` is the OPEN
+ *  state in zz.eval_finding — the state a recorded finding starts at and counts against
+ *  headroom in — so a reader moving between the two vocabularies met one word with two
+ *  meanings and nothing saying which was in force. `disputed` is live in eval-case.ts's
+ *  `LabelStatus`, where it is actually constructed and carries the reasons and the voided
+ *  reviewers behind it; here it was a name for a state {@link disputeFinding} deliberately
+ *  refuses to write, so the only thing it could do was suggest that function does something it
+ *  documents itself as not doing. A vocabulary nothing writes is a vocabulary free to drift
+ *  from the one that is real, and neither of these had a way to be found wrong. */
+export type FindingDisposition = "open" | "resolved";
 
 // ── the six identities ─────────────────────────────────────────────────────────────────────
 
@@ -180,11 +194,21 @@ export interface RecordedResolution {
   readonly at: string;
 }
 
-/** What a caller hands {@link recordFinding}. Everything but the id and the disposition has a
- *  defensible default; neither of those does. */
+/** What a caller hands {@link recordFinding}. Everything but the id has a defensible default.
+ *
+ *  `disposition` IS TYPED `"open"` AND NOT {@link FindingDisposition}, which is the whole of
+ *  the rule this module spends its header asserting. It took the full set, so
+ *  `recordFinding({ id, disposition: "resolved" })` was legal: this file refused an assessment
+ *  the right to close a finding and then handed the same power to anyone recording one. The
+ *  rule was stated in three paragraphs at the top and held by two of the three functions
+ *  underneath them.
+ *
+ *  It stays as a field rather than being deleted because `disposition: "open"` is a true thing
+ *  a caller may want to write down, and the gate check writes it. What it may no longer be is
+ *  anything else. */
 export interface FindingInput {
   readonly id: string;
-  readonly disposition: FindingDisposition;
+  readonly disposition?: "open";
   readonly summary?: string;
   readonly evidence_ref?: string | null;
   readonly requiredTests?: readonly RequiredTest[];
@@ -192,10 +216,20 @@ export interface FindingInput {
   readonly resolution?: RecordedResolution | null;
 }
 
+/** A NEW FINDING IS OPEN, AND THERE IS NO EXPRESSION HERE THAT PRODUCES ANY OTHER STATE.
+ *
+ *  `"open"` is written as a literal rather than copied from `input`, for the reason the type
+ *  above is narrow: a type is erased at runtime and an input cast from JSON is not, so a
+ *  narrow field alone would leave `recordFinding(row as FindingInput)` able to record a
+ *  finding closed. Both together mean a closed recording is neither writable nor typeable.
+ *
+ *  `resolution` is still carried, because {@link resolveFinding} is the one thing that files
+ *  one and its output has to be constructible. A resolution arriving here without a
+ *  disposition to go with it lands on a finding that is still open — which is what it is. */
 export function recordFinding(input: FindingInput): Finding {
   return Object.freeze({
     id: input.id,
-    disposition: input.disposition,
+    disposition: "open",
     summary: input.summary ?? "",
     evidence_ref: input.evidence_ref ?? null,
     requiredTests: Object.freeze([...(input.requiredTests ?? [])]),
@@ -280,12 +314,44 @@ export function applyAssessment(finding: Finding, assessment: Assessment): Asses
   });
 }
 
-/** The one way a finding closes: something ran, and its outcome is on the record. Refused
- *  unless the verification passed — a resolution citing a failed or unrun check is a finding
- *  closed by a reference to evidence that says it is still open. */
-export function resolveFinding(finding: Finding, resolution: RecordedResolution): Finding {
-  if (resolution.outcome !== "passed") return finding;
-  return recordFinding({ ...finding, disposition: "resolved", resolution });
+/** What became of an attempt to close a finding. BOTH ARMS CARRY THE FINDING, so a caller
+ *  wanting the record as it now stands never has to read `closed` to get it, and `refusal`
+ *  says which check was cited and what state it was in. */
+export type FindingClosure =
+  | { readonly closed: true; readonly finding: Finding }
+  | { readonly closed: false; readonly finding: Finding; readonly refusal: string };
+
+/**
+ * THE ONE WAY A FINDING CLOSES: something ran, and its outcome is on the record.
+ *
+ * REFUSING SILENTLY IS NOT REFUSING. This returned the finding unchanged on a resolution
+ * citing a check that had failed or never run — the right record, and no way for the caller to
+ * tell it apart from a finding that was already resolved, or from a close that worked. A
+ * refusal nobody can observe is indistinguishable from success at the call site, which is how
+ * the caller most likely to be wrong is the one least likely to find out. So the outcome is on
+ * the result and the reason is a sentence, the way `finding_decide` answers in zz-core: it
+ * names what it refused and why rather than handing back something that looks like agreement.
+ */
+export function resolveFinding(finding: Finding, resolution: RecordedResolution): FindingClosure {
+  if (resolution.outcome !== "passed") {
+    return Object.freeze({
+      closed: false as const,
+      finding,
+      refusal: `${finding.id} stays open: closing it cites ${resolution.verification_ref}, ` +
+        `which is "${resolution.outcome}" and not "passed". A finding closed by a reference ` +
+        "to evidence that says it is still open is worse than one nobody closed, because the " +
+        "reference reads afterwards as though somebody checked.",
+    });
+  }
+  // BUILT FROM THE FINDING, NOT THROUGH `recordFinding`. It used to go through it, and that
+  // coupling is what made the defect above reachable: `recordFinding` had to accept a closed
+  // disposition because this line needed to hand it one. A resolved finding is the finding it
+  // was plus the verification that closed it, and saying so here costs one spread and leaves
+  // the recording constructor with no reason to know the word "resolved".
+  return Object.freeze({
+    closed: true as const,
+    finding: Object.freeze({ ...finding, disposition: "resolved" as const, resolution }),
+  });
 }
 
 /** A dispute between two rounds, as a relation rather than an edit. */
@@ -305,10 +371,11 @@ export interface FindingLedger {
 /**
  * A LATER ROUND DISPUTING AN EARLIER FINDING, WITH BOTH SURVIVING.
  *
- * Neither record is rewritten. The earlier finding keeps the disposition it was recorded at —
- * marking it `disputed` here would mean a second round's disagreement silently restating what
- * the first round concluded, and the first round's account is exactly what somebody needs when
- * the two conflict.
+ * Neither record is rewritten. The earlier finding keeps the disposition it was recorded at,
+ * and the disagreement is the relation between the two rather than an edit to either: writing
+ * a second round's view onto the first round's row would mean the record of what the first
+ * round found is whatever the second thought of it, and the first round's account is exactly
+ * what somebody needs when the two conflict.
  */
 export function disputeFinding(original: Finding, later: Finding): FindingLedger {
   return Object.freeze({

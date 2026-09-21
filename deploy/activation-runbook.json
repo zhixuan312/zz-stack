@@ -17,7 +17,7 @@
     "precondition carries state `blocked`, and that is DERIVED at read time by",
     "scripts/activation-rehearsal.ts rather than stored here. A field somebody could set to true",
     "is a field somebody will set to true; a derived one has to be earned by closing each gap.",
-    "packages/contracts/src/eval-protocol.ts argues this at length for the same question and is",
+    "The assessor protocol argued this at length for the same question and was",
     "where the shape comes from: `activationBlockers` is enumerated, the flag is the emptiness of",
     "that list, and `draftingAllowed` is a constant beside it because nothing may block writing a",
     "procedure down.",
@@ -173,7 +173,7 @@
       ],
       "would_unblock": "the conversion and rebuild that make the corpus present and searchable, which are separately owned and have not run; implementing the two migration-suite parity cases, which have no code behind them; and then running both against an isolated copy",
       "and_the_assessor_protocol_is_not_parity_evidence_either": [
-        "packages/contracts/src/eval-protocol*.ts will look like evidence to the next reader, and it",
+        "the assessor protocol would have looked like evidence to the next reader, and it",
         "is not. It is a DRAFTED, UNACTIVATED protocol: no arm has run, arm A has no method reference",
         "because the legacy assessment path has not been pinned to anything in this repository, all",
         "three tolerances are null, owner_approval_ref is null, and the case inventory's digest is",

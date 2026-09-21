@@ -185,16 +185,16 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 
 /** The digest of what a decision authorises. Over the effect and nothing else, so that a
  *  record whose effect was edited after issuance no longer hashes to what it carries. */
-export const effectDigest = (e: ControlEffect): string =>
+const effectDigest = (e: ControlEffect): string =>
   sha(`${canonicalTarget(e.resource, e.operation)}:${e.holds}`);
 
 /** The digest of the profile the decision was taken under. Sorted, so the same attributes in
  *  another order are the same profile. */
-export const profileDigest = (profile: readonly string[]): string =>
+const profileDigest = (profile: readonly string[]): string =>
   sha([...profile].sort().join("\n"));
 
 /** The reference a dependency snapshot is filed under: its pins, sorted, hashed. */
-export const dependencySnapshotRef = (pins: readonly DependencyPin[]): string =>
+const dependencySnapshotRef = (pins: readonly DependencyPin[]): string =>
   sha([...pins].map((p) => `${p.id}@${p.revision}`).sort().join("\n"));
 
 // ---------------------------------------------------------------------------------------

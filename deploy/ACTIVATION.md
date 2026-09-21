@@ -43,7 +43,7 @@ Activation is permitted exactly when no precondition is blocked.
 
 That verdict is **derived, never stored**. There is no `activation_allowed` field in the runbook,
 because a field somebody could set to true is a field somebody will set to true.
-`packages/contracts/src/eval-protocol.ts` settled this shape first, for the assessor protocol,
+The assessor protocol settled this shape first,
 and its reasoning transfers unchanged: enumerate the blockers, and let the flag be the emptiness
 of that list, so it has to be earned by closing each gap rather than by editing one line.
 
@@ -108,13 +108,14 @@ restored deployment serves the same content as the old one, which is what a cuto
 evidence has to mean. Citing it here would be citing the right-sounding words over the wrong
 measurement.
 
-**And the assessor protocol is not parity evidence either.** `packages/contracts/src/eval-protocol*.ts`
-is the other artifact a reader will reach for. It is a *drafted, unactivated* protocol: no arm has
-run, arm A has no method reference because the legacy assessment path has not been pinned to
-anything here, all three tolerances are null, the owner approval is null, and the case inventory's
-digest is null with `enumerated` false. It is evidence that the assessor comparison is **designed
-and not run** — a real and useful fact, and not a measurement of anything. It is named here so
-nobody has to work out for themselves that it does not count.
+**And the assessor protocol that used to sit here is gone.** A reader of an earlier version of
+this document was warned not to reach for `packages/contracts/src/eval-protocol*.ts` as parity
+evidence, because it was a drafted, unactivated protocol — no arm run, tolerances null, owner
+approval null, inventory digest null. It has since been **deleted**, and the reason is the same
+fact stated more plainly: its inputs do not exist and this schema has nowhere to put them. No
+slice columns, no rate card, no second reviewer in 614 judged rows, and an inventory pinned to
+a directory that was never created. A design nothing can run is not evidence of anything, and
+keeping it only gave the next reader something to mistake for a measurement.
 
 The measurements that *would* be parity are absent, in three different ways.
 `RESTORE-AND-CUTOVER.md` section 7 records that `projection_parity_against_the_isolated_database`

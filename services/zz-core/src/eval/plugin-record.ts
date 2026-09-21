@@ -238,7 +238,7 @@ export function registerPluginRecordTools(server: McpServer): void {
         "own problem). A finding on somebody else's plugin carries no proposed_change — we " +
         "assess and stop. REFUSES an eval_id nothing minted. Recording is not deciding: a " +
         "finding lands deferred, and applying or rejecting it is a separate act by whoever " +
-        "owns the plugin.",
+        "owns the plugin. THERE IS NO `decision` TO SEND: recording cannot close.",
       inputSchema: {
         eval_id: z.string(),
         findings: z.array(z.object({
@@ -247,7 +247,6 @@ export function registerPluginRecordTools(server: McpServer): void {
           scope: z.enum(["generic", "specific"]),
           proposed_change: z.string().optional()
             .describe("one change, and what you expect it to do. Omit for a third-party plugin."),
-          decision: z.enum(["applied", "rejected", "deferred"]).optional(),
         })).min(1),
       },
     },
@@ -278,13 +277,30 @@ export function registerPluginRecordTools(server: McpServer): void {
       // THE IDS COME BACK, because a finding nobody can name is a finding nobody can close.
       // `decision` has carried three values since it was written and held one: closing a
       // finding is a separate act, and the act needs a handle to perform it on.
+      //
+      // `'deferred'` IS A LITERAL IN THIS STATEMENT AND NOT A PARAMETER, which is the whole of
+      // what this tool adopted from the kernel. The rule was stated in three places — the
+      // header above, this tool's own description, and zz-plugin-report's skill — and held in
+      // none: the schema carried an optional `decision`, the insert bound it, and a caller
+      // sending `decision: "applied"` recorded a finding CLOSED AT BIRTH. Such a row carries no
+      // `decided_by`, no `decided_at` and no `decision_note`, never counts against headroom
+      // because `round_score` reads openness as `decision = 'deferred'`, and can never be
+      // decided afterwards because `finding_decide` updates `where decision = 'deferred'` — so
+      // the one act that records who closed it and why is unreachable on it forever. No such
+      // row has ever been written; the door to write one was open.
+      //
+      // The field is gone rather than validated, because a check is a thing somebody can
+      // relax and an absent field is not. There is now no expression in this function that
+      // produces a decision and no input that could supply one, which is the same
+      // construction `applyAssessment` uses in packages/contracts/src/audit-identity.ts: the
+      // guarantee is the absence, not a branch defending it.
       const stored: { id: string; scope: string; pattern: string }[] = [];
       for (const f of findings) {
         const id = (await p.query<{ id: string }>(`
           insert into zz.eval_finding (eval_id, pattern, docs_affected, scope, proposed_change, decision)
-          values ($1::uuid, $2, $3, $4, $5, $6) returning id::text as id`,
+          values ($1::uuid, $2, $3, $4, $5, 'deferred') returning id::text as id`,
           [eval_id, f.pattern, f.docs_affected ?? 0, f.scope,
-           f.proposed_change ?? "", f.decision ?? "deferred"])).rows[0].id;
+           f.proposed_change ?? ""])).rows[0].id;
         stored.push({ id, scope: f.scope, pattern: f.pattern });
       }
       const who = parseCaller(requestHeaders()).email;
@@ -632,8 +648,13 @@ export function registerPluginRecordTools(server: McpServer): void {
           pattern: f.pattern, proposed_change: f.change,
           carried_over: f.round !== round.version,
         })),
-        evidence_strength: strength?.type === "score"
-          ? { score: strength.score, legend: strength.legend, confidence: strength.confidence }
+        // THE FIGURE, ITS SCALE AND HOW SURE THE JUDGE WAS, all three as the adapter validated
+        // them: the score against the four levels asked for above, the legend against the same
+        // count. A reply that carried none of that never reaches here -- `ask` refuses it --
+        // so a null here is the absence of a score rather than a score nobody could read.
+        evidence_strength: strength && strength.readings.score !== null
+          ? { score: strength.readings.score, legend: strength.readings.legend,
+              confidence: strength.readings.confidence }
           : null,
         judge_on_trial_gap: gap,
         next: "Both axes are recorded. Section 1 of findings.md carries them verbatim — the " +

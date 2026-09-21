@@ -136,6 +136,7 @@ const ASSESSMENT_WITHDRAWAL: FindingWithdrawal =
   Object.freeze({ by: "assessment", assessment_ref: "probe-a1" });
 const WITHDRAWN_BY_ASSESSMENT = recordFinding({
   ...OPEN_FINDING,
+  disposition: "open",
   withdrawal: ASSESSMENT_WITHDRAWAL,
 });
 
@@ -144,6 +145,7 @@ const ASSESSMENT_DISCHARGE: TestDischarge =
   Object.freeze({ by: "assessment", assessment_ref: "probe-a1" });
 const TEST_DISCHARGED_BY_ASSESSMENT = recordFinding({
   ...OPEN_FINDING,
+  disposition: "open",
   requiredTests: [{ ...UNRUN_TEST, discharged: ASSESSMENT_DISCHARGE }],
 });
 
@@ -235,10 +237,20 @@ function verifiedResolutionStillWorks(): AuditIdentityProbeRow {
   const notClosed = resolveFinding(OPEN_FINDING, NEVER_RAN);
   return row(
     "a finding still closes on a verification that ran and passed",
-    [closed.disposition === "resolved" && closed.resolution !== null,
+    [closed.closed && closed.finding.disposition === "resolved"
+      && closed.finding.resolution !== null,
      "a passing verification closes the finding and the reference is on the record"],
-    [notClosed.disposition === "open" && notClosed.resolution === null,
-     "a resolution citing a check that never ran leaves the finding open and files nothing"],
+    // THE REFUSAL IS READ, NOT ONLY THE RECORD. This used to assert that the finding came
+    // back open and carrying nothing, which a function that ignored its argument entirely
+    // would also satisfy — and for a while that is close to what `resolveFinding` did: it
+    // returned the finding untouched and said nothing, so a caller could not tell a refusal
+    // from a close that worked. The record still has to be right, and now the caller has to
+    // have been told, naming the check it cited and the state that check was actually in.
+    [!notClosed.closed && notClosed.finding.disposition === "open"
+      && notClosed.finding.resolution === null
+      && notClosed.refusal.includes("run-2") && notClosed.refusal.includes("unrun"),
+     "a resolution citing a check that never ran leaves the finding open, files nothing, and " +
+     "is refused in words that name the check and its state rather than passing silently"],
   );
 }
 

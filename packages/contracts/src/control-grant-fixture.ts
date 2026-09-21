@@ -17,6 +17,16 @@
  * recording an approval and redeeming an authorised repair all still possible. Those are
  * behaviours, and a registry listing is not evidence of any of them.
  *
+ * WHICH CHECKS ACTUALLY DRIVE IT, named because a claim in a header is a claim and nothing
+ * more. `scripts/gate/checks/issuer-unreachable.ts` takes the issuing side: that no role
+ * reaches issuance, that a trusted host does, and that a fabricated id redeems as nothing.
+ * `scripts/gate/checks/grant-claim-refusals.ts` takes the redeeming side, through
+ * {@link grantFixtureWorld}: a widened target list, a digest that no longer matches its
+ * decision, a moved dependency, a moved permission epoch, a withdrawn approval, an expired
+ * grant, a moved target revision, and a lease that does not redeem as a mutation — each one
+ * produced against a control that redeems, because a handler which refused everything would
+ * satisfy every assertion made only of refusals.
+ *
  * THE ROLES ARE CUMULATIVE AND GENUINELY DIFFERENT. An admin sees an operation a member does
  * not, and a superadmin one an admin does not, because a check that compared three identical
  * lists would pass while proving nothing about enumeration by privilege. Neither extra
@@ -27,7 +37,10 @@
  * ONE MODULE-SCOPE WORLD, deliberately, against this package's usual rule. The three exports
  * are separate top-level functions with no handle passed between them — that is the shape the
  * declared check calls them in — so a grant issued by one has to be redeemable by another.
- * {@link resetGrantFixture} is how a caller that wants a clean world gets one.
+ * {@link resetGrantFixture} is how a caller that wants a clean world gets one, and a check
+ * that moves the epoch or the clock calls it at BOTH ends: one shared world means a check
+ * which walked away from a perturbed one would hand the next check a world its assertions
+ * were never written against.
  */
 import {
   canonicalTarget,

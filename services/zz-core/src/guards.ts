@@ -13,11 +13,27 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
+import { admitEntry, OUTCOME_STOPPED, parseEnvelope, PLATFORM_OWNED } from "@zz/contracts";
 
 import { frontmatterStatus } from "./chain.js";
 import { attributionCheck, type Chain, outcomeCheck, sectionCheck, statusCheck } from "./write-guards.js";
 
+/** WHY A STOP DISCHARGES A CLOSE-TIME REQUIREMENT, written once because two rules claim it.
+ *
+ * An initiative that was dropped is precisely one whose gates were never passed, so requiring
+ * them at close would leave two options — approve a plan nobody agreed to, or leave the
+ * initiative open forever, which is the very state the close rules were written to end. The
+ * same argument covers a `requiredForClose` document: a verification guide is what a FINISHED
+ * build owes its stakeholder, and demanding one from work that stopped can only be satisfied
+ * by writing a guide for a thing nobody built — the fabrication the rule exists to prevent.
+ * Those two used to be a bare `if` round each loop, which is an exemption with nowhere to say
+ * why it applied; as a ground it is carried on the admission that granted it.
+ *
+ * It is NOT a general amnesty. The closing document's own gate is asked without it, and the
+ * word costs an outcome the ledger then carries in public — so an agent that takes this route
+ * has said out loud that the work stopped. */
+const STOPPED_GROUND =
+  `the work stopped rather than finished, and closing it as ${OUTCOME_STOPPED} records that in the team's ledger`;
 /** Closing an initiative (writing `outcome:` into the manifest's closing
  * document) requires every document the manifest marks `requiredForClose`. */
 function closeCheck(chain: Chain, root: string, relPath: string, content: string): string | null {
@@ -65,8 +81,31 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
       "records a delivery and asks why nobody signed off; `abandoned` says the work stopped."
     );
   }
+  // THE SAME RULE AS gateCheck's, ASKED THREE TIMES. Each of the three questions below is
+  // "does what is recorded reach the standard this close demands, or is it discharged on a
+  // named ground" — the rule `admitEntry` holds. It used to be written out three more times
+  // here, once per question, with the stop exemption as a bare `if` wrapped round two of the
+  // loops; the platform then had four copies of one rule in one file, and the only thing
+  // keeping them in agreement was that nobody had edited three of them lately.
+  //
+  // THREE CALLS AND NOT ONE, and the reason is load-bearing. On both flows this platform runs
+  // the closing document is ALSO `requiredForClose` — review.md on sdlc-flow, findings.md on
+  // zz-plugin-eval — so a single requirement list would name that document twice, once at
+  // `ratified` from the text being written and once at `recorded` from the copy on disk.
+  // `admitEntry` takes the strongest holding of a kind, so the disk copy would answer for the
+  // text, and a closing document approved yesterday would close on an unapproved draft today.
+  // Three questions are three calls.
+  const stop = env.outcome === OUTCOME_STOPPED;
   const self = chain.documents.find((d) => d.name === parts[1]);
-  if (self?.gate && parseEnvelope(content).status !== "approved") {
+  // Judged from `content` — the text being written — and never from the copy on disk, which is
+  // the version this write supersedes. NO WAIVER: a stop does not discharge this one, and the
+  // loop below says why the other two are different.
+  const own = admitEntry(
+    self?.gate ? [{ kind: parts[1], standard: "ratified" }] : [],
+    [{ kind: parts[1], standard: parseEnvelope(content).status === "approved" ? "ratified" : "recorded" }],
+    [],
+  );
+  if (!own.admitted) {
     return (
       `ERROR: ${parts[1]} is this flow's closing document AND carries a gate, so it cannot be ` +
       `closed while its own approval is unrecorded. Call document_approve("${parts[0]}/${parts[1]}") first — ` +
@@ -89,21 +128,33 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // what makes it a route rather than a loophole: it costs an outcome word that the ledger
   // then carries in public, so an agent that takes it has said out loud that the work
   // stopped.
-  if (env.outcome !== OUTCOME_STOPPED) {
-    for (const d of chain.documents) {
-      if (!d.gate || d.name === parts[1]) continue;
-      const f = join(root, parts[0], d.name);
-      if (!existsSync(f)) continue;
-      if (frontmatterStatus(f) !== "approved") {
-        return (
-          `ERROR: ${parts[0]}/${d.name} carries a gate this flow declares and is not ` +
-          `approved, so this initiative cannot close as ${env.outcome}. Call ` +
-          `document_approve("${parts[0]}/${d.name}") once the stakeholder agrees — or, if the work ` +
-          `stopped rather than finished, call initiative_close(initiative, "${OUTCOME_STOPPED}"), ` +
-          "which says so in the team's ledger. A gate left open is not a gate passed."
-        );
-      }
-    }
+  //
+  // WRITTEN is the condition, so a gated document that does not exist is not required here at
+  // all — it is `requiredForClose`'s business, below — and that is why absence filters the
+  // list rather than arriving as an unmet requirement.
+  const written = chain.documents
+    .filter((d) => d.gate && d.name !== parts[1])
+    .map((d) => ({ name: d.name, file: join(root, parts[0], d.name) }))
+    .filter((d) => existsSync(d.file));
+  const gates = admitEntry(
+    written.map((d) => ({ kind: d.name, standard: "ratified" })),
+    written.map((d) => ({
+      kind: d.name,
+      standard: frontmatterStatus(d.file) === "approved" ? "ratified" : "recorded",
+    })),
+    stop ? written.map((d) => ({ kind: d.name, ground: STOPPED_GROUND })) : [],
+  );
+  if (!gates.admitted) {
+    // `chain.documents` order in, the same order out, so the document named is the first the
+    // manifest declares — which is the one the old loop reported.
+    const [unmet] = gates.unmet;
+    return (
+      `ERROR: ${parts[0]}/${unmet.kind} carries a gate this flow declares and is not ` +
+      `approved, so this initiative cannot close as ${env.outcome}. Call ` +
+      `document_approve("${parts[0]}/${unmet.kind}") once the stakeholder agrees — or, if the work ` +
+      `stopped rather than finished, call initiative_close(initiative, "${OUTCOME_STOPPED}"), ` +
+      "which says so in the team's ledger. A gate left open is not a gate passed."
+    );
   }
   // REQUIRED TO FINISH, NOT REQUIRED TO STOP. The loop above exempts stopped work from its
   // gates and tells the caller, in as many words, to close it as stopped instead. This loop
@@ -114,17 +165,25 @@ function closeCheck(chain: Chain, root: string, relPath: string, content: string
   // A verification guide is what a FINISHED build owes its stakeholder. An initiative that
   // was dropped never got that far by definition, and demanding it can only be satisfied by
   // writing a guide for a thing nobody built — the fabrication this rule exists to prevent.
-  if (env.outcome !== OUTCOME_STOPPED) {
-    for (const need of chain.closeRequires) {
-      if (!existsSync(join(root, parts[0], need))) {
-        return (
-          `ERROR: ${parts[0]}/${need} does not exist — this flow's manifest requires it before the ` +
-          `initiative can close as finished, under exactly that name. If the work STOPPED ` +
-          `rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") records that and does ` +
-          "not ask for it — a document nobody wrote is not made true by the close needing one."
-        );
-      }
-    }
+  //
+  // EXISTENCE, NOT APPROVAL, which is what `recorded` says and why the two loops are separate
+  // questions rather than one stricter one. A `requiredForClose` document that was written and
+  // left in draft satisfies this and is judged — if it is gated — by the gates above.
+  const needed = admitEntry(
+    chain.closeRequires.map((need) => ({ kind: need, standard: "recorded" })),
+    chain.closeRequires
+      .filter((need) => existsSync(join(root, parts[0], need)))
+      .map((need) => ({ kind: need, standard: "recorded" })),
+    stop ? chain.closeRequires.map((need) => ({ kind: need, ground: STOPPED_GROUND })) : [],
+  );
+  if (!needed.admitted) {
+    const [unmet] = needed.unmet;
+    return (
+      `ERROR: ${parts[0]}/${unmet.kind} does not exist — this flow's manifest requires it before the ` +
+      `initiative can close as finished, under exactly that name. If the work STOPPED ` +
+      `rather than finished, initiative_close(initiative, "${OUTCOME_STOPPED}") records that and does ` +
+      "not ask for it — a document nobody wrote is not made true by the close needing one."
+    );
   }
   return null;
 }
@@ -222,36 +281,47 @@ function closedDocumentGuard(root: string, relPath: string, via: string | null):
     "corrected; it may not be quietly overwritten."
   );
 }
+/** A CLOSED INITIATIVE HAS SETTLED ITS PREREQUISITE, WHICHEVER DOCUMENT IT LANDED ON.
+ *
+ * handover.md requires review.md, and an initiative ABANDONED at the plan stage has no
+ * review.md and never will — initiative_close already knows that and records the outcome on
+ * the furthest document the work reached. So the chain demanded a document the close had
+ * deliberately skipped, and `initiative_status` went on answering `action: "handover"`
+ * forever: the platform instructing an act its own gate refuses. That is the same shape as
+ * the close-with-no-documents trap fixed in 0.54.1, one document further along.
+ *
+ * An outcome ANYWHERE in the folder is the proof. It is written by initiative_close and by
+ * nothing else, the ledger row is already appended, and what the prerequisite exists to
+ * establish — that the work before this document is settled — is exactly what a close
+ * asserts. The narrower rule still applies to every OPEN initiative, which is all of them
+ * until somebody closes one.
+ *
+ * It reads the folder, so it is called ONLY where the prerequisite is absent — there is no
+ * second reading of every document in an initiative on the ordinary path, and an initiative
+ * whose folder does not exist raises rather than being reported closed. */
+function closedOnSomeDocument(root: string, initiative: string): boolean {
+  return readdirSync(join(root, initiative))
+    .some((f: string) => f.endsWith(".md") &&
+                 !!parseEnvelope(readFileSync(join(root, initiative, f), "utf8")).outcome);
+}
+/** May this document be written, given what the document before it has reached.
+ *
+ * THE DECISION IS `admitEntry`'s, from @zz/contracts, and the sentence is this function's. The
+ * rule — a requirement is met when what is held reaches the standard demanded, or discharged
+ * on a named ground — is the same rule the stage controller applies to a step's entry
+ * evidence, and it was written twice: once there over evidence kinds, once here over a
+ * document's prerequisite. Two copies of "may this be entered, given what has been recorded"
+ * is one copy more than the platform can keep in agreement, and the half nobody was reading
+ * would be the half that drifted.
+ *
+ * What stays here is what the kernel must not know: that a prerequisite is a FILE, that
+ * `gate: true` is what ratifies one, and what to tell an agent that has been refused. */
 function gateCheck(chain: Chain, root: string, relPath: string): string | null {
   const clean = relPath.replace(/^\/+/, "");
   const parts = clean.split("/");
   if (parts.length !== 2) return null;
   const dep = chain.requires[parts[1]];
   if (!dep) return null;
-  const depFile = join(root, parts[0], dep);
-  if (!existsSync(depFile)) {
-    // A CLOSED INITIATIVE HAS SETTLED ITS PREREQUISITE, WHICHEVER DOCUMENT IT LANDED ON.
-    //
-    // handover.md requires review.md, and an initiative ABANDONED at the plan stage has no
-    // review.md and never will — initiative_close already knows that and records the outcome on
-    // the furthest document the work reached. So the chain demanded a document the close had
-    // deliberately skipped, and `initiative_status` went on answering `action: "handover"`
-    // forever: the platform instructing an act its own gate refuses. That is the same shape as
-    // the close-with-no-documents trap fixed in 0.54.1, one document further along.
-    //
-    // An outcome ANYWHERE in the folder is the proof. It is written by initiative_close and by
-    // nothing else, the ledger row is already appended, and what the prerequisite exists to
-    // establish — that the work before this document is settled — is exactly what a close
-    // asserts. The narrower rule still applies to every OPEN initiative, which is all of them
-    // until somebody closes one.
-    const closed = readdirSync(join(root, parts[0]))
-      .some((f: string) => f.endsWith(".md") &&
-                   !!parseEnvelope(readFileSync(join(root, parts[0], f), "utf8")).outcome);
-    if (!closed) {
-      return `ERROR: ${parts[0]}/${dep} does not exist yet — the flow writes it first, and its gate must pass before ${parts[1]} is written.`;
-    }
-    return null;
-  }
   // A NON-GATED PREREQUISITE IS SATISFIED BY EXISTING. `gate: false` says no approval is
   // required, so nothing ever approves such a document and its status stays `draft` for the
   // life of the initiative — demanding `approved` here makes the next document permanently
@@ -262,18 +332,42 @@ function gateCheck(chain: Chain, root: string, relPath: string): string | null {
   // must agree: one told the agent to write spec.md while the other refused the write, which
   // is worse than either being wrong alone. `requires` means "settled first", and what
   // settles a document is approval when it is gated and existence when it is not.
+  //
+  // That sentence is now the kernel's `EvidenceStandard`: a gated prerequisite is required
+  // `ratified` and an ungated one `recorded`, and the comparison is made there rather than by
+  // an early return here.
   const depGate = chain.documents.find((d) => d.name === dep)?.gate === true;
-  if (!depGate) return null;
-  const status = frontmatterStatus(depFile);
-  if (status !== "approved") {
-    return (
-      `ERROR: ${parts[0]}/${dep} is status: ${status ?? "missing"} — its approval gate has not been recorded. ` +
-      `Once the stakeholder agrees, call document_approve("${parts[0]}/${dep}") in that same turn; the platform ` +
-      `stamps the approval from who you are and what time it is, and a hand-written one is refused. ` +
-      `Only then can ${parts[1]} be written. An approval that exists only in the chat does not exist.`
-    );
+  const depFile = join(root, parts[0], dep);
+  const exists = existsSync(depFile);
+  const status = exists ? frontmatterStatus(depFile) : null;
+  const admission = admitEntry(
+    [{ kind: dep, standard: depGate ? "ratified" : "recorded" }],
+    // A document that EXISTS is recorded; one carrying a recorded approval is ratified. What
+    // is held is stated as it stands and never trimmed to what is demanded — an ungated
+    // prerequisite that somehow carries `status: approved` is reported as ratified, because
+    // that is what is true of it, and the requirement it meets is a separate question.
+    exists ? [{ kind: dep, standard: status === "approved" ? "ratified" : "recorded" }] : [],
+    // THE GROUND, AND ONLY WHERE THE DOCUMENT IS ABSENT. A close settles a prerequisite
+    // nobody will now write; it says nothing about one that was written and left in draft,
+    // and discharging that too would let a closed initiative write over a gate that a person
+    // was still owed a say in.
+    !exists && closedOnSomeDocument(root, parts[0])
+      ? [{ kind: dep, ground: `this initiative is closed, and the close settled ${dep} by landing its outcome elsewhere` }]
+      : [],
+  );
+  if (admission.admitted) return null;
+  // One requirement went in, so at most one comes back. Absent and unratified are the two
+  // situations the refusal has to tell apart, and `held` is what tells them apart.
+  const [unmet] = admission.unmet;
+  if (unmet.held === null) {
+    return `ERROR: ${parts[0]}/${dep} does not exist yet — the flow writes it first, and its gate must pass before ${parts[1]} is written.`;
   }
-  return null;
+  return (
+    `ERROR: ${parts[0]}/${dep} is status: ${status ?? "missing"} — its approval gate has not been recorded. ` +
+    `Once the stakeholder agrees, call document_approve("${parts[0]}/${dep}") in that same turn; the platform ` +
+    `stamps the approval from who you are and what time it is, and a hand-written one is refused. ` +
+    `Only then can ${parts[1]} be written. An approval that exists only in the chat does not exist.`
+  );
 }
 /** The fields the platform owns — PLATFORM_OWNED, from @zz/contracts. Writing any of them
  * by hand is refused.

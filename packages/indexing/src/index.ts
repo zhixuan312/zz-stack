@@ -100,16 +100,6 @@ export {
 // into `search-plan.js`. Pure and synchronous exactly like `lanesFor`: see that file's own
 // header for why it plans a native retrieval call rather than running one.
 export { planSearch } from "./search-plan.js";
-// The retrieval-consumption contract and its serializer — I-14 — re-exported through this
-// same door for the reason everything else on this page is. See `retrieval-serializer.ts`'s
-// own header for why `serializeReceipt` touches no database either, exactly like `lanesFor`
-// and `planSearch` above.
-export {
-  serializeReceipt,
-  type RetrievalScope, type RetrievalItem, type RetrievalReceipt,
-  type Ref, type LegacyRef, type ExecutionRef, type RawResponseCapture,
-  type RawRetrievalRow, type SerializeReceiptInput,
-} from "./retrieval-serializer.js";
 
 import { decisionRows, indexable, isoDate } from "./rules.js";
 

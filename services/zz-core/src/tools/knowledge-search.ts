@@ -38,7 +38,7 @@
  * backup/cutover), after which this file keeps ONE query path, not two behind a flag.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller } from "@zz/contracts";
+import { parseCaller, recallResultFrom, type RecallResult } from "@zz/contracts";
 import { analyze, parseQuery, QueryParseError, type QueryAst, TEXT_SEARCH_CONFIG } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
@@ -51,6 +51,11 @@ import { db, teamFor } from "../platform-db.js";
  *  new node's tags against, imported rather than repeated so a kind added there is
  *  searchable here without anybody remembering this file. */
 import { SUBJECT_KINDS } from "./knowledge.js";
+
+/** What an empty answer concludes, and the signals it concludes from — split out by subject,
+ *  because this file reads the shelves and that one decides which kind of empty an empty
+ *  answer is. The verdict itself is the kernel's; that file produces its inputs. */
+import { recallOutcomeFrom, type RecallSignals } from "./knowledge-search-verdict.js";
 
 
 // ── the legacy handler's predicate builder ──────────────────────────────────────────────────
@@ -71,6 +76,24 @@ import { SUBJECT_KINDS } from "./knowledge.js";
 // Latin term, read from `@zz/indexing`, so "identical" stays a fact about the stored column
 // and not just about this file's SQL text.
 const HAN_SCALAR_RE = /\p{Script=Han}/u;
+
+/** The same Han run, as a PostgreSQL regex character class, for the scope probe below. Built
+ *  from code points rather than written as literal characters: every file in this repository
+ *  is English, and a CJK range spelled out is the one exception nobody would remember to keep
+ *  matching `HAN_SCALAR_RE`. Bound as a parameter, never spliced into SQL. */
+const HAN_SQL_CLASS = `[${String.fromCodePoint(0x4e00)}-${String.fromCodePoint(0x9fff)}]`;
+
+/** A body with a Latin letter in it — the material the `websearch_to_tsquery` lane can reach,
+ *  as the counterpart to `HAN_SQL_CLASS` for the lane that cannot.
+ *
+ *  BOTH ARE EXISTENCE TESTS, NEVER MAJORITY ONES, and the verdict they feed claims no more
+ *  than that: one English acronym makes a Chinese document Latin-bearing, one quoted Chinese
+ *  sentence makes an English one Han-bearing. What they establish is that a lane had material
+ *  in scope it cannot reach — not that the answer was in it. A digit is deliberately not a
+ *  Latin letter here while it IS an ASCII clause on the query side: a purely numeric question
+ *  does go down the tsvector lane, and a body holding only digits is not material that lane
+ *  was shut out of. */
+const LATIN_SQL_CLASS = "[A-Za-z]";
 
 /** The text-search configuration every query below is parsed with, quoted for SQL — read from
  *  `@zz/indexing` rather than spelled here, because the WRITE path stores a row's Latin terms
@@ -206,16 +229,24 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
         // ONLY AN UNQUOTED TERM IS EVER ELIGIBLE — a quoted phrase stays mandatory whether or
         // not broadening was asked for, exactly as the Contract requires.
         const mayRelax = a.broadened === true && clause.kind === "term";
-        const frag = han
-          ? `body ilike ${sqlLiteral(likePattern(clause.text))}`
-          : `body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${put(clause.text)})`;
-        if (mayRelax) eligible.push(frag);
-        else if (han) mandatory.push(frag);
-        // Quotes restored for a phrase clause — `websearch_to_tsquery` reads `"a b"` as the
-        // exact-phrase operator, and a reconstruction that dropped them would turn "the exact
-        // phrase these two words" into "these two words anywhere", which is not what a caller
-        // who quoted it asked for.
-        else asciiRaw += clause.kind === "phrase" ? ` "${clause.text}"` : ` ${clause.text}`;
+        // A FRAGMENT IS BUILT ONLY WHERE IT IS USED, because `put` BINDS A PARAMETER as a side
+        // effect. Building the ASCII fragment and then discarding it for the `asciiRaw` path
+        // bound a `$N` the SQL never referenced, and PostgreSQL refuses to parse a statement
+        // whose numbering skips one — "could not determine data type of parameter $2" for
+        // EVERY ascii query. Nothing caught it: no check executes a built predicate against a
+        // database, and the two that read its text only assert on what the text contains.
+        if (han) {
+          const frag = `body ilike ${sqlLiteral(likePattern(clause.text))}`;
+          if (mayRelax) eligible.push(frag); else mandatory.push(frag);
+        } else if (mayRelax) {
+          eligible.push(`body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${put(clause.text)})`);
+        } else {
+          // Quotes restored for a phrase clause — `websearch_to_tsquery` reads `"a b"` as the
+          // exact-phrase operator, and a reconstruction that dropped them would turn "the exact
+          // phrase these two words" into "these two words anywhere", which is not what a caller
+          // who quoted it asked for.
+          asciiRaw += clause.kind === "phrase" ? ` "${clause.text}"` : ` ${clause.text}`;
+        }
         continue;
       }
       // Alternation: survives broadening as ONE mandatory unit (the Contract names it
@@ -237,8 +268,13 @@ export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
     rankExpr = `websearch_to_tsquery(${QUERY_CONFIG}, ${q})`;
   }
 
-  const broadened = eligible.length > 0;
-  if (broadened) mandatory.push(`(${eligible.join(" or ")})`);
+  // THE GROUP IS ALWAYS PUSHED; THE FLAG IS NOT. Every eligible clause has to reach the
+  // predicate or the query silently loses it — but ONE clause ORed with nothing is the same
+  // predicate the exact attempt already ran, so calling that a relaxation made the retry below
+  // run a second identical query. Its header had always said one relaxable clause reports
+  // `broadened: false`; `eligible.length > 0` said the opposite.
+  if (eligible.length) mandatory.push(`(${eligible.join(" or ")})`);
+  const broadened = eligible.length > 1;
 
   cond.push(...mandatory);
 
@@ -534,6 +570,58 @@ export function registerKnowledgeSearch(server: McpServer): void {
 
       const superseded = results.filter((r) => (r as { status: string }).status === "superseded").length;
 
+      /* AN EMPTY ANSWER SAYS WHICH KIND OF EMPTY IT IS — see knowledge-search-verdict.ts.
+       *
+       * ONLY WHEN NOTHING CAME BACK, so no answer that has results can be changed by this and
+       * the extra round trip is paid on the one path with nothing else to say. `results` is
+       * empty exactly when `ranked` is: the fill loop stops early only once it has put
+       * something in.
+       *
+       * THE PROBE IS THE SAME SCOPE THE SEARCH RAN IN — both shelves and every filter, through
+       * `applyFilters`, with the query predicate left off. Three `exists` reads, not counts:
+       * did the declared search cover any material, and is that material written in a script
+       * these lanes can reach.
+       *
+       * AND IT NEVER TURNS AN EMPTY INTO AN ERROR. A probe that throws leaves `scope` null,
+       * which the kernel reads as unknown completeness and undeclared language — the honest
+       * verdict when coverage could not be established, and the caller still gets its []. */
+      let recall: RecallResult | null = null;
+      if (results.length === 0) {
+        let scope: RecallSignals["scope"] = null;
+        try {
+          const sArgs: unknown[] = [[team, KNOWLEDGE_TEAM], HAN_SQL_CLASS, LATIN_SQL_CLASS];
+          const sPut = (v: unknown) => { sArgs.push(v); return `$${sArgs.length}`; };
+          const sCond = ["team_slug = any($1::text[])"];
+          applyFilters((c) => sCond.push(c), sPut);
+          const inScope = `from ${SOURCE} where ${sCond.join(" and ")}`;
+          const probe = (await p.query(
+            `select exists(select 1 ${inScope}) as any_row,
+                    exists(select 1 ${inScope} and body ~ $2) as han_row,
+                    exists(select 1 ${inScope} and body ~ $3) as latin_row`, sArgs,
+          )).rows[0] as { any_row: boolean; han_row: boolean; latin_row: boolean };
+          scope = { rows: probe.any_row, han: probe.han_row, latin: probe.latin_row };
+        } catch { scope = null; }
+        recall = recallResultFrom(recallOutcomeFrom({
+          query, unsafe: primary.unsafe, scope,
+          // The query's own scripts, tested with the same expression the predicate above
+          // splits its clauses on — which lane a clause went down is what decides what that
+          // lane could reach.
+          asksHan: HAN_SCALAR_RE.test(query ?? ""), asksLatin: /[A-Za-z0-9]/.test(query ?? ""),
+          // The shelves this search spans, named the way they are read back: a `platform` row
+          // needs document_read's `scope: "platform"` and a team row does not.
+          shelves: team === KNOWLEDGE_TEAM ? [`team:${team}`] : [`team:${team}`, `platform:${KNOWLEDGE_TEAM}`],
+          filters: { type, status, initiative, flow, tags, include_superseded: withHistory },
+        }));
+      }
+
+      // AN UNPARSEABLE QUERY SAYS SO, rather than the caller reading a narrowed or empty result
+      // as "nothing is known" — set only when the raw text could not be read under this
+      // platform's query grammar (today: an unterminated quote) and was matched as one literal
+      // clause instead.
+      const unsafeNote = primary.unsafe
+        ? `The query could not be fully parsed (${primary.unsafe}) — it was matched as one literal clause instead.`
+        : null;
+
       // WHAT CAME BACK, recorded against who asked. Until this line the knowledge base could
       // say what had been written into it and nothing at all about what anyone read out —
       // `knowledge_add` and `knowledge_supersede` each left three records and a search left
@@ -562,6 +650,11 @@ export function registerKnowledgeSearch(server: McpServer): void {
           // Whether the conjunction found nothing and the OR pass rescued the query. This is
           // the rate the fix exists to move, and it is unmeasurable after the fact without it.
           broadened,
+          // AND, FOR THE ONES IT DID NOT RESCUE, WHICH KIND OF EMPTY THEY WERE. Same reason:
+          // "how often does a search come back unable to conclude rather than having concluded
+          // nothing" is the next rate anybody will want, and replaying it from the query text
+          // afterwards cannot recover what the corpus held at the time.
+          recall: recall?.result,
         },
       });
 
@@ -572,26 +665,30 @@ export function registerKnowledgeSearch(server: McpServer): void {
         returned: results.length,
         withheld: ranked.length - results.length,
         superseded_in_results: superseded,
-        // A BROADENED ANSWER SAYS SO FIRST. It is the more surprising fact about the result
-        // set, and a reader who takes it for a match will cite documents that do not together
-        // say what was asked.
+        // AN EMPTY ANSWER'S NOTE IS THE VERDICT, because `note` is the line a reading agent
+        // acts on and an empty result left it unset entirely — the shape where "could not
+        // conclude" and "we never decided this" arrive as the same silence. The parse
+        // complaint still leads when there is one: it names the text that could not be read,
+        // which the authored sentence deliberately does not.
         //
-        // AN UNPARSEABLE QUERY SAYS SO TOO, rather than the caller reading a narrowed or empty
-        // result as "nothing is known" — `primary.unsafe` is set only when the raw text could
-        // not be read under this platform's query grammar (today: an unterminated quote) and
-        // was matched as one literal clause instead.
-        note: primary.unsafe
-          ? `The query could not be fully parsed (${primary.unsafe}) — it was matched as one literal clause instead.`
-          : broadened
-            ? "No document contains all of those terms together. These match SOME of them, best first — "
-              + "treat them as leads rather than as an answer, and narrow the question to confirm one."
-            : ranked.length > results.length
-              ? `${ranked.length - results.length} lower-ranked results not shown — ask a narrower question to see them.`
-              : undefined,
+        // A BROADENED ANSWER SAYS SO FIRST among the rest: a reader who takes it for a match
+        // will cite documents that do not together say what was asked.
+        note: recall
+          ? [unsafeNote, recall.answer].filter((n): n is string => n !== null).join(" ")
+          : unsafeNote
+            ?? (broadened
+              ? "No document contains all of those terms together. These match SOME of them, best first — "
+                + "treat them as leads rather than as an answer, and narrow the question to confirm one."
+              : ranked.length > results.length
+                ? `${ranked.length - results.length} lower-ranked results not shown — ask a narrower question to see them.`
+                : undefined),
+        // WHICH KIND OF EMPTY, on the empty answers only — `retrieval_inconclusive` is not
+        // `no_relevant_match_in_searched_scope`, and the whole point is that a caller can tell
+        // them apart. Absent when there are results: this adds to what an empty answer says
+        // and changes nothing about what a found one returns.
+        recall: recall ?? undefined,
         results,
       }));
     },
   );
-  // ── rebuilding a team's knowledge index ────────────────────────────────────────────────
-  //
 }

@@ -33,6 +33,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.62.4] — 2026-09-21
+
+**The setup text told every new person to type a command that does not exist.** `client_setup`
+is the first thing anybody reads, and it named `/zz-core:doctor` and `/zz-core:update`. Both
+commands are real and both belong to **zz-access** — `zz-core` declares `breakout`, `deck` and
+`tldr` and nothing else. Someone following their first instruction typed a command that did not
+exist and got nothing back, which is the worst place to be wrong: the reader is the one person
+who cannot tell whether the fault is theirs. The commands are `/zz-access:doctor` and
+`/zz-access:update`. The division was always right and only the prefix was wrong — zz-core owns
+the record, zz-access owns your access to it, and your client's setup and its currency are
+access.
+
+**A gate check now compares that prose to the manifests.** `no shipped prose types a slash
+command the plugin does not declare` derives each plugin's commands from its own manifest,
+derives the typed prefix through the same rule the client package publishes with (so `sdlc-flow`
+ships as `sdlc`), and names any `/plugin:command` the plugin does not declare along with who
+actually owns it. It sweeps TypeScript as well as markdown, because this defect lived in a
+template literal in the code that builds the text at runtime — a markdown-only check would have
+swept the whole tree and reported nothing.
+
+**`zz-handover` gained the two corrections from 0.62.3's fix.** A node minted under its
+exception now states both readings — what the approved line said and what is true now — in its
+own body rather than in a report nobody checks, and pins the correction with `verified_against`
+so it ages visibly instead of silently.
+
+### Upgrade notes
+
+**`/zz-access:update` is the one command**, and it is what the setup text should have said all
+along: it refreshes the shelf and then every ZZ plugin you have, in the order that works, then
+tells you to restart. By hand the order is not optional — refresh the plugins against a stale
+clone and each one reports itself up to date, truthfully, at the version you already had.
+
+No migration, no contract change.
+
 ## [0.62.3] — 2026-09-21
 
 **`zz-handover` would have minted a statement that had stopped being true.** Its second pass

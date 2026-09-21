@@ -139,6 +139,20 @@ your report, which line you altered and why, so a person can put it back if they
 This is the narrowest possible door: it opens for a fact you verified is now wrong, and never
 for a judgement you would make differently today.
 
+**A node minted under this exception states BOTH readings — what the approved line said, and
+what is true now — in its own body.** Not "this was corrected": the old claim and the new one,
+side by side, so the divergence is legible from the node alone. That is the whole accountability
+of the exception, and it has to live in the node because the report does not: a report is prose
+somebody reads once, nothing checks it, and there is no field anywhere that counts a line
+altered this way. A node saying only that it was corrected would establish that an edit
+happened and not that anybody agreed with it — which is the trap the platform's own guardrail
+node 0167 names, arrived at from the other side.
+
+The boundary is where the safety is, and it is the one you will be tempted to widen, because a
+judgement can nearly always be re-described as a fact that moved. If you cannot write the two
+readings as two checkable statements, it was a judgement. Mint the approved line and raise the
+disagreement in your report.
+
 Observed the first time this pass ran for real, on 2026-09-21: a proposed node said
 `review.md` did not state a discrepancy, the initiative's owner read the draft handover and
 revised `review.md` to state it, and minting the approved sentence unchanged would have

@@ -11,6 +11,7 @@
  * on: a good version undone by a name the script guessed.
  */
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { REMOTE, root, run, ssh } from "../../deployment.ts";
 import { layer, probe } from "../run.ts";
@@ -36,8 +37,40 @@ probe("every migration is applied, and every applied migration still exists", ()
   const inDb = new Set(applied), onDisk = new Set(files);
   const unapplied = files.filter((f) => !inDb.has(f));
   const orphaned = applied.filter((a) => !onDisk.has(a));
-  if (unapplied.length) return `on disk but never applied: ${unapplied.join(", ")}`;
+
+  // A MIGRATION MAY BE UNAPPLIED ON PURPOSE, and this probe used to call that a disagreement.
+  //
+  // `services/gateway/src/db.ts` DEFERS a migration declaring `-- requires-extension: X` when
+  // this cluster cannot supply X — skipped, and deliberately NOT recorded as applied, because
+  // a migration attempted where its extension is absent throws, rolls back, un-sets the pool
+  // and rethrows, and the gateway starts anyway: the platform serving with no database while
+  // reporting itself healthy. Migration 070 needs pg_textsearch, which arrives with a
+  // PostgreSQL 17 image this project has not built yet.
+  //
+  // THIS PROBE IS STRICTER THAN AN EXEMPTION, because unlike the release's offline checks it
+  // is talking to the actual database. It does not take the directive's word for anything: it
+  // ASKS the cluster what it offers, and a migration whose declared extension IS available and
+  // which still has not run is a real disagreement — exactly the case where the deferral has
+  // stopped being a deferral and become a migration nobody noticed failing.
+  const stillUnapplied: string[] = [];
+  const deferredHere: string[] = [];
+  const available = new Set(psql("select name from pg_available_extensions")
+    .split("\n").map((x) => x.trim()).filter(Boolean));
+  for (const file of unapplied) {
+    const sql = readFileSync(join(root, "services/gateway/migrations", file), "utf8");
+    const needs = [...sql.matchAll(/^--\s*requires-extension:\s*([a-z0-9_]+)\s*$/gim)].map((m) => m[1]);
+    const missing = needs.filter((n) => !available.has(n));
+    if (needs.length && missing.length && available.size) deferredHere.push(`${file} (needs ${missing.join(" and ")})`);
+    else stillUnapplied.push(file);
+  }
+  if (stillUnapplied.length) return `on disk but never applied: ${stillUnapplied.join(", ")}`;
   if (orphaned.length) return `applied but no longer in this checkout: ${orphaned.join(", ")}`;
+  // Reported, never silent: an unapplied migration is a fact an operator should be told, even
+  // when it is the correct one. It is the difference between this platform's schema and the
+  // schema this checkout describes.
+  if (deferredHere.length) {
+    console.log(`      deferred, correctly — this cluster offers no such extension: ${deferredHere.join(", ")}`);
+  }
   return null;
 });
 

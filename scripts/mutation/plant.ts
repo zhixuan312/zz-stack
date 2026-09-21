@@ -30,6 +30,13 @@ export interface MutationSpec {
   readonly replace: string;
   /** Replace every occurrence rather than requiring exactly one. */
   readonly all?: boolean;
+  /**
+   * Which of the check's independent assertions this row establishes, where it has more than
+   * one. A registered check may make several claims that fail for different reasons, and a
+   * mutation to one says nothing about the others — so two rows can share a `target` and be
+   * about different things, and this is what tells them apart.
+   */
+  readonly assertion?: string;
   /** The defect, in the words a reader of the report needs. */
   readonly planted: string;
   /** Set when this row is known not to prove what it looks like it proves, and why. */

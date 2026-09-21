@@ -284,7 +284,8 @@ function main(): void {
     console.log(`${head} — ${spec.target}: ${landed.replacements} replacement(s), ` +
       `${failed ? "CAUGHT" : "SURVIVED"} (${run.verdict}, exit ${run.exit})`);
     results.push({
-      check: file, target: spec.target, subject: spec.subject, planted: spec.planted,
+      check: file, target: spec.target, assertion: spec.assertion ?? null,
+      subject: spec.subject, planted: spec.planted,
       find: spec.redact ? null : spec.find,
       replace: spec.redact ? null : spec.replace,
       find_base64: spec.redact ? Buffer.from(spec.find, "utf8").toString("base64") : null,
@@ -405,6 +406,32 @@ function main(): void {
         "roster would let one mutation stand in for every check in its file. Rows may share a " +
         "`check` path; each names its own `target`, and a mutation that only trips a SIBLING " +
         "check in the same file is a failed experiment, not evidence about the target.",
+      a_green_row_establishes_one_assertion:
+        "Rows are per registered check, and a registered check may carry SEVERAL INDEPENDENT " +
+        "assertions. A green row therefore establishes that one named assertion of that check " +
+        "can fail — not the check entire. Where a row is about one of several, it says which " +
+        "in `assertion`; two rows may share a `target` and be about different claims.",
+      the_class_nobody_has_counted:
+        "Per-file was fixed by going per-registered-check. Per-ASSERTION is the same problem " +
+        "one level further down: a check with two independent assertions needs two mutations " +
+        "to be fully established. `trial-analyzer-agreement.ts` has two and now has two rows. " +
+        "`rederivation-generation.ts` — the precedent that check was modelled on — has the " +
+        "same shape, an import assertion and a vector-agreement assertion, with one row " +
+        "against it. NOBODY HAS COUNTED HOW MANY OTHERS THERE ARE, and this task deliberately " +
+        "did not sweep for them: it is work for whoever writes the next set of checks, " +
+        "alongside the dormant regions this run found (a clause guarded by a condition the " +
+        "data never takes, invisible to a mutation run as much as to a reader).",
+      a_subject_too_simple_to_fail:
+        "The third shape, and the one that hid a real kernel defect the longest. `evaluate` " +
+        "checked only the step immediately before, so a seven-step procedure was verified one " +
+        "link deep and a rule-free step became a permanent hole. Two fixtures watched it and " +
+        "neither could disagree with it: the second-flow fixture is two steps, so it has no " +
+        "\"three steps back\" to get wrong, and the negative control gives every step a " +
+        "sign-off rule, so it has no rule-free step in the middle. A test whose SUBJECT cannot " +
+        "express the failure passes for the same reason an unreachable clause does, and a " +
+        "mutation run cannot tell the two apart from the outside — in both cases the defect " +
+        "is planted and nothing goes red. What caught it was giving the check a subject that " +
+        "could fail: the procedure the release actually registers.",
       what_this_artifact_is_not_evidence_about:
         "Every check this PLAN adds. The declared files also carry pre-existing checks that " +
         "predate this plan and have no row here, so a reader must not read a green report as " +

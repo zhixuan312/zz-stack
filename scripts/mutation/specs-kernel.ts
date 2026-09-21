@@ -12,6 +12,10 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
+/** The one registered check both host-chain rows are aimed at; they differ by `assertion`. */
+const TRIAL_CHAIN =
+  "a registered procedure's chain is enforced all the way back, and still grants when it is met";
+
 export const KERNEL_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/assessment-port.ts",
@@ -97,6 +101,37 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "nothing about the host being generic",
   },
   {
+    // HALF ONE, AND IT FIRES ALONE. With the chain not consulted at all, an empty run is still
+    // refused — the last step's OWN rules are unmet — but the refusal names only that step, so
+    // the clause watching for an earlier step's id is what catches it. A complete run still
+    // grants and still evaluates clean, so half two cannot answer for this.
+    check: "scripts/gate/checks/host-chain.ts",
+    target: TRIAL_CHAIN,
+    assertion: "an action is refused on an empty run AND the refusal names a step behind the one claimed",
+    subject: "packages/contracts/src/host.ts",
+    find: "    for (const before of step.after) {",
+    replace: "    for (const before of step.after.slice(0, 0)) {",
+    planted: "the chain is not consulted at all, so every step is judged alone — the refusal a " +
+      "caller receives names only the step they claimed and says nothing about the six behind " +
+      "it that are still outstanding",
+  },
+  {
+    // HALF TWO, AND IT FIRES ALONE TOO. Any step that declares predecessors becomes
+    // permanently unsatisfiable, so a run driven to genuine completion is still refused. The
+    // empty run is refused as before and its refusal still names an earlier step, so half one
+    // passes — which is the point: a host that refuses everything passes a check watching only
+    // the refusal, and is worse than the broken one because nobody can ever finish.
+    check: "scripts/gate/checks/host-chain.ts",
+    target: TRIAL_CHAIN,
+    assertion: "the same action is GRANTED on a run driven to genuine completion, and the evaluation agrees",
+    subject: "packages/contracts/src/host.ts",
+    find: "    return { satisfied: distinct.length === 0, unmet: distinct };",
+    replace: "    return { satisfied: distinct.length === 0 && step.after.length === 0, unmet: distinct };",
+    planted: "a step that declares any predecessor can never be satisfied, so the control loop " +
+      "refuses a procedure whose every step has been completed on its own terms — a wall " +
+      "rather than a control, and nobody can finish a run",
+  },
+  {
     check: "scripts/gate/checks/issuer-unreachable.ts",
     target: "the grant issuer is unreachable by any caller and still works for the host",
     subject: "packages/contracts/src/control-grant-fixture.ts",
@@ -171,11 +206,28 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/trial-analyzer-agreement.ts",
     target: "the recall trial's analyzer finds the same Han terms as zz-lexical-v2",
     subject: "packages/contracts/src/recall-trial-corpus.ts",
+    assertion: "the trial's analyzer and zz-lexical-v2 find the same Han unigrams and adjacent bigrams",
     find: "      if (i + 1 < scalars.length) terms.push(scalars[i] + scalars[i + 1]);",
     replace: "      if (i + 2 < scalars.length) terms.push(scalars[i] + scalars[i + 2]);",
     planted: "the trial's copy of the analyzer pairs scalars the real one keeps apart and " +
       "drops the pairs it ranks, so the two implementations of one segmentation disagree on " +
       "what is adjacent — the drift this check exists to notice",
+  },
+  {
+    // THE SECOND ASSERTION OF THE SAME CHECK, and the row above establishes the other one.
+    // That check makes two independent claims — that `searchCorpus` still DEFAULTS to the
+    // trial's analyzer, and that the analyzer still MEANS what the real one means — and a
+    // mutation to either says nothing about the other. The coupling is a default parameter,
+    // so no value a caller passes in can observe it; only the default itself can be moved.
+    check: "scripts/gate/checks/trial-analyzer-agreement.ts",
+    target: "the recall trial's analyzer finds the same Han terms as zz-lexical-v2",
+    subject: "packages/contracts/src/recall-trial-corpus.ts",
+    assertion: "searchCorpus still defaults to the trial's own analyzer, so the agreement above is with a function something calls",
+    find: "  analyzer: TrialAnalyzer = trialAnalyze,",
+    replace: "  analyzer: TrialAnalyzer = (text) => text.split(/\\s+/).filter(Boolean),",
+    planted: "the trial searches by splitting on whitespace instead of through its own " +
+      "analyzer, so an unspaced Han run is handed back whole and matches nothing — and the " +
+      "agreement the check verifies below is with a function nothing calls any more",
   },
   {
     check: "scripts/gate/checks/runtime-adapter-portability.ts",

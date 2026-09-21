@@ -57,7 +57,9 @@ export interface CompletionRule {
 /** One step of a procedure: the method somebody reads, what it accepts, what completes it,
  *  and what completing it makes claimable. `after` names the steps that must have completed
  *  first — a list, so a procedure that fans out is expressible and a procedure that does not
- *  is visibly linear. */
+ *  is visibly linear. It names the IMMEDIATE predecessors and binds the whole chain behind
+ *  them: a step has not completed while anything it follows is outstanding, however far back,
+ *  so a procedure states each link once and gets the order it wrote down. */
 export interface ProcedureStep {
   readonly id: string;
   readonly method: string;
@@ -184,6 +186,38 @@ function unmetSentence(rule: CompletionRule, stepId: string): string {
 }
 
 /**
+ * Refuse a procedure whose `after` graph closes on itself.
+ *
+ * AT REGISTRATION, WHICH HAPPENS ONCE, rather than inside the evaluation that runs on every
+ * claim. A registration is the platform accepting a body whose digest somebody reviewed; that
+ * is where a defect in the body belongs, and refusing there makes the recursive predecessor
+ * check terminating by construction instead of guarded per call — a guard that would otherwise
+ * have to answer "this procedure cannot be evaluated" to a caller who cannot act on it.
+ *
+ * AN UNKNOWN PREDECESSOR IS NOT THIS FUNCTION'S BUSINESS. A step naming an `after` the module
+ * does not declare is already refused by name, with the id in the message, the first time
+ * anything asks about that step. Folding it in here would give one fault two answers.
+ */
+function refuseCycle(module: ReviewedModule): void {
+  const steps = new Map(module.steps.map((s) => [s.id, s]));
+  const open = new Set<string>();
+  const done = new Set<string>();
+  const walk = (id: string, path: readonly string[]): void => {
+    if (done.has(id)) return;
+    if (open.has(id)) {
+      const cycle = [...path.slice(path.indexOf(id)), id].join(" -> ");
+      throw new Error(`${module.id} declares a cycle in the steps that must come first: ` +
+                      `${cycle} — no step in it can ever be entered`);
+    }
+    open.add(id);
+    for (const before of steps.get(id)?.after ?? []) walk(before, [...path, id]);
+    open.delete(id);
+    done.add(id);
+  };
+  for (const step of module.steps) walk(step.id, []);
+}
+
+/**
  * A host with nothing registered.
  *
  * Every instance is independent — no module-scope registry, no process-wide state — so a
@@ -208,24 +242,59 @@ export function createHost(): Host {
   };
   // Shared by `control_evaluate` and `action_claim`, and untraced, so that claiming an action
   // records one operation rather than two — a claim is not an evaluation the caller asked for.
-  const evaluate = (run: HostRun, step: ProcedureStep): ControlVerdict => {
+  //
+  // A PREDECESSOR IS SATISFIED, NOT MERELY COUNTED, and the difference is the whole chain.
+  // This asked whether the step before had met its own completion rules, which says nothing
+  // about the steps before THAT — so the check was one level deep and a seven-step procedure
+  // was six steps of decoration. Two consequences, both observed on the first real module
+  // registered against this engine: a step whose completion rules are empty is vacuously met,
+  // so it was a permanent hole every later step was measured through; and an action could be
+  // claimed at step five with steps one and two visibly unsatisfied. `after` means the steps
+  // that must have completed first, and a step has not completed while anything behind it is
+  // outstanding — so the answer for a predecessor is the same answer this function gives,
+  // which is why it asks itself for it.
+  //
+  // `settled` MEMOISES ONE TOP-LEVEL ANSWER. A procedure that fans out and rejoins reaches the
+  // same ancestor down several paths, and re-deriving it each time is exponential in the depth
+  // of the fan. It is scoped to the call, never to the host: evidence arrives between calls,
+  // and a verdict cached across them would be an answer about a run that has since moved on.
+  //
+  // TERMINATION IS ESTABLISHED AT REGISTRATION, not here. `refuseCycle` turns a body whose
+  // `after` graph closes on itself away at the door, so this recursion is safe by construction
+  // rather than defended on every claim.
+  const evaluate = (run: HostRun, step: ProcedureStep,
+                    settled: Map<string, ControlVerdict> = new Map()): ControlVerdict => {
     const unmet: string[] = [];
     for (const before of step.after) {
       const earlier = stepOf(run, before);
-      if (earlier.completion.some((r) => !met(r, run.evidence, earlier.id))) {
-        unmet.push(`${before} has not completed, and ${step.id} follows it`);
+      let verdict = settled.get(before);
+      if (verdict === undefined) {
+        verdict = evaluate(run, earlier, settled);
+        settled.set(before, verdict);
+      }
+      // WHY THE PREDECESSOR IS NOT DONE COMES WITH IT. "the step before has not completed" is
+      // true and useless when that step is itself waiting on something three links back: the
+      // reader is told to go and look, having asked the one question that would have told
+      // them. Carrying the earlier verdict's own sentences up makes the answer a trail that
+      // ends at the thing somebody has to record. Deduplicated because a procedure that fans
+      // out and rejoins reaches one ancestor down two paths, and a reason stated twice reads
+      // as two reasons.
+      if (!verdict.satisfied) {
+        unmet.push(`${before} has not completed, and ${step.id} follows it`, ...verdict.unmet);
       }
     }
     for (const rule of step.completion) {
       if (!met(rule, run.evidence, step.id)) unmet.push(unmetSentence(rule, step.id));
     }
-    return { satisfied: unmet.length === 0, unmet };
+    const distinct = [...new Set(unmet)];
+    return { satisfied: distinct.length === 0, unmet: distinct };
   };
 
   return {
     trace,
     register(module) {
       if (modules.has(module.id)) throw new Error(`${module.id} is already registered`);
+      refuseCycle(module);
       modules.set(module.id, module);
     },
     registered() {

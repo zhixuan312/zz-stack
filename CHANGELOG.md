@@ -33,6 +33,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.62.1] — 2026-09-21
+
+**The release was rehearsing its SQL against a database this deployment no longer runs.** Two
+release steps start a throwaway PostgreSQL — one migrates an empty database with the image
+about to ship and then asks Postgres to PREPARE every SQL literal in the tree against the
+schema those migrations leave behind, the other stands the whole platform up and calls it.
+Both named `postgres:16-alpine`, which cannot carry pg_textsearch. Migration 070 declares it,
+the runner therefore deferred 070 and everything after it, the search partitions and the BM25
+index were never created in the rehearsal, and the SQL check went on to EXCUSE every query
+naming a relation those migrations would have made. The excuses were printed and the step
+exited zero: a pass reported over exactly the DDL nobody had checked. Both steps now read the
+`postgres` service — image and command — out of `deploy/docker-compose.yml`, so the rehearsal
+and the deployment are the same database.
+
+**A deferred migration now blocks a release.** With the deployment's own image there is no
+legitimate deferral left: one there means the deployment would defer it too, and an operator
+should hear that from the release rather than from a production boot. When it happens the
+release diffs `zz.schema_migration` against the migration files and names each missing one
+beside the extension it declares.
+
+**One physical BM25 index may carry one visibility scope, not merely one owner.** The registry
+guard refused two owners sharing an index — the loud case. It let through the quiet one: a
+single owner whose private work documents and published-shared knowledge sat in one index,
+where a shared reader's ranking is moved by content they cannot see and cannot ask about. The
+leak is inside one tenant, across the exact line `audience` exists to draw, and every row it
+returns is one the caller is entitled to. Both misconfigurations are now refused.
+
+### Upgrade notes
+
+**`postgres-data` is gone from the compose file, and rolling back by editing it is no longer
+possible.** It had not been possible since the cutover — writes since then exist only in
+`postgres-data-17` — and leaving the declaration there invited somebody to try. On this
+deployment the PostgreSQL 16 volume was removed after its logical dump was restored into a
+throwaway database and diffed table by table: 33 tables, every row count equal or higher in
+the live cluster. Recovery is forward, from the hourly dumps in `~/zz-backups`.
+
+**Nothing in the database or the API changed.** No migration, no tool, no contract.
+
 ## [0.62.0] — 2026-09-21
 
 **This deployment now runs PostgreSQL 17.11 with pg_textsearch and pg_trgm.** The database was

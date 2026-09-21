@@ -1,0 +1,159 @@
+{
+  "provenance": {
+    "generator_version": "1.0.0",
+    "pg_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+    "pg_textsearch_version": "1.4.0",
+    "generated_at": "2026-09-21T06:21:05.054Z",
+    "analyzer_digest": "316f95c73faedd3e28b86c8466827abf4bcfb57880e412f3410287a4be90b606"
+  },
+  "cases": [
+    {
+      "submitted": "这",
+      "stored": "这"
+    },
+    {
+      "submitted": "是",
+      "stored": "是"
+    },
+    {
+      "submitted": "一",
+      "stored": "一"
+    },
+    {
+      "submitted": "段",
+      "stored": "段"
+    },
+    {
+      "submitted": "测",
+      "stored": "测"
+    },
+    {
+      "submitted": "试",
+      "stored": "试"
+    },
+    {
+      "submitted": "用",
+      "stored": "用"
+    },
+    {
+      "submitted": "的",
+      "stored": "的"
+    },
+    {
+      "submitted": "中",
+      "stored": "中"
+    },
+    {
+      "submitted": "文",
+      "stored": "文"
+    },
+    {
+      "submitted": "本",
+      "stored": "本"
+    },
+    {
+      "submitted": "zh008fd900662f",
+      "stored": "zh008fd900662f"
+    },
+    {
+      "submitted": "zh00662f004e00",
+      "stored": "zh00662f004e00"
+    },
+    {
+      "submitted": "zh004e00006bb5",
+      "stored": "zh004e00006bb5"
+    },
+    {
+      "submitted": "zh006bb5006d4b",
+      "stored": "zh006bb5006d4b"
+    },
+    {
+      "submitted": "zh006d4b008bd5",
+      "stored": "zh006d4b008bd5"
+    },
+    {
+      "submitted": "zh008bd5007528",
+      "stored": "zh008bd5007528"
+    },
+    {
+      "submitted": "zh007528007684",
+      "stored": "zh007528007684"
+    },
+    {
+      "submitted": "zh007684004e2d",
+      "stored": "zh007684004e2d"
+    },
+    {
+      "submitted": "zh004e2d006587",
+      "stored": "zh004e2d006587"
+    },
+    {
+      "submitted": "zh006587006587",
+      "stored": "zh006587006587"
+    },
+    {
+      "submitted": "zh00658700672c",
+      "stored": "zh00658700672c"
+    },
+    {
+      "submitted": "schema",
+      "stored": "schema"
+    },
+    {
+      "submitted": "migration",
+      "stored": "migration"
+    },
+    {
+      "submitted": "reader",
+      "stored": "reader"
+    },
+    {
+      "submitted": "次",
+      "stored": "次"
+    },
+    {
+      "submitted": "会",
+      "stored": "会"
+    },
+    {
+      "submitted": "rebuild",
+      "stored": "rebuild"
+    },
+    {
+      "submitted": "索",
+      "stored": "索"
+    },
+    {
+      "submitted": "引",
+      "stored": "引"
+    },
+    {
+      "submitted": "zh008fd9006b21",
+      "stored": "zh008fd9006b21"
+    },
+    {
+      "submitted": "zh007d22005f15",
+      "stored": "zh007d22005f15"
+    },
+    {
+      "submitted": "http",
+      "stored": "http"
+    },
+    {
+      "submitted": "server",
+      "stored": "server"
+    },
+    {
+      "submitted": "2",
+      "stored": "2"
+    },
+    {
+      "submitted": "config",
+      "stored": "config"
+    },
+    {
+      "submitted": "v",
+      "stored": "v"
+    }
+  ]
+}

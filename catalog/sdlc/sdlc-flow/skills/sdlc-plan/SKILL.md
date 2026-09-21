@@ -1,8 +1,8 @@
 ---
 name: sdlc-plan
-version: 1.8
+version: 1.12
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
-when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Local runtimes only (Claude Code)."
+when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
 
 # sdlc-plan
@@ -187,6 +187,26 @@ must pass at EVERY task boundary — the project's own build, typecheck, test an
 they actually exist in the target (do not invent commands; read the manifest or the existing docs and
 name the real ones).
 
+**Exactly, because this is the one section of `plan.md` the platform itself requires.**
+`flow.json` declares `Full-suite gate` and nothing else for this document. Everything else the
+plan carries is required by something weaker, and the two are worth keeping apart:
+
+- **The phase and task format is checked, by `sdlc-plan-audit`.** Level-2 phase headings,
+  `### Task I-N:` with its arabic digit, and the one-line `**Output:**` / `**Dependencies:**`
+  under each are point 5 of that audit's contract, and a break comes back as a finding.
+- **`Goal`, `Architecture`, `Tech Stack`, `Ground truth at HEAD` and `File Structure` are this
+  skill's convention and nothing checks them.** Not the platform, which does not declare them,
+  and not the audit, whose eleven points do not mention them. Write them because a reader needs
+  them, and never tell anyone they are enforced — a plan asserting an enforcement nobody wrote is
+  the same defect the audit exists to find, one document earlier.
+
+Being declared has a second consequence worth knowing before you write. `plan.md` is gated, so the
+section is checked when the plan is offered as approved rather than while it is a draft — but the
+platform normalizes headings on every write regardless. A `##` heading of yours that says
+everything `Full-suite gate` says is renamed to it, and the reply to that call is the only place
+you are ever told. Keep that line and hand it to `sdlc-plan-audit` along with the version it
+should read; nothing in the stored plan records that a heading was ever worded differently.
+
 Per-task checks prove the task did its own job. They cannot prove the task left the rest of the
 project working, and that is the failure a plan executed task-by-task actually produces: each check
 green, the suite red. State the gate once, at the end, so an executor knows what must hold after
@@ -343,3 +363,53 @@ second plan; execution needs one document.
 Then show it again with `document_present("<initiative>/plan.md")`, say what changed and why, and
 get the approval recorded afresh — the gate is on the version they read, not on the one they
 read last time.
+
+## Skill contract
+
+**Outcome:** `plan.md` in the initiative — phases each stating what works at the end, `### Task
+I-N` headings numbered straight through with a one-line `**Output:**` and `**Dependencies:**`, a
+five-bullet contract and a technical acceptance criterion traced `← AC-N.N`, plan-authored checks
+wherever the claim is machine-decidable, a `## Full-suite gate` section and a spec-coverage
+traceability table — presented to the person and carrying their recorded approval.
+
+**Required evidence:** the approved spec. Ground truth at HEAD: every path, figure, symbol or
+source the spec references, confirmed to exist and to say what the spec claims, with each
+discrepancy written into the plan header as a reconciliation note. And whether the target actually
+has a build, typecheck, test or lint entry point — read from its manifest, never assumed.
+
+**Allowed unknowns:** how a task will be implemented. A capable executor implements freely against
+the contract, so the plan carries no implementation code and no deliverable content; the only code
+you write is a declared check's source. What is never unknown is the order: if B needs what A
+creates, A comes first, and a dependency you have not resolved is a task you have not yet written.
+
+**Work roles:** this stage is never dispatched. Order, risk and scope are the person's judgement,
+and a dispatched plan is a plausible ordering nobody chose; the person approves the document
+before anything is built from it. Each technical AC names which role proves it — a deterministic
+command, a delegated analytical review, or a named human whose authority the claim requires. The
+`semantic-assessment` role answers the bounded questions below by question ID from the fixed set
+below. Nothing in this platform registers those IDs yet, so an implementation adopts these
+spellings rather than minting its own, and is never a substitute for the human method: a plausible
+opinion is not accountability.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Step 4, per business AC in the spec | `requirement_coverage` | whether it reaches at least one task, and whether that task's technical AC is the engineering translation of it rather than a restatement |
+| Per technical AC, choosing how it is proved | `needs_verification` | whether the claim is machine-decidable, needs delegated analysis, or needs authority — decided by what the claim requires, never by what is convenient |
+| On a return from audit or from execution | `changes_commitment` | whether the finding changes what was approved, so the revision cites the source that caused it and marks every task `unchanged`, `changed` or `new` |
+
+**Action and exit paths:** the action is ground truth, state the production method in prose,
+scaffold in one write with a uniquely-id'd marker per task, fill one task at a time until no
+marker remains, close with the gate and the traceability table, present, ask. The forward exit is
+`sdlc-plan-audit`, once the approval is recorded. The return exit is `document_revise` citing the
+source that sent it back — `document_write` and `document_patch` are refused on an approved plan,
+because writing over one leaves the approver's name standing on bytes they never read. Writing a
+second plan is not an exit at all: execution needs one document.
+
+**Degraded behaviour:** the target genuinely has no suite, so the `## Full-suite gate` section
+still exists and says so in one line, naming what stands in for it — the section is never omitted,
+because a plan that cannot state its gate has not decided how anyone will know it still works. A
+source the spec names that does not exist becomes a reconciliation note, not a contract written
+around the gap. A task whose acceptance criterion no method can establish is not ready to be
+planned: say what is missing rather than writing it anyway.

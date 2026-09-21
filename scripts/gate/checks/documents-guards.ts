@@ -158,12 +158,25 @@ check("a refusal is classified in one place", () => {
 //
 // The guards are found by their type, not by name: `string | null` is the signature of "a
 // reason to refuse, or nothing", and a guard added tomorrow is covered without an edit.
+//
+// THE PARAMETER LIST IS MATCHED, NOT SPANNED, and that distinction was worth four wrong answers.
+// This read `\(` then `[\s\S]{0,300}?` then `\): string | null`, which does not stop at the
+// parameter list's own closing paren — so a `): string | null` belonging to a LATER function
+// within 300 characters was attributed to the earlier one. Measured on this repository: it named
+// `governingFlows` (returns `string[]`) and `headRevisionOf` (returns `TrialRevision | null`) as
+// guards, and because a global match consumes what it spans, it then MISSED the two real guards
+// whose signatures had been swallowed — `skillText` and `pinnedRevisionOf`. The false negatives
+// are the serious half: two genuine guards whose discarded answers this check could not see.
+//
+// `(?:[^()]|\([^()]*\))*` cannot cross the closing paren it is looking for. It admits one level
+// of nesting, which is what a parameter type like `(x: string) => string` needs, and nothing
+// beyond it. There is no character budget to tune, because the shape does the work.
 check("a guard's answer is never discarded", () => {
   const files = sourceFiles(["services", "packages"], [".ts"]);
   const guards = new Set();
   for (const f of files) {
     for (const m of readFileSync(join(root, f), "utf8")
-                      .matchAll(/function ([a-zA-Z_]\w*)\s*\([\s\S]{0,300}?\)\s*:\s*string \| null/g)) {
+                      .matchAll(/function ([a-zA-Z_]\w*)\s*\((?:[^()]|\([^()]*\))*\)\s*:\s*string \| null/g)) {
       guards.add(m[1]);
     }
   }

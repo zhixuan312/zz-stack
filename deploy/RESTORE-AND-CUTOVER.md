@@ -83,12 +83,23 @@ Each refusal is a real finding about the backup. None of them is a problem with 
 
 ## 3. Stand up the isolated PostgreSQL 17 database
 
-> **Blocked today.** `deploy/postgres/versions.lock.json` still carries placeholder pins —
-> every `*_verified` flag is `false`, and the build below will produce an image nobody
-> resolved. Resolving those pins is I-5's remaining work, not something to guess here. Until
-> it is done, `verify --suite deployment --cases extension` reports `not_run` and names every
-> unresolved field. The restore in step 4 does not depend on it and can proceed on a stock
-> PostgreSQL 17 image; only the `pg_textsearch` half does.
+> **The pins are resolved; this paragraph used to say otherwise.** It read "every `*_verified`
+> flag is `false`" and stayed that way after the pins were filled in, which made a document
+> about what is safe to do assert the opposite of the file it cites. `deploy/postgres/
+> versions.lock.json` now carries eight of its nine `*_verified` flags `true` — the PostgreSQL
+> version, the base image digest, the architecture, the `pg_textsearch` repository, commit and
+> source digest, the built image digest, and the text-configuration fingerprint.
+>
+> The ninth, `okf_reference_digest_verified`, is `false` and its own `unverified_fields` entry
+> argues it should be struck from the specification rather than filled: the specification asks
+> for a vendored OKF reference digest, and **this repository vendors no OKF reference to
+> digest**. It carries its own implementation and that implementation's tests, and nothing else
+> named OKF exists in the tree. An unresolvable field is a finding about the specification, not
+> a gap in this build, so it does not block the image.
+>
+> Read the lock file rather than this paragraph if the two ever disagree again. The restore in
+> step 4 depends on none of it and can proceed on a stock PostgreSQL 17 image; only the
+> `pg_textsearch` half ever did.
 
 ```bash
 cd <checkout>/zz-stack/deploy/postgres
@@ -291,10 +302,15 @@ of two of them. The other four need something else as well, and this document ca
 it.
 
 > **Read this before the table.** Every row below assumes migration 070 applied, and step 5
-> shows that needs the step 3 image, which needs `deploy/postgres/versions.lock.json`'s pins
-> resolved. **Until those pins are resolved, the answer in every row is "no" — including the
-> two marked Yes.** The variable is necessary for those two and is not sufficient for any of
-> them. Resolving the pins is the first domino, not this document.
+> shows that needs the step 3 image. This paragraph used to add that the image needs
+> `versions.lock.json`'s pins resolved and that therefore "the answer in every row is no —
+> including the two marked Yes". **That premise no longer holds**: eight of the lock's nine
+> `*_verified` flags are `true`, and the ninth is unresolvable by design rather than
+> outstanding (see section 3). The pins are no longer the first domino.
+>
+> What the table says stands on its own. The variable is necessary for the two marked Yes and
+> sufficient for neither pair marked No, for the reasons in their own rows — a missing verified
+> BM25 DDL for the isolation pair, and no implementation at all for the migration pair.
 
 | Suite | Case | Does step 6 unblock it? |
 |---|---|---|
@@ -305,8 +321,9 @@ it.
 | `migration` | `projection_parity_against_the_isolated_database` | **No.** These two are a hardcoded `NOT_RUN` map in `testing/tenant-info/migration.ts` and read no environment variable at all. They have no implementation behind them yet. |
 | `migration` | `copied_multi_owner_store_projection_replay` | **No.** Same — unimplemented, not unconfigured. |
 
-So: **2 of 6 once the image pins are resolved, and 0 of 6 before that.** The isolation pair is
-additionally blocked on the extension's verified BM25 DDL; the migration pair is blocked on
+So: **2 of 6.** The image pins are resolved, so the two `rebuild` cases are reachable once 070
+is applied. The isolation pair is additionally blocked on the extension's verified BM25 DDL;
+the migration pair is blocked on
 code nobody has written. Neither of those is an environment problem and neither is closed by
 running this document.
 

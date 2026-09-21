@@ -204,8 +204,23 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             scored before migration 067 the effectiveness and headroom they
             always implied, recomputed from their own stored marks through
             judge-score.ts — it never invents the initiative link, which is
-            genuinely absent on those rows), manifests.ts (where the packages are, read by
-            both) and build-image.sh (the runtime image, from the lockfile).
+            genuinely absent on those rows), rederive-analyzer-generation.ts
+            (dry-run by default: rederives every existing `zz.doc`/`zz.knowledge_node`
+            row's `body_tsv`/`analyzer_version` under the current analyzer generation
+            through `@zz/indexing`'s `rederiveAll`, resumable by watermark — `--write`
+            is the only path that changes anything), manifests.ts (where the packages are, read by
+            both), mutation-run.ts (plants a defect in what each gate check
+            examines, in a disposable copy of this checkout, and records whether
+            the check noticed — mutation/ holds the workspace, the planting and
+            one spec per check, and the answer lands in
+            testing/mutation-report.json), activation-rehearsal.ts (rehearses
+            deploy/activation-runbook.json on copied fixtures and against nothing
+            live: it derives the blocker list from the runbook itself, proves a
+            precondition cannot be waived by deep-copying the document and trying,
+            and refuses to start if any database URL is set in the environment —
+            it exits non-zero while a precondition is blocked, which today is all
+            eight of them) and build-image.sh (the runtime image, from the
+            lockfile).
             tenant-info/ is `npm run tenant-info` — cli.ts's six verbs (baseline,
             fixtures, verify, benchmark, migrate, export), each requiring a workspace
             outside this checkout and none of them running anything at import time,

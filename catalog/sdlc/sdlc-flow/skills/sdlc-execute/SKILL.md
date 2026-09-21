@@ -1,8 +1,8 @@
 ---
 name: sdlc-execute
-version: 1.2
+version: 1.8
 description: Build what the approved plan describes — one subagent per task, in plan order, each making its task's contract true and its plan-authored checks pass. Main agent orchestrates and stays accountable for the sequence; the work itself is dispatched.
-when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Local runtimes only (Claude Code)."
+when_to_use: "plan.md exists, has been audited, and the person has approved it. Implements its tasks. If there is no plan on disk, this is not the stage — the plan is what makes each task dispatchable. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
 
 # sdlc-execute
@@ -52,7 +52,9 @@ register it.
 
 After the task finishes, and again before you dispatch the next one, compare the active file's
 bytes to its frozen copy. The worker may register the active check in the gate; it may not
-alter it, and a hash mismatch is the task failing regardless of what else it reports. A check
+alter it, so treat any byte difference from your frozen copy as the task failing, whatever
+else it reports. Nothing computes that for you: you froze the copy and you make the
+comparison. A check
 that appears after the worker has been told what "done" means is a check the worker has already
 routed around — activating on time is exactly as load-bearing as activating only the one file.
 
@@ -83,6 +85,35 @@ If a contract defect blocks you — including a check that contradicts the contr
 Reconciliation means satisfying the contract against the actual source, not matching the plan's
   symbols to what you find.
 ```
+
+### A broken platform tool is filed, not worked around
+
+Distinct from a contract defect, and the two go to different places. A contract defect is this
+plan's problem and it comes back to you and then to `sdlc-plan`. A platform tool misbehaving is
+everybody's problem: it will meet the next initiative exactly as it met this one, and a
+workaround buried in one task's implementation is a fix that nobody else ever gets.
+
+So when a `/core` tool refuses what its own description says it accepts, contradicts itself, or
+breaks in a way you can make happen again, file it with `bug_report` — a title in the words of
+whoever hit it, a detail saying what happened and what was expected instead, `surface` naming the
+tool, and `initiative` naming the work it interrupted. Do not diagnose it first; the report is
+evidence, and a tidied summary loses it. Then work on. One report, filed once, and the task
+continues to whatever it can still reach.
+
+Three lines around that, all of them easy to get wrong:
+
+- **A task that failed is not a platform bug.** A check that goes red, a contract you could not
+  satisfy, a worker that came back short — those are this plan's record, and they are reported as
+  what they are. Filing one as a defect in the platform puts a false row in the one list an
+  operator reads to decide what is broken, and the real defects get lost behind it.
+- **You cannot close anything, and you should not look for the tool.** `bug_list`, `bug_resolve`
+  and `bug_delete` are offered to a superadmin and to nobody else, so a flow agent's door does not
+  carry them. Deciding what came of somebody's report is an operator's act about the platform,
+  not a step in delivering this change.
+- **Never close somebody else's report on their behalf, even where you could.** A resolution is a
+  sentence the reporter would recognise as an answer, and one written by whoever happened to be
+  passing is not that. If you believe an existing report is wrong, file what you now know as a new
+  report naming the old id.
 
 ### A check that could not RUN is not a check that FAILED
 
@@ -149,3 +180,53 @@ before.
 ❌ **Re-dispatching the whole plan after one failure.** Scope it to what failed.
 
 ❌ **Reporting a task failed because its check could not run.** See above.
+
+## Skill contract
+
+**Outcome:** the change the approved plan describes, built one dispatched worker per task in plan
+order, each task's contract made true and each plan-authored check passing, with what changed
+reported from the tree. This stage writes no document of the flow.
+
+**Required evidence:** the approval on `plan.md`, read from its frontmatter rather than from your
+memory of the conversation. Each task's checks run by you — the worker's report is a claim, the
+check is the fact. The full-suite gate after every task, not only after the last. The active
+check's bytes compared by you against its frozen copy after each task, where any byte difference
+means the task failed whatever else it reports. And `git diff --name-only` against where you started, not the
+union of what the workers said they did.
+
+**Allowed unknowns:** how a worker implements against the contract — it may choose, write, rename
+and structure freely, and reconciliation means satisfying the contract against the actual source
+rather than matching the plan's symbols to what it finds. Whether a given check can run in this
+environment. What is never unknown is whether a check ran: one that dies on a denied bind, a
+missing binary, a sandbox restriction or a bare timeout did not fail, and conflating the two
+throws away finished work.
+
+**Work roles:** one dispatched worker per task, sequential, because the plan already made the
+decisions and what remains is the change itself. This agent keeps the sequence, owns the branch,
+freezes and activates the checks, runs them and the gate, and stays accountable for what changed.
+The person decides whether the work is committed. The `semantic-assessment` role answers the
+bounded questions below by question ID from the fixed set below. Nothing in this platform
+registers those IDs yet, so an implementation adopts these spellings rather than minting its own;
+it does not judge a check's result, which is deterministic.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| After each task, reading what actually changed | `changes_commitment` | whether the change quietly did something the contract did not ask for, or skipped something it did — divergence from the plan is expected, and somebody has to notice it |
+| On a check that produced no verdict | `needs_verification` | whether it failed or could not run, and which environment could settle it |
+| When the same task fails the same way twice | `actionability` | whether the contract itself is wrong, which sends it back to `sdlc-plan` rather than to a third worker |
+
+**Action and exit paths:** the action is freeze every check up front, then per task: activate that
+one check, dispatch, run the task's checks, run the full-suite gate, compare the hash. Three
+exits. Every task done, so report from the tree, ask about committing, and hand to `sdlc-review`.
+A contract defect, or the same failure twice, so back to `sdlc-plan` naming the unmet clause or
+the faulty check. The gate red, so stop — the next worker would inherit the breakage and spend its
+turn on somebody else's bug.
+
+**Degraded behaviour:** a partial run is reported as a partial run, naming the outstanding task
+ids — a shortfall is not a failure, and it is also not done. A check that could not run is named
+unverifiable so somebody can run it elsewhere, never reported as failed. A non-git target takes
+its edits in place with no commit, said plainly rather than by inventing a repository. A failed
+task is re-dispatched scoped to itself, never by re-running the whole list, which on a sequential
+plan can undo what already succeeded.

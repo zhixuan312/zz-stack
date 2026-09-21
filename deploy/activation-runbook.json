@@ -1,0 +1,356 @@
+{
+  "_header": [
+    "THE PROCEDURE FOR SWITCHING PRODUCTION ONTO THE NEW PLATFORM, WRITTEN AND REHEARSED AND",
+    "NOT RUN. deploy/ACTIVATION.md is the prose half and carries the reasoning; this file is the",
+    "half a program can read. Neither one authorises anything.",
+    "",
+    "WHY EVERY PRECONDITION IS AN OBJECT AND NEVER A BOOLEAN. A precondition has three states,",
+    "not two: met, blocked, and blocked-in-a-way-somebody-can-act-on. `false` collapses the last",
+    "two, and the difference between them is the entire value of writing this down — a reader who",
+    "learns that restore evidence is missing has learned nothing they can pick up, and a reader",
+    "who learns which run would produce it has. So each of the eight carries its state, what it",
+    "requires, what evidence stands behind it today, what that evidence actually shows, and what",
+    "would unblock it. deploy/postgres/versions.lock.json settled this shape first, for the same",
+    "reason and in the same words: a placeholder must be unmistakable from a resolved value.",
+    "",
+    "THERE IS NO `activation_allowed` FIELD, DELIBERATELY. Activation is allowed exactly when no",
+    "precondition carries state `blocked`, and that is DERIVED at read time by",
+    "scripts/activation-rehearsal.ts rather than stored here. A field somebody could set to true",
+    "is a field somebody will set to true; a derived one has to be earned by closing each gap.",
+    "packages/contracts/src/eval-protocol.ts argues this at length for the same question and is",
+    "where the shape comes from: `activationBlockers` is enumerated, the flag is the emptiness of",
+    "that list, and `draftingAllowed` is a constant beside it because nothing may block writing a",
+    "procedure down.",
+    "",
+    "THERE IS NO `waivePreconditions` FIELD AND NO CODE THAT HONOURS ONE. A blocked precondition",
+    "blocks activation. It is not waived, not overridden, and not quietly marked met to let the",
+    "switch proceed. scripts/activation-rehearsal.ts derives its blocker list from the eight",
+    "`state` values alone; the only code that reads such a field reads it in order to REFUSE the",
+    "runbook outright. The rehearsal asserts that a copy of this document carrying",
+    "`waivePreconditions`, `activation_allowed` and `executed` derives the identical list.",
+    "",
+    "THERE IS NO `executed` FIELD. This task wrote this procedure and rehearsed parts of it on",
+    "copied fixtures. It did not run it, and nothing in this delivery may be read as having run",
+    "it. `rehearsal` below records what was actually exercised and, at least as importantly, what",
+    "was not. A rehearsal is not an execution and the two are kept apart by name.",
+    "",
+    "NO VERSION IS WRITTEN HERE AS A LITERAL. The three version preconditions name where each",
+    "value is read from at activation time and what it must agree with. A number typed into this",
+    "file is a number that goes stale silently, and the failure mode is a runbook confidently",
+    "describing a build nobody is deploying."
+  ],
+  "runbook_id": "platform-activation",
+  "subject": "switching production traffic and writes from the current deployment onto the new one",
+  "written_at": "2026-09-22T00:00:00.000Z",
+  "written_by": "Task I-37, in this repository, against measurements taken by the task that dispatched it",
+  "status": "written_and_rehearsed",
+  "prose": "deploy/ACTIVATION.md",
+  "rehearsed_by": "scripts/activation-rehearsal.ts",
+  "supersedes_nothing": "deploy/RESTORE-AND-CUTOVER.md remains the rehearsal procedure and is unchanged. It says in its own preamble that it never switches production. This file is the switch it declines to perform, and it borrows that document's step order rather than inventing a second one.",
+  "preconditions": {
+    "operator": {
+      "state": "blocked",
+      "name": null,
+      "assigned_by": null,
+      "requires": "one named person accountable for this switch, who can be asked afterwards why it went the way it did",
+      "evidence": null,
+      "reading": "No assignment exists. The operational work item the specification requires to be assigned before cutover has not been assigned to anybody, and this repository contains no record that it was.",
+      "why_no_name_is_written_here": [
+        "Task I-37 was performed by a model. Naming who may switch production is an authority",
+        "decision, and a model's plausible opinion about who should hold it is not accountability —",
+        "it is a name that every later reader would take for an assignment somebody made.",
+        "`name` and `assigned_by` are explicitly null so that 'nobody has been named' is something",
+        "this file STATES rather than something a reader infers from a field being absent. The",
+        "literal string 'unassigned' is not used because it reads as a settled administrative",
+        "status, as though the vacancy had been reviewed and left open on purpose; what is true is",
+        "that the decision has not been made."
+      ],
+      "would_unblock": "an assignment naming the person, made by whoever holds the authority to make it, recorded outside this file and then cited here in `name` and `assigned_by`. Nothing in this repository can produce it."
+    },
+    "runbook": {
+      "state": "blocked",
+      "written": true,
+      "approved": false,
+      "approved_by": null,
+      "document": "deploy/ACTIVATION.md",
+      "machine_readable": "deploy/activation-runbook.json",
+      "requires": "an APPROVED procedure, which is a different thing from a written one",
+      "evidence": "deploy/ACTIVATION.md and this file, both written by Task I-37",
+      "reading": "The procedure exists and has been rehearsed in part. Nobody has approved it.",
+      "why_this_is_blocked_by_the_document_that_contains_it": [
+        "Approval is what makes a procedure authorised, and a procedure cannot supply its own. If",
+        "this precondition were satisfied by the existence of the file it is written in, the runbook",
+        "would authorise itself, and the gate check that reads this file is named for refusing",
+        "exactly that. Written and approved are separate fields here so the difference cannot be",
+        "lost by anybody skimming."
+      ],
+      "would_unblock": "a review and approval by the same authority that assigns `operator`, recorded with what was approved — a digest of this file and of deploy/ACTIVATION.md, so that approval binds to a version rather than to a filename"
+    },
+    "app_version": {
+      "state": "blocked",
+      "requires": "the application build that will serve after the switch, pinned by image digest, and shown to be one matched unit with `store_version` and `database_version`",
+      "read_from": "the digest of the activation candidate image, recorded when that image is built; deploy/postgres/versions.lock.json holds the same kind of pin for the database image beside it",
+      "recorded_here": null,
+      "evidence": "deploy/postgres/versions.lock.json",
+      "reading": "The database image is pinned: eight of that lock's nine fields were resolved on 2026-09-21 against a real registry, a real upstream repository and a real built image. The ninth, okf_reference_digest, is still a placeholder, and its own unverified_fields entry argues it should be struck from the specification rather than filled, because this repository vendors no OKF reference to digest. NO ACTIVATION CANDIDATE APPLICATION BUILD HAS BEEN PRODUCED OR RECORDED. There is nothing to pin.",
+      "stale_document_warning": "deploy/RESTORE-AND-CUTOVER.md section 3 says this lock 'still carries placeholder pins — every *_verified flag is false', and section 7's table inherits that premise. That text is stale and contradicts the lock file itself. Read the lock, not the prose about it. Correcting that document is outside this task.",
+      "would_unblock": "building the activation candidate, recording its digest and the migration head it expects, and citing both here"
+    },
+    "store_version": {
+      "state": "blocked",
+      "requires": "every owner store the new deployment will serve carrying a complete `.zz/{blobs,commits}` record layout, on the volume the new deployment will mount",
+      "read_from": "a listing of each owner store root on the artifact volume the new unit will mount, checked for all three directories",
+      "recorded_here": null,
+      "evidence": "deploy/RESTORE-AND-CUTOVER.md step 5a; deploy/init-record-layout.sh; services/zz-core/src/tenant-info/record.ts",
+      "reading": "The live owner stores carry no `.zz/` layout, and nothing in the platform ever creates one: record.ts refuses STORE_UNAVAILABLE when any of the three directories is missing, and that refusal is correct and is not to be relaxed — a volume that failed to mount must never be read as a tenant who has no documents. Production holds 0 rows in zz.artifact, consistent with a deployment whose stores have never been adopted. Step 5a of the rehearsal document has no owner elsewhere in the delivery, and without it the switch produces a platform that refuses every write.",
+      "partial_is_worse_than_missing": "A store with `.zz/` and `.zz/blobs` but no `.zz/commits` refuses every write exactly as a store with nothing does, while looking initialised to anybody who lists the directory. deploy/init-record-layout.sh repairs that state rather than refusing it, and step 7 below verifies all three directories rather than the parent.",
+      "would_unblock": "running deploy/init-record-layout.sh once per owner store on the NEW artifact volume, after the restore and before the checks, and recording the resulting listing"
+    },
+    "database_version": {
+      "state": "blocked",
+      "requires": "the migration head the activation candidate expects, applied to the database the new unit will use, and agreeing with `app_version`",
+      "read_from": "the applied-migration ledger of the candidate database, compared against the highest-numbered file in services/gateway/migrations/",
+      "recorded_here": null,
+      "evidence": "production, read read-only over the tailnet on 2026-09-21; services/gateway/migrations/072_write_path_records_its_analyzer.sql",
+      "reading": "Production has 71 migrations applied, the latest being 071_a_source_has_no_content_revision.sql at 2026-09-21T01:32Z. Migration 072 is staged in the working tree, is idempotent, declares no extension, and has NOT been applied. Consistent with that: analyzer_version is ABSENT from both zz.doc and zz.knowledge_node, and schema zz carries 0 `using bm25` indexes. The candidate head and the production head therefore differ by one migration, and the column that migration adds does not exist yet.",
+      "row_counts_at_that_reading": "zz.doc 971, zz.knowledge_node 902, zz.artifact 0. The plan's text says 841 + 902; the live count is 971 + 902. The live numbers are the ones step 8 below is sized against, and the discrepancy is recorded rather than resolved here because the plan's figure is the older reading.",
+      "would_unblock": "applying 072 to the candidate database as step 6 describes, then recording the applied head beside the app digest so the two can be shown to match"
+    },
+    "restore_evidence": {
+      "state": "blocked",
+      "requires": "a completed restore into an isolated copy, with the acknowledged-write replay that proves nothing was lost across the boundary",
+      "read_from": "the restore and cutover-rehearsal observation records an operator produces while executing deploy/RESTORE-AND-CUTOVER.md",
+      "recorded_here": null,
+      "evidence": null,
+      "reading": "deploy/RESTORE-AND-CUTOVER.md is a PROCEDURE, not a result. No observation record from a run of it exists in this checkout: there is no artifacts/ directory at all, and ZZ_TENANT_INFO_CUTOVER_OBSERVATIONS names a file an operator writes on a rehearsal host, which nobody here has. A document describing how to obtain evidence is not the evidence.",
+      "would_unblock": "an operator executing deploy/RESTORE-AND-CUTOVER.md end to end on a throwaway host with no route to production, producing the restore and cutover-rehearsal records, and the acknowledged-write replay coming back whole"
+    },
+    "parity_evidence": {
+      "state": "blocked",
+      "requires": "a demonstrated match between what the old deployment holds and what the new one will serve — projection parity against an isolated copy, and a semantic comparison between canonical records and the published generation",
+      "read_from": "the migration suite's parity cases and the benchmark report's semantic_parity target",
+      "recorded_here": null,
+      "evidence": "testing/mutation-report.json",
+      "reading": [
+        "The artifact that exists is a MUTATION report, and it evidences something real but",
+        "different. Read on disk: 66 rows, baseline PASSED with zero failed ids, every one of the",
+        "66 failing under its planted defect, 79 substitutions, no row with zero replacements, no",
+        "build or prebuild failure, and restored_digest equal to that row's own snapshot on all 66.",
+        "",
+        "TWO THINGS ABOUT THAT ARTIFACT A READER SHOULD NOT BE ALLOWED TO ROUND OFF. It was taken",
+        "across THREE trees, not one: 60 rows against 40fcce444a020890, 5 against 08594336104462fc",
+        "and 1 against 3ac24313cc3594945e41222a25a4d255b6cbf8136d1c5dcf1ae5586d2124f4c1. That is",
+        "honest rather than misleading precisely because every row names the digest it was measured",
+        "against — but the report's top-level snapshot_tree_sha256 is the last of the three, which",
+        "65 of its 66 rows were not measured against, so quoting that one field as though it covered",
+        "the run would be a single-digest claim the run does not support. And its coverage is short:",
+        "66 rows against the 68 check files under scripts/gate/checks/ at the time of this reading.",
+        "The two uncovered are mutation-coverage.ts, re-planted after a mutation runner restored its",
+        "snapshot over the checkout, and activation-runbook.ts, the check that reads this file.",
+        "",
+        "What the report shows is that this gate's declared checks DISCRIMINATE — each goes red when",
+        "the thing it guards is broken, and the tree is restored byte-identical afterwards. It says",
+        "nothing whatever about whether the new deployment serves the same content as the old one,",
+        "which is what a cutover's parity evidence has to mean. Citing it as parity would be citing",
+        "the wrong measurement in the right-sounding words.",
+        "",
+        "The measurements that would be parity are all absent. deploy/RESTORE-AND-CUTOVER.md",
+        "section 7 records that projection_parity_against_the_isolated_database and",
+        "copied_multi_owner_store_projection_replay are a hardcoded NOT_RUN map reading no",
+        "environment variable — unimplemented, not merely unconfigured. semantic_parity is one of",
+        "the benchmark report's blocked targets. And AC-7.3 did not close: its producer runs and",
+        "refuses at preflight, because schema zz carries no `using bm25` index, all seven declared",
+        "corpora hold 0 artifacts against a pinned 780,000, and all 98 judged relevant artifacts",
+        "are unresolvable under the locators their qrels name. An available extension is not an",
+        "index and an applied DDL migration is not a populated projection."
+      ],
+      "would_unblock": "the conversion and rebuild that make the corpus present and searchable, which are separately owned and have not run; implementing the two migration-suite parity cases, which have no code behind them; and then running both against an isolated copy",
+      "and_the_assessor_protocol_is_not_parity_evidence_either": [
+        "packages/contracts/src/eval-protocol*.ts will look like evidence to the next reader, and it",
+        "is not. It is a DRAFTED, UNACTIVATED protocol: no arm has run, arm A has no method reference",
+        "because the legacy assessment path has not been pinned to anything in this repository, all",
+        "three tolerances are null, owner_approval_ref is null, and the case inventory's digest is",
+        "null with `enumerated` false. Its own header says the honest shape of that is a protocol",
+        "that may be drafted and may not be activated. So it is evidence that the assessor comparison",
+        "is DESIGNED AND NOT RUN — a real and useful fact, and not a measurement of anything. It says",
+        "nothing about projection or data parity, and it is named here so that nobody has to work out",
+        "for themselves that it does not count."
+      ]
+    },
+    "switch_authorization": {
+      "state": "blocked",
+      "granted_by": null,
+      "granted_at": null,
+      "scope": null,
+      "requires": "an explicit, recorded decision to switch production, made by somebody entitled to make it, naming what is being authorised and when",
+      "evidence": null,
+      "reading": "No authorisation exists. Nothing in this repository grants one and nothing in this delivery may be read as granting one. deploy/RESTORE-AND-CUTOVER.md says so about itself in its own preamble; this file says so about itself here.",
+      "why_no_grant_is_written_here": [
+        "The same reason `operator` carries no name. An authorisation written by the party that",
+        "wants to proceed is not an authorisation, and one written by a model is not even that.",
+        "`granted_by`, `granted_at` and `scope` are explicitly null rather than omitted, so that a",
+        "reader and a program both see an authority that was asked for and not given, rather than a",
+        "field somebody forgot."
+      ],
+      "would_unblock": "the authorising party recording the decision against a digest of this runbook and of the evidence the seven preconditions above cite, so the grant binds to what was actually true when it was given"
+    }
+  },
+  "steps": [
+    {
+      "n": 1,
+      "title": "Re-derive the preconditions and stop if any is blocked",
+      "does": "Read this file, list every precondition whose state is not `met`, and refuse to continue while the list is non-empty. This is the gate, and it is first because every step after it is harder to undo than the one before.",
+      "verification": "scripts/activation-rehearsal.ts prints the blocker list it derived and exits 0 only when that list is empty; it exits 3 when the rehearsal is clean and a precondition is blocked, 1 on a problem with the runbook itself, and 2 if the environment names a database it must not reach. Exit 0 is what permits step 2 — a clean rehearsal is not the same fact as a permitted activation, and only one of them is a zero. The derivation reads the eight `state` values and nothing else, so no field added to this document can shorten the list.",
+      "abort": "Stop here. Nothing has been touched. This is not a failure of the activation — it is the activation declining to start, which is the outcome it is supposed to have while anything is outstanding.",
+      "reversible": true
+    },
+    {
+      "n": 2,
+      "title": "Take a complete backup set and build its manifest",
+      "does": "Run deploy/backup.sh on the production host, copy one complete stamped set off-host, and build the manifest with deploy/backup-manifest.sh.",
+      "verification": "deploy/backup-manifest.sh produced a manifest listing all five components with their SHA-256 hashes, and refused nothing. Its refusals are real findings about the backup: an incomplete set, a store whose history does not bundle, or an archive carrying a half-initialised `.zz/`.",
+      "abort": "Stop. Production is untouched and still serving. A set that will not manifest is a set that would not restore, and discovering that now is the cheapest this discovery ever gets.",
+      "reversible": true
+    },
+    {
+      "n": 3,
+      "title": "Suspend: revoke future grants and admissions, and let in-flight work settle",
+      "does": "Put the three mutation paths — request, background and legacy client — into maintenance so no new work is admitted, stop issuing grants that would authorise more, and wait for in-flight work to finish. Record the file commit watermark per store and the database write boundary at the freeze.",
+      "verification": "Each mutation path reports maintenance true, and in-flight reaches zero within the timeout. If it does not, the count is recorded as STILL RUNNING AND UNKNOWN, never as stopped, and step 4 does not begin.",
+      "abort": "Lift maintenance and resume admissions. The old deployment continues on its own data. No content has moved.",
+      "reversible": true
+    },
+    {
+      "n": 4,
+      "title": "Freeze the old unit and record it as one matched thing",
+      "does": "Record the old application image digest, database identity and artifact volume together, and make the old artifact volume read-only. Resolve the volume from the Compose project rather than from a name somebody typed.",
+      "verification": "The recorded old unit names all three parts, the volume was resolved from the project, outbound integrations are disabled, and the old volume is genuinely read-only rather than merely intended to be.",
+      "abort": "Restore write access to the old volume and lift maintenance. Nothing new exists yet.",
+      "reversible": true
+    },
+    {
+      "n": 5,
+      "title": "Restore into a NEW database and a NEW volume",
+      "does": "Logical restore of the database dump into a newly created cluster, and extraction of the artifacts archive onto a separate new volume. Never mount an older major version's data directory into the new one, and never restore onto the old volume.",
+      "verification": "The restore completed with no errors — any error is fatal here, because a partial restore that looks finished is the failure this whole procedure exists to find. The new volume is a different volume from the old one, and the old one has not been written to.",
+      "abort": "Discard the new database and the new volume. The old unit is byte-identical to what step 4 froze and can simply be unfrozen.",
+      "reversible": true
+    },
+    {
+      "n": 6,
+      "title": "Apply migrations to the candidate head",
+      "does": "Apply the outstanding migrations to the new database, up to and including 072_write_path_records_its_analyzer.sql, which adds a nullable analyzer_version column to zz.doc and zz.knowledge_node.",
+      "verification": "The applied head equals the candidate head recorded in `database_version`, and the two columns exist and are nullable. Nullable is the honest state: no row written before this migration carries a value, and null says 'unknown' rather than naming an analyzer that did not build the vector.",
+      "abort": "Discard the new database and restore it again from step 5. Nothing outside the new unit has changed.",
+      "reversible": true
+    },
+    {
+      "n": 7,
+      "title": "Initialise the record layout on each owner store, on the NEW volume only",
+      "does": "Run deploy/init-record-layout.sh once per owner store root on the new artifact volume, with each path visible in the invocation. List the stores first and read the list before acting on it. The script takes exactly one existing directory, never searches, and has no recursive mode and no default.",
+      "verification": "Every owner store on the new volume carries all three of `.zz/`, `.zz/blobs` and `.zz/commits`. A second run on any store reports `already complete` and changes nothing, and the non-`.zz` content of each store hashes the same before and after — the script creates two empty directories and rewrites no document byte.",
+      "abort": "Nothing to undo: this step only ever touches the new volume, and abandoning the activation discards that volume whole. Were a layout ever created on a store that then went back to the old path, it would be two empty directories the old code never opens.",
+      "reversible": true
+    },
+    {
+      "n": 8,
+      "title": "Rederive the analyzer generation over the real rows",
+      "does": "Run the rederivation pass over the restored rows so an existing row's null analyzer_version becomes a real generation. Sized against the live counts: zz.doc 971 and zz.knowledge_node 902, not the plan's older figure of 841 + 902.",
+      "verification": "Every row in both tables carries a non-null analyzer_version naming the current generation, and the row counts after the pass equal the counts before it. The pass writes only on its explicit write flag; a bare run plans and writes nothing.",
+      "abort": "Discard the new database and return to step 5. This runs against the new unit only, and the environment it reads its connection from must name that unit and never production.",
+      "reversible": true
+    },
+    {
+      "n": 9,
+      "title": "Check the new unit with writes still frozen",
+      "does": "With admissions still suspended, exercise query behaviour, the restore's integrity, and the parity comparison the `parity_evidence` precondition names, against the new unit.",
+      "verification": "The parity comparison passes on the evidence `parity_evidence` cites — which is why that precondition blocks rather than warns. Query behaviour matches what the old unit served for the same requests. Writes are still frozen while this runs.",
+      "abort": "Discard the new unit entirely, unfreeze the old one, and lift maintenance. THIS IS THE LAST STEP AT WHICH ABORTING IS A CLEAN RETURN. Nothing outside the new unit has changed and no write has been accepted since the freeze.",
+      "reversible": true,
+      "last_clean_abort_point": true
+    },
+    {
+      "n": 10,
+      "title": "Switch traffic to the new unit",
+      "does": "Point the front door at the new application and its new database and volume. Writes remain suspended.",
+      "verification": "Every request is served by the new unit; no request is still reaching the old one. The old unit remains frozen and read-only rather than stopped, so step 9's return is still physically available until step 11 accepts a write.",
+      "abort": "Point the front door back at the old unit and discard the new one. Still clean, because no write has been accepted anywhere since the freeze — but this is the last moment that sentence is true.",
+      "reversible": true
+    },
+    {
+      "n": 11,
+      "title": "Resume writes, and record the first one that is accepted",
+      "does": "Lift maintenance on the three mutation paths, admit work again, and deliberately inject and record the first accepted write and the boundary it lands after.",
+      "verification": "The first accepted write is recorded with the identity one accepted mutation actually has in this schema, and the resume boundary is recorded beside it. A resumed platform that cannot name its first write cannot later prove which writes were recovered.",
+      "abort": "NOT A CLEAN RETURN ANY MORE. Once a write is accepted on the new unit, going back to the old one means either carrying those writes forward onto it or losing them, and either outcome has to be a recorded decision rather than a rollback. Beyond this point abort means forward recovery from the new unit, with the recovered writes enumerated.",
+      "reversible": false
+    },
+    {
+      "n": 12,
+      "title": "Observe, and write the activation record",
+      "does": "Watch the resumed platform, replay the acknowledged writes across the boundary, and record what was done, by whom, against which digests, and what remained outstanding.",
+      "verification": "Every acknowledged write from before the freeze is present after it, and every write accepted after the resume is accounted for. The record names the operator from `operator` and the grant from `switch_authorization` — which is why both must be real before step 1 lets any of this begin.",
+      "abort": "Nothing to abort; this step only observes and records. A discrepancy found here is an incident on a live platform, handled as forward recovery, and it is the reason steps 2 and 9 are not optional.",
+      "reversible": false
+    }
+  ],
+  "suspension": {
+    "guaranteesWorkerStopped": false,
+    "what_it_does": [
+      "Stops admitting new work on the three mutation paths — request, background and legacy client — by putting each into maintenance.",
+      "Revokes the grants that would authorise further work, so nothing new becomes authorised while the switch is under way.",
+      "Waits for work already in flight to finish, and records the count that is still outstanding when the wait ends.",
+      "Records a boundary — a per-store commit watermark and a database write boundary — so that what happened before the freeze and what happened after it can be told apart later."
+    ],
+    "what_it_cannot_do": [
+      "It cannot guarantee a worker stopped. Suspension withdraws admission and authority; it does not reach into a process and halt it. A worker that is mid-operation when maintenance begins keeps running until it finishes or fails, and a worker that has stopped responding is indistinguishable from one that is working slowly.",
+      "It cannot undo a completed external effect. Anything already sent outside this platform — a call made, a message delivered, a credential used — stayed sent. Suspension is a boundary on what happens next, not a reversal of what happened.",
+      "It cannot cancel a non-cancellable process, and must never report one as cancelled. Where the wait times out, the honest record is the count still outstanding and the fact that their state is unknown.",
+      "It cannot make default-off mean safe-in-general. Leaving a capability off prevents unintended enrolment into it. It does not prevent a regression in code that everything shares, and no amount of not-enrolling anybody makes a change to the shared path harmless."
+    ],
+    "on_timeout": "Record the outstanding count as still running and unknown. Never as stopped, never as zero. A count nobody could confirm is not a count of zero, and step 4 does not begin on one.",
+    "reversal": "Suspension is lifted by resuming admissions and reissuing the grants it revoked. That restores the ability to start new work; it does nothing about work that ran while suspension was in force, because that work already happened."
+  },
+  "rollback": {
+    "weakensCurrentSecurity": false,
+    "returns_to": "the matched old unit recorded at step 4 — the old application image, its database and its artifact volume, all three together",
+    "clean_until": "the end of step 10. Step 11 accepts a write on the new unit, and from that moment a return to the old unit either carries those writes forward or loses them.",
+    "after_that": "forward recovery from the new unit, with every recovered write enumerated and the loss, if any, recorded as a decision somebody made rather than as a rollback that happened",
+    "invariants_a_rollback_may_not_trade_away": [
+      "The record layout refusal stays. services/zz-core/src/tenant-info/record.ts refuses STORE_UNAVAILABLE when a store's `.zz/` layout is incomplete, and that refusal is not to be relaxed to make a rollback smoother. The alternative is a failed mount being read as a tenant with no documents, and the next thing that happens to an empty tenant is that something helpfully reconstructs them.",
+      "Rolling a method back may not weaken the identity or storage safeguards the platform currently has. A returned-to version is allowed to lack a new capability; it is not allowed to admit a caller the current version refuses, or to store something the current version protects.",
+      "No automatic downgrade may widen what anybody can see or do. If a fallback path would expand data exposure or authority, it is not a fallback — it is a second, weaker deployment, and it needs its own decision rather than inheriting this one."
+    ],
+    "what_rollback_does_not_reverse": "Completed external effects, exactly as under `suspension`. Returning the platform to its old unit does not unsend what was sent."
+  },
+  "scope_limits": {
+    "a_staged_fix_is_not_readiness": "Migration 072 sitting in the working tree, and this procedure describing how to apply it, together establish that somebody has written down what to do. They do not establish that the platform is ready to do it. Staging a legacy fix and being natively ready are different claims and this file makes only the first.",
+    "fixtures_are_not_production": "The new framework may be built and exercised on copied fixtures while the operational migration is outstanding. What it may not do is claim active native guarantees over production artifacts that have not been migrated. Production holds 971 documents and 902 knowledge nodes with no analyzer_version column and no bm25 index; nothing rehearsed on a copy says anything about those rows until step 8 has actually run against them.",
+    "default_off_scope": "Default-off prevents unintended enrolment. It is not a general safety property and it does not bound regressions in shared code."
+  },
+  "rehearsal": {
+    "is_not_an_execution": "Everything recorded here was done on copies in a temporary directory. No step was performed against production, no database was contacted, and steps 2 through 6 and 8 through 12 were not performed at all. A rehearsal that reached production would be an execution, and this procedure has not been executed.",
+    "performed_by": "scripts/activation-rehearsal.ts",
+    "performed_at": "2026-09-21T16:31:31.066Z",
+    "established": [
+      "the activation gate refuses while any precondition is blocked: 8 of 8 are blocked today and the derived verdict is REFUSE",
+      "the blocker list is derived from the eight precondition states alone — a copy of the runbook carrying waivePreconditions, activation_allowed and executed derives the identical list, so there is no path past a blocked precondition",
+      "every step carries a verification and an abort point, and exactly one step is marked as the last moment at which aborting is a clean return",
+      "step 7 turns a copied store with no record layout into one carrying all three of .zz/, .zz/blobs and .zz/commits",
+      "step 7 is idempotent on a copied store: a second run reports the layout already complete and changes nothing",
+      "step 7 repairs a half-initialised copied store rather than refusing it — the state that refuses every write while looking initialised to anybody who lists the directory",
+      "the copied store's documents hash identically before and after all three runs (sha256 55bda3554cfc4c46), so step 7 creates directories and rewrites no document byte"
+    ],
+    "did_not_establish": [
+      "It did not run the activation. No step was performed against production and no database was contacted; this script refuses to start if a connection variable is set.",
+      "It did not rehearse steps 2 to 6 or 8 to 12. Backup and manifest, drain, freeze, restore, migration, rederivation, the frozen-write checks, the traffic switch, the resume and the activation record all need a deployment, and rehearsing them needs the throwaway host deploy/RESTORE-AND-CUTOVER.md describes rather than this checkout.",
+      "It did not produce restore evidence or parity evidence. Exercising step 7 on a copied store says nothing about whether a restored deployment serves what the old one held.",
+      "It did not establish native readiness. A migration staged in the working tree and a procedure describing how to apply it are not the same claim as a platform ready to apply it, and nothing rehearsed on a copy speaks for the unmigrated production rows.",
+      "It did not verify that suspension stops a worker, because suspension does not do that and no rehearsal could show that it did."
+    ],
+    "note": "The MEASURED fields of this block — performed_at, fixtures, derived_gate, blocked_preconditions, established and did_not_establish — are written by scripts/activation-rehearsal.ts and by nothing else. `is_not_an_execution` and this note were written by hand and are carried through a recording unchanged. The script may write this block and refuses to modify any precondition, so a rehearsal cannot mark its own gate met.",
+    "fixtures": "a store-shaped directory in a temporary path, holding copies of real files from this repository; removed when the run ends",
+    "derived_gate": "REFUSE",
+    "blocked_preconditions": 8
+  }
+}

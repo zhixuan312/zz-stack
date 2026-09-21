@@ -20,8 +20,13 @@
  * is that a report with no measurements in it must not evaluate to a pass: an absent target is
  * `blocked`, never `0`, never an omission a reader mistakes for success. `evaluateTargets({})`
  * returns all eighteen targets blocked and `passed: false`, which is the state this repository
- * is actually in — no PostgreSQL 17 cluster, no `pg_textsearch` bm25 index and no projected
- * row exists on any reachable cluster, so not one of the eighteen has ever been observed.
+ * is actually in. The reason is now narrower than it was: measured against the production
+ * cluster on 2026-09-21, PostgreSQL 17.11 IS reachable and `pg_textsearch` 1.4.0 IS installed,
+ * so the first of the three premises this comment used to rest on has become false. What still
+ * blocks every one of the eighteen is the other two — `zz` carries no bm25 index at all, and
+ * `zz.artifact` and all three `zz.search_*_default` projections hold zero rows. Availability of
+ * the extension is not an index, and an applied DDL migration is not a populated projection;
+ * conversion and rebuild are separately owned work that has not run.
  */
 import { planCorpora } from "./inventory.ts";
 import {

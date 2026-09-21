@@ -1,6 +1,6 @@
 ---
 name: sdlc-investigate
-version: 1.0
+version: 1.2
 description: Answer one specific question about material inside this system — code, config, specs, data, documents — with grounded file:line citations and calibrated confidence. Read-only. Dispatched by sdlc-explore, one question per worker.
 when_to_use: "One convergent question about this system needs a grounded answer: how something works, where something lives, what something depends on. Dispatched by sdlc-explore as part of its fan-out, or reached directly when a single fact is blocking. Not for surveying a subject — that is the whole fan-out, not one worker."
 ---
@@ -145,3 +145,47 @@ Your FINAL text response must be exactly one JSON block (do NOT write it to a fi
 ```json
 {"answer": "<synthesis with inline file:line citations>", "criteriaCovered": ["direct-symbol-trace", "caller-analysis", "test-driven", "cross-file-dependency-map", "documentation-comment-lens"], "findings": [{"weight": "critical|high|medium|low", "category": "<perspective-slug>", "claim": "<one sentence>", "evidence": "<extracted text from file>", "file": "<path>", "line": 0}]}
 ```
+
+## Skill contract
+
+**Outcome:** the one question you were dispatched with, resolved in your first sentence in plain
+language and backed by `file:line` citations at the confidence the evidence supports, returned as
+one JSON block of text. You write no file: the caller synthesises your answer into `explore.md`,
+which is why the citations have to be exact.
+
+**Required evidence:** for a present thing, `file:line` — or the equivalent locator for material
+with no line numbering, with `line` omitted rather than invented — holding the cited content as of
+your read this session. For an absent thing, the explicit negative: "searched `<pattern>` in
+`<path>`, no matches". For a synthesis claim, every link in the chain cited separately. Reasoning
+from training data is not evidence and may not be cited.
+
+**Allowed unknowns:** the second question you found while answering the first — name it, do not
+answer it. Anything outside the question you were given. A chain carrying one or two inferred
+steps is an allowed unknown provided confidence is `medium` and the file to confirm against is
+named. An unknown rated `high` is not an unknown; it is an overstatement.
+
+**Work roles:** retrieval here is deterministic — grep, glob, read — and the reading, the five
+perspectives and the synthesis are this agent's own. Nothing re-reads your citations, so no
+reviewing role stands behind you and the self-validation rubric is yours to run and mean. The
+`semantic-assessment` role answers the bounded questions below by question ID from the fixed set
+below. Nothing in this platform registers those IDs yet, so an implementation adopts these
+spellings rather than minting its own; it does not write the answer.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Per citation, before it enters the answer | `evidence_relation` | whether the cited line, as read this session, says what the claim says it says |
+| Per synthesis claim, at self-validation | `needs_verification` | whether a link in the chain is inferred, which caps confidence at `medium` and names the file to confirm against |
+| On the finished answer | `actionability` | whether the caller could act without re-deriving the finding, or is being handed the investigation instead of the answer |
+
+**Action and exit paths:** the action is read, cite, apply all five perspectives, calibrate,
+return. The exit is the JSON block as your final text response. No exit here writes, edits or
+proposes a fix: if the question implies one, answer the factual question behind it and stop.
+
+**Degraded behaviour:** the turn budget runs out before a confident answer, so emit what you have
+at the confidence the evidence supports rather than guessing to fill the gap. The subject contains
+no source code, which is a complete subject on its own terms and not a gap to report — investigate
+the material that is actually there, substituting its own structure for the code vocabulary. A
+negative finding is an answer and is never suppressed; read-only here is a discipline and not an
+enforced denial, so keeping it is yours.

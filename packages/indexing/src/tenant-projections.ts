@@ -36,6 +36,9 @@ import pg from "pg";
 
 import type { ArtifactClass, ArtifactEvent, ContentRevision } from "@zz/contracts";
 
+import { analyze } from "./tenant-analysis.js";
+import { parseQuery, type QueryClause } from "./query-grammar.js";
+
 // ── the smallest shape a caller's pool/client already has ──────────────────────────────────
 
 export interface ProjectionClient {
@@ -398,4 +401,159 @@ export async function ensureCorpus(client: ProjectionClient, corpusKey: string):
     await client.query(
       `create index if not exists ${table.replace(".", "_")}_bm25 on ${table} using bm25 (raw_body) with (text_config='english')`);
   }
+}
+
+// ── the native lane set: which of exact / BM25 / fuzzy-identifier / typed-provenance a query
+//    actually reaches, over Chinese prose exactly as over Latin, through the shared analyzer ──
+//
+// TAGS ARE FILTERS AND TIE-BREAKS, NEVER A LANE. `zz.search_current`/`evidence`/`history` all
+// carry a `tags` GIN index (`ensureCorpus` above) for narrowing and ranking a result set that
+// another lane already produced — they are never themselves a way to reach a row nothing else
+// found. Reintroducing a tag lane here is the one regression this task's Contract names by
+// name, so `lanesFor` below has no branch that can ever push `"tag"` into its result.
+//
+// "RECORDED AS NOT APPLICABLE — NEVER AS ZERO RESULTS." A lane this module excludes for a
+// query never ran: it has no ranking, no cost, and nothing to report as empty. `lanesFor`
+// reflects that at the type level by simply leaving an inapplicable lane out of its returned
+// array, rather than returning all four with a `matched: false` flag a caller could mistake
+// for "ran and found nothing". Each lane that IS returned still carries its own
+// `LaneApplicability` — the rule that let it in — so a caller building "not applicable" text
+// for the lanes NOT returned has the same rule objects to draw the negative from, without
+// `lanesFor` itself having to enumerate every lane it declined.
+//
+// WHAT THIS FUNCTION DOES NOT DO: it does not run a query, touch `ProjectionClient`, or read
+// `zz.artifact_passage`/`zz.artifact_identifier` — nothing populates those tables yet (see
+// this file's own header; `applyCommit` above stops short of them on purpose). `lanesFor` is
+// the routing decision a real retrieval call would make BEFORE it queries anything; wiring it
+// to an actual corpus, ranking within a lane and fusing lanes into one ordered result is later
+// work this task's Plan boundary excludes ("final deliverable content is not in this plan").
+//
+// NO SECOND ANALYZER OR QUERY PARSER. Every applicability rule below reads a query exactly the
+// way the rest of this platform already does: `parseQuery` (`query-grammar.ts`, Task I-7) for
+// the clause a person typed — quotes, a leading `-` exclusion, `OR` alternation — and `analyze`
+// (`tenant-analysis.ts`, `zz-lexical-v2`, Task I-6) for whether the shared analyzer finds any
+// term to rank at all. Natural-mode ranking hints and legacy conjunction semantics are that
+// other file's own concern and are not read here.
+
+/** The four lanes this module can route a query to. No `"tag"` member exists — see this
+ *  section's header — so a caller cannot even type a tag lane into existence here. */
+export type LaneName = "exact" | "bm25" | "fuzzy" | "provenance";
+
+/** The rule that let one lane into a `lanesFor` result: a short machine-stable `rule` id (for
+ *  a caller that branches on it) plus a `detail` sentence a person can read as-is when
+ *  explaining why a lane did, or — read against a lane `lanesFor` left out — did not, run. */
+export interface LaneApplicability {
+  readonly rule: string;
+  readonly detail: string;
+}
+
+/** `name` is `string`, not the narrower `LaneName`, ON PURPOSE: a caller checking a returned
+ *  lane set against a lane that must NEVER appear — `names.includes("tag")`, exactly this
+ *  task's own frozen check — has to be able to ask that question about a value outside the
+ *  union without TypeScript refusing the comparison as unreachable. `lanesFor` itself still
+ *  only ever constructs a `name` from `LaneName` (`pushLane` below is where that is pinned),
+ *  so the widened field type gives up no real safety — it only stops the widened union from
+ *  fighting the one check written to interrogate it. */
+export interface LaneDescriptor {
+  readonly name: string;
+  readonly applicability: LaneApplicability;
+}
+
+const HAN_SCALAR = /\p{Script=Han}/u;
+
+/** A clause reads as identifier-shaped when it carries the internal structure an identifier
+ *  has and ordinary prose does not: a delimiter (`.`, `_`, `/`, `-`, `:`), a camelCase or
+ *  acronym transition, or a letter-digit boundary — the exact boundary set
+ *  `identifierTokens` (`tenant-analysis.ts`) splits on. A bare lowercase word like `"reader"`
+ *  has none of these and is left to the BM25 lane; `"primary_evidence-000037.txt"` and
+ *  `"httpServer2"` both do. Han text is never identifier-shaped — Chinese prose is served by
+ *  the shared analyzer's BM25 lane, never by pretending the identifier lanes (which key off
+ *  `zz.artifact_identifier`, a Latin-identifier table) contain bodies. */
+function isIdentifierShaped(raw: string): boolean {
+  if (HAN_SCALAR.test(raw)) return false;
+  if (!/[A-Za-z0-9]/.test(raw)) return false;
+  return /[._/:-]/.test(raw) || /[a-z0-9][A-Z]/.test(raw) || /[A-Za-z][0-9]/.test(raw) || /[0-9][A-Za-z]/.test(raw);
+}
+
+/** The narrower shape `provenance` keys off: identifier-shaped AND carrying a `.` or `/`, the
+ *  two scalars that make an identifier read as a concrete artifact reference (an extension, a
+ *  path) rather than merely a structured token like `httpServer2`. Typed neighbours
+ *  (`zz.artifact_edge`'s `derived_from`/`cites` rows) are asserted about one specific artifact,
+ *  so this lane's rule is deliberately narrower than `exact`'s — the same underlying shape,
+ *  owned by this lane on its own stricter terms rather than reused as-is. */
+function isArtifactReferenceShaped(raw: string): boolean {
+  return isIdentifierShaped(raw) && /[./]/.test(raw);
+}
+
+/** Every non-excluded leaf clause a query folds to, alternation operands included — an
+ *  exclusion (`-foo`) is a negative filter on a lane's results, never a positive signal that a
+ *  lane should run, so it is left out here rather than treated the same as a term or phrase. */
+function positiveLeaves(clauses: readonly QueryClause[]): QueryClause[] {
+  const leaves: QueryClause[] = [];
+  for (const clause of clauses) {
+    if (clause.kind === "exclude") continue;
+    if (clause.kind === "alternation") { leaves.push(...positiveLeaves(clause.alternatives ?? [])); continue; }
+    leaves.push(clause);
+  }
+  return leaves;
+}
+
+/** The one place a `LaneDescriptor.name` is ever constructed — pinned to `LaneName`, so
+ *  `lanesFor` itself cannot typo a lane name or, still less, push `"tag"`, even though the
+ *  field the caller reads back is the wider `string` explained on `LaneDescriptor` above. */
+function pushLane(lanes: LaneDescriptor[], name: LaneName, applicability: LaneApplicability): void {
+  lanes.push({ name, applicability });
+}
+
+/** Routes one query to the native lanes it actually reaches. Four independent rules, each
+ *  reading `query` through `parseQuery`/`analyze` rather than a second parser of its own:
+ *
+ *   `exact`      — a positive clause is identifier-shaped: looked up by its unsplit spelling.
+ *   `bm25`       — the shared `zz-lexical-v2` analyzer produces at least one base term (a Han
+ *                  unigram or a Latin word) to rank, which is true of Chinese prose exactly as
+ *                  it is true of English prose — the same analyzer, the same rule, no
+ *                  Han-specific branch.
+ *   `fuzzy`      — a positive clause is identifier-shaped AND at least 3 scalars long, the
+ *                  floor a GiST trigram index needs to mean anything; never reached by prose,
+ *                  Han or Latin, because `isIdentifierShaped` already excludes it.
+ *   `provenance` — a positive clause is artifact-reference-shaped (identifier-shaped plus a
+ *                  `.` or `/`): specific enough to name one artifact whose typed
+ *                  `zz.artifact_edge` neighbours can be resolved.
+ *
+ *  No `"tag"` branch exists, ever — see this section's header. A lane whose rule finds nothing
+ *  to match is simply absent from the returned array; `lanesFor` never fabricates a zero-result
+ *  entry for it. `QueryParseError` from a malformed `query` (an unterminated quote) propagates
+ *  to the caller unchanged, exactly as `parseQuery`'s own contract requires — never silently
+ *  flattened into "no lanes apply". */
+export function lanesFor(query: string): LaneDescriptor[] {
+  const leaves = positiveLeaves(parseQuery(query).clauses);
+  const identifierLeaves = leaves.filter((c) => isIdentifierShaped(c.text));
+  const hasAnalyzableTerm = leaves.some((c) => analyze(c.text).base.length > 0);
+
+  const lanes: LaneDescriptor[] = [];
+  if (identifierLeaves.length > 0) {
+    pushLane(lanes, "exact", {
+      rule: "identifier-shaped-clause",
+      detail: "at least one clause carries an unsplit identifier spelling (a delimiter, camelCase/acronym or letter-digit boundary), looked up verbatim against zz.artifact_identifier.identifier_text",
+    });
+  }
+  if (hasAnalyzableTerm) {
+    pushLane(lanes, "bm25", {
+      rule: "analyzable-base-term",
+      detail: "the shared zz-lexical-v2 analyzer produced at least one Han or Latin base term to rank with pg_textsearch bm25 — true of Chinese prose exactly as of English prose",
+    });
+  }
+  if (identifierLeaves.some((c) => Array.from(c.text).length >= 3)) {
+    pushLane(lanes, "fuzzy", {
+      rule: "identifier-shaped-clause-trigram-length",
+      detail: "an identifier-shaped clause of at least 3 scalars exists for GiST trigram fuzzy matching over identifiers only, never over prose bodies",
+    });
+  }
+  if (identifierLeaves.some((c) => isArtifactReferenceShaped(c.text))) {
+    pushLane(lanes, "provenance", {
+      rule: "artifact-reference-shaped-clause",
+      detail: "an identifier-shaped clause also carries a '.' or '/', specific enough to name one artifact whose typed zz.artifact_edge neighbours (derived_from, cites) are resolvable",
+    });
+  }
+  return lanes;
 }

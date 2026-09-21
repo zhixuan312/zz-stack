@@ -1,0 +1,437 @@
+{
+  "registry_version": "1.0.0",
+  "flow": "sdlc-flow",
+  "generated_for": "Task I-16 — AC-8.1, AC-8.5",
+  "supported_backend": "@zz/zz-core",
+  "supported_backend_version": "0.62.4",
+  "evidence_standard": "An entry is `platform` (or `flow_controller`, the same bar for code that sequences a flow's stages at runtime) only when a real handler is named at file and symbol AND an EXECUTABLE test drives it in both directions — the refusal fires, and a legitimate control is allowed. Three forms of test are accepted, and nothing else is: (1) a live chain-check probe under `packages/tools/src/testing/` that CALLS the tool over its real door and asserts both the refusal and a successful control — the strongest form, run by `scripts/release.ts` against a live deployment; (2) a check under `checks/` that imports the compiled module and drives the enforcing predicate the handler calls, where the handler's call site is cited at file:line so the predicate is demonstrably not an orphan; (3) a check under `checks/` that lifts the handler's own refusal conditions out of its comment-stripped source and EVALUATES them over every combination of the inputs. A check that regexes source text, an export that exists, and a unit test over a subsystem nothing else imports satisfy none of these. `analytical_review` is used where a real handler enforces the claim but NO executable test of any of the three forms drives it — the handler is still named, so the gap is visible rather than hidden, and the entry is promoted to `platform` the day a test drives it. `convention` is used where nothing executable enforces the claim at all.",
+  "enforcement_classes": {
+    "platform": "Refused by the platform's own code, and a check drives that refusal in both directions.",
+    "flow_controller": "Computed by the platform's flow machinery at runtime, and a check drives it in both directions.",
+    "convention": "Nothing executable enforces it. A named reader is responsible for verifying it.",
+    "analytical_review": "A real handler enforces it, but no executable test drives that handler. A named reader verifies it by reading the handler. The four classes have no slot for enforced-but-untested; this is where those entries sit, with `handler` populated so the gap is legible."
+  },
+  "notes_on_duplicate_claims": "Several skills state the same guarantee in their own words. Each such sentence maps to exactly one entry: the entry carries the primary `skill`/`locator`, and every other sentence stating the same guarantee is listed in `also_claimed_in`. No claiming sentence found in the thirteen skills is left unmapped.",
+  "rules": [
+    {
+      "rule_id": "documents.envelope_written_by_platform",
+      "skill": "sdlc-method",
+      "locator": "## Where things live — all of it on the platform, none of it local (SKILL.md:168-171)",
+      "claim": "Every document carries an envelope, and the platform writes all of it. You send the document's BODY — markdown starting at its first heading — and content that opens with frontmatter is refused.",
+      "enforcement_class": "platform",
+      "schema": "packages/contracts/src/index.ts::Envelope",
+      "handler": "services/zz-core/src/document-rules.ts::frontmatterRefusal, called by services/zz-core/src/tools/artifacts.ts::registerArtifactTools at artifacts.ts:61 (document_write) and by services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools at initiative-acts.ts:204 (document_revise)",
+      "behavioural_test": "checks/document-rules.ts:55-56 — refuses content opening with `---`, allows a body starting at its title",
+      "test_drives": "services/zz-core/dist/document-rules.js",
+      "report": "node checks/document-rules.ts",
+      "also_claimed_in": [
+        "sdlc-audit-criteria/SKILL.md:58",
+        "sdlc-review/SKILL.md:40",
+        "sdlc-plan/SKILL.md:243-244",
+        "sdlc-explore/SKILL.md:90"
+      ]
+    },
+    {
+      "rule_id": "documents.caller_may_not_write_envelope_fields",
+      "skill": "sdlc-spec",
+      "locator": "## What this skill is for (SKILL.md:28-29)",
+      "claim": "the platform stamps `status`, `approved_by` and `approved_at` itself, refuses those three written by hand",
+      "enforcement_class": "platform",
+      "schema": "services/zz-core/src/document-rules.ts::RESERVED_ENVELOPE, derived from packages/contracts/src/index.ts::Envelope.shape",
+      "handler": "services/zz-core/src/document-rules.ts::fieldRefusal (called at services/zz-core/src/tools/artifacts.ts:61 and services/zz-core/src/tools/initiative-acts.ts:204) and services/zz-core/src/document-rules.ts::envelopeEditRefusal (called at services/zz-core/src/tools/artifacts.ts:324, document_patch)",
+      "behavioural_test": "checks/document-rules.ts:59-68 — `fieldRefusal({status})` and `envelopeEditRefusal(base, base with status changed)` refuse; a plain caller field (59) and an unchanged envelope (67) are allowed. Also exercised end to end on a live deployment: packages/tools/src/testing/chain-check.ts:356 ('an approval written by hand is refused') and :499 ('an outcome written by hand is refused')",
+      "test_drives": "services/zz-core/dist/document-rules.js",
+      "report": "node checks/document-rules.ts"
+    },
+    {
+      "rule_id": "documents.approval_records_who_and_when",
+      "skill": "sdlc-method",
+      "locator": "## Where things live — all of it on the platform, none of it local (SKILL.md:170-171)",
+      "claim": "`approved_by`, `approved_at`, `outcome` and `closed_by` come from `document_approve()` and `initiative_close()`.",
+      "enforcement_class": "platform",
+      "schema": "packages/contracts/src/index.ts::Envelope",
+      "handler": "services/zz-core/src/write-guards.ts::attributionCheck:129, reached through services/zz-core/src/guards.ts::documentGuards:354, which dispatches to it at services/zz-core/src/guards.ts::attributionCheck:363, from services/zz-core/src/tools/initiative-acts.ts:120 (document_approve)",
+      "behavioural_test": "checks/write-guards.ts:63-78 — an approval with no `approved_at` (70), with a role word as approver (74) or with `unknown` (76) is refused; an approval carrying a real signer and date (68, 78) and a draft carrying neither (72) are allowed. Confirmed against the live door by packages/tools/src/testing/chain-check.ts:398 ('document_approve() stamps an approver AND a day')",
+      "test_drives": "services/zz-core/dist/write-guards.js",
+      "report": "node checks/write-guards.ts"
+    },
+    {
+      "rule_id": "spec.eight_headings_required_at_approval",
+      "skill": "sdlc-spec",
+      "locator": "### Phase B — the skeleton (SKILL.md:235-238)",
+      "claim": "All eight headings, always — the platform requires them. `flow.json` declares the eight for `spec.md`, and the platform refuses the APPROVAL of a spec missing any of them.",
+      "enforcement_class": "platform",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections — the eight headings this flow declares",
+      "handler": "services/zz-core/src/write-guards.ts::sectionCheck:205, reached through services/zz-core/src/guards.ts::documentGuards:354, which dispatches to it at services/zz-core/src/guards.ts::sectionCheck:364, from services/zz-core/src/tools/initiative-acts.ts:120 (document_approve)",
+      "behavioural_test": "checks/write-guards.ts:80-86 — a DRAFT missing a declared section is allowed (82), an APPROVED document missing one is refused (84), and a complete approved document is allowed (86)",
+      "test_drives": "services/zz-core/dist/write-guards.js",
+      "report": "node checks/write-guards.ts",
+      "enum": {
+        "name": "spec.md sections",
+        "closed": true,
+        "claimed": [
+          "Context",
+          "Problem",
+          "Goals & Requirements",
+          "Alternatives",
+          "Approach, Method & Structure",
+          "Verification Plan",
+          "Risks & Mitigations",
+          "Stakeholders & Work"
+        ],
+        "emitted_from": "catalog/sdlc/sdlc-flow/flow.json documents[name=spec.md].sections"
+      },
+      "also_claimed_in": [
+        "sdlc-spec/SKILL.md:424",
+        "sdlc-spec/SKILL.md:502",
+        "sdlc-spec-audit/SKILL.md:49"
+      ]
+    },
+    {
+      "rule_id": "documents.outcome_vocabulary_is_closed",
+      "skill": "sdlc-flow",
+      "locator": "### After review · the close is an act, not a stage (SKILL.md:136-138)",
+      "claim": "The platform derives `outcome`, writes it into `review.md`, which this flow declares as its closing document, and appends the team's ledger row.",
+      "enforcement_class": "platform",
+      "schema": "packages/contracts/src/index.ts::OUTCOMES (index.ts:252)",
+      "handler": "services/zz-core/src/write-guards.ts::outcomeCheck:74, reached through services/zz-core/src/guards.ts::documentGuards:354, which dispatches to it at services/zz-core/src/guards.ts::outcomeCheck:362; the derivation itself is services/zz-core/src/tools/initiative-close.ts::registerInitiativeCloseTool:26, typed from OUTCOMES",
+      "behavioural_test": "checks/write-guards.ts:57-61 — `delivered` (58) and `accepted` (59) are allowed, `shipped` (61) is refused. The derivation is exercised over the live door by packages/tools/src/testing/chain-check.ts:523 ('a close accepted by a person is recorded')",
+      "test_drives": "services/zz-core/dist/write-guards.js",
+      "report": "node checks/write-guards.ts",
+      "enum": {
+        "name": "OUTCOMES",
+        "closed": true,
+        "claimed": [
+          "delivered",
+          "accepted",
+          "abandoned"
+        ],
+        "emitted_from": "packages/contracts/src/index.ts::OUTCOMES"
+      }
+    },
+    {
+      "rule_id": "revise.version_names_its_material",
+      "skill": "sdlc-flow",
+      "locator": "## The sequence — Four documents, and the audits produce none of them (SKILL.md:48-51)",
+      "claim": "the platform refuses that revision until the source is cited — so a round is on the record, findable from the document it changed",
+      "enforcement_class": "platform",
+      "schema": "services/zz-core/src/tools/initiative-acts.ts document_revise inputSchema — `sources: z.array(...)` and `source_content: z.string()`",
+      "handler": "services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools, document_revise, initiative-acts.ts:218-229 (the `causes` guard)",
+      "behavioural_test": "checks/revise-cause.ts:70-133 — lifts the handler's own refusal conditions out of the comment-stripped source and EVALUATES them over all four combinations of the cause fields: no material refuses; `sources` alone, `source_content` alone, and both together are each allowed; and the refusal is asserted to name at least two routes the tool's real schema declares",
+      "test_drives": "services/zz-core/src/tools/initiative-acts.ts (conditions lifted and executed via new Function)",
+      "report": "node checks/revise-cause.ts",
+      "also_claimed_in": [
+        "sdlc-method/SKILL.md:201-203",
+        "sdlc-plan/SKILL.md:323"
+      ]
+    },
+    {
+      "rule_id": "method.freeform_initiative_has_no_next_move",
+      "skill": "sdlc-method",
+      "locator": "## Where things live — THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED (SKILL.md:192-194)",
+      "claim": "Opening WITHOUT one is a legitimate choice rather than a mistake: nothing is enforced on that initiative, and `initiative_status` says so by answering `next_move: null` instead of inventing a stage.",
+      "enforcement_class": "flow_controller",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json stages[] and documents[] — the chain `initiativeState` reads",
+      "handler": "services/zz-core/src/tools/initiative-status.ts::initiativeState, registered by services/zz-core/src/tools/initiative-status.ts::registerInitiativeStatusTools (initiative-status.ts:418)",
+      "behavioural_test": "checks/initiative-open.ts:187-234 — BOTH directions over a fixture store: a freeform initiative answers `next_move: null` with a stated reason, a closed freeform one answers `closed`, and a flow-governed one answers `write_document spec.md`",
+      "test_drives": "services/zz-core/dist/tools/initiative-status.js",
+      "report": "node checks/initiative-open.ts",
+      "also_claimed_in": [
+        "sdlc-flow/SKILL.md:264-266"
+      ]
+    },
+    {
+      "rule_id": "spec.gate_holds_plan_until_spec_is_approved",
+      "skill": "sdlc-spec",
+      "locator": "## Phase D — present, and hold (SKILL.md:449-451)",
+      "claim": "`spec.md` carries `gate: true`; the platform refuses `plan.md` until this document's approval is recorded, so an agreement that stays in the conversation stops the flow at its next step.",
+      "enforcement_class": "platform",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=plan.md].requires = \"spec.md\"",
+      "handler": "services/zz-core/src/guards.ts::gateCheck:225 (private to the module), reached through services/zz-core/src/guards.ts::documentGuards:354, which dispatches to it at services/zz-core/src/guards.ts::gateCheck:359, from services/zz-core/src/tools/artifacts.ts:104 (document_write)",
+      "behavioural_test": "packages/tools/src/testing/chain-check.ts:437-440 — writes the flow's LAST document first against a live deployment and requires the refusal to match /the flow writes it first|approval gate has not been recorded/; the successful control is the same walk writing and approving each document in declared order at chain-check.ts:452-458",
+      "report": "npm run chain-check (node packages/tools/dist/testing/chain-check.js), run by scripts/release.ts:119 against the live deployment. scripts/gate/checks/catalog-stages.ts:84-89 additionally reads `gateCheck`'s source text with a regular expression — that is a string match, not enforcement evidence, and is recorded here so nobody mistakes it for one.",
+      "note": "Requires ZZ_PUBLIC_URL and ZZ_TOKEN; scripts/release.ts:116 reports `unknown` without them, so this evidence is not reproducible from a bare checkout. No check under checks/ drives `gateCheck` — it is private to guards.ts. `documentGuards` IS exported and takes `root` explicitly, so a fixture-store check under checks/ is possible and would make this evidence reproducible offline.",
+      "also_claimed_in": [
+        "sdlc-spec/SKILL.md:29"
+      ]
+    },
+    {
+      "rule_id": "flow.close_refused_until_review_approved",
+      "skill": "sdlc-flow",
+      "locator": "### After review · the close is an act, not a stage (SKILL.md:141-144)",
+      "claim": "It is the closing document AND it carries a gate, so the platform refuses the close until `document_approve(\"<initiative>/review.md\")` is recorded",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading `closeCheck` against `flow.json`'s `closing`/`gate`/`requiredForClose` flags — there is no executing test of the platform's own guard",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[name=review.md] — gate, closing, requiredForClose",
+      "handler": "services/zz-core/src/guards.ts::closeCheck:23 (private to the module), reached through services/zz-core/src/guards.ts::documentGuards:354, which dispatches to it at services/zz-core/src/guards.ts::closeCheck:360, from services/zz-core/src/tools/initiative-close.ts:276",
+      "behavioural_test": null,
+      "report": "scripts/gate/checks/documents-lifecycle.ts:135-242 executes `auditInitiative` from packages/tools/src/testing/manifest-audit.ts over fixtures and asserts it agrees with these rules. That drives the AUDIT TOOL's copy of the rule, not `closeCheck`, so it is recorded as a report rather than as this entry's behavioural test.",
+      "note": "Enforced in code; no test drives the platform's own guard.",
+      "also_claimed_in": [
+        "sdlc-flow/SKILL.md:52-54"
+      ]
+    },
+    {
+      "rule_id": "plan.approved_plan_is_write_refused",
+      "skill": "sdlc-plan",
+      "locator": "## Revising an approved plan (SKILL.md:306-310)",
+      "claim": "`document_write` and `document_patch` are refused on it outright",
+      "enforcement_class": "platform",
+      "schema": "packages/contracts/src/index.ts::STATUSES (index.ts:226)",
+      "handler": "services/zz-core/src/guards.ts::approvedDocumentGuard:160 (private to the module), reached through services/zz-core/src/guards.ts::documentGuards:354, which dispatches to it at services/zz-core/src/guards.ts::approvedDocumentGuard:358, from services/zz-core/src/tools/artifacts.ts:104 (document_write) and services/zz-core/src/tools/artifacts.ts:338 (document_patch)",
+      "behavioural_test": "packages/tools/src/testing/chain-check.ts:459-463 — rewrites the first gated document after its approval against a live deployment and requires a refusal naming `document_revise`; the successful control is the same walk's earlier draft write of that document at chain-check.ts:453. The patch half is covered by packages/tools/src/testing/chain-freeform.ts:61 ('an approved freeform document is not patched afterwards')",
+      "note": "Requires a live deployment; no offline check drives `approvedDocumentGuard`, which is private to guards.ts.",
+      "also_claimed_in": [
+        "sdlc-plan/SKILL.md:20-21",
+        "sdlc-plan/SKILL.md:384"
+      ],
+      "report": "npm run chain-check, run by scripts/release.ts:119 against the live deployment"
+    },
+    {
+      "rule_id": "plan.patch_requires_a_unique_fragment",
+      "skill": "sdlc-plan",
+      "locator": "## Phase B — the skeleton and the passes (SKILL.md:254-256)",
+      "claim": "`document_patch` replaces a fragment that occurs EXACTLY ONCE and refuses one that repeats",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading the count-and-refuse line in document_patch — there is no executing test",
+      "schema": "services/zz-core/src/tools/artifacts.ts document_patch inputSchema — `find`, `replace`",
+      "handler": "services/zz-core/src/tools/artifacts.ts::registerArtifactTools, document_patch, artifacts.ts:302 (`if (n !== 1) return text(...)`)",
+      "behavioural_test": null,
+      "note": "Enforced in code; the condition is inline in the handler and nothing extracts or drives it."
+    },
+    {
+      "rule_id": "method.unknown_flow_refused_at_open",
+      "skill": "sdlc-method",
+      "locator": "## Where things live — `flow` is not decoration (SKILL.md:188-191)",
+      "claim": "a flow THE CATALOG does not have is refused by name at the open.",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading the `governingFlows` lookup in initiative_open — there is no executing test of this branch",
+      "schema": "@zz/catalog::governingFlows, imported at services/zz-core/src/tools/initiative-open.ts:28",
+      "handler": "services/zz-core/src/tools/initiative-open.ts::registerInitiativeOpenTool, initiative-open.ts:88-96",
+      "behavioural_test": null,
+      "report": "checks/initiative-open.ts drives `slugRefusal`, `takenRefusal`, `recordOpen`, `openRecord` and `unopenedRefusal` from this same tool, and harvests its real zod schema — but not this branch, which resolves through `governingFlows` inside the handler.",
+      "note": "Enforced in code; no test drives this branch."
+    },
+    {
+      "rule_id": "flow.knowledge_add_requires_evidence",
+      "skill": "sdlc-flow",
+      "locator": "## What this flow does NOT own (SKILL.md:178-179)",
+      "claim": "A node with no evidence is refused, and that is correct. `knowledge_add` will not mint an entry that cannot point at the initiative it came from",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading the evidence loop in knowledge_add — there is no executing test",
+      "schema": "services/zz-core/src/tools/knowledge.ts knowledge_add inputSchema — `evidence: z.array(z.string()).min(1)` (knowledge.ts:118)",
+      "handler": "services/zz-core/src/tools/knowledge.ts::registerKnowledgeTools, knowledge_add, knowledge.ts:212-238",
+      "behavioural_test": null,
+      "report": "scripts/gate/checks/knowledge.ts holds twenty-two source-level checks over the knowledge surface; none of them executes this refusal.",
+      "note": "Two halves, both enforced in code: the zod `.min(1)` refuses an empty array, and the handler refuses an entry that is not an initiative folder in a store the caller is a member of. Neither half is driven by a test."
+    },
+    {
+      "rule_id": "recall.knowledge_search_requires_a_team",
+      "skill": "sdlc-recall",
+      "locator": "## Degraded behaviour (SKILL.md:167-168)",
+      "claim": "`knowledge_search` is team-scoped and returns an error if the caller has no team",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading the `teamFor` guard in knowledge_search — there is no executing test",
+      "schema": "services/zz-core/src/platform-db.ts::teamFor",
+      "handler": "services/zz-core/src/tools/knowledge-search.ts::registerKnowledgeSearch, knowledge-search.ts:271-272",
+      "behavioural_test": null,
+      "note": "Enforced in code; the branch needs a platform database, so nothing under checks/ drives it."
+    },
+    {
+      "rule_id": "audit_criteria.undeclared_document_name_refused",
+      "skill": "sdlc-audit-criteria",
+      "locator": "## Step 3 — consolidate and emit (SKILL.md:159)",
+      "claim": "writing `spec-audit.md` into the initiative is a name `document_approve` would refuse as undeclared.",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading the membership test in document_approve against flow.json's four declared documents",
+      "schema": "catalog/sdlc/sdlc-flow/flow.json documents[] — explore.md, spec.md, plan.md, review.md",
+      "handler": "services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools, document_approve, the `chain.documents.length && !chain.docs.has(parts[1])` test (mirrored at initiative-acts.ts:242 in document_revise)",
+      "behavioural_test": null,
+      "report": "checks/initiative-open.ts:481-492 asserts the SHAPE of this membership test over comment-stripped source and labels itself 'source-level' for exactly this reason. checks/sdlc-documents.ts:24-26 asserts flow.json declares no `spec-audit.md`. Neither runs the refusal.",
+      "note": "Enforced in code; no test drives it."
+    },
+    {
+      "rule_id": "revise.supporting_source_must_be_cited",
+      "skill": "sdlc-audit-criteria",
+      "locator": "## What an audit round leaves behind (SKILL.md:45-47)",
+      "claim": "`supports` is what makes it findable: the platform refuses the next revision of that document until this source is cited",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading the `owed` computation in document_revise",
+      "schema": "services/zz-core/src/tools/artifacts.ts source_add inputSchema — `supports`, written into the source's own envelope",
+      "handler": "services/zz-core/src/tools/initiative-acts.ts::registerInitiativeActTools, document_revise, initiative-acts.ts:325-335",
+      "behavioural_test": null,
+      "note": "This is NOT the rule checks/revise-cause.ts drives. That check lifts only the conditions turning on `causes` — a revision citing nothing. This second, narrower rule reads the initiative's `sources/` directory for entries whose envelope `supports` this document, and nothing drives it.",
+      "also_claimed_in": [
+        "sdlc-plan-audit/SKILL.md:35-36",
+        "sdlc-plan/SKILL.md:322-325"
+      ]
+    },
+    {
+      "rule_id": "handover.proposed_team_nodes",
+      "skill": "zz-handover",
+      "locator": "skills/zz-handover/SKILL.md:228-245 — 'Declare how many team nodes you proposed, in the write's own `fields`'",
+      "claim": "That number is not decoration and it is not a duplicate of the section above it. `## Proposed for the team` is prose, and the platform cannot count prose — so this field is the one machine-readable form of the promise, which is what makes it checkable by anybody later.",
+      "enforcement_class": "convention",
+      "verified_by": "a later reader comparing the declared count against `knowledge_search(scope: \"team\")` for that initiative — the skill says so itself at SKILL.md:244-245",
+      "schema": "services/zz-core/src/document-rules.ts::fieldRefusal — the field is accepted as a caller key and stored verbatim",
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Declared and self-reported. Nothing under services/**/*.ts reads `proposed_team_nodes` back — verified by grep across the tree, and the skill states it outright at SKILL.md:239-243: 'NOTHING READS IT BACK, AND THIS SKILL USED TO CLAIM OTHERWISE.' A check of exactly that shape existed in `initiative_status` and was deliberately removed, because it held an abandoned initiative open forever. The only executable fact about this field is that `fieldRefusal` ALLOWS it as a caller key (checks/document-rules.ts:60), which is permission, not enforcement."
+    },
+    {
+      "rule_id": "audits.read_only_by_discipline",
+      "skill": "sdlc-audit-criteria",
+      "locator": "## Step 2 — the eleven passes (SKILL.md:119)",
+      "claim": "Audit is read-only by discipline, not by enforcement. Nothing here denies you a write tool",
+      "enforcement_class": "convention",
+      "verified_by": "the dispatched auditing or reviewing subagent itself; the main agent reading what the round returned",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Correctly labelled as a convention by the skills themselves — this entry records that the label is accurate, not that a gap was found. A dispatched subagent is an ordinary agent with the caller's tools.",
+      "also_claimed_in": [
+        "sdlc-investigate/SKILL.md:62",
+        "sdlc-investigate/SKILL.md:190",
+        "sdlc-spec-audit/SKILL.md:10",
+        "sdlc-spec-audit/SKILL.md:134",
+        "sdlc-plan-audit/SKILL.md:10",
+        "sdlc-plan-audit/SKILL.md:132",
+        "sdlc-review/SKILL.md:18"
+      ]
+    },
+    {
+      "rule_id": "plan.acceptance_method_is_unenforced",
+      "skill": "sdlc-plan",
+      "locator": "## Acceptance criteria and their methods (SKILL.md:162-164)",
+      "claim": "This is a planning obligation, and nothing enforces it: the platform records what you declare and never refuses a criterion for its choice of method",
+      "enforcement_class": "convention",
+      "verified_by": "the plan's auditor in sdlc-plan-audit, and the person at the plan gate",
+      "schema": "sdlc-spec's `### Deliverable contract` yaml block — `acceptance[].method`",
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Correctly labelled. The skill states the absence of enforcement plainly and says where the cost lands instead."
+    },
+    {
+      "rule_id": "flow.auditing_an_unagreed_spec_is_unenforced",
+      "skill": "sdlc-flow",
+      "locator": "### 3 · Audit the spec (SKILL.md:105-107)",
+      "claim": "Nothing in the platform refuses it — `source_add` is ungated and immutable and may be called at any time, from any harness, including while the work is in flight",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-flow, before dispatching an audit round",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Correctly labelled."
+    },
+    {
+      "rule_id": "execute.checks_are_frozen_before_dispatch",
+      "skill": "sdlc-execute",
+      "locator": "**3. Freeze every check, then activate them one at a time.** (SKILL.md:36-57)",
+      "claim": "freeze its exact bytes now … compare the active file's bytes to its frozen copy … a hash mismatch is the task failing regardless of what else it reports.",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-execute — it holds the frozen copy and re-hashes each check when a worker returns",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Nothing in this repository freezes, stores or re-hashes a plan-authored check. The whole procedure is carried out by the orchestrating agent, and the hash comparison is a shell command it chooses to run."
+    },
+    {
+      "rule_id": "execute.gate_runs_after_every_task",
+      "skill": "sdlc-execute",
+      "locator": "**5. Run the gate.** (SKILL.md:102-107)",
+      "claim": "Run the gate after every task, not only after the last one. If the gate goes red, stop.",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-execute",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "scripts/gate/run.ts exists and runs the suite, but nothing sequences it against task dispatch. A worker that never runs the gate is not refused by anything."
+    },
+    {
+      "rule_id": "checkpoints.question_ids_are_registered",
+      "skill": "sdlc-flow",
+      "locator": "## Skill contract — **Work roles:** and **Checkpoints:** (present in all thirteen skills)",
+      "claim": "The `semantic-assessment` role is asked the bounded questions below by registered question ID",
+      "enforcement_class": "convention",
+      "verified_by": "the agent running the stage, reading its own Checkpoints table",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "THE WORD `registered` IS NOT YET TRUE. Neither `semantic-assessment` nor any of the nine question IDs appears anywhere in this repository outside the thirteen SKILL.md files and one gate check — no registry, no enum, no handler. Recorded here as a convention so the gap is on the record rather than implied away by the word 'registered'.",
+      "enum": {
+        "name": "question IDs cited in the thirteen skills' Checkpoints tables",
+        "closed": true,
+        "claimed": [
+          "evidence_relation",
+          "requirement_coverage",
+          "needs_fact",
+          "needs_verification",
+          "needs_analysis",
+          "missing_user_input",
+          "changes_commitment",
+          "repeats_finding",
+          "actionability"
+        ],
+        "emitted_from": null,
+        "emitted_from_note": "Nothing emits these. A later task builds QUESTION_FAMILIES and must adopt these exact spellings."
+      }
+    },
+    {
+      "rule_id": "explore.recall_leg_is_additive",
+      "skill": "sdlc-explore",
+      "locator": "## Degraded behaviour (SKILL.md:188, 229-233)",
+      "claim": "`sdlc-recall` failed or found nothing | `(no prior learning)` and continue. This leg is additive, never blocking",
+      "enforcement_class": "convention",
+      "verified_by": "the main agent running sdlc-explore, when it collects the fan-out's returns",
+      "schema": null,
+      "handler": null,
+      "behavioural_test": null,
+      "note": "Nothing sequences or supervises the fan-out. The rule is applied by the agent reading what came back."
+    },
+    {
+      "rule_id": "flow.close_disposition_vocabulary",
+      "skill": "sdlc-flow",
+      "locator": "### After review · the close is an act, not a stage (SKILL.md:130-136)",
+      "claim": "`initiative_close(initiative, \"finished\")` when it is done … or `initiative_close(initiative, \"abandoned\")` when the work stopped short.",
+      "enforcement_class": "analytical_review",
+      "verified_by": "the reviewer reading initiative_close's `disposition` enum against the skill's two words",
+      "schema": "services/zz-core/src/tools/initiative-close.ts:47 — `disposition: z.enum([\"finished\", OUTCOME_STOPPED])`, with OUTCOME_STOPPED from packages/contracts/src/index.ts:286",
+      "handler": "services/zz-core/src/tools/initiative-close.ts::registerInitiativeCloseTool, initiative-close.ts:47",
+      "behavioural_test": null,
+      "note": "The zod enum refuses a third word, so this IS enforced; nothing under checks/ harvests that schema and asserts its members. checks/initiative-open.ts harvests initiative_close's schema but only asserts the `document` field.",
+      "enum": {
+        "name": "initiative_close disposition",
+        "closed": true,
+        "claimed": [
+          "finished",
+          "abandoned"
+        ],
+        "emitted_from": "services/zz-core/src/tools/initiative-close.ts:47"
+      }
+    },
+    {
+      "rule_id": "method.document_write_takes_no_flow",
+      "skill": "sdlc-method",
+      "locator": "## Where things live — THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED (SKILL.md:182-186)",
+      "claim": "THE FLOW IS DECLARED WHEN THE INITIATIVE IS OPENED, and `document_write` does not take one.",
+      "enforcement_class": "platform",
+      "schema": "services/zz-core/src/tools/artifacts.ts document_write inputSchema — it declares `content`, `path`, `fields`, and no `flow`",
+      "handler": "services/zz-core/src/tools/artifacts.ts::registerArtifactTools, document_write",
+      "behavioural_test": "checks/initiative-open.ts:423-427 — harvests the REAL zod inputSchema by handing `registerArtifactTools` a stub server, asserts `flow` is undefined, with `content !== undefined` as the control that the right tool is being read; checks/initiative-open.ts:438-450 then sweeps every file under services/zz-core/src for an `initiative_adopt` registration, with its own control that the sweep walked more than twenty files",
+      "test_drives": "services/zz-core/dist/tools/artifacts.js",
+      "report": "node checks/initiative-open.ts"
+    },
+    {
+      "rule_id": "recall.lexical_broad_fallback",
+      "skill": "sdlc-recall",
+      "locator": "## Reading a result (SKILL.md:60-64)",
+      "claim": "An ordinary lexical match joins your words with AND. When that returns nothing, the platform re-asks the same question with OR and hands back what matched SOME of them",
+      "enforcement_class": "platform",
+      "schema": "services/zz-core/src/tools/knowledge-search.ts:502 — `fuse(lexical, broadened ? \"lexical-broad\" : \"lexical\")`",
+      "handler": "services/zz-core/src/tools/knowledge-search.ts::registerKnowledgeSearch, knowledge-search.ts:402 and :502",
+      "behavioural_test": "packages/tools/src/testing/chain-shelf.ts:126-133 — calls the real `knowledge_search` over the live door with a query that is empty under AND by construction, and asserts BOTH halves: the note saying no document contains all the terms, and `via: [\"lexical-broad\"]` on the rows. Its control is the sibling call at chain-shelf.ts:105-106, the same probe node found by an ordinary AND match",
+      "report": "npm run chain-check (chain-shelf is walked by the same run), scripts/release.ts:119",
+      "note": "Requires a live deployment with a platform database and a team; the probe tolerates `no platform database` / `not in a team` as a legitimate refusal, so a run without either asserts nothing."
+    }
+  ]
+}

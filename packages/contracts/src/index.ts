@@ -54,6 +54,14 @@ export {
   SearchResponseSchema, type SearchResponse,
 } from "./tenant-information.js";
 
+// THE CONTROL LOOP, through its own aggregator rather than a block per module here. This file
+// is 40 lines under a ceiling the gate enforces with no exemption list, and the control loop
+// arrives as many modules — so `control-loop.js` names them and this block re-exports it
+// whole. The one wildcard in this file, and deliberately: a module added to the aggregator has
+// to reach every consumer of `@zz/contracts`, and a name list here would have to be edited by
+// every task that adds one, which is exactly the growth the ceiling cannot take.
+export * from "./control-loop.js";
+
 /**
  * The frontmatter block at the head of a document: `[0]` is the whole block including both
  * fences, `[1]` the lines between them.

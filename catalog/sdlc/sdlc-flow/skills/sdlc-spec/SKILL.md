@@ -1,8 +1,8 @@
 ---
 name: sdlc-spec
-version: 1.5
+version: 1.9
 description: Open the option space with the person, close it to confirmed decisions, and write the agreement at <initiative>/spec.md — what ships, why it is worth building, and what "done" means. Brainstorm and spec are one skill because they are one conversation. Main agent only.
-when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Local runtimes only (Claude Code)."
+when_to_use: "Explore has established what is true and the person is ready to decide what to build. Covers both halves: deciding with them, and writing what was decided. If nothing has been established yet, run sdlc-explore first. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
 
 # sdlc-spec
@@ -159,7 +159,16 @@ The interactive design session (brain dump → investigation → structuring →
 
 The spec has eight components. Each has ONE name — the literal `##` heading you write in the
 file, and the same words you use for it in conversation, with the person and with
-`sdlc-spec-audit`:
+`sdlc-spec-audit`.
+
+**Where the eight are declared, and where this catalog stands in relation to them.** `flow.json`
+declares `spec.md`'s `sections`, and that declaration is what the platform checks and what it
+renames a near-miss heading to. This catalog exists so the labels are in front of you while you
+write, and so is the numbered list at the end of Phase B — three reproductions of one list. If
+any of them ever reads differently from the manifest, the manifest is what runs and the skill is
+the thing that is wrong.
+
+The eight:
 
 | The eight components |
 |---|
@@ -423,7 +432,9 @@ Each section you enrich must satisfy these Section Rules:
 Before finishing, verify:
 - All eight top-level `##` components are present, none outside the eight is added, and zero `<!-- brief:` markers remain. A component that does not apply says so under its own heading rather than being left out — the platform refuses the approval of a spec missing one.
 - **Zero `<!-- brief:` markers remain** — every section has been enriched with final content
-- Every component heading is present, using its label from the Component catalog (Context, Problem, Goals & Requirements, Alternatives, Approach, Method & Structure, Verification Plan, Risks & Mitigations, Stakeholders & Work). A component outside the eight is a defect, not a bonus: remove it before you finish.
+- Every component heading is present, using its label from the Component catalog. Check them against the numbered list at the end of Phase B rather than against a comma-separated run of them — `Approach, Method & Structure` is ONE label containing a comma, and read out of a comma list it turns into two components that do not exist. A component outside the eight is a defect, not a bonus: remove it before you finish.
+- Nothing in the file is a heading the manifest does not declare at `##` level. A `##` heading of your own invention is not refused, but it is also nobody's requirement, and the next two stages read the spec by these labels and will not see it.
+- If a write, revision or approval came back saying a heading was renamed to the one this flow declares, that line is kept and handed to `sdlc-spec-audit` with the spec. It is reported once and stored nowhere, so the copy in your hands is the only one there is.
 - Every `##` heading uses the exact label from the Component catalog (case-insensitive match is tolerated but exact casing is preferred)
 - The `### Deliverable contract` block declares `kind`, `audience`, `disposition`, at least one `artifacts` entry or a terminal `command` criterion, and every `acceptance` entry has an explicit `method`, a `why` rationale, and at least one `references` entry
 - Sections within components use `###`, sub-parts use `####` — no other heading levels for spec content
@@ -454,3 +465,53 @@ conversation stops the flow at its next step.
 skill's** — judge it rather than matching phrases, record it under their name in the same
 turn, and never send a decision back to somebody who already made it. It is written once,
 there, because it holds for every flow.
+
+## Skill contract
+
+**Outcome:** `spec.md` in the initiative — all eight canonical components under their exact
+labels, a proposed deliverable contract under `## Context`, every `FR-N` mapped to at least one
+checkable `AC-N.N`, zero surviving brief markers — presented to the person in full and carrying
+their recorded agreement.
+
+**Required evidence:** the numbered list of decisions you and the person confirmed at the end of
+Part one, in this conversation. That list is the only thing that counts as decided. Every path,
+symbol or source the spec names, verified against the real material. Frozen values, schemas, enums
+and sort orders inlined verbatim rather than pointed at.
+
+**Allowed unknowns:** anything the decisions genuinely leave unstated. Propose your best
+plain-language reading and flag it in the spec's own prose — never silently — so the person
+notices it while confirming. What is never an allowed unknown is a trade-off, a scope call or a
+priority: those are the person's, and answering one yourself produces a document that audits
+cleanly and nobody agreed to.
+
+**Work roles:** the person decides, and never has their own decision made for them. Mechanical
+questions — a signature, a path, prior art, what was already settled — go to dispatched workers,
+one question each, and you come back with the answer rather than with the question. The writing is
+this agent's own; there is no worker to check. The `semantic-assessment` role answers the bounded
+questions below by question ID from the fixed set below. Nothing in this platform registers those
+IDs yet, so an implementation adopts these spellings rather than minting its own, and decides
+nothing the person owns.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Phase 1, per queued question | `missing_user_input` | whether this is a decision, which the person answers, or a mechanical fact, which a worker resolves |
+| During the interview, on every new answer | `changes_commitment` | whether it contradicts something already recorded, which is surfaced the moment it is seen rather than reconciled quietly |
+| Phase D, per functional requirement and acceptance entry | `requirement_coverage` | whether every `FR-N` reaches a checkable `AC-N.N`, and every acceptance entry carries an explicit method, a `why` and at least one reference |
+
+**Action and exit paths:** the action is name the destination, grill one decision at a time,
+confirm the whole set, scaffold in one write, enrich one section at a time, present, ask, hold.
+The forward exit is `sdlc-spec-audit`, and only once the agreement is recorded on the document —
+an agreement that stays in the conversation stops the flow at its next step. The backward exit is
+`sdlc-explore`, taken when the person cannot name a destination; interviewing into fog is not a
+third option.
+
+**Degraded behaviour:** four kinds of material stay distinct here and are never promoted into one
+another — `explore.md`'s rough directions are grounding that nobody ranked, your reading of an
+unstated fact is an assumption flagged in prose, the deliverable contract is a proposal you may
+not approve, and only the confirmed numbered list is an accepted commitment. A component that does
+not apply keeps its heading and says so in a sentence a reader can disagree with; it is never
+omitted, because the platform refuses the approval of a spec missing one. A budget exhausted
+mid-enrichment leaves a well-structured partial: say which sections are unreached rather than
+reporting the spec written.

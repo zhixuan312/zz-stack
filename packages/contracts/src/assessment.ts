@@ -1,0 +1,608 @@
+/**
+ * THE SEMANTIC-ASSESSMENT PORT — what a bounded question is, what an answer to one is, and the
+ * one function that turns a provider's raw reply into a record this platform may act on.
+ *
+ * WHAT THIS FILE IS FOR IS WHAT IT REFUSES TO INVENT. A model that returns a label and nothing
+ * else has told us one thing. The temptation — and it is the whole reason this module exists —
+ * is to write that label down as a probability of 1.0, or to fill an empty confidence column
+ * with 0.5 so a downstream threshold has a number to compare against. Both manufacture evidence
+ * nobody produced, and both are indistinguishable, one table later, from a measurement. So:
+ *
+ *   · a label with no probability yields `signals: []`, never zero and never 0.5;
+ *   · a distribution is only ever COPIED from a channel the adapter declares native, never
+ *     constructed here — there is no code path in this file that builds a one-hot vector;
+ *   · a confidence number the model generated, whether it arrives as "0.91" or as 0.91, is
+ *     `self_reported`. The JSON type of a token the model emitted says nothing about where the
+ *     number came from, and only the adapter knows which channel carried it.
+ *
+ * AND WHAT IT REFUSES TO CONFLATE. A timeout is `unavailable`: the transport failed and nobody
+ * assessed anything. Semantic uncertainty is `unknown` for a predicate and `null` for a
+ * category or ordinal: the assessor looked and could not tell. Collapsing the first into the
+ * second turns a failed network call into a considered judgement, which is how a run that never
+ * happened comes to look like one that found nothing. `value` is null for every status but
+ * `answered`, so no reader has to know the difference to stay safe.
+ *
+ * THE INTERPRETER PRODUCES THE VALUE, NOT THE VENDOR. `interpret` reads the raw reply as
+ * untrusted data — `unknown`, validated field by field — and applies the question's own
+ * `answer_spec`. A category or ordinal key the question never declared is `invalid_response`,
+ * not a new option; an out-of-range score is `invalid_response`, not a clamped one; a reply
+ * from a model other than the exact identity the profile declared is `invalid_response`, not a
+ * substitution. None of those may authorize a semantic advance, and `authorizesSemanticAdvance`
+ * derives that from the recorded status alone. There is no field on any shape here through
+ * which a model can assert its own answer is actionable.
+ *
+ * ONE DELIBERATE DIVERGENCE FROM THE APPROVED CONTRACT, stated rather than hidden, in the shape
+ * of the `raw_response_ref` divergence recorded for the retrieval receipt. The approved type
+ * declares `request_id`, `question_digest`, `evidence_snapshot_id`, `profile_digest`,
+ * `interpretation_profile_ref` and `requested_model` as `string`. Those six are facts about an
+ * INVOCATION — which request, against which pinned evidence snapshot, under which approved
+ * profile. Interpretation is a pure function of a question and a payload and knows none of
+ * them; only the adapter that made the call does. Typing them `string` would have forced this
+ * module to write `""` into every one of them, and an empty string in a digest column is a
+ * fabricated identity that reads exactly like a real one. They are `string | null` here, the
+ * adapter supplies them through `AssessmentCall`, and null means "this interpretation was
+ * performed without a call envelope" rather than "no such thing existed". `identity_assurance`
+ * needs no widening: its declared `"unverified"` is already the honest value when nothing
+ * verified the identity.
+ */
+
+// ── the registered question families ───────────────────────────────────────────────────────
+
+/**
+ * THE NINE SHARED QUESTION FAMILIES. Every checkpoint any method declares names one of these,
+ * and thirteen shipped skills already cite them by these exact spellings in their Checkpoints
+ * tables. This constant is the registration those citations point at: before it existed the
+ * names were agreed in prose and compared against nothing.
+ *
+ * TYPED `readonly string[]`, NOT `as const`, AND THAT IS LOAD-BEARING. A caller checking
+ * whether a name it holds is registered has a `string`, and `readonly ["a", "b"].includes(s)`
+ * rejects a `string` argument outright — the literal union narrows `includes`'s own parameter.
+ * So the frozen tuple would typecheck only for callers who already knew the answer, and the
+ * membership test this constant exists to serve would not compile. `Object.freeze` gives the
+ * immutability; the widened type gives the question.
+ *
+ * WHY NINE AND NOT SIX. The approved table groups three rows by shared meaning —
+ * `needs_fact`/`needs_verification`/`needs_analysis` in one row, `missing_user_input`/
+ * `changes_commitment` in another. Counting rows counts groupings, not names; the names are
+ * what a checkpoint cites and what an adapter renders, so the registry holds all nine.
+ */
+export const QUESTION_FAMILIES: readonly string[] = Object.freeze([
+  /** Does a passage support, contradict, leave unclear, or bear no relation to a claim. */
+  "evidence_relation",
+  /** Does a clause cover, partly cover, omit, or leave unclear a stated requirement. */
+  "requirement_coverage",
+  /** Does one named gap need a fact fetched to resolve it. */
+  "needs_fact",
+  /** Does one named gap need something verified to resolve it. */
+  "needs_verification",
+  /** Does one named gap need analysis to resolve it. */
+  "needs_analysis",
+  /** Is an input only the person can supply still missing. */
+  "missing_user_input",
+  /** Would this change what was already agreed and committed to. */
+  "changes_commitment",
+  /** Does this finding repeat one already recorded. */
+  "repeats_finding",
+  /** Is the proposed repair absent, directional, incomplete, or specific enough to carry out. */
+  "actionability",
+]);
+
+// ── the question ───────────────────────────────────────────────────────────────────────────
+
+/** What shape of answer a question admits, and the exact keys that answer may use. The keys
+ *  are the question's own: an adapter may render them however its transport requires, but it
+ *  may not return one the question never declared. */
+export type AnswerSpec =
+  | { readonly kind: "predicate"; readonly true_means: string; readonly false_means: string }
+  | { readonly kind: "category"; readonly options: readonly AnswerOption[] }
+  | { readonly kind: "ordinal"; readonly levels: readonly AnswerOption[] };
+
+/** One declared key and what it means. `meaning` is rendered into the request, so a key with
+ *  an empty meaning is a key the assessor was asked to choose blind. */
+export interface AnswerOption {
+  readonly key: string;
+  readonly meaning: string;
+}
+
+/** A registered, immutable question: what is being asked, about which subjects, from which
+ *  pinned evidence, and in what shape the answer must come back. */
+export interface SemanticQuestion {
+  readonly question_id: string;
+  readonly question_digest: string;
+  readonly subject_ids: readonly string[];
+  readonly evidence_ids: readonly string[];
+  readonly instruction: string;
+  readonly answer_spec: AnswerSpec;
+}
+
+/**
+ * THE HALF OF A QUESTION INTERPRETATION ACTUALLY DEPENDS ON. `interpret` maps a payload onto
+ * declared keys; the digest, the subjects, the evidence ids and the instruction belong to the
+ * request that was sent and are recorded by the adapter that sent it. Narrowing the parameter
+ * to what the function reads means a caller holding only a question's answer contract can
+ * still validate a reply, and a full `SemanticQuestion` is accepted unchanged.
+ */
+export type AskedQuestion = Pick<SemanticQuestion, "question_id" | "answer_spec">;
+
+// ── the assessment ─────────────────────────────────────────────────────────────────────────
+
+/** The normalized answer. `unknown` for a predicate and `null` for a category or ordinal are
+ *  SEMANTIC uncertainty — the assessor answered and could not tell — and never a transport
+ *  failure, which is `unavailable` with no value at all. */
+export type SemanticValue =
+  | { readonly kind: "predicate"; readonly value: "true" | "false" | "unknown" }
+  | { readonly kind: "category"; readonly key: string | null }
+  | { readonly kind: "ordinal"; readonly level_key: string | null };
+
+/** Where a number came from. THE CHANNEL DECLARES THIS, never the JavaScript type of the
+ *  field: a float in the model's own JSON is still a token the model generated, so it is
+ *  `self_reported`. `native_distribution` and `native_score` are reserved for a channel the
+ *  adapter reports as the provider's own primitive, and `empirical_calibration` for a number a
+ *  separately validated calibration supplied. */
+export type SignalOrigin = "native_distribution" | "native_score" | "self_reported" | "empirical_calibration";
+
+/** One numeric reading that accompanied an answer. Every value is finite and range-validated
+ *  before it gets here; a number nothing could validate is not recorded at all. */
+export interface StatisticalSignal {
+  readonly name: string;
+  readonly origin: SignalOrigin;
+  readonly meaning: string;
+  readonly values: Readonly<Record<string, number>>;
+  readonly calibration_ref: string | null;
+}
+
+/**
+ * `answered` — a value was produced from a validated reply.
+ * `insufficient_evidence` — the assessor declared the evidence would not support an answer.
+ * `unsupported` — the reply was well formed but this profile is not qualified to turn it into
+ *   a value: a raw score with no qualified mapping is retained, not rounded.
+ * `invalid_response` — the reply broke the question's contract. Never a semantic answer.
+ * `unavailable` — the call did not produce a reply. Transport, not semantics.
+ */
+export type AssessmentStatus = "answered" | "insufficient_evidence" | "unsupported" | "invalid_response" | "unavailable";
+
+/** How much the resolved model identity is worth. A hosted provider asserting its own exact
+ *  version is `provider_reported`; a deployment whose binding was checked is
+ *  `deployment_verified`; everything else, including a call nobody checked, is `unverified`. */
+export type IdentityAssurance = "provider_reported" | "deployment_verified" | "unverified";
+
+/** The record. See the file header for why six envelope fields are nullable here. */
+export interface SemanticAssessment {
+  readonly request_id: string | null;
+  readonly question_id: string;
+  readonly question_digest: string | null;
+  readonly evidence_snapshot_id: string | null;
+  readonly profile_digest: string | null;
+  readonly status: AssessmentStatus;
+  readonly value: SemanticValue | null;
+  readonly signals: readonly StatisticalSignal[];
+  readonly raw_response_ref: string | null;
+  readonly interpretation_profile_ref: string | null;
+  readonly requested_model: string | null;
+  readonly resolved_identity: string | null;
+  readonly identity_assurance: IdentityAssurance;
+  readonly failure_reason: string | null;
+}
+
+/** Why no reply arrived. `no_answer` is a question a batch left out — no transport failed, but
+ *  nothing was assessed either, and both are `unavailable` for the same reason: the absence of
+ *  an answer is not an answer. */
+export type CallFailure = "timeout" | "network" | "rate_limited" | "server_error" | "cancelled" | "no_answer";
+
+/**
+ * WHAT THE ADAPTER KNOWS AND THE INTERPRETER CANNOT. Everything here is supplied by the caller
+ * that actually made the request: the envelope it recorded, the identity it observed, and the
+ * mappings the approved profile qualified it to apply. Nothing here is derived from the reply.
+ *
+ * The two mappings are the reason a raw number is ever turned into a value. Without them a
+ * score stays a score and the status is `unsupported` — which is a smaller claim than a level
+ * nobody validated, and the one the approved contract asks for.
+ */
+export interface AssessmentCall {
+  /** Set when no reply arrived. Wins over any payload: a partial body after a timeout is not
+   *  an assessment. */
+  readonly failure?: CallFailure;
+  readonly failure_detail?: string;
+  readonly request_id?: string;
+  readonly question_digest?: string;
+  readonly evidence_snapshot_id?: string;
+  readonly profile_digest?: string;
+  readonly interpretation_profile_ref?: string;
+  readonly raw_response_ref?: string;
+  readonly requested_model?: string;
+  /** The exact identity the approved profile pinned. When set, a reply reporting anything else
+   *  is `invalid_response`: alias drift never inherits eligibility. */
+  readonly expected_identity?: string | null;
+  readonly resolved_identity?: string | null;
+  readonly identity_assurance?: IdentityAssurance;
+  /** A qualified predicate mapping: `0 <= no_le < yes_ge <= 1`, unknown between the bounds.
+   *  A profile strategy, not the definition of every assessor. */
+  readonly predicate_bounds?: { readonly no_le: number; readonly yes_ge: number };
+  /** The declared scale of a numeric score. Without it a score cannot be range-validated, so
+   *  it is neither recorded as a signal nor mapped. */
+  readonly score_range?: { readonly min: number; readonly max: number };
+  /** A qualified score-to-level mapping: the highest `at` a score reaches names the level. */
+  readonly ordinal_mapping?: {
+    readonly qualification_ref: string;
+    readonly thresholds: readonly { readonly at: number; readonly level_key: string }[];
+  };
+}
+
+// ── reading an untrusted payload ───────────────────────────────────────────────────────────
+
+/** A plain decimal, and nothing else. `Number("")` and `Number(" ")` are both 0, so parsing a
+ *  confidence with `Number` alone invents a zero through the back door for any reply that left
+ *  the field blank — the exact fabrication this module exists to prevent. */
+const DECIMAL = /^[+-]?\d+(?:\.\d+)?$/;
+
+function asRecord(raw: unknown): Readonly<Record<string, unknown>> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  return raw as Readonly<Record<string, unknown>>;
+}
+
+function has(rec: Readonly<Record<string, unknown>>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(rec, key);
+}
+
+/** PRESENT AND CARRYING SOMETHING. JSON `null` is how a provider says a field is absent, and
+ *  this platform's rule for that is already written: absence stays null or unknown. So a null
+ *  confidence is a confidence nobody reported — not a malformed number, and emphatically not a
+ *  zero. The one place null is an ANSWER rather than an absence is a category or ordinal key,
+ *  where the approved value type declares it to mean the assessor could not tell; those two
+ *  branches read the field directly and say so. */
+const given = (rec: Readonly<Record<string, unknown>>, key: string): boolean =>
+  has(rec, key) && rec[key] !== null;
+
+/** A finite number, from a number or from a strictly formatted decimal string. `null` means
+ *  the field was present and is not one — never that it was absent; callers test presence. */
+function finite(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && DECIMAL.test(v.trim())) return Number(v.trim());
+  return null;
+}
+
+/** The keys this question declares. A predicate's are its two truth keys; `unknown` is a
+ *  value the interpreter may produce but not a key a distribution may carry. */
+function declaredKeys(spec: AnswerSpec): readonly string[] {
+  if (spec.kind === "category") return spec.options.map((o) => o.key);
+  if (spec.kind === "ordinal") return spec.levels.map((l) => l.key);
+  return ["true", "false"];
+}
+
+// ── building the record ────────────────────────────────────────────────────────────────────
+
+const NO_SIGNALS: readonly StatisticalSignal[] = Object.freeze([]);
+
+interface Envelope {
+  readonly question: AskedQuestion;
+  readonly call: AssessmentCall | undefined;
+  readonly observed: string | null;
+}
+
+function record(
+  env: Envelope,
+  status: AssessmentStatus,
+  value: SemanticValue | null,
+  signals: readonly StatisticalSignal[],
+  failure_reason: string | null,
+): SemanticAssessment {
+  const call = env.call;
+  return Object.freeze({
+    request_id: call?.request_id ?? null,
+    question_id: env.question.question_id,
+    question_digest: call?.question_digest ?? null,
+    evidence_snapshot_id: call?.evidence_snapshot_id ?? null,
+    profile_digest: call?.profile_digest ?? null,
+    status,
+    // THE INVARIANT, ENFORCED HERE RATHER THAN TRUSTED TO EVERY BRANCH: only `answered` carries
+    // a value. Any other status with one would read as a judgement that was never made.
+    value: status === "answered" ? value : null,
+    signals: Object.freeze(signals.slice()),
+    raw_response_ref: call?.raw_response_ref ?? null,
+    interpretation_profile_ref: call?.interpretation_profile_ref ?? null,
+    requested_model: call?.requested_model ?? null,
+    resolved_identity: env.observed,
+    identity_assurance: call?.identity_assurance ?? "unverified",
+    failure_reason,
+  });
+}
+
+/** The numeric readings that accompanied a reply, or the contract violation that stops it.
+ *  Confidence is always self-reported; a distribution is copied from the adapter's declared
+ *  native channel and validated against the question's own keys. */
+function readSignals(
+  question: AskedQuestion,
+  rec: Readonly<Record<string, unknown>>,
+): { signals: StatisticalSignal[]; distribution: Readonly<Record<string, number>> | null; error: string | null } {
+  const signals: StatisticalSignal[] = [];
+  let distribution: Readonly<Record<string, number>> | null = null;
+
+  if (given(rec, "confidence")) {
+    const n = finite(rec.confidence);
+    if (n === null) return { signals, distribution, error: "the confidence field is not a finite number" };
+    if (n < 0 || n > 1) return { signals, distribution, error: `the confidence ${n} is outside 0..1` };
+    signals.push({
+      name: "confidence",
+      // NEVER `native_distribution`, whatever its JavaScript type. A number the model wrote is
+      // a number the model wrote.
+      origin: "self_reported",
+      meaning: "the assessor's own stated confidence, generated as part of its reply",
+      values: Object.freeze({ confidence: n }),
+      calibration_ref: null,
+    });
+  }
+
+  const native = given(rec, "native") ? asRecord(rec.native) : null;
+  if (given(rec, "native") && native === null) {
+    return { signals, distribution, error: "the native channel is not an object" };
+  }
+  if (native && given(native, "distribution")) {
+    const raw = asRecord(native.distribution);
+    if (raw === null) return { signals, distribution, error: "the native distribution is not an object" };
+    const allowed = declaredKeys(question.answer_spec);
+    const values: Record<string, number> = {};
+    let total = 0;
+    for (const key of Object.keys(raw)) {
+      if (!allowed.includes(key)) {
+        return { signals, distribution, error: `the native distribution carries the key ${key}, which this question never declared` };
+      }
+      const n = finite(raw[key]);
+      if (n === null || n < 0 || n > 1) {
+        return { signals, distribution, error: `the native distribution value for ${key} is not a finite probability` };
+      }
+      values[key] = n;
+      total += n;
+    }
+    if (Math.abs(total - 1) > 1e-3) {
+      return { signals, distribution, error: `the native distribution sums to ${total}, not to 1` };
+    }
+    distribution = Object.freeze(values);
+    signals.push({
+      name: "distribution",
+      origin: "native_distribution",
+      meaning: "the provider's own distribution over this question's declared keys, copied unchanged",
+      values: distribution,
+      calibration_ref: typeof native.calibration_ref === "string" ? native.calibration_ref : null,
+    });
+  }
+  return { signals, distribution, error: null };
+}
+
+// ── interpretation ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * TURN ONE RAW REPLY INTO ONE RECORD. The raw reply is `unknown` on purpose: it is vendor
+ * output, and a static type here would only describe what an honest provider sends while the
+ * validation below is what actually has to hold.
+ *
+ * The order of the decisions matters and is the contract's own: a recorded failure outranks any
+ * payload, an identity mismatch outranks a well-formed answer from the wrong model, and a key
+ * the question never declared is rejected before anything is read from it.
+ */
+export function interpret(question: AskedQuestion, raw?: unknown, call?: AssessmentCall): SemanticAssessment {
+  const rec = raw === undefined || raw === null ? null : asRecord(raw);
+  const reported = rec !== null && typeof rec.model === "string" ? rec.model : null;
+  const env: Envelope = { question, call, observed: reported ?? call?.resolved_identity ?? null };
+
+  // A TIMEOUT IS TRANSPORT, NOT SEMANTICS, and it is decided before the payload is looked at:
+  // a body that arrived after the call was abandoned describes nothing this run may use.
+  if (call?.failure) {
+    const why = call.failure_detail ? `${call.failure}: ${call.failure_detail}` : call.failure;
+    return record(env, "unavailable", null, NO_SIGNALS, why);
+  }
+  if (rec === null) {
+    const why = raw === undefined || raw === null
+      ? "the call recorded neither a reply nor a failure"
+      : "the reply was not an object";
+    return record(env, raw === undefined || raw === null ? "unavailable" : "invalid_response", null, NO_SIGNALS, why);
+  }
+
+  // AN EXACT IDENTITY IS EXACT. A profile that pinned one and got another was served by a model
+  // whose qualification nothing here establishes, so the reply is invalid however well formed.
+  if (call?.expected_identity && env.observed !== null && env.observed !== call.expected_identity) {
+    return record(env, "invalid_response", null, NO_SIGNALS,
+      `the reply came from ${env.observed}, not the pinned ${call.expected_identity}`);
+  }
+
+  if (rec.insufficient_evidence === true) {
+    return record(env, "insufficient_evidence", null, NO_SIGNALS, "the assessor declared the evidence insufficient");
+  }
+
+  const read = readSignals(question, rec);
+  if (read.error) return record(env, "invalid_response", null, NO_SIGNALS, read.error);
+  const signals = read.signals;
+  const spec = question.answer_spec;
+
+  if (spec.kind === "predicate") return predicate(env, rec, signals, read.distribution);
+  if (spec.kind === "category") return category(env, rec, spec, signals, read.distribution);
+  return ordinal(env, rec, spec, signals);
+}
+
+function predicate(
+  env: Envelope,
+  rec: Readonly<Record<string, unknown>>,
+  signals: readonly StatisticalSignal[],
+  distribution: Readonly<Record<string, number>> | null,
+): SemanticAssessment {
+  if (has(rec, "predicate")) {
+    const v = rec.predicate;
+    // `null` and `"unknown"` are the same claim — the assessor answered and could not tell —
+    // and neither is a transport failure. Only a value that is none of the four is malformed.
+    const primitive = v === true ? "true"
+      : v === false ? "false"
+      : v === null ? "unknown"
+      : v === "true" || v === "false" || v === "unknown" ? v
+      : null;
+    if (primitive === null) {
+      return record(env, "invalid_response", null, NO_SIGNALS,
+        `the predicate field is ${JSON.stringify(v)}, not true, false or unknown`);
+    }
+    return record(env, "answered", { kind: "predicate", value: primitive }, signals, null);
+  }
+
+  // A DISTRIBUTION IS NOT AN ANSWER UNTIL A QUALIFIED MAPPING SAYS WHERE THE LINES ARE. Picking
+  // them here would be this module deciding what counts as confident enough, which is precisely
+  // the profile decision it must not make.
+  if (distribution && Object.prototype.hasOwnProperty.call(distribution, "true")) {
+    const bounds = env.call?.predicate_bounds;
+    if (!bounds) {
+      return record(env, "unsupported", null, signals,
+        "a native probability arrived and no qualified mapping declares its decision bounds");
+    }
+    if (!(bounds.no_le >= 0 && bounds.no_le < bounds.yes_ge && bounds.yes_ge <= 1)) {
+      return record(env, "unsupported", null, signals,
+        `the declared bounds ${bounds.no_le}..${bounds.yes_ge} are not a valid qualified mapping`);
+    }
+    const p = distribution["true"];
+    const value = p >= bounds.yes_ge ? "true" : p <= bounds.no_le ? "false" : "unknown";
+    return record(env, "answered", { kind: "predicate", value }, signals, null);
+  }
+  return record(env, "invalid_response", null, NO_SIGNALS, "the reply carries no predicate and no native probability");
+}
+
+function category(
+  env: Envelope,
+  rec: Readonly<Record<string, unknown>>,
+  spec: Extract<AnswerSpec, { kind: "category" }>,
+  signals: readonly StatisticalSignal[],
+  distribution: Readonly<Record<string, number>> | null,
+): SemanticAssessment {
+  if (has(rec, "category")) {
+    const key = rec.category;
+    // THE ONE NULL THAT IS AN ANSWER. The approved value type declares a null key to mean the
+    // assessor could not tell, so discarding it as malformed would lose a real judgement and
+    // push the caller towards a key nobody chose.
+    if (key === null) return record(env, "answered", { kind: "category", key: null }, signals, null);
+    if (typeof key !== "string" || !spec.options.some((o) => o.key === key)) {
+      return record(env, "invalid_response", null, NO_SIGNALS,
+        `the category ${JSON.stringify(key)} is not one this question declared`);
+    }
+    return record(env, "answered", { kind: "category", key }, signals, null);
+  }
+  // Taking the largest probability as the answer is rounding a distribution into a label. It is
+  // a mapping, it has to be qualified, and none is defined for categories.
+  if (distribution) {
+    return record(env, "unsupported", null, signals,
+      "only a distribution arrived, and no qualified mapping turns one into a declared key");
+  }
+  return record(env, "invalid_response", null, NO_SIGNALS, "the reply carries no category key");
+}
+
+function ordinal(
+  env: Envelope,
+  rec: Readonly<Record<string, unknown>>,
+  spec: Extract<AnswerSpec, { kind: "ordinal" }>,
+  signals: readonly StatisticalSignal[],
+): SemanticAssessment {
+  if (has(rec, "level_key") || has(rec, "level")) {
+    const key = has(rec, "level_key") ? rec.level_key : rec.level;
+    // Null is semantic uncertainty here too, for the reason the category branch gives.
+    if (key === null) return record(env, "answered", { kind: "ordinal", level_key: null }, signals, null);
+    if (typeof key !== "string" || !spec.levels.some((l) => l.key === key)) {
+      return record(env, "invalid_response", null, NO_SIGNALS,
+        `the level ${JSON.stringify(key)} is not one this question declared`);
+    }
+    return record(env, "answered", { kind: "ordinal", level_key: key }, signals, null);
+  }
+
+  const native = given(rec, "native") ? asRecord(rec.native) : null;
+  const fromNative = native !== null && given(native, "score");
+  if (!fromNative && !given(rec, "score")) {
+    return record(env, "invalid_response", null, NO_SIGNALS, "the reply carries no level and no score");
+  }
+  const n = finite(fromNative && native ? native.score : rec.score);
+  if (n === null) return record(env, "invalid_response", null, NO_SIGNALS, "the score is not a finite number");
+
+  const range = env.call?.score_range;
+  if (!range) {
+    // AN UNVALIDATABLE NUMBER IS NOT RECORDED. Writing it down anyway would put a figure with
+    // no declared scale beside figures that have one, and nothing on the row would say which.
+    return record(env, "unsupported", null, NO_SIGNALS,
+      "a raw score arrived and no profile declares the scale it is on, so it cannot be validated");
+  }
+  if (n < range.min || n > range.max) {
+    return record(env, "invalid_response", null, NO_SIGNALS,
+      `the score ${n} is outside the declared range ${range.min}..${range.max}`);
+  }
+  const scored: readonly StatisticalSignal[] = [...signals, {
+    name: "score",
+    origin: fromNative ? "native_score" : "self_reported",
+    meaning: `the assessor's score on the declared ${range.min}..${range.max} scale`,
+    values: Object.freeze({ score: n }),
+    calibration_ref: native !== null && typeof native.calibration_ref === "string" ? native.calibration_ref : null,
+  }];
+
+  const mapping = env.call?.ordinal_mapping;
+  // THE RAW SCORE IS RETAINED RATHER THAN ROUNDED. Without a qualified mapping the number is
+  // real and the level is not, so the number is what gets written down.
+  if (!mapping) {
+    return record(env, "unsupported", null, scored,
+      "a score arrived and no qualified mapping turns it into one of this question's levels");
+  }
+  const reached = [...mapping.thresholds].sort((a, b) => b.at - a.at).find((t) => n >= t.at);
+  if (!reached) {
+    return record(env, "unsupported", null, scored,
+      `the qualified mapping declares no level for a score of ${n}`);
+  }
+  if (!spec.levels.some((l) => l.key === reached.level_key)) {
+    return record(env, "unsupported", null, scored,
+      `the qualified mapping names the level ${reached.level_key}, which this question never declared`);
+  }
+  return record(env, "answered", { kind: "ordinal", level_key: reached.level_key }, scored, null);
+}
+
+// ── what the host may do with one ──────────────────────────────────────────────────────────
+
+/**
+ * MAY THIS ASSESSMENT CARRY A SEMANTIC ADVANCE. Derived here from the recorded status and
+ * nothing else, so that the answer is a property of what was actually established rather than
+ * a flag on the reply — no shape in this file gives a model anywhere to assert its own answer
+ * is actionable, and this function reads no such field.
+ *
+ * ENUMERATED POSITIVELY: only `answered` may be consumed. An unrecognised status added later
+ * defaults to refusing, which is the safe direction. What an `unknown` predicate or a null key
+ * then means for a particular advance is the trusted host's policy and is decided against its
+ * qualification records, not here.
+ */
+export function authorizesSemanticAdvance(assessment: SemanticAssessment): boolean {
+  return assessment.status === "answered" && assessment.value !== null;
+}
+
+// ── batches ────────────────────────────────────────────────────────────────────────────────
+
+/** Every question asked, every answer interpreted, and the questions nothing came back for.
+ *  `complete` is the whole point: a batch that lost one answer is not a batch that finished. */
+export interface BatchAssessment {
+  readonly assessments: readonly SemanticAssessment[];
+  readonly missing: readonly string[];
+  readonly complete: boolean;
+}
+
+/**
+ * INTERPRET A BATCH WITHOUT LETTING A PARTIAL ONE PASS AS WHOLE. A question the reply left out
+ * gets an explicit `unavailable` row rather than being dropped, so the count of assessments
+ * always equals the count of questions asked and a caller cannot read a short array as
+ * agreement. Answers are addressed by `question_id`; asking the same question twice in one
+ * batch is not addressable and the second occurrence takes the same answer.
+ */
+export function interpretBatch(
+  questions: readonly AskedQuestion[],
+  answers: Readonly<Record<string, unknown>>,
+  call?: AssessmentCall,
+): BatchAssessment {
+  const assessments: SemanticAssessment[] = [];
+  const missing: string[] = [];
+  for (const question of questions) {
+    if (has(answers, question.question_id)) {
+      assessments.push(interpret(question, answers[question.question_id], call));
+      continue;
+    }
+    missing.push(question.question_id);
+    assessments.push(interpret(question, undefined, { ...call, failure: "no_answer" }));
+  }
+  return Object.freeze({
+    assessments: Object.freeze(assessments),
+    missing: Object.freeze(missing),
+    complete: missing.length === 0,
+  });
+}

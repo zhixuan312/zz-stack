@@ -1,0 +1,179 @@
+/**
+ * Defects planted in `@zz/contracts` — the kernel the behavioural checks call into.
+ *
+ * THESE REACH THE CHECK THROUGH THE BUILD, AND THAT IS LOAD-BEARING. `@zz/contracts` resolves
+ * to `dist/index.js`, so a check importing it reads compiled output, not the source mutated
+ * here. The gate's first check runs `npm run -s build`, which recompiles the package before
+ * anything imports it — which is also why every mutation below is TYPE-VALID by construction.
+ * `tsc -b` does not emit for a project with type errors, so a mutation that broke the types
+ * would leave the previous `dist` in place, the check would read the OLD behaviour, and the
+ * row would record "survived" for a defect that never reached it. Each row carries whether
+ * the build failed for exactly that reason.
+ */
+import type { MutationSpec } from "./plant.ts";
+
+export const KERNEL_SPECS: readonly MutationSpec[] = [
+  {
+    check: "scripts/gate/checks/assessment-port.ts",
+    target: "the assessment port never invents a probability or an answer",
+    subject: "packages/contracts/src/assessment.ts",
+    find: 'return record(env, "unavailable", null, NO_SIGNALS, why);',
+    replace: 'return record(env, "invalid_response", null, NO_SIGNALS, why);',
+    planted: "a transport timeout is recorded as a malformed reply, so a call that never " +
+      "arrived becomes indistinguishable from an assessor that answered badly",
+  },
+  {
+    check: "scripts/gate/checks/audit-identity.ts",
+    target: "audit identity survives import and no assessment erases a finding",
+    subject: "packages/contracts/src/audit-legacy-import.ts",
+    find: "    target: SPEC_DOC, approval_version: 4, round: 1,",
+    replace: "    target: PLAN_DOC, approval_version: 4, round: 1,",
+    planted: "one legacy spec audit is imported as a plan audit, so the import no longer " +
+      "accounts for three audits of each target",
+  },
+  {
+    check: "scripts/gate/checks/central-binding.ts",
+    target: "a default binding change reaches new runs only, and a rebind cannot inherit calibration",
+    subject: "packages/contracts/src/bindings.ts",
+    find: "    inheritedCalibration: inherited(state.calibration.filter((e) => e.in_force)),",
+    replace: "    inheritedCalibration: true,",
+    planted: "a rebind carries the old profile's calibration onto the new one by name",
+  },
+  {
+    check: "scripts/gate/checks/close-truthfulness.ts",
+    target: "a close says only what is known and a handover claims only what it verified",
+    subject: "packages/contracts/src/close.ts",
+    // Written as a negation rather than by naming the two outcome words, because
+    // @zz/contracts owns that vocabulary and a second spelling of it anywhere in this
+    // repository is what "the envelope vocabulary is defined once" exists to refuse.
+    find: '  if (basis.disposition === "finished") return named(basis.accepted_by)',
+    replace: '  if (basis.disposition === "finished") return !named(basis.accepted_by)',
+    planted: "a close with no sign-off is derived as accepted and one with an acceptor as " +
+      "merely delivered, so the record states an acceptance nobody gave",
+  },
+  {
+    check: "scripts/gate/checks/commit-result-reconciliation.ts",
+    target: "a canonical no-op is durable, and an unknown commit reconciles instead of replaying",
+    subject: "packages/contracts/src/commit-reconciliation.ts",
+    find: 'return { state: "applied", durable, followUp, nextRequest: null };',
+    replace: 'return { state: "reconciling", durable, followUp, nextRequest: null };',
+    planted: "a write the store confirmed is left in an unsettled state, so a durable result " +
+      "is treated as one still needing to be chased",
+  },
+  {
+    check: "scripts/gate/checks/dependency-invalidation.ts",
+    target: "a grant invalidates when a dependency moves even though the target bytes do not",
+    subject: "packages/contracts/src/dependency-snapshot.ts",
+    find: '  return revalidate(snap, world).state === "valid";',
+    replace: "  return snap !== undefined && world !== undefined;",
+    planted: "a grant is reported valid whatever moved underneath it, which is the " +
+      "record-local digest assumption this whole snapshot exists to replace",
+  },
+  {
+    check: "scripts/gate/checks/eval-protocol-shape.ts",
+    target: "the evaluation protocol cannot activate on absent numbers or zero-cost unknowns",
+    subject: "packages/contracts/src/eval-cost.ts",
+    find: 'missing.length === 0 ? "known" : known_subtotal === null ? "unknown" : "partial";',
+    replace: 'missing.length === 0 ? "known" : "partial";',
+    planted: "a run with nothing to price reports its cost as partial rather than unknown, so " +
+      "an absent number reads as a measured one",
+  },
+  {
+    check: "scripts/gate/checks/gap-routing.ts",
+    target: "every gap kind reaches its resolver and no stage deadlocks",
+    subject: "packages/contracts/src/gap-routing.ts",
+    find: '  if (kind === "verification") return "run-experiment";',
+    replace: '  if (kind === "verification") return "deepen-analysis";',
+    planted: "an untested claim is routed to more analysis instead of to the experiment that " +
+      "would settle it — the deadlock this router exists to prevent",
+  },
+  {
+    check: "scripts/gate/checks/generic-host-genericity.ts",
+    target: "the generic host serves a second flow and the kernel never branches on an SDLC stage",
+    subject: "packages/contracts/src/host.ts",
+    find: "    invoked: [...host.trace],",
+    replace: "    invoked: [],",
+    planted: "the second-flow fixture reports no operations at all, so it demonstrates " +
+      "nothing about the host being generic",
+  },
+  {
+    check: "scripts/gate/checks/issuer-unreachable.ts",
+    target: "the grant issuer is unreachable by any caller and still works for the host",
+    subject: "packages/contracts/src/control-grant-fixture.ts",
+    find: '  evidence_record: {\n    minRole: "member",',
+    replace: '  evidence_record: {\n    minRole: "superadmin",',
+    planted: "recording evidence is raised out of a member's reach, so contrary evidence " +
+      "cannot be filed while progression is held",
+  },
+  {
+    check: "scripts/gate/checks/jev-adapter.ts",
+    target: "the first provider adapter validates identity, ranges and retry classification",
+    subject: "packages/contracts/src/adapters/jev-retry.ts",
+    find: "export const retryable = (status: number | null): boolean => RETRYABLE.includes(classify(status));",
+    replace: "export const retryable = (status: number | null): boolean => status !== null;",
+    planted: "every answered status is classified as retryable, so a refusal the provider " +
+      "will repeat forever is retried instead of surfaced",
+  },
+  {
+    check: "scripts/gate/checks/label-only-adapter.ts",
+    target: "a label-only adapter cannot manufacture a probability or drift to the cloud",
+    subject: "packages/contracts/src/label-adapter.ts",
+    find: "  native_distributions: false as const,",
+    replace: "  native_distributions: true as const,",
+    planted: "a backend class with no probability primitive declares that it has one",
+  },
+  {
+    check: "scripts/gate/checks/observation-manifests.ts",
+    target: "observation manifests include ignored outputs and keep check states distinct",
+    subject: "packages/contracts/src/observation-manifest.ts",
+    find: '    exclusions.every((rule) => rule.source !== "git_ignore")',
+    replace: '    exclusions.some((rule) => rule.source === "git_ignore")',
+    planted: "the capture reports that it included ignored outputs precisely when it excluded " +
+      "them, so generated output is invisible in the record that says it is there",
+  },
+  {
+    check: "scripts/gate/checks/plan-validator.ts",
+    target: "the plan validator blocks malformed plans from controlled execution but not from being written",
+    subject: "packages/contracts/src/plan-validation.ts",
+    find: "    const firstAt = claimedAt.get(id);\n    if (firstAt !== undefined) {",
+    replace: "    const firstAt = claimedAt.get(id);\n    if (firstAt !== undefined && line < 0) {",
+    planted: "a second task claiming an id already taken is no longer reported, so two tasks " +
+      "share one identity through the whole of controlled execution",
+  },
+  {
+    check: "scripts/gate/checks/readiness-basis.ts",
+    target: "readiness rests on evidence and gates, never on volume, rounds or a score",
+    subject: "packages/contracts/src/readiness.ts",
+    find: "  const advance = blockers.length === 0;",
+    replace: "  const advance = blockers.length >= 0;",
+    planted: "readiness advances with its blockers still standing, so an open gap and an " +
+      "unrecorded gate stop holding anything back",
+  },
+  {
+    check: "scripts/gate/checks/recall-result-contract.ts",
+    target: "recall separates an inconclusive search from a scoped no-match",
+    subject: "packages/contracts/src/recall.ts",
+    find: '      result: "retrieval_inconclusive",',
+    replace: '      result: "no_relevant_match_in_searched_scope",',
+    planted: "a search that could not answer reports a clean scoped no-match, which is the " +
+      "one reading that must never be produced from a blocked search",
+  },
+  {
+    check: "scripts/gate/checks/search-read-synthesis.ts",
+    target: "search to pinned read to synthesis holds in both languages and cannot be redirected",
+    subject: "packages/contracts/src/recall-trial.ts",
+    find: '  return /\\p{Script=Han}/u.test(question) ? "zh" : "en";',
+    replace: '  return question.length >= 0 ? "en" : "zh";',
+    planted: "the asker's language is no longer read off the question, so a question asked in " +
+      "Chinese is answered in English and the reader is handed a language they did not use",
+  },
+  {
+    check: "scripts/gate/checks/runtime-adapter-portability.ts",
+    target: "a second runtime adapter runs the same protocol with a different event format",
+    subject: "packages/contracts/src/adapters/conformance.ts",
+    find: "      passed: reason === null,",
+    replace: "      passed: false,",
+    planted: "the shared conformance protocol never passes, so the second adapter cannot " +
+      "demonstrate it runs the same protocol",
+  },
+];

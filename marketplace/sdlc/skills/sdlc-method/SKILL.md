@@ -1,6 +1,6 @@
 ---
 name: sdlc-method
-version: 1.8
+version: 1.12
 description: How every SDLC skill runs — which stages a subagent executes and which the main agent must keep, what to hand a worker, and how to judge what it returns. Read this before running any sdlc-* skill.
 when_to_use: "Before executing any sdlc-* stage or tool, and whenever you are deciding whether to dispatch a piece of work or do it yourself. The stage skills describe their own output; this describes how all of them are run."
 ---
@@ -34,9 +34,9 @@ several times more for the same output.
 
 Which tier that is, is your runtime's answer, not this skill's. Ask what your runtime offers
 and pick the cheapest one that can hold the work; if it names only one tier, say so rather
-than silently spending the difference. As an illustration only, at the time of writing a
-A Claude Code session would reach for something like `sonnet`, and another harness for something
-like `terra` — treat those as the shape of the answer, not the answer. A tier named in a
+than silently spending the difference. Every runtime spells its tiers differently, so the
+answer is the SHAPE — the cheapest tier that can hold this work — and never a tier's name. A
+tier named in a
 document goes stale faster than anything else in it, and a stale name fails by silently
 falling back to your own tier, which is the exact cost this rule exists to avoid.
 
@@ -111,6 +111,18 @@ wrong.
    item. Verbatim, not summarised. A summary is a second act of judgement the caller did
    not intend to make.
 3. **Where it lands**: the initiative and the document name.
+
+**And, to an auditor only, a fourth thing: the version to read and the rename receipt.** Name the
+stored revision you want audited — `plan.md` at version 3, not "the plan" — because otherwise a
+round picks whatever is current when it happens to run, and two rounds then disagree without
+either being wrong. Alongside it, pass on any `Renamed to the heading this flow declares:` line
+the platform handed back when that document was written, patched, revised or approved. The
+platform normalizes a near-miss `##` heading to the wording the manifest declares and tells the
+caller it did, and that reply is the only place it is ever said: the stored document, its frozen
+copy and the activity log all carry the new wording and nothing else. You made those calls, so
+you are the only party who can still see those lines — keep them for the initiative's life. Where
+there is none to pass, say `rename_receipt: unavailable` rather than leaving the auditor to
+decide whether you forgot.
 
 **Why `skill_read` and not whatever your runtime offers.** A worker that loads the skill from
 its own plugin directory gets the same text and leaves no trace, and the platform attributes a
@@ -209,6 +221,22 @@ what *every* earlier one learned.
 Neither is this flow's to implement. The platform already does storage, indexing, versioning
 and retrieval, and a stage that rebuilds any of it produces a second store nobody searches.
 
+**Which `##` sections a document owes is the flow manifest's answer, not a skill's.** `flow.json`
+carries a `sections` list per document, and that list is what the platform checks at the moment
+the document is offered as done and what it renames a near-miss heading to. The stage skills
+reproduce their own document's list so an author has it to hand while writing; where a
+reproduction and the manifest ever disagree, the manifest is what runs and the skill is the thing
+to fix. A heading a skill teaches but the manifest does not declare is nobody's requirement — it
+may be a useful convention, and the skill that asks for it should say which of the two it is.
+
+**Something on the platform is broken: file it, do not route around it.** A tool that refuses
+what should have worked, an answer that disagrees with itself, a step no instruction prepared
+anybody for — `bug_report(title, detail, impact, surface, initiative)` on the `/core` door, in the
+words of whoever hit it, without diagnosing it first. Only `title` and `detail` are required, it
+records the platform version itself, and it hands back the id. Then carry on with what the defect
+interrupted; filing is the whole obligation. A workaround that goes unreported is a defect that
+every later initiative pays for and nobody can find.
+
 ## Who approves
 
 Not you, and not the worker. A worker proposes; a person decides. Report to them in their own
@@ -217,3 +245,46 @@ only once `document_approve(path)` has recorded it — the platform stamps who a
 itself, so the one thing you must get right is calling it in the same turn they agreed. Your
 team's own name is not a person, and `on_behalf_of` exists for the rarer case where the verdict
 is someone else's.
+
+## Skill contract
+
+**Outcome:** every stage of this flow run by the right party — four dispatched, the rest kept —
+with each worker handed its three things and each return judged against the written document
+rather than against the report. This skill writes no document; its result is that the other twelve
+are run correctly.
+
+**Required evidence:** the document read back with `document_read`, not the worker's summary of
+it. The absence of surviving `<!--`, `TODO`, `TBD` and `brief:` markers. A section with substance
+next to its neighbours. And, on a gated document, the recorded approval. Three checks, every
+stage, before a return is accepted.
+
+**Allowed unknowns:** which execution tier a runtime offers and what it is called there — that is
+the runtime's answer, not this skill's, and a tier named in a document goes stale faster than
+anything else in it. Also acceptably unknown: whether a person will delegate a gate decision.
+Delegation is an ordinary answer and it stands until they say otherwise.
+
+**Work roles:** the person holds the three gates. A dispatched worker does breadth, independent
+reading, or bounded volume — never a decision somebody is party to. This agent keeps the sequence,
+does the synthesis, and is the only thing between a worker's draft and a document someone builds
+on. The `semantic-assessment` role answers the bounded questions below by question ID from the
+fixed set below. Nothing in this platform registers those IDs yet, so an implementation adopts
+these spellings rather than minting its own; it does not decide what is dispatched.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Deciding whether a piece of work is yours or a worker's | `needs_analysis` | whether the work is judgement a person is party to, or breadth, independence or volume |
+| On a returned document, before accepting it | `actionability` | whether each section carries substance a reader could build on, or was named and not written |
+| Before a re-dispatch | `repeats_finding` | which parts are already written, so the second prompt names only what is missing |
+
+**Action and exit paths:** the action is dispatching a stage or running it yourself, then reading
+the file and deciding. Two exits: accept the return and move on, or re-dispatch on the same tier
+naming only what is missing and saying the rest is already written. Writing the missing part
+yourself is not an exit — it defeats the reason the expensive model is not the one producing prose.
+
+**Degraded behaviour:** a runtime that names only one tier is said so plainly rather than silently
+spending the difference, which is the exact cost the rule exists to avoid. A worker that reports
+success without a successful write has described a document that does not exist, so the read is
+the fact. A document judged mid-run looks exactly like an abandoned one, so it is not judged until
+the worker returns.

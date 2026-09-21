@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.3
+version: 1.6
 description: Review what was built before it ships — sweep the change against ten release-safety failure modes, cite every finding precisely, and separate pre-existing defects from regressions this change introduced. Read-only. Dispatched, because a reviewer who did not write the code is the point.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. Dispatched by the main agent."
 ---
@@ -246,3 +246,55 @@ Your FINAL text response must be exactly one JSON block (the JSON itself is neve
 ```json
 {"criteriaCovered": ["verification-gap", "cross-reference-ripple", "pre-existing-vs-regression", "missing-edge-case", "ordering-concurrency", "resource-cleanup-gap", "backward-compat-break", "safety-regression", "efficiency-regression", "implicit-contract"], "findings": [{"weight": "critical|high|medium|low", "category": "<criterion-slug>", "claim": "<one sentence>", "evidence": "<quoted material>", "file": "<path>", "line": 0, "suggestion": "<fix>", "preExisting": false}]}
 ```
+
+## Skill contract
+
+**Outcome:** the change swept against all ten release-safety categories, every finding located and
+cited, every pre-existing defect flagged as such, recorded as an appended `## Round N` in
+`<initiative>/review.md` and returned as one JSON block. `review.md` is this flow's closing
+document; nothing here approves it and nothing here closes the initiative. The main agent does
+both once you return, and delivery does not end the cycle: `initiative_status` reports
+`action: handover` on a closed initiative until `handover.md` exists and is approved, which the
+platform's `zz-handover` skill writes cold, afterwards. Say so when you hand back, so nobody
+reads a clean review as the last thing that happens.
+
+**Required evidence:** the change-set, established first — nothing hands you a diff, so derive one
+against the base the caller names, or use the one the caller supplied. Then per finding, a precise
+locator with quoted or extracted material, never a paraphrase. A cross-reference finding cites
+both the location that triggers the break and the one that breaks as a result. A verification-gap
+finding names the sibling artifact you expected and cites the part of the change it does not
+cover.
+
+**Allowed unknowns:** whether the maintainer ships. Authorship, when no change-set can be derived
+on a non-git target or a clean tree — say so in your notes rather than guessing at it. Behaviour
+of material the change neither touched nor references: out of scope, and speculation about it is
+not a finding however plausible.
+
+**Work roles:** dispatched to a reader who did not write the code, which is the entire reason this
+stage leaves the main agent. The maintainer accepts or rejects and will not re-investigate before
+approving, so a miss ships and everything must be cited. You present nothing to the person; the
+main agent decides what anybody is shown. The `semantic-assessment` role answers the bounded
+questions below by question ID from the fixed set below. Nothing in this platform registers those
+IDs yet, so an implementation adopts these spellings rather than minting its own; it does not set
+release severity for you.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Per finding, at self-validation | `evidence_relation` | whether the material quoted at the cited locator demonstrates the failure claimed |
+| Reading the change against `plan.md` | `requirement_coverage` | whether a task the plan declared went unimplemented, or the change quietly did what no contract asked for — the finding no taxonomy sweep surfaces on its own |
+| Per finding, before it is emitted | `actionability` | whether the claim names the concrete failure, under what input or state, rather than labelling the smell |
+
+**Action and exit paths:** the action is establish the change-set, sweep all ten categories,
+classify each finding pre-existing or not, append the round, return. Two exits, both taken every
+round: the appended `review.md` and the JSON block as your final text. The exit that does not
+exist is fixing what you found — a review that fixes removes the maintainer's ability to judge the
+fix and hides the defect rate that tells them whether the change is safe.
+
+**Degraded behaviour:** no change-set available and the target is not a git checkout, so say so in
+your notes and mark a finding `preExisting: false` only where the material itself shows the
+defect. Evidence you cannot put into one of the required forms, so do not raise the finding and
+note "investigation needed" in the summary instead. A pre-existing defect is never dropped and
+never left indistinguishable from a regression: the boolean is the whole distinction, and a prose
+section outside the JSON is discarded.

@@ -1,6 +1,6 @@
 ---
 name: zz-handover
-version: 2.8
+version: 2.9
 description: The handover every flow ends with. Read one closed initiative — its documents, its telemetry, its refusals — decide what generalises beyond the team that hit it and what matters only to this team, mint the first kind immediately, and propose the second in one gated handover document.
 when_to_use: "An initiative has closed — its closing document carries an `outcome` and the platform has appended its row to `_ledger.md`. Runs at the end of EVERY flow, whatever the flow was. Not a delivery stage: the stakeholder never sees this run."
 ---
@@ -233,18 +233,25 @@ document_write(path: "<initiative>/handover.md", content: "<the body>",
 ```
 
 That number is not decoration and it is not a duplicate of the section above it. `## Proposed
-for the team` is prose, and the platform cannot count prose — so this field is the thing
-`initiative_status` reads to decide whether Pass 2 actually kept the promise Pass 1 made.
+for the team` is prose, and the platform cannot count prose — so this field is the one
+machine-readable form of the promise, which is what makes it checkable by anybody later.
 Zero is correct when you proposed none, and must still be written: `fields:
 {proposed_team_nodes: "0"}`.
 
-**This was missing until 2026-09-09, and the consequence is worth stating.** The platform has
-always read the field, and no skill ever said to write it — so it was absent on every handover
-ever written, `Number(undefined ?? "0")` made it zero, and the check that an approved handover
-kept what it promised was satisfied by zero every single time. An initiative closed as
-complete with two team nodes promised in its own prose and none on the shelf, and nothing
-anywhere disagreed. A promise recorded whose keeping goes unverified is the exact shape this
-document's own machinery exists to prevent.
+**NOTHING READS IT BACK, AND THIS SKILL USED TO CLAIM OTHERWISE.** It said this field was
+what `initiative_status` reads to decide whether Pass 2 kept the promise Pass 1 made. That is
+not true. A check of exactly that shape existed and was **deliberately removed**, for a reason
+`initiative_status` records in its own source: it held an initiative open until the handover
+was written, approved, and its promised count met, which made an abandoned initiative
+unclosable — its own gate demanded a document that work could never produce. What changed, in
+that file's words, is only that the promise "is no longer owed."
+
+**So Pass 2 completion is self-reported and platform-unverified.** Write the count because a
+later reader can compare it against `knowledge_search(scope: "team")` and see for themselves,
+not because anything will stop you if you promise two and mint none. If that gap matters
+enough to close, it closes by implementing the read-back — not by a sentence here saying it
+already exists. A skill that describes a safety net nobody built is worse than one that admits
+there is none, because the first stops people looking.
 
 Write the document with `document_write` once, with all three sections filled in as above. It is
 gated like every other document this platform hands to a person: a team member reads it and

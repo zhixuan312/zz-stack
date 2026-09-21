@@ -38,18 +38,78 @@ import { documentBody, parseEnvelope } from "@zz/contracts";
 // reached by a deep import: `@zz/contracts` states the same rule about identity.ts and
 // alias.ts one line from its own top. A consumer imports `@zz/indexing`, not a path inside it.
 export { decisionRows, indexable, isoDate, type DecisionRow } from "./rules.js";
-// `zz-lexical-v1`, the versioned analyzer for the derived tables migration 070 created. NOT
-// called from `indexDoc`/`reindexTeam` below — those still write `zz.doc` exactly as they did
-// before this file existed, at the fixed 200,000-character cutoff this analyzer has no part
-// of. Re-exported here so the derived-table write path (whichever task wires
-// `zz.artifact_passage`/`zz.artifact_identifier`) imports one door, `@zz/indexing`, rather than
-// a deep path into it — the same reason `rules.js` is re-exported above.
+// `zz-lexical-v2`, the versioned analyzer for the derived tables migration 070 created, and,
+// since Task I-38, for `indexDoc`'s own `body_tsv` below too — `buildRowVector` is imported
+// for local use just below, not only re-exported, because `indexDoc` calls it directly to
+// build the vector for both `zz.doc` and `zz.knowledge_node` instead of the english
+// text-search configuration this file used to build it with. `passagesOf`/`identifierTokens`
+// are NOT called from `indexDoc`/`reindexTeam` — those still write their two tables at the
+// fixed 200,000-character cutoff this analyzer has no part of, and passages are a projection
+// input for the derived tables migration 070 created, wired in by whichever task populates
+// `zz.artifact_passage`/`zz.artifact_identifier`. Re-exported here so a caller outside this
+// file imports one door, `@zz/indexing`, rather than a deep path into it — the same reason
+// `rules.js` is re-exported above.
 export {
   ANALYZER_NAME, CURRENT_ANALYZER_VERSION, MAX_INPUT_BYTES, InputTooLargeError,
   assertWithinInputLimit, PASSAGE_MAX_SCALARS, PASSAGE_OVERLAP_SCALARS,
-  passagesOf, identifierTokens, derivationFingerprint,
-  type Passage, type DerivationVersions,
+  passagesOf, identifierTokens, analyze, derivationFingerprint,
+  OPACITY_SEEDS, OPACITY_CASES, analyzerDigestFor,
+  // `buildRowVector` moved here from this file by Task I-13, so the write path below and the
+  // rederivation pass (`rebuildRowVector`, re-exported further down) import the same function
+  // rather than each keeping its own copy — see `tenant-analysis.ts`'s own comment on it.
+  buildRowVector,
+  // The two text-search configuration names, and the `body_tsv` construction built from them.
+  // Re-exported because the READ path (`services/zz-core/src/tools/knowledge-search.ts`) has to
+  // parse its queries with the same configuration this file stores a Latin term through; when
+  // the two were written out separately in the two files they drifted, and a stemmed query
+  // stopped matching an unstemmed stored word.
+  TEXT_SEARCH_CONFIG, bodyTsvSql, bodyTsvParams, termsByWeight,
+  type Passage, type DerivationVersions, type AnalysisField, type AnalysisTerm, type AnalysisResult,
+  type RowVector, type RowVectorTerm, type RowVectorWeight,
 } from "./tenant-analysis.js";
+import { bodyTsvParams, bodyTsvSql, buildRowVector } from "./tenant-analysis.js";
+// The generation-aware rederivation pass over EXISTING `zz.doc`/`zz.knowledge_node` rows —
+// Task I-13 — re-exported through this same door. `rebuildRowVector` lives in
+// `tenant-rebuild.js` (its own file's header explains why); `planRebuild`/`queryGeneration`
+// live in `rederivation.js`, which never imports this file back — only `tenant-rebuild.js`
+// and `tenant-analysis.js`, so re-exporting both here creates no import cycle.
+export { planRebuild, queryGeneration, rederiveCorpus, rederiveAll, type RebuildPlan, type GenerationQuery, type GenerationStatusResult, type CorpusRebuildRecord, type RederivationClient } from "./rederivation.js";
+export { rebuildRowVector, type RebuildRowInput } from "./tenant-rebuild.js";
+// The query-grammar lexer: quotes, exclusions and explicit `OR`, read on the raw text BEFORE
+// `identifierTokens`/`analyze` above ever see it — re-exported through this door for the same
+// reason everything else on this page is, rather than a deep import into `query-grammar.js`.
+export {
+  parseQuery, QueryParseError,
+  type QueryClauseKind, type QueryClause, type QueryAst,
+} from "./query-grammar.js";
+// A citation for a hit: original-byte snippet extraction, widened to a character boundary and
+// never an analyzer term — re-exported through this door for the same reason everything else
+// on this page is, rather than a deep import into `snippet.js`.
+export { snippetFor, type Snippet } from "./snippet.js";
+// Which native lanes (exact, BM25, fuzzy-identifier, typed-provenance) a query actually
+// reaches — pure routing over `parseQuery`/`analyze` above, no database involved, so it is
+// re-exported through this door exactly like the rest of this page rather than through
+// `tenant-projections.js`'s own deep import path, which the DB-bound pieces of that file
+// (`applyCommit`, `ensureCorpus`, `connectIsolated`) still use. No `"tag"` lane exists here.
+export {
+  lanesFor,
+  type LaneName, type LaneApplicability, type LaneDescriptor,
+} from "./tenant-projections.js";
+// The scope-restriction plan built on top of `lanesFor` above — I-12 — re-exported through
+// this same door for the reason everything else on this page is, rather than a deep import
+// into `search-plan.js`. Pure and synchronous exactly like `lanesFor`: see that file's own
+// header for why it plans a native retrieval call rather than running one.
+export { planSearch } from "./search-plan.js";
+// The retrieval-consumption contract and its serializer — I-14 — re-exported through this
+// same door for the reason everything else on this page is. See `retrieval-serializer.ts`'s
+// own header for why `serializeReceipt` touches no database either, exactly like `lanesFor`
+// and `planSearch` above.
+export {
+  serializeReceipt,
+  type RetrievalScope, type RetrievalItem, type RetrievalReceipt,
+  type Ref, type LegacyRef, type ExecutionRef, type RawResponseCapture,
+  type RawRetrievalRow, type SerializeReceiptInput,
+} from "./retrieval-serializer.js";
 
 import { decisionRows, indexable, isoDate } from "./rules.js";
 
@@ -140,10 +200,20 @@ export async function indexDoc(root: string, relPath: string, content: string, s
           [teamSlug, parts.slice(1).join("/")]);
         if (cur.rows[0]?.content_hash === nodeHash) return false;
       }
+      // Task I-38: analysed by `zz-lexical-v2`, not parsed as prose in SQL. `buildRowVector`
+      // is the analyzer's own segmentation, done once and shared with Task I-13's
+      // rederivation; `bodyTsvSql`/`bodyTsvParams` group its flat term list into six
+      // space-joined strings — one per weight per configuration — so the Han half is stored
+      // by `simple` exactly as the analyzer emitted it (Task I-8's fixture) and the Latin
+      // half by the same configuration the read path queries with, which is what keeps a
+      // stemmed query matching a stored word. A failure in `buildRowVector`/`analyze`
+      // propagates out of this `try` to the `catch` at the foot of this function: the write
+      // fails outright, and no statement here re-parses prose to fall back on.
+      const nodeVector = buildRowVector({ title, tags: list(env.tags), body });
       await p.query(
         `insert into zz.knowledge_node
            (team_slug, path, kind, lifecycle, superseded_by,
-            title, body, tags, evidence, content_hash, updated_at, body_tsv)
+            title, body, tags, evidence, content_hash, updated_at, analyzer_version, body_tsv)
          -- THE NODE'S OWN RECORDED DATE, not the moment the index ran. This was now(), so
          -- every row said "recorded" whenever it was last re-derived: a force rebuild
          -- restamps the entire journal to one afternoon, and the console Recorded column
@@ -153,19 +223,21 @@ export async function indexDoc(root: string, relPath: string, content: string, s
          -- knowledge_add writes into the node frontmatter; now() remains the fallback for a
          -- node that carries none, because a null here would lose the ordering entirely.
          values ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9::text[],$10,
-                 coalesce($11::timestamptz, now()),
-                 setweight(to_tsvector('english', $6::text), 'A') ||
-                 setweight(to_tsvector('english', array_to_string($8::text[], ' ')), 'B') ||
-                 setweight(to_tsvector('english', $7::text), 'C'))
+                 coalesce($11::timestamptz, now()), $20,
+                 ${bodyTsvSql(12)})
          on conflict (team_slug, path) do update set
            kind=excluded.kind, lifecycle=excluded.lifecycle,
            superseded_by=excluded.superseded_by, title=excluded.title, body=excluded.body,
            tags=excluded.tags, evidence=excluded.evidence, content_hash=excluded.content_hash,
-           updated_at=excluded.updated_at, body_tsv=excluded.body_tsv`,
+           updated_at=excluded.updated_at, analyzer_version=excluded.analyzer_version,
+           body_tsv=excluded.body_tsv`,
         [teamSlug, parts.slice(1).join("/"), kind, lifecycle,
          supersededBy && supersededBy !== "null" ? supersededBy : null,
          title, body, list(env.tags), list(env.evidence), nodeHash,
-         /^\d{4}-\d{2}-\d{2}$/.test((env.date ?? "").trim()) ? env.date.trim() : null]);
+         /^\d{4}-\d{2}-\d{2}$/.test((env.date ?? "").trim()) ? env.date.trim() : null,
+         // $12-$19 — the eight `bodyTsvSql` binds: the two configuration names, then the
+         // six space-joined term strings (A/B/C x latin/han). $20 is the analyzer.
+         ...bodyTsvParams(nodeVector), nodeVector.analyzer]);
       return true;
     }
 
@@ -218,6 +290,11 @@ export async function indexDoc(root: string, relPath: string, content: string, s
       // explicitly is making a stronger claim than one whose sources happen to be listed.
       list(env.evidence || env.sources),
       superseded && superseded !== "null" ? superseded : null];
+    // Task I-38: the same `buildRowVector` `indexDoc`'s `zz.knowledge_node` branch above
+    // calls, and the one Task I-13's rederivation pass calls too — one analyzer-driven
+    // mapping from title/tags/body to a weighted term list, never two that could disagree.
+    // `body`/`title`/`list(env.tags)` are the same values already sitting in `values` above.
+    const docVector = buildRowVector({ title, tags: list(env.tags), body });
     // The decision rows are part of what this function WRITES, so they belong in the hash.
     //
     // Without them the skip is blind to exactly one thing again: a change to decisionRows.
@@ -244,7 +321,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
     // and re-inserts a document's claims on every reindex, so each rebuild put the
     // column back to null. The id is right here; it only had to be carried.
     const inserted = await p.query<{ id: string }>(
-      `insert into zz.doc (team_slug, initiative, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, body_tsv)
+      `insert into zz.doc (team_slug, initiative, path, flow, type, status, outcome, approved_by, approved_at, closed_by, updated_at, body, title, tags, evidence, superseded_by, content_hash, supports, analyzer_version, body_tsv)
        -- WHEN THE DOCUMENT CHANGED, not when the indexer last ran.
        --
        -- This was now(). A reindex touches every file it re-derives, so one rebuild
@@ -258,14 +335,20 @@ export async function indexDoc(root: string, relPath: string, content: string, s
        -- (see the updated_at line written on every write), so it is authoritative
        -- rather than a model's claim. now() survives only as the fallback for a
        -- document whose envelope has no date at all.
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, coalesce($17::timestamptz, now()), $11,$12,$13::text[],$14::text[],$15,$16, $18,
-               -- title A, tags B, body C. The positions moved when closed_by was inserted at
-               -- $10: these pointed at $11/$12/$10, which after the shift is body/title/closed_by
-               -- — a search index built from the wrong three columns, and one that would have
-               -- looked like it worked because every one of them is text.
-               setweight(to_tsvector('english', $12::text), 'A') ||
-               setweight(to_tsvector('english', array_to_string($13::text[], ' ')), 'B') ||
-               setweight(to_tsvector('english', $11::text), 'C'))
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, coalesce($17::timestamptz, now()), $11,$12,$13::text[],$14::text[],$15,$16, $18, $27,
+               -- title A, tags B, body C — unchanged since the positions moved when closed_by
+               -- was inserted at $10 (see below). Task I-38: the analyzer's own terms for each
+               -- field ($19-$26, from buildRowVector/bodyTsvParams above), not the raw columns
+               -- re-parsed by a prose text-search configuration — that tokenizes on whitespace
+               -- and punctuation, so an unspaced Han run went in as one opaque word.
+               -- TWO configurations, not one, and bodyTsvSql is the only place either is
+               -- named: Latin words go through the same one the read path's
+               -- websearch_to_tsquery uses, so stemming happens once and both sides agree;
+               -- Han unigrams and zh-bigrams go through simple, which does no stemming and no
+               -- dictionary lookup, so they are stored exactly as the analyzer emitted them.
+               -- Storing the whole vector through simple -- this task's first form -- left
+               -- every English word whose stem differs from its surface form unfindable.
+               ${bodyTsvSql(19)})
        on conflict (team_slug, initiative, path) do update set
          flow=excluded.flow, type=excluded.type, status=excluded.status, outcome=excluded.outcome,
          approved_by=excluded.approved_by, approved_at=excluded.approved_at,
@@ -273,7 +356,7 @@ export async function indexDoc(root: string, relPath: string, content: string, s
          body=excluded.body, title=excluded.title, tags=excluded.tags,
          evidence=excluded.evidence, superseded_by=excluded.superseded_by,
          content_hash=excluded.content_hash, supports=excluded.supports,
-         body_tsv=excluded.body_tsv
+         analyzer_version=excluded.analyzer_version, body_tsv=excluded.body_tsv
        returning id`,
       // $17 — the envelope's own date, or null so the insert falls back to now().
       // Parsed here rather than in SQL so an unparseable value degrades to "index
@@ -304,7 +387,11 @@ export async function indexDoc(root: string, relPath: string, content: string, s
        // $18 — which document this source was attached to. Every source carries it
        // and nothing indexed it, so the chain from "what we learned" to "what we
        // changed" could be read by opening files and by no query at all.
-       env.supports ?? null],
+       env.supports ?? null,
+       // $19-$26 — the eight `bodyTsvSql` binds for title/tags/body (two configuration
+       // names, then six space-joined term strings), and $27 the analyzer that produced
+       // them (`docVector`/`bodyTsvParams` above).
+       ...bodyTsvParams(docVector), docVector.analyzer],
     );
     const docId = inserted.rows[0]?.id ?? null;
       // The claims this document makes, replaced wholesale rather than merged: a revision

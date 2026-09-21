@@ -24,6 +24,9 @@ import express from "express";
 
 import { OWN_TOOLS, recordingDoor } from "./door.js";
 import { buildEvalServer } from "./eval-door.js";
+import { refuseIssuanceOnDoors, reviewedModuleHost,
+         type ReviewedModuleHost } from "./host/index.js";
+import { packagedModules } from "./reviewed-modules.js";
 
 import { coreServer } from "./orientation.js";
 import { db } from "./platform-db.js";
@@ -233,21 +236,53 @@ serveMcp(app, "/mcp", buildServer);
 // /eval/mcp and forwards here; see eval-door.ts for why the ten `plugin_*` tools are behind a
 // door of their own rather than on the one every account carries.
 serveMcp(app, "/eval-mcp", buildEvalServer);
+// REVIEWED MODULES ARE REGISTERED BEFORE THE PORT OPENS, from the bodies this release
+// packages and the allowlist that approves them. Registration is where an unapproved
+// component, a caller-supplied body and an altered digest are refused, and this is the
+// composition root: the one place that holds the catalogue, so it is the one place those
+// refusals can fire.
+//
+// ABOVE `listen`, NOT INSIDE ITS CALLBACK, and that is the whole of the placement decision. A
+// refusal here has to stop the process coming up; raised from the callback it would be thrown
+// after the socket was already bound and accepting, which is a service that is serving and
+// broken at the same time.
+const reviewed: ReviewedModuleHost = reviewedModuleHost(packagedModules);
+if (reviewed.registered.length) {
+  console.log(`registered ${reviewed.registered.length} reviewed module(s): ` +
+              reviewed.registered.map((e) => `${e.id}@${e.digest.slice(0, 12)}`).join(", "));
+}
+
+// ONE THROWAWAY SERVER PER DOOR, TO LEARN OUR OWN SURFACE, and now also to check it. The
+// doors are stateless, so a builder runs per request and nothing had ever run one by the time
+// the process was ready — leaving the set of registered names empty at exactly the moment we
+// want to record it. Building one of each fills it from the same code path every request
+// uses, so what we record is what we serve rather than a second list that could disagree.
+//
+// BOTH, NOT JUST THE FIRST. Our recorded surface is the whole platform's, and building only
+// the core door would have recorded a platform that serves ten fewer tools than it does —
+// `zz-tool block-surface platform` would then report ten tools DELETED in the release that
+// merely moved them, which is worse than no measurement because it reads as a finding.
+//
+// `true` BUILDS THE WIDEST SURFACE, the one that includes the registrations a superadmin
+// credential unlocks. Checking the narrow build would be checking the surface an ordinary
+// caller sees and calling it every registry.
+buildServer(true);
+buildEvalServer();
+// ABOVE `listen`, for the reason the block before it gives. Grant issuance is reached from a
+// trusted call after a stored controller decision and from nowhere else; a door that has
+// registered it is reachable by a direct call from anybody that door admits, and no role,
+// administrative ones included, confers the authority to mint authority. A process in that
+// state must not come up, so the check runs where its refusal can still stop it.
+refuseIssuanceOnDoors(OWN_TOOLS);
+
 app.listen(8000, "0.0.0.0", () => {
   console.log("zz-core (TS) listening on :8000 (/mcp /eval-mcp)");
   // The files are the truth and this index is derived, so it is rebuilt from them at boot.
   // Not awaited: the service serves while it runs, and a partial index beats a dead port.
   void reindexAllTeams().catch((err: unknown) => console.error("boot reindex failed:", err));
-  // ONE THROWAWAY SERVER PER DOOR, TO LEARN OUR OWN SURFACE. The doors are stateless, so a
-  // builder runs per request and nothing had ever run one by the time the process was ready —
-  // leaving the set of registered names empty at exactly the moment we want to record it.
-  // Building one of each here fills it from the same code path every request uses, so what we
-  // record is what we serve rather than a second list that could disagree.
-  //
-  // BOTH, NOT JUST THE FIRST. Our recorded surface is the whole platform's, and building only
-  // the core door would have recorded a platform that serves ten fewer tools than it does —
-  // `zz-tool block-surface platform` would then report ten tools DELETED in the release that
-  // merely moved them, which is worse than no measurement because it reads as a finding.
-  void (async () => { buildServer(true); buildEvalServer(); await recordOwnSurface(); })()
+  // The doors were built above, before the port opened, so OWN_TOOLS is already filled and
+  // this only has to write it down. Recording stays here because it is a database write and
+  // a service that is serving beats one that waited for one.
+  void recordOwnSurface()
     .catch((err: unknown) => console.error("surface record failed:", err));
 });

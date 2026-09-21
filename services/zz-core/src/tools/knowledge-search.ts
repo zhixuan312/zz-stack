@@ -39,6 +39,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
+import { analyze, parseQuery, QueryParseError, type QueryAst, TEXT_SEARCH_CONFIG } from "@zz/indexing";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -51,6 +52,198 @@ import { db, teamFor } from "../platform-db.js";
  *  searchable here without anybody remembering this file. */
 import { SUBJECT_KINDS } from "./knowledge.js";
 
+
+// ── the legacy handler's predicate builder ──────────────────────────────────────────────────
+//
+// `websearch_to_tsquery(QUERY_CONFIG, …)` pins BOTH a dictionary and, through it, the parser's
+// idea of a "word" — and PostgreSQL's built-in parser has no Han word segmentation at all, so
+// an unspaced Han run becomes ONE token regardless of which config reads it. "迁移" cannot
+// match inside "这个迁移会破坏旧的模式" no matter which dictionary `to_tsquery`/`websearch_to_tsquery`
+// is given, because the token boundary is decided before the dictionary ever runs.
+//
+// So a Han-bearing clause is matched here a different way: as a literal substring of `body`,
+// which is exactly what "does this document contain 迁移" means for a script with no
+// whitespace-delimited words — and it works against the `body` column that exists TODAY,
+// independent of whether `body_tsv` carries `zz-lexical-v2` lexemes yet (Task I-13's
+// backfill). An ASCII clause keeps going through `websearch_to_tsquery(QUERY_CONFIG, …)`
+// exactly as before, so a query with no Han in it produces the identical predicate a legacy
+// caller already depends on — and `QUERY_CONFIG` is the write path's own configuration for a
+// Latin term, read from `@zz/indexing`, so "identical" stays a fact about the stored column
+// and not just about this file's SQL text.
+const HAN_SCALAR_RE = /\p{Script=Han}/u;
+
+/** The text-search configuration every query below is parsed with, quoted for SQL — read from
+ *  `@zz/indexing` rather than spelled here, because the WRITE path stores a row's Latin terms
+ *  through this same name and the two must never be able to drift apart. They did drift, for
+ *  exactly one task: the write path moved to `simple` for the sake of the analyzer's Han terms
+ *  while this file went on stemming its queries, and a stemmed query does not match an
+ *  unstemmed stored word — not even when the query word and the stored word are the same word.
+ *  Nothing here needs the Han configuration: a Han clause is matched as a `body` substring,
+ *  never through the vector. */
+const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.latin);
+
+/** Embeds `text` as a single-quoted SQL literal, safely: every embedded quote is doubled. A
+ *  Han clause's own text is inlined here rather than bound as `$N` — deliberately, so the
+ *  predicate a caller inspects (logging, this file's own gate check) carries the actual
+ *  substring being matched rather than a placeholder. */
+function sqlLiteral(raw: string): string {
+  return `'${raw.replace(/'/g, "''")}'`;
+}
+
+/** Escapes `%`, `_` and `\` so an ILIKE pattern stays a literal substring match — a Han clause
+ *  is "contains this text", never "contains this text with a caller-controlled wildcard". */
+function likePattern(raw: string): string {
+  return `%${raw.replace(/([%_\\])/g, "\\$1")}%`;
+}
+
+interface SearchPredicateArgs {
+  readonly query?: string;
+  /** True on the empty-result broadening retry: relax the conjunction across ELIGIBLE
+   *  unquoted positive clauses into a disjunction. A quoted phrase, an exclusion, an explicit
+   *  `OR` alternation and every filter/scope predicate below are never eligible — they apply
+   *  exactly the same whether this is true or false. */
+  readonly broadened?: boolean;
+  readonly team?: string;
+  readonly type?: string;
+  readonly status?: string;
+  readonly initiative?: string;
+  readonly flow?: string;
+  readonly tags?: readonly string[];
+  /** Same meaning as `include_superseded !== false` on the tool's own argument: false means
+   *  current state only. */
+  readonly includeSuperseded?: boolean;
+}
+
+interface SearchPredicate {
+  /** The full WHERE-clause body (already `and`-joined), ready to splice after `where `. */
+  readonly sql: string;
+  /** Bound parameters `sql`'s `$1`, `$2`, … refer to. */
+  readonly args: unknown[];
+  /** A ready `to_tsquery`/`websearch_to_tsquery` call for `ts_rank_cd`/`ts_headline` to rank
+   *  and excerpt the ASCII portion of the query by, or `null` when the query had no ASCII
+   *  clause to rank by (a Han-only query has no `body_tsv` signal to rank on until Task I-13's
+   *  backfill lands — every matching row still comes back, just tied on rank). */
+  readonly rankExpr: string | null;
+  /** Every `zz-lexical-v2` base term (Han unigrams, whole Latin words) the query analysed
+   *  into, across every positive and excluded clause — for a caller building tag or
+   *  neighbour-expansion candidates from the same query, so a Han query is no longer invisible
+   *  to those lanes either. */
+  readonly terms: readonly string[];
+  /** Raw text of every `-excluded` clause, unmodified. */
+  readonly excluded: readonly string[];
+  /** Whether this call actually relaxed anything. False when `broadened` was requested but
+   *  there was no eligible unquoted positive clause to relax — the caller should not bother
+   *  re-running the query in that case, since the predicate did not change. */
+  readonly broadened: boolean;
+  /** Set when the raw query could not be parsed under the platform's query grammar (today:
+   *  an unterminated quote). The offending text is read as one literal clause instead of being
+   *  silently flattened into a bag of words — a parse hiccup narrows the search, it never
+   *  empties the response outright. */
+  readonly unsafe?: string;
+}
+
+/** Builds the legacy `knowledge_search` handler's WHERE-clause predicate: team scope, the
+ * caller's envelope filters, and the query itself — Han and mixed clauses included, by
+ * matching a Han-bearing clause as a literal `body` substring instead of running it through
+ * `websearch_to_tsquery(…)`, which cannot see inside an unspaced Han run at all.
+ *
+ * Pure — no database access — so it is exercised directly by this file's own gate check
+ * (`scripts/gate/checks/legacy-han-retrieval.ts`) without a pool or a team to query against. */
+export function buildSearchPredicate(a: SearchPredicateArgs): SearchPredicate {
+  const args: unknown[] = [];
+  const put = (v: unknown): string => { args.push(v); return `$${args.length}`; };
+
+  // SCOPE, FIRST AND ALWAYS. Both query-building paths below (mandatory and the broadened
+  // OR-group) are appended to this same `cond` array, so neither can ever drop it — the bug
+  // the old broadening pass had, rebuilding `bCond` from an empty array of its own.
+  const cond = [`team_slug = any(${put([a.team, KNOWLEDGE_TEAM].filter((t): t is string => Boolean(t)))}::text[])`];
+  if (a.type) cond.push(`type = ${put(a.type)}`);
+  if (a.status) cond.push(`status = ${put(a.status)}`);
+  if (a.initiative) cond.push(`initiative = ${put(a.initiative)}`);
+  if (a.flow) cond.push(`flow = ${put(a.flow)}`);
+  if (a.tags?.length) cond.push(`tags && ${put(a.tags.map((t) => t.trim().toLowerCase()))}::text[]`);
+  if (a.includeSuperseded === false) cond.push(`superseded_by is null and status <> 'superseded'`);
+
+  const terms: string[] = [];
+  const excluded: string[] = [];
+  const mandatory: string[] = [];
+  const eligible: string[] = [];
+  let asciiRaw = "";
+  let rankExpr: string | null = null;
+  let unsafe: string | undefined;
+
+  // `zz-lexical-v2` base terms only — Han unigrams and whole Latin words, unstemmed. The
+  // ranking bigrams `analyze` also returns are a ranking hint over a real tsvector, which this
+  // ILIKE-based match does not build, so they add nothing here.
+  const termsOf = (t: string): string[] => analyze(t).base.map((b) => (b.field === "han" ? b.term : b.term.toLowerCase()));
+
+  if (a.query) {
+    let ast: QueryAst;
+    try {
+      ast = parseQuery(a.query);
+    } catch (err) {
+      if (!(err instanceof QueryParseError)) throw err;
+      unsafe = err.message;
+      ast = { clauses: [{ kind: "term", text: a.query }] };
+    }
+
+    for (const clause of ast.clauses) {
+      if (clause.kind === "exclude") {
+        excluded.push(clause.text);
+        terms.push(...termsOf(clause.text));
+        // EXCLUSIONS ARE NEVER ELIGIBLE FOR BROADENING — a caller who wrote `-测试` wants 测试
+        // out of every row broadening rescues too, not just the ones the exact query matched.
+        if (HAN_SCALAR_RE.test(clause.text)) {
+          mandatory.push(`body not ilike ${sqlLiteral(likePattern(clause.text))}`);
+        } else {
+          asciiRaw += ` -${clause.text}`;
+        }
+        continue;
+      }
+      if (clause.kind === "phrase" || clause.kind === "term") {
+        terms.push(...termsOf(clause.text));
+        const han = HAN_SCALAR_RE.test(clause.text);
+        // ONLY AN UNQUOTED TERM IS EVER ELIGIBLE — a quoted phrase stays mandatory whether or
+        // not broadening was asked for, exactly as the Contract requires.
+        const mayRelax = a.broadened === true && clause.kind === "term";
+        const frag = han
+          ? `body ilike ${sqlLiteral(likePattern(clause.text))}`
+          : `body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${put(clause.text)})`;
+        if (mayRelax) eligible.push(frag);
+        else if (han) mandatory.push(frag);
+        // Quotes restored for a phrase clause — `websearch_to_tsquery` reads `"a b"` as the
+        // exact-phrase operator, and a reconstruction that dropped them would turn "the exact
+        // phrase these two words" into "these two words anywhere", which is not what a caller
+        // who quoted it asked for.
+        else asciiRaw += clause.kind === "phrase" ? ` "${clause.text}"` : ` ${clause.text}`;
+        continue;
+      }
+      // Alternation: survives broadening as ONE mandatory unit (the Contract names it
+      // explicitly), ORing its own operands — a Han operand matched by substring, an ASCII one
+      // by the same tsvector match every other ASCII clause uses.
+      const parts = (clause.alternatives ?? []).map((alt) => {
+        terms.push(...termsOf(alt.text));
+        return HAN_SCALAR_RE.test(alt.text)
+          ? `body ilike ${sqlLiteral(likePattern(alt.text))}`
+          : `body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${put(alt.text)})`;
+      });
+      if (parts.length) mandatory.push(`(${parts.join(" or ")})`);
+    }
+  }
+
+  if (asciiRaw.trim()) {
+    const q = put(asciiRaw.trim());
+    mandatory.push(`body_tsv @@ websearch_to_tsquery(${QUERY_CONFIG}, ${q})`);
+    rankExpr = `websearch_to_tsquery(${QUERY_CONFIG}, ${q})`;
+  }
+
+  const broadened = eligible.length > 0;
+  if (broadened) mandatory.push(`(${eligible.join(" or ")})`);
+
+  cond.push(...mandatory);
+
+  return { sql: cond.join(" and "), args, rankExpr, terms, excluded, broadened, unsafe };
+}
 
 export function registerKnowledgeSearch(server: McpServer): void {
   server.registerTool(
@@ -82,24 +275,18 @@ export function registerKnowledgeSearch(server: McpServer): void {
 
       const want = limit ?? 15;
       const withHistory = include_superseded !== false;
-      const tokens = (query ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
       /* Pull a CANDIDATE-BOUNDED pool, not a corpus-bounded one: the row count a query
        * materialises never grows with the knowledge base, only with how many documents could
        * plausibly matter for one question. Ordered by ts_rank_cd, so the pool is already the
        * lexical ranking — cover density, which rewards matched terms appearing close together,
        * over the A/B/C weighting indexDoc applies (title > tags > body). */
-      // Built once and applied to BOTH queries below. The neighbour expansion used to
-      // rebuild a subset by hand and dropped initiative, flow and tags — so a caller who
-      // scoped a search to one initiative got rows from others, arriving as via:["evidence"]
-      // with no indication that the scope had been ignored. A filter the caller asked for is
-      // not a hint to the ranker.
-      // The caller's own documents AND the platform's journal. Knowledge is
-      // filed under zz-platform now, so a search scoped to one team alone would
-      // return a team's specs and none of the lessons written about them.
-      const cond = ["team_slug = any($1::text[])"];
-      const args: unknown[] = [[team, KNOWLEDGE_TEAM]];
-      const put = (v: unknown) => { args.push(v); return `$${args.length}`; };
+      // Kept for the TAG and NEIGHBOUR lanes below, each of which still builds its own local
+      // `cond`/`args` around it — the query lane no longer does; `buildSearchPredicate` (above
+      // this function) carries team scope and every one of these filters itself now, so
+      // whichever pass runs (the exact attempt or the broadened retry) can never drop scope
+      // the way the old broadened pass — rebuilding `bCond` from an empty array of its own —
+      // used to.
       const applyFilters = (push: (sql: string) => void, add: (v: unknown) => string) => {
         if (type) push(`type = ${add(type)}`);
         if (status) push(`status = ${add(status)}`);
@@ -118,7 +305,6 @@ export function registerKnowledgeSearch(server: McpServer): void {
         // snapshot in the corpus, three rows deep for one spec.
         if (!withHistory) push(`superseded_by is null and status <> 'superseded'`);
       };
-      applyFilters((c) => cond.push(c), put);
 
       // team_slug IS SELECTED, because the query spans TWO shelves and the answer used to
       // discard which one each row came from. A caller then read a path back with document_read,
@@ -156,27 +342,43 @@ export function registerKnowledgeSearch(server: McpServer): void {
                'node' as subject
           from zz.knowledge_node
       ) k`;
-      let rank = "0::float4", head = "left(body, 400)";
-      if (query) {
-        const q = put(query);
-        // websearch_to_tsquery accepts what a person actually types — quoted phrases, OR,
-        // leading minus — and never throws on syntax, which plainto_ silently flattens and
-        // to_tsquery rejects outright.
-        cond.push(`body_tsv @@ websearch_to_tsquery('english', ${q})`);
-        rank = `ts_rank_cd(body_tsv, websearch_to_tsquery('english', ${q}))`;
-        // Matched terms are marked so a reader can see WHY a result came back, in markdown
-        // rather than ts_headline's default <b>: everything else in this corpus is markdown,
-        // and a model reading HTML tags in a snippet treats them as content.
-        head = `ts_headline('english', body, websearch_to_tsquery('english', ${q}),
+      /* THE QUERY ITSELF, through `buildSearchPredicate` (Task I-10): the platform's own query
+       * grammar (Task I-7) reads quotes, exclusions and an explicit `OR` on the raw text, and
+       * `zz-lexical-v2` (Task I-6) analyses each clause — a Han clause matches as a literal
+       * `body` substring, since `websearch_to_tsquery(QUERY_CONFIG, …)` cannot see inside an
+       * unspaced Han run at all, and every other clause still runs through it exactly as
+       * before. */
+      const primary = buildSearchPredicate({
+        query, team, type, status, initiative, flow, tags,
+        includeSuperseded: withHistory ? undefined : false,
+      });
+      // THE SAME split() SHAPE AS BEFORE, its character class widened rather than replaced —
+      // the CJK Unified Ideographs block (and Extension A) joins `[a-z0-9]` so a Chinese query
+      // is no longer invisible to the tag and neighbour lanes below, exactly as ASCII words
+      // already weren't. Never ':': that is what keeps the SUBJECT_KINDS expansion two blocks
+      // down live rather than dead code, and this repository's own gate reads this exact class
+      // to hold that guarantee — see "a subject tag is reachable from the word it is about" in
+      // scripts/gate/checks/documents-schema.ts.
+      const tokens = (query ?? "").toLowerCase().split(/[^a-z0-9\p{Script=Han}]+/u).filter(Boolean);
+
+      // Matched terms are marked so a reader can see WHY a result came back, in markdown
+      // rather than ts_headline's default <b>: everything else in this corpus is markdown,
+      // and a model reading HTML tags in a snippet treats them as content.
+      const headlineOf = (rankExpr: string) => `ts_headline(${QUERY_CONFIG}, body, ${rankExpr},
                  'MaxFragments=2, MaxWords=28, MinWords=12, FragmentDelimiter=" … ",
                   StartSel=**, StopSel=**')`;
-      }
+      // `rankExpr` is null for a query with no ASCII clause to rank by — a Han-only match has
+      // no `body_tsv` signal to score until Task I-13's backfill lands, so every matching row
+      // ties on rank and the tiebreak (`updated_at desc`) orders them, same as a query-less
+      // search already does.
+      const rank = primary.rankExpr ? `ts_rank_cd(body_tsv, ${primary.rankExpr})` : "0::float4";
+      const head = primary.rankExpr ? headlineOf(primary.rankExpr) : "left(body, 400)";
       const CANDIDATE_CAP = 200;
       const sql = `select ${COLS}, ${rank} as rank, ${head} as snippet
-                   from ${SOURCE} where ${cond.join(" and ")}
+                   from ${SOURCE} where ${primary.sql}
                    order by ${query ? "rank desc, updated_at desc" : "updated_at desc"}
                    limit ${CANDIDATE_CAP}`;
-      let lexical = (await p.query(sql, args)).rows as KbRow[];
+      let lexical = (await p.query(sql, primary.args)).rows as KbRow[];
 
       /* AND FOUND NOTHING, so ask the same question with OR before answering "nothing is known".
        *
@@ -202,28 +404,29 @@ export function registerKnowledgeSearch(server: McpServer): void {
        * contains most of it" is a different answer from a match, and a reader who cannot tell
        * them apart will cite the second as the first.
        *
-       * A single-token query is skipped: with one term, OR and AND are the same question.
-       *
-       * `tokens` is split on `[^a-z0-9]+`, so no tsquery operator can survive into the string
-       * this builds — and it is bound as a parameter regardless.
-       */
+       * ONLY THE ELIGIBLE UNQUOTED POSITIVE CLAUSES RELAX. `buildSearchPredicate({ …,
+       * broadened: true })` turns their conjunction into a disjunction and reports back whether
+       * anything was actually eligible to relax (`wide.broadened`) — a quoted phrase, an
+       * exclusion, an explicit `OR` and every scope/filter predicate are never eligible, so a
+       * query built entirely from those (or with only one relaxable clause) reports
+       * `broadened: false` and this retry is skipped, exactly as the old "skip a single-token
+       * query" guard did, generalised to every clause kind rather than just ASCII words. */
       let broadened = false;
-      if (query && lexical.length === 0 && tokens.length > 1) {
-        const bArgs: unknown[] = [[team, KNOWLEDGE_TEAM]];
-        const bPut = (v: unknown) => { bArgs.push(v); return `$${bArgs.length}`; };
-        const bCond = ["team_slug = any($1::text[])"];
-        applyFilters((c) => bCond.push(c), bPut);
-        const bq = bPut(tokens.join(" | "));
-        bCond.push(`body_tsv @@ to_tsquery('english', ${bq})`);
-        lexical = (await p.query(
-          `select ${COLS}, ts_rank_cd(body_tsv, to_tsquery('english', ${bq})) as rank,
-                  ts_headline('english', body, to_tsquery('english', ${bq}),
-                    'MaxFragments=2, MaxWords=28, MinWords=12, FragmentDelimiter=" … ",
-                     StartSel=**, StopSel=**') as snippet
-             from ${SOURCE} where ${bCond.join(" and ")}
-            order by rank desc, updated_at desc
-            limit ${CANDIDATE_CAP}`, bArgs)).rows as KbRow[];
-        broadened = lexical.length > 0;
+      if (query && lexical.length === 0) {
+        const wide = buildSearchPredicate({
+          query, team, type, status, initiative, flow, tags,
+          includeSuperseded: withHistory ? undefined : false, broadened: true,
+        });
+        if (wide.broadened) {
+          const wRank = wide.rankExpr ? `ts_rank_cd(body_tsv, ${wide.rankExpr})` : "0::float4";
+          const wHead = wide.rankExpr ? headlineOf(wide.rankExpr) : "left(body, 400)";
+          lexical = (await p.query(
+            `select ${COLS}, ${wRank} as rank, ${wHead} as snippet
+               from ${SOURCE} where ${wide.sql}
+              order by rank desc, updated_at desc
+              limit ${CANDIDATE_CAP}`, wide.args)).rows as KbRow[];
+          broadened = lexical.length > 0;
+        }
       }
 
       /* Retrieve by TAG as its own list, not as a re-ranking of the lexical one.
@@ -237,13 +440,13 @@ export function registerKnowledgeSearch(server: McpServer): void {
       if (tokens.length) {
         // SUBJECT TAGS ARE REACHABLE FROM THE WORD, which is the whole reason they exist.
         //
-        // `tokens` splits the query on everything that is not a letter or a digit, so "what
-        // have we learned about casebox" yields `casebox` — and a node tagged `plugin:casebox` was matched by
-        // neither arm: not by `tags && tokens`, because the stored tag is one string with a
-        // colon in it, and not by the lexical arm unless the body happened to spell it. The
-        // platform validates the kind half, refuses a kind it does not have, and names that
-        // exact question in knowledge_add's own description; the retrieval that answers it
-        // could not see the tag.
+        // `tokens` is `buildSearchPredicate`'s `zz-lexical-v2` base terms, so "what have we
+        // learned about casebox" yields `casebox` and "迁移 相关的" yields `迁`/`移`/`相`/`关`/`的`
+        // — and a node tagged `plugin:casebox` was matched by neither arm: not by
+        // `tags && tokens`, because the stored tag is one string with a colon in it, and not by
+        // the lexical arm unless the body happened to spell it. The platform validates the kind
+        // half, refuses a kind it does not have, and names that exact question in
+        // knowledge_add's own description; the retrieval that answers it could not see the tag.
         //
         // Expanded on the QUERY side rather than the stored side: a compound candidate is
         // only ever a tag somebody actually wrote, so `&&` and the overlap count that orders
@@ -372,12 +575,19 @@ export function registerKnowledgeSearch(server: McpServer): void {
         // A BROADENED ANSWER SAYS SO FIRST. It is the more surprising fact about the result
         // set, and a reader who takes it for a match will cite documents that do not together
         // say what was asked.
-        note: broadened
-          ? "No document contains all of those terms together. These match SOME of them, best first — "
-            + "treat them as leads rather than as an answer, and narrow the question to confirm one."
-          : ranked.length > results.length
-            ? `${ranked.length - results.length} lower-ranked results not shown — ask a narrower question to see them.`
-            : undefined,
+        //
+        // AN UNPARSEABLE QUERY SAYS SO TOO, rather than the caller reading a narrowed or empty
+        // result as "nothing is known" — `primary.unsafe` is set only when the raw text could
+        // not be read under this platform's query grammar (today: an unterminated quote) and
+        // was matched as one literal clause instead.
+        note: primary.unsafe
+          ? `The query could not be fully parsed (${primary.unsafe}) — it was matched as one literal clause instead.`
+          : broadened
+            ? "No document contains all of those terms together. These match SOME of them, best first — "
+              + "treat them as leads rather than as an answer, and narrow the question to confirm one."
+            : ranked.length > results.length
+              ? `${ranked.length - results.length} lower-ranked results not shown — ask a narrower question to see them.`
+              : undefined,
         results,
       }));
     },

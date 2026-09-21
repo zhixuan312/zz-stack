@@ -1,8 +1,8 @@
 ---
 name: sdlc-explore
-version: 1.4
+version: 1.8
 description: Ground a raw idea before anyone designs it — capture the brain dump, fan out parallel workers across this system, the outside world and the ZZ knowledge base, wait for all of them, then synthesise one explore.md (Background · Current state · Rough direction). Main agent, with the fan-out dispatched.
-when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Local runtimes only (Claude Code)."
+when_to_use: "Someone arrives with a raw idea, problem, feature request or brain dump and it needs grounding before it is designed. The question is exploratory — several directions to weigh, not one fact to look up. If it is one convergent question, that is a single sdlc-investigate, not this. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
 
 # sdlc-explore
@@ -85,6 +85,20 @@ succeeded is not a direction anybody read.
 
 Keep the top level at `##`: downstream stages read these sections by their `##` heading, and a
 deeper top level makes them see nothing.
+
+`Background`, `Current state` and `Rough direction` are what `flow.json` declares for
+`explore.md`; the template below reproduces them so you have them while writing, and the manifest
+is what actually runs. `explore.md` carries no gate, which means those three are required on
+every write rather than only at an approval — there is no draft state in which a missing one goes
+through.
+
+**Write a heading that says more than a declared one and the platform renames it.** `## Background
+of the pricing work` becomes `## Background`, and the reply to your `document_write` tells you it
+did. Two things follow. Keep that line: it is said once, to you, and the stored document keeps
+only the new wording, so an auditor later has no way to find out unless you pass it on. And read
+the rest of the reply, because one heading can cover two declared sections — `## Background and
+current state` is renamed to `## Background`, and `## Current state` is then genuinely missing
+from a document that looked complete when you typed it.
 
 ```markdown
 # No frontmatter. document_write takes the BODY; the platform writes the envelope.
@@ -189,3 +203,48 @@ an explained one is a finding.
 | Both investigate and research failed | Report both errors. **Do not write the artifact** |
 | All three failed | Report every error. Do not fabricate an exploration |
 | A worker returned but flagged its own concerns | Pause and surface what it said. Do not synthesise over it as if clean |
+
+## Skill contract
+
+**Outcome:** one `explore.md` in the initiative carrying `## Background`, `## Current state` and
+`## Rough direction` — three to five ranked directions spanning at least two resolution shapes,
+each with its own divergence axis and a backing citation or the matching sentinel — written by
+you, then put in front of the person before they pick a direction to carry into `sdlc-spec`.
+
+**Required evidence:** every dispatched worker's return, all of them, before any synthesis. A
+`file:LINE` citation for each internal finding, a source name for each external one, the node for
+each prior learning. Where a leg found nothing, the sentinel is the evidence — `(no internal
+anchor — fully greenfield)`, `(no external source found)`, `(no prior learning)` — and it is
+information, not a blank.
+
+**Allowed unknowns:** which direction the person will choose; how any direction would be built;
+anything the fan-out could not reach. A direction may be ranked on incomplete ground as long as
+the gap is written into it. What is never unknown here is whether every worker returned: the
+picture changes with the last answer.
+
+**Work roles:** the fan-out is dispatched, one question per worker, and the synthesis is this
+agent's own — many answers are not a picture, and making them one is the judgement this stage
+exists for. The person is asked once, terse, to size the fan-out. The `semantic-assessment` role
+answers the bounded questions below by question ID from the fixed set below. Nothing in this
+platform registers those IDs yet, so an implementation adopts these spellings rather than minting
+its own; it does not rank the directions.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Phase 2, per candidate worker | `needs_fact` / `needs_analysis` | whether the question is one convergent fact, which is one worker, or a subject, which is several — a prompt saying "and also" is two workers |
+| Phase 4, per finding carried into the document | `evidence_relation` | whether the cited material actually supports the claim a direction rests on |
+| Phase 4, across the returned reports | `repeats_finding` | whether two workers found the same thing, so the synthesis states it once rather than as two confirmations |
+
+**Action and exit paths:** the action is size, ask once, dispatch in one message, wait for all,
+synthesise, write, present. The forward exit is `sdlc-spec`, with a direction the person chose.
+One earlier exit exists: a worker that returns but flags its own concerns pauses the stage —
+surface what it said rather than synthesising over it as if clean.
+
+**Degraded behaviour:** research failed, so every external line takes its sentinel. Investigate
+failed, so treat the ground as greenfield with its sentinel. Recall failed or found nothing, so
+its sentinel stands and the leg is additive, never blocking. **Both investigate and research
+failed, or all three failed: do not write the artifact** — report every error instead, because an
+exploration nobody could ground is not one to fabricate. An honestly short direction list, with
+its reason stated, is a finding; an unexplained one reads as laziness.

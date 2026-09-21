@@ -624,7 +624,10 @@ check("a subject tag is reachable from the word it is about", () => {
   const src = zzCoreSource();
   const bad: string[] = [];
 
-  const split = /const tokens = [^;]*?split\(\/\[([^\]]*)\]\+\/\)/s.exec(src);
+  // Trailing flags are part of the literal: the class had to become a `u`-mode one to admit
+  // the whole Han script rather than a hand-picked BMP range, and a reader that only accepted
+  // an unflagged literal reported that widening as "the tokenizer is unreadable".
+  const split = /const tokens = [^;]*?split\(\/\[([^\]]*)\]\+\/[a-z]*\)/s.exec(src);
   if (!split) {
     return "knowledge_search no longer derives query words with a split() this rule can read " +
            "— re-establish what a token may contain before trusting the arm below";

@@ -9,7 +9,8 @@ disable-model-invocation: true
 # sdlc-flow
 
 The entry point. Starting an initiative, resuming one, or deciding what happens next all begin
-here. (You reached this as `/sdlc:flow` in Claude Code.)
+here. (Which door you came through — a command, a menu entry, a direct load — depends on the
+runtime; this file is the same either way.)
 
 This file decides **which** stage. `sdlc-method` says **how** any stage is executed — who runs
 it, what a worker is handed, how to judge what comes back. **Load `sdlc-method` before running
@@ -165,9 +166,11 @@ zz-core, which arrives with the required `zz-core` plugin:
 
 Writing to that journal is not a stage of this flow at all. Once you close, `zz-handover`
 reads the closed initiative — cold, after delivery is over — and mints what generalises with
-`knowledge_add(title, type, body, evidence, tags, scope)`. `scope` decides the shelf:
-`platform` for a fact that holds for anyone touching a registry entry, `team` for one that is
-only true of this team.
+`knowledge_add`. Five of its arguments are required and have no default: `title`, `type`, `body`,
+`evidence` and `scope`. It takes others besides; the tool's own description is where they are
+listed, and this line does not keep a second copy of a signature that belongs to another door.
+`scope` decides the shelf: `platform` for a fact that holds for anyone touching a registry entry,
+`team` for one that is only true of this team.
 
 Two consequences worth stating, because both are easy to get wrong:
 
@@ -191,8 +194,8 @@ platform's own nouns, useful with no flow installed at all — so they belong to
 everybody already has rather than to this flow.
 
 Reach for one whenever it helps, inside a stage or outside the flow entirely. Installing this
-plugin gives a Claude Code user **one command**, `/sdlc:flow`; the other three arrive with the
-baseline.
+plugin adds **one command**, `/sdlc:flow`, wherever the runtime exposes commands; the other
+three arrive with the baseline.
 
 ## Pitfalls
 
@@ -223,3 +226,46 @@ last one produced.
 **Routing to a stage that is not installed.** Say so plainly and do the work in the
 conversation. Never improvise a document into the initiative store as though a stage produced
 it — it is indistinguishable from one that a stage did produce, until someone builds on it.
+
+## Skill contract
+
+**Outcome:** an initiative that moved through explore, spec, audit, plan, audit, execute and
+review in the order its recorded state actually permitted, and that ends closed with an outcome
+on the record — or a plainly reported reason it stopped where it did. This skill writes no
+document of its own; routing is its whole product.
+
+**Required evidence:** the `initiative_status` return, said out loud before anything is routed on
+it; which of the four documents exist; and, at each gate, the approval recorded on the document
+rather than a recollection of the conversation. An agreement that only happened in a chat turn is
+not evidence that the next stage may run.
+
+**Allowed unknowns:** what any stage will conclude; how many audit rounds a document will need;
+whether the work ends `finished` or `abandoned`. None of these has to be settled to route the next
+step, and guessing at them is how a stage gets skipped.
+
+**Work roles:** the person decides at the three gates — agreement on `spec.md`, approval of
+`plan.md`, approval of `review.md` — and nothing substitutes for them there. Choosing the stage
+and reporting where the work stands are this agent's own. The `semantic-assessment` role is asked
+the bounded questions below by question ID from the fixed set below. Nothing in this platform
+registers those IDs yet, so an implementation adopts these spellings rather than minting its own;
+it never picks the stage.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Before routing to `sdlc-spec` | `needs_fact` | whether the ground is established enough to decide on, or `sdlc-explore` has to run first |
+| At each of the three gates | `missing_user_input` | whether the person's decision is recorded on the document, or exists only in the conversation |
+| After an audit round returns | `changes_commitment` | whether a finding reopens something the person already agreed, which sends the document back to the stage that wrote it |
+
+**Action and exit paths:** the action is entering the next stage, or re-entering an earlier one
+when an audit sends a document back — the sequence is not a ratchet, and a return is the method
+working. Two exits: `initiative_close` with `finished` or `abandoned` once `review.md` exists and
+is approved, and a report naming where the work stopped and why when it cannot close. `zz-handover`
+may follow the close; it belongs to the platform, not to this flow.
+
+**Degraded behaviour:** a stage that is not installed is named plainly and its work is done in the
+conversation — never improvised into the initiative store as though a stage produced it, because
+that is indistinguishable from the real thing until somebody builds on it. An initiative opened
+with no flow is a legitimate choice, and `next_move: null` is the honest answer rather than an
+invented stage. Closing part-way through is a normal way for work to end, not a lesser one.

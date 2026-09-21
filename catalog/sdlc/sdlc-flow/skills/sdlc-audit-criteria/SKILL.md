@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.1
+version: 2.4
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -28,6 +28,39 @@ independent confirmations of one problem.
 **Change nothing in the document you are auditing** — and above all do not "helpfully" fix what
 you find. An audit that edits the document destroys the caller's ability to decide which findings
 to accept, and removes the evidence that anything was ever wrong.
+
+**Read the stored revision, and say which one it was.** Open the target with
+`document_present("<initiative>/<doc>")`, adding `version: N` when the caller named one. That
+call states the path it actually read, that copy's version and status, and the approvals it
+carries, and it refuses a version nobody filed instead of quietly handing you today's document
+under the number you asked for. Carry that version into your round's title and into the source
+you register. "The spec" is not something anybody can have audited; one stored revision is, and
+naming it is what lets a second reader reproduce your findings or disagree with them. Audit the
+revision you were given even when a newer one exists — a round that silently retargets the
+newest copy answers a question nobody asked.
+
+**The `##` headings on that revision are not necessarily the ones its author typed.** Where this
+flow's manifest declares the sections a document must carry, the platform renames a heading that
+already says everything a declared heading says to the declared wording, and does it on every
+write path — first write, patch, revision and approval alike. Here that reaches `explore.md`,
+`spec.md` and `plan.md`. `review.md` declares no sections, so nothing is ever renamed in it.
+
+Three consequences, and every one of them lands on this round:
+
+- **The rename is reported once, to whoever made the call, and then it is gone.** Nothing keeps
+  it: the document on disk, the frozen copy filed at approval, and the activity log all hold the
+  renamed wording with no trace of what was there before. If the caller passed you that report,
+  quote it as the rename receipt. If they did not, record the normalization history as
+  `unavailable` and audit the text in front of you. The earlier wording is not recoverable from
+  the store, so it is also not something to reconstruct from context.
+- **A declared heading is not evidence that its author chose it.** Never read section wording as
+  authorial intent, never attribute a section to somebody on the strength of its label, and never
+  raise a finding whose entire content is that a heading matches the manifest.
+- **A renamed heading is not a finished section.** One heading can say everything that two
+  declared headings say — `## Background and current state` covers `Background` and also
+  `Current state` — and it is renamed to one of them, which leaves the other genuinely missing
+  and the survivor labelled more narrowly than the prose beneath it. So the shape worth hunting
+  is a body that does not match the label above it, and a declared section that is simply absent.
 
 **Recording your round is not fixing it. Your round is a SOURCE, not a document of the flow.**
 An audit produces the material that makes the next version of somebody else's document
@@ -213,3 +246,54 @@ After consolidating all failure-mode passes, your FINAL text response must be ex
 ```
 
 ---
+
+## Skill contract
+
+**Outcome:** no document, no source and no findings of its own — this file is never run alone. It
+supplies the shared half of an audit to whichever auditor loaded it: the eleven prose failure
+modes, the four evidence shapes, the severity calibration and the JSON envelope. Its result is
+that two auditors apply one standard, which is why it is a file rather than 165 lines copied into
+both.
+
+**Required evidence:** one of four shapes per finding — doc quote, absence reference, wrong-claim,
+internal-coherence — each opening with its source in square brackets: the nearest heading for a
+document, the file path with a line number where you have one for code. Anything else is
+speculation and belongs in the summary as "investigation needed", not in `findings`. Alongside
+them, the version `document_present` stated for the copy you read, carried into the source you
+register, and the rename receipt the caller handed you — or `unavailable` where none was.
+
+**Allowed unknowns:** what the document's owner will choose to fix — severity is calibrated to
+downstream-execution impact and the human decides what to act on. Content the document does not
+reference: out of scope, and enumerating the repository to reach it is explicitly not this round's
+job. Whether the recommendation is the right one for the business, as opposed to coherent with the
+document's own stated constraints. And what any `##` heading said before the platform normalized
+it: no reading of the store answers that, so it is recorded as an unknown rather than inferred.
+
+**Work roles:** the eleven passes and the consolidation belong to the auditing agent, run one mode
+at a time rather than as a single sweep, because each mode gets full attention before the next.
+The document's owner decides what is fixed. The `semantic-assessment` role answers the bounded
+questions below by question ID from the fixed set below. Nothing in this platform registers those
+IDs yet, so an implementation adopts these spellings rather than minting its own — but running the
+self-validation rubric is not delegated away: it was a second model's job before and it is yours
+now.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Self-validation, per finding | `evidence_relation` | whether the quoted material actually demonstrates the issue claimed, in one of the four shapes |
+| Criterion 3, across the whole document | `repeats_finding` | whether two items address the same root cause without acknowledging each other, so they are merged or cross-referenced |
+| Criterion 7, per proposed fix | `actionability` | whether the fix is complete enough to implement, or stops at a vague verb with no owning subsystem |
+
+**Action and exit paths:** the action is eleven modes sequentially, notes kept in working memory,
+then consolidation. Two exits, both taken every round: `source_add` carrying the prose findings
+and naming the document they bear on, and the JSON block as your final text. Neither is a document
+of the flow, and neither is ever written to a file. The exit that does not exist is editing the
+document you were given.
+
+**Degraded behaviour:** a finding that fails the self-validation rubric is downgraded or dropped —
+but logical-coherence and argument-soundness findings backed by section references are fully valid
+and are never downgraded as speculation. A later round that changes what an earlier one concluded
+says so in its own source; sources are immutable and ungated, and nothing rewrites yours. A round
+that re-reports the last round's findings reads to the caller as three independent confirmations
+of one problem, which is worse than reporting nothing.

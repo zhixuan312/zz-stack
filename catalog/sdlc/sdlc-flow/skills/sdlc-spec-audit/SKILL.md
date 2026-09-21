@@ -1,6 +1,6 @@
 ---
 name: sdlc-spec-audit
-version: 2.0
+version: 2.3
 description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, at most three rounds.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
@@ -88,3 +88,51 @@ document says what was decided, coherently enough to plan from.
 
 "I would have chosen option B" is not a finding. "The Approach implements option B while
 Alternatives records option A as the decision" is — and it is a critical one.
+
+## Skill contract
+
+**Outcome:** one round's findings on `spec.md` — the eleven prose failure modes plus the seven
+points of the spec's own contract — registered as a SOURCE supporting that document with
+`source_add`, and returned to the caller as one JSON block. No document of the flow, and no change
+to the spec.
+
+**Required evidence:** every finding in one of the four evidence shapes — doc quote, absence
+reference, wrong-claim, internal-coherence — each opening with its source in square brackets: the
+nearest heading for the document, the file path for code. A finding in none of those shapes is
+speculation, and it goes in the summary as "investigation needed" rather than into `findings`.
+Plus the spec version you were shown, on the round and on its source: a missing component is a
+claim about one revision, and the eight are only required of this document at its approval.
+
+**Allowed unknowns:** whether the team should build this at all, and which alternative they should
+have picked — that was settled with a person in `sdlc-spec` and is not yours to reopen. Which of
+your findings get acted on: the document's owner decides, and severity is your honest read rather
+than your verdict. "I would have chosen option B" is not a finding; "the Approach implements
+option B while Alternatives records option A as the decision" is, and it is critical.
+
+**Work roles:** this round is dispatched because the value is a reader who did not write the
+document; running it yourself re-reads your own reasoning and finds it sound. The person who owns
+the spec decides what to fix, and you present nothing to them — the main agent decides what
+anybody is shown. The `semantic-assessment` role answers the bounded questions below by question
+ID from the fixed set below. Nothing in this platform registers those IDs yet, so an
+implementation adopts these spellings rather than minting its own; it does not set severity for
+you.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Contract point 2, per requirement | `requirement_coverage` | whether every `FR-N` reaches at least one testable `AC-N.N`, and every criterion is numbered, checkboxed and checkable |
+| On each finding, where the caller said what the last round raised | `repeats_finding` | whether this was already reported, so the round confirms the fix rather than re-reporting the problem as a third independent confirmation |
+| On each finding, before it is emitted | `actionability` | whether the owner could act on it without asking you to explain it |
+
+**Action and exit paths:** the action is the eleven failure modes one at a time, then the spec's
+seven, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
+findings and naming `spec.md`, and the JSON block as your final text. The exit that does not exist
+is fixing what you found — an audit that edits the document destroys the caller's ability to
+decide which findings to accept and removes the evidence that anything was ever wrong.
+
+**Degraded behaviour:** the caller did not tell you what the previous round raised, so say so and
+audit the document as it stands rather than assuming this is round one. A component present as a
+heading with four lines of restatement under it passes every mechanical check there is, which is
+why that finding is the one only this round can make. Read-only here is a discipline and not an
+enforced denial: nothing stops you writing, which is exactly why keeping it is yours.

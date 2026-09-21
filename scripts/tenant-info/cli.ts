@@ -33,6 +33,7 @@ import { resolveSuite, runReadySuite, type VerifyProfile } from "./verify.ts";
 import { finalize } from "./acceptance.ts";
 import { SUITE_NAMES, availableSuiteNames, type SuiteName } from "./suites.ts";
 import { runBenchmark, type BenchmarkProfile, type BenchmarkReceipt } from "./benchmark-report.ts";
+import { runMeasurement, type MeasureReceipt } from "./benchmark-measure-run.ts";
 import { runMigrate, type MigrateArgs, type MigrateReceipt } from "./migrate.ts";
 import { runExport } from "./export.ts";
 
@@ -116,12 +117,26 @@ async function dispatch(argv: string[]): Promise<DispatchResult> {
     case "verify":
       return dispatchVerify(parseFlags(rest, new Set(["suite", "profile", "cases"]), new Set(["finalize"])));
     case "benchmark": {
-      const flags = parseFlags(rest, new Set(["profile"]), new Set());
+      const flags = parseFlags(rest, new Set(["profile"]), new Set(["measure"]));
       const profile = requireFlag(flags, "profile");
       if (profile !== "baseline" && profile !== "acceptance") {
         throw new CliError("INVALID_ARGUMENTS", `--profile must be "baseline" or "acceptance", got "${profile}".`);
       }
       const workspace = resolveWorkspace();
+      // `--measure` IS THE EXECUTION HALF, and it runs BEFORE the assembler rather than beside
+      // it. `runMeasurement` puts the held-out queries through the real public search path and,
+      // only if every premise of that measurement held, writes the observations into
+      // `<workspace>/benchmark-inputs/<profile>/measurements.json` — which is exactly the file
+      // `assembleBenchmarkReport` below already loads. So a measured run turns blocked quality
+      // targets into observations without this verb, or that module, knowing anything new.
+      // A refused measurement stops here: nothing was written, every target is still blocked,
+      // and assembling a report over the same absent inputs would only restate that at length.
+      if (flags.get("measure") === true) {
+        const measurement: MeasureReceipt = await runMeasurement(workspace, profile as BenchmarkProfile);
+        if (!measurement.ok) return { receipt: measurement, ok: false };
+        const assembled: BenchmarkReceipt = runBenchmark(workspace, profile as BenchmarkProfile);
+        return { receipt: { measurement, benchmark: assembled }, ok: assembled.ok };
+      }
       // `ok` COMES OFF THE RECEIPT, exactly as `migrate` below already does. A benchmark that
       // produced a structurally perfect report carrying eighteen blocked targets has run and
       // has not passed, and the exit code is the only part of that an acceptance script reads.

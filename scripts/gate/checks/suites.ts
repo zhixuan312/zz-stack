@@ -492,7 +492,7 @@ check("a legacy import through the real importer and the real kernel keeps every
 check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
       runsCheck("tenant-complete-text.ts"));
 
-check("zz-lexical-v1 handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
+check("zz-lexical-v2 handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
       runsCheck("tenant-passage-analysis.ts"));
 
 check("a migration needing an extension declares it, and the runner still defers rather than taking the database down", runsCheck("migration-extension-declared.ts"));

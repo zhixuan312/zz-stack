@@ -21,7 +21,7 @@ Never resume from your memory of a conversation.
 
 ### sdlc-flow (v0.62.4)
 
-**When:** Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code).
+**When:** Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach...
 
 **Then:** call the `zz-core` tool **skill_read**, passing `zz-platform` as its
 `name` argument; then call it again passing `sdlc-flow`. Both are MCP tools

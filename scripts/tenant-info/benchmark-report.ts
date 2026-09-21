@@ -8,9 +8,13 @@
  * the evaluator and the judgment validator stayed there and the report — a separate subject,
  * and the only half that touches a filesystem — is what left.
  *
- * NOTHING IN THIS FILE MEASURES ANYTHING, AND THAT IS NOT A GAP THIS TASK LEFT OPEN. There is
- * no PostgreSQL 17 cluster, no built pg_textsearch image, no bm25 index and no projected row
- * reachable from this checkout; migration 070 is deferred on every cluster by construction.
+ * NOTHING IN THIS FILE MEASURES ANYTHING, AND THAT IS NOT A GAP THIS TASK LEFT OPEN. The reason
+ * is narrower than it was: measured against the production cluster on 2026-09-21, PostgreSQL
+ * 17.11 IS reachable, `pg_textsearch` 1.4.0 IS installed, and migration 070 HAS applied — the
+ * tables it creates exist. What is still missing is what those two facts do not give you:
+ * schema `zz` carries no bm25 index at all, and `zz.artifact` and all three
+ * `zz.search_*_default` projections hold zero rows. An available extension is not an index,
+ * and an applied DDL migration is not a populated projection.
  * So `assembleBenchmarkReport` records the thresholds the agreement fixes, the bindings it can
  * hash off disk, and eighteen blocked targets — each naming what would produce an observation.
  * It never writes a number nobody measured, not as a placeholder and above all not as a zero:
@@ -528,8 +532,10 @@ function assembleBenchmarkReport(
     declared[corpus] = { records: plan.records, one_mib_fixtures: plan.one_mib };
   }
 
-  const NOTHING_RAN = "no reference run has been executed from this checkout: there is no PostgreSQL 17 cluster, " +
-    "no built pg_textsearch image and no projected row to measure against";
+  const NOTHING_RAN = "no reference run has been executed from this checkout: PostgreSQL 17.11 and " +
+    "pg_textsearch 1.4.0 are reachable and migration 070 has applied, but schema zz carries no bm25 " +
+    "index and zz.artifact and every zz.search_*_default projection hold zero rows, so there is " +
+    "nothing indexed to measure against";
 
   const report: Record<string, unknown> = {
     schema: "tenant-info-benchmark/1",
@@ -552,7 +558,7 @@ function assembleBenchmarkReport(
     },
     index_census: isRecord(index) ? index : {
       method: "absent", observed_indexed_artifacts: null, projection_generation: null,
-      blocked_reason: blocked(`${NOTHING_RAN}; migration 070 is deferred on every cluster, so no artifact is indexed`),
+      blocked_reason: blocked(`${NOTHING_RAN}; conversion and rebuild have not run, so no artifact is indexed`),
     },
     sizes: { passage_bytes: null, index_bytes: null,
       blocked_reason: blocked("passage and index sizes are properties of a built index, and none exists") },
@@ -593,7 +599,7 @@ function assembleBenchmarkReport(
     coverage: {
       candidate: {
         supported: ["four composed retrieval lanes", "three scopes", "mode-aware grammar", "cursor and freshness bounds"],
-        unsupported: ["lexical bm25 ranking — no bm25 index exists on any cluster; migration 070 is deferred",
+        unsupported: ["lexical bm25 ranking — migration 070 has applied and its tables exist, but no bm25 index exists on any cluster and the projections are empty",
           "the live knowledge_search handler is deliberately not repointed at these tables"],
       },
       baseline: {

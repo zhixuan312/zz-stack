@@ -108,7 +108,21 @@ const MARKER = /NOT A TOOL:/;
 // stated. It is a single named path rather than a pattern: the day a second frozen check needs
 // this, somebody should have to write down why, which is the property the marker convention
 // exists to preserve.
-const FROZEN_WITHOUT_MARKERS = new Set(["checks/tenant-lifecycle-matrix.ts"]);
+// THE SECOND ONE, and this is the "write down why" the paragraph above asks for.
+//
+// `scripts/gate/checks/commit-result-reconciliation.ts` is Task I-23's declared check in the
+// Jev/LLM control-loop plan, frozen before dispatch and hash-verified after it for the same
+// reason as the matrix above: a worker who finds a check inconvenient must not be able to
+// soften it, and that holds against this repository's conventions too.
+//
+// It imports `reconcile` from `@zz/contracts` — a pure function that settles what a mutation
+// kernel's reply means about the operation that produced it. It reaches no door. The renamed
+// MCP tool `knowledge_reconcile` is a different thing that happens to share an English verb,
+// and the source module it imports from carries the `NOT A TOOL:` marker in full.
+const FROZEN_WITHOUT_MARKERS = new Set([
+  "checks/tenant-lifecycle-matrix.ts",
+  "scripts/gate/checks/commit-result-reconciliation.ts",
+]);
 
 const TREES = ["services", "packages", "scripts", "checks", "catalog", "marketplace", "skills",
                "testing"];

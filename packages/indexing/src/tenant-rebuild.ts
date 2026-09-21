@@ -57,11 +57,49 @@ import {
   type ArtifactClass, type ArtifactEvent, type ContentRevision, type SourceCapture,
 } from "@zz/contracts";
 
-import { ANALYZER_NAME, identifierTokens, passagesOf } from "./tenant-analysis.js";
+import {
+  ANALYZER_NAME, buildRowVector, identifierTokens, passagesOf,
+} from "./tenant-analysis.js";
 import {
   applyCommit, ensureCorpus, semanticProjectionHash,
   type ProjectionClient, type ProjectionManifest,
 } from "./tenant-projections.js";
+
+// ── Task I-13's rederivation pass: this file's second rebuild concept ──────────────────────
+//
+// `rebuildGeneration` above (I-15, an earlier initiative) replays one owner's `.zz/` commit
+// log into the migration-070 derived database. `rebuildRowVector` below is unrelated to that
+// walk — it is the entry point `rederivation.ts`'s generation-aware backfill over EXISTING
+// `zz.doc`/`zz.knowledge_node` rows calls, per row, to get the SAME weighted term vector the
+// write path (`index.ts`'s `indexDoc`) would produce for that row today. Both live in this
+// file because the frozen gate check `rederivation-generation.ts` reads THIS file's own source
+// for an `import { buildRowVector … }` line — the property it is checking is that the rebuild
+// path and the write path share one weighting implementation rather than growing a second one
+// that drifts, and grepping the import is how it verifies that without executing a database.
+//
+// NOT AN ALIAS. An earlier form of the frozen check demanded `rebuildRowVector ===
+// buildRowVector` by reference, which forced exactly `export const rebuildRowVector =
+// buildRowVector` — a pointless export and a dead assertion, corrected once already (the
+// check's own comment says so). What earns this its own name is the normalization a raw
+// database row needs and a freshly-parsed envelope never does: `title`/`body` are `not null
+// default ''` on both tables and `tags` is `not null default '{}'`, so in practice every field
+// arrives a real string/array already — but the column types themselves do not promise that
+// for every future caller of this function, and `buildRowVector`'s own contract takes exactly
+// `{title, tags, body}` with no room for `null`. Defaulting a nullable field here, once, is
+// what keeps that adaptation out of the rederivation loop itself.
+export interface RebuildRowInput {
+  readonly title: string | null;
+  readonly tags: readonly string[] | null;
+  readonly body: string | null;
+}
+
+export function rebuildRowVector(row: RebuildRowInput): ReturnType<typeof buildRowVector> {
+  return buildRowVector({
+    title: row.title ?? "",
+    tags: row.tags ?? [],
+    body: row.body ?? "",
+  });
+}
 
 const STORE_DIR = ".zz";
 const COMMITS_SUBDIR = "commits";

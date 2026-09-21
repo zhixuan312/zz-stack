@@ -1,55 +1,55 @@
 {
   "sdlc-audit-criteria": {
-    "version": "2.1",
-    "sha": "d4588e9f25ec"
+    "version": "2.4",
+    "sha": "7a33bec2796c"
   },
   "sdlc-execute": {
-    "version": "1.2",
-    "sha": "bf205cfeb54f"
+    "version": "1.8",
+    "sha": "cd0bc5ec8107"
   },
   "sdlc-explore": {
-    "version": "1.4",
-    "sha": "9c87b081e9aa"
+    "version": "1.8",
+    "sha": "c7eb0a109e8b"
   },
   "sdlc-flow": {
-    "version": "2.1",
-    "sha": "1f5dcfc5f826"
+    "version": "2.5",
+    "sha": "7ebef54afafe"
   },
   "sdlc-investigate": {
-    "version": "1.0",
-    "sha": "c52bfb4eff39"
+    "version": "1.2",
+    "sha": "7b4dfc8ef68c"
   },
   "sdlc-method": {
-    "version": "1.8",
-    "sha": "76465dc209ab"
+    "version": "1.12",
+    "sha": "5cec69cb6bda"
   },
   "sdlc-plan-audit": {
-    "version": "2.0",
-    "sha": "6d0a05e5dbbb"
+    "version": "2.3",
+    "sha": "0f79ad5f88d0"
   },
   "sdlc-plan": {
-    "version": "1.8",
-    "sha": "5d904c4bea4c"
+    "version": "1.12",
+    "sha": "dd5a741f3898"
   },
   "sdlc-recall": {
-    "version": "1.5",
-    "sha": "c56c819f31d2"
+    "version": "1.9",
+    "sha": "636faf9cf4ba"
   },
   "sdlc-research": {
-    "version": "1.1",
-    "sha": "ed0837fbf25b"
+    "version": "1.4",
+    "sha": "2a8c4a886be8"
   },
   "sdlc-review": {
-    "version": "1.3",
-    "sha": "afe2f28aeb27"
+    "version": "1.6",
+    "sha": "002d931ad975"
   },
   "sdlc-spec-audit": {
-    "version": "2.0",
-    "sha": "02eea2b655f6"
+    "version": "2.3",
+    "sha": "26e91ce98bbc"
   },
   "sdlc-spec": {
-    "version": "1.5",
-    "sha": "2b4c93395a4c"
+    "version": "1.9",
+    "sha": "c50c03718254"
   },
   "zz-access": {
     "version": "2.5",
@@ -108,8 +108,8 @@
     "sha": "564cc938a102"
   },
   "zz-handover": {
-    "version": "2.8",
-    "sha": "374bac0029df"
+    "version": "2.9",
+    "sha": "5335aaade5e2"
   },
   "zz-platform": {
     "version": "3.44",

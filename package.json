@@ -42,6 +42,7 @@
   },
   "devDependencies": {
     "@zz/contracts": "*",
+    "@zz/indexing": "*",
     "typescript": "^5.6.0",
     "@types/node": "^22.7.0"
   },

@@ -1,0 +1,349 @@
+#!/usr/bin/env node
+/**
+ * mutation-run.ts — plant a defect in what each gate check examines, and record whether the
+ * check noticed.
+ *
+ * WHY THIS EXISTS. A gate check that cannot fail is decoration with a green tick on it, and
+ * nothing in a passing gate run distinguishes the two. This repository has had both kinds:
+ * a check whose one input took an early-return branch so its loop iterated empty arrays and
+ * it reported green on every run this repository had ever done, and a guard whose window was
+ * widened for a moved call and quietly started passing for a builder nobody called. Neither
+ * was found by reading. Both are found by planting a defect and watching what happens.
+ *
+ *   node scripts/mutation-run.ts                       # every declared check
+ *   node scripts/mutation-run.ts --only scripts/gate/checks/hygiene.ts
+ *   node scripts/mutation-run.ts --work /tmp/zz-mut --keep
+ *
+ * It writes `testing/mutation-report.json`, which `scripts/gate/checks/mutation-coverage.ts`
+ * reads: a check with no row, a row whose mutation never landed, and a row whose check
+ * survived its defect are all release-blocking, and the middle one is the reason the
+ * substitution count is measured rather than assumed.
+ *
+ * EVERY RUN IS A REAL `node scripts/gate.ts`, in a copy of this checkout, over a tree that is
+ * byte-identical to the snapshot except for the one planted defect. Nothing is run in a
+ * cut-down harness: same entry file, same import order, same `ZZ_GATE_RUNNING` guard, same
+ * exit codes. It costs about half an hour for the full set and buys an answer that is about
+ * the gate rather than about a simulation of it.
+ *
+ * IT MUST NOT BE REGISTERED AS A GATE CHECK. It spawns gates; a gate that ran it would spawn
+ * itself. It lives outside `scripts/gate/` so registration cannot reach it, and it refuses to
+ * start inside a gate as well, because a static rule cannot see every way a launch is built.
+ */
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { plant } from "./mutation/plant.ts";
+import type { MutationSpec } from "./mutation/plant.ts";
+import { guardsBlock, probeGuards } from "./mutation/guards.ts";
+import { SPECS } from "./mutation/specs.ts";
+import { DECLARED_BY, declaredChecks, makeWorkspace, provenanceOf, restore } from "./mutation/workspace.ts";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// SPELLED OUT, NEVER COMPUTED. This repository finds an environment variable by looking for
+// its literal name in the source, and a name assembled at runtime is a variable no audit of
+// the configuration surface can see — which has its own check two files away.
+if (process.env.ZZ_GATE_RUNNING === "1") {
+  console.error("  REFUSED — ZZ_GATE_RUNNING=1: this launches gates, so running it inside one " +
+    "is the recursion scripts/gate/run.ts refuses. Run it from a shell, never as a check.");
+  process.exit(1);
+}
+
+/** A flag given with nothing after it is refused rather than read as absent — this
+ *  repository's own rule, and it has a gate check of its own. */
+function flag(name: string): string | null {
+  const argv = process.argv;
+  const inline = argv.find((a) => a.startsWith(`--${name}=`));
+  if (inline !== undefined) return valueOrDie(name, inline.slice(name.length + 3));
+  const at = argv.indexOf(`--${name}`);
+  if (at < 0) return null;
+  return valueOrDie(name, argv[at + 1]);
+}
+
+/** A refusal this program can only answer by stopping: say what is wrong and exit non-zero,
+ *  rather than writing an artifact that is quietly less than the one it replaced. */
+function die(why: string): never {
+  console.error(`  REFUSED — ${why}`);
+  process.exit(6);
+}
+
+function valueOrDie(name: string, raw: string | undefined): string {
+  if (raw === undefined || raw === "" || raw.startsWith("--")) {
+    console.error(`  REFUSED — --${name} was given with no value after it`);
+    process.exit(2);
+  }
+  return raw;
+}
+
+const only = process.argv.filter((_, i) => process.argv[i - 1] === "--only");
+const keep = process.argv.includes("--keep");
+// `--dry` PLANTS AND RESTORES WITHOUT RUNNING A GATE. It answers one question and no other:
+// did the substitution land. A spec whose text has moved reports zero replacements, and this
+// is how that is found in seconds rather than in the half-hour it would otherwise hide inside.
+const dry = process.argv.includes("--dry");
+// `--guards` drives the gate's OWN refusals — the two it can only be shown from outside itself
+// — and merges their receipts into the report the mutation rows already live in, without
+// redoing those rows. They are about the gate as a process rather than about any one check.
+const guardsOnly = process.argv.includes("--guards");
+const workAt = flag("work") ?? join(tmpdir(), "zz-mutation");
+const out = resolve(flag("out") ?? join(root, "testing/mutation-report.json"));
+
+interface GateRun {
+  readonly verdict: string;
+  readonly exit: number;
+  readonly failed: string[];
+  readonly ms: number;
+}
+
+/**
+ * THE BUILD IS RUN BEFORE THE GATE, AND THIS IS NOT AN OPTIMISATION.
+ *
+ * `scripts/gate.ts` statically imports every check module, and a check that reads a shared
+ * package imports `@zz/contracts`, which resolves to `dist/`. An ES module graph is INSTANTIATED
+ * in full — every file read, parsed and linked — before any module body is evaluated, so
+ * `dist/index.js` is already in the module registry by the time `check("tsc -b")` runs and
+ * rebuilds it. The rebuilt output cannot reach the process that produced it.
+ *
+ * MEASURED, not reasoned: with a pristine `packages/contracts/src` and a deliberately stale
+ * `dist`, one gate run rebuilt `dist` correctly AND failed "the assessment port never invents a
+ * probability or an answer" — the check judged the bytes that were on disk when the process
+ * started, not the ones the gate had just produced.
+ *
+ * So a defect planted in one of those packages reaches its check only if the build happens in
+ * a process that ends before the gate's begins. Without this the experiment measures nothing:
+ * every such check would "survive" a defect it never saw.
+ */
+function prebuild(repo: string): string | null {
+  const r = spawnSync("npm", ["run", "-s", "build"], { cwd: repo, encoding: "utf8" });
+  if (r.status === 0) return null;
+  return String(r.stdout || r.stderr || "").slice(-400);
+}
+
+/** One real gate run in the copy, read back from its own machine-readable report rather than
+ *  from stdout — "did THIS check fail" has to be exact, and a name scraped out of a console
+ *  line is not. */
+function runGate(repo: string, reportPath: string): GateRun {
+  const began = Date.now();
+  const r = spawnSync("node", ["scripts/gate.ts", "--quiet", "--report", reportPath],
+    { cwd: repo, encoding: "utf8", env: { ...process.env, ZZ_GATE_RUNNING: "" } });
+  const ms = Date.now() - began;
+  if (!existsSync(reportPath)) {
+    return { verdict: "NO REPORT", exit: r.status ?? -1, failed: [], ms };
+  }
+  const parsed = JSON.parse(readFileSync(reportPath, "utf8")) as
+    { verdict: string; failed_ids: string[] };
+  return { verdict: parsed.verdict, exit: r.status ?? -1, failed: parsed.failed_ids, ms };
+}
+
+/**
+ * What a check's subject IS, from its path, so a reader can tell the row kinds apart.
+ *
+ * A defect in `.ts` changes what the platform DOES. A defect in a `.md` changes shipped
+ * content — which for a check whose whole subject is shipped prose is the only defect there
+ * is, and is exactly the regression each of those checks was written after somebody shipped.
+ * A defect in a manifest or a configuration file changes what the platform DECLARES.
+ */
+function subjectKind(subject: string): string {
+  if (subject.endsWith(".ts")) return "source";
+  if (subject.endsWith(".md")) return "shipped prose";
+  return "declared data or configuration";
+}
+
+/**
+ * Give the coverage check a row for every check it will ask about, IN THE COPY ONLY.
+ *
+ * `scripts/gate/checks/mutation-coverage.ts` reads this report and fails when a declared check
+ * has no row — including, once it is planted, its own. So the FIRST run that covers a new check
+ * would find the gate already red at baseline on the very check it is about to test, and every
+ * row it produced would read "the target was already failing" instead of an answer.
+ *
+ * A provisional row settles that and is marked as one. It is written into the disposable copy,
+ * never into the repository's report: this run's real result replaces it a few minutes later,
+ * and a provisional row that reached the artifact would be a claim nothing measured.
+ */
+function seedProvisional(repo: string, wanted: readonly string[]): void {
+  const p = join(repo, "testing/mutation-report.json");
+  const doc = existsSync(p)
+    ? JSON.parse(readFileSync(p, "utf8")) as { results: { check: string }[] }
+    : { results: [] };
+  const have = new Set(doc.results.map((r) => r.check));
+  const missing = wanted.filter((w) => !have.has(w));
+  if (!missing.length) return;
+  for (const check of missing) {
+    doc.results.push({
+      check, provisional: true, replacements: 1, failed: true,
+      planted: "provisional, written into this run's disposable copy so the coverage check is " +
+        "answerable at baseline — this run's measured row replaces it",
+    } as { check: string });
+  }
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, `${JSON.stringify(doc, null, 2)}\n`);
+}
+
+function main(): void {
+  const provenance = provenanceOf(root);
+  console.log(`  building a disposable copy under ${workAt}`);
+  const declaredNow = declaredChecks(root);
+  // BEFORE the copy and before the baseline. A mistyped `--only` used to be caught after a
+  // gate run had already been spent on it, which is a refusal arriving too late to be useful —
+  // the same argument the gate itself makes for refusing a bad `--report` path at import.
+  const unknown = only.filter((o) => !declaredNow.includes(o));
+  if (unknown.length) die(`--only names ${unknown.join(", ")}, which the declared set does not contain`);
+  const seedFor = only.length ? declaredNow.filter((d) => only.includes(d)) : declaredNow;
+  const ws = makeWorkspace(root, workAt, (repo) => seedProvisional(repo, seedFor));
+
+  if (guardsOnly) {
+    const probes = probeGuards(ws.repo, join(ws.reports, "control.json"));
+    for (const g of probes) console.log(`  ${g.held ? "HELD" : "DID NOT HOLD"} — ${g.probe}\n      ${g.observed}`);
+    const doc = JSON.parse(readFileSync(out, "utf8")) as Record<string, unknown>;
+    doc.guards = guardsBlock(doc.guards, probes);
+    writeFileSync(out, `${JSON.stringify(doc, null, 2)}\n`);
+    console.log(`\n  ${probes.length} guard receipt(s) merged into ${out}`);
+    if (!keep) execFileSync("rm", ["-rf", workAt]);
+    process.exit(probes.every((g) => g.held) ? 0 : 5);
+  }
+
+  console.log(dry ? "  dry: landing only, no gate runs" : "  baseline: one gate run with nothing planted");
+  if (!dry) prebuild(ws.repo);
+  const baseline = dry
+    ? { verdict: "SKIPPED", exit: 0, failed: [] as string[], ms: 0 }
+    : runGate(ws.repo, join(ws.reports, "baseline.json"));
+  console.log(`      ${baseline.verdict} in ${(baseline.ms / 1000).toFixed(1)}s` +
+    (baseline.failed.length ? ` — already red: ${baseline.failed.join(", ")}` : ""));
+  const alreadyRed = new Set(baseline.failed);
+
+  const declared = declaredChecks(ws.repo);
+  const byCheck = new Map<string, MutationSpec>();
+  for (const s of SPECS) byCheck.set(s.check, s);
+  const wanted = only.length ? declared.filter((d) => only.includes(d)) : declared;
+
+  const results = [];
+  for (const [i, file] of wanted.entries()) {
+    const spec = byCheck.get(file);
+    const head = `  [${i + 1}/${wanted.length}] ${file}`;
+    if (!spec) {
+      console.log(`${head} — NO SPEC`);
+      results.push({
+        check: file, target: null, subject: null, planted: "no mutation was written for this check",
+        find: null, replace: null, replacements: 0, failed: false, exit: null,
+        verdict: null, build_failed: null, baseline_red: alreadyRed.has(file),
+        failed_ids: [], new_failures: [], restored_digest: ws.digest, digest_matches: true,
+        duration_ms: 0, caveat: "no spec — this check has been shown nothing and proves nothing",
+      });
+      continue;
+    }
+    // A SPEC THAT CANNOT BE APPLIED IS RECORDED, NEVER THROWN. A run that died on row 24
+    // would lose the twenty-three answers it already had, and what went wrong is a fact about
+    // this spec — an anchor that moved, a subject renamed — which the report is the right
+    // place for. It is still a failed experiment and it still has to be fixed.
+    let landed = { replacements: 0, before: "" };
+    let applyError: string | null = null;
+    try {
+      landed = plant(ws.repo, spec);
+    } catch (err) {
+      applyError = err instanceof Error ? err.message : String(err);
+    }
+    let run: GateRun = { verdict: "NOT RUN", exit: -1, failed: [], ms: 0 };
+    let prebuildError: string | null = null;
+    if (landed.replacements > 0 && !dry) {
+      prebuildError = prebuild(ws.repo);
+      run = runGate(ws.repo, join(ws.reports, `${i}.json`));
+    }
+    const digest = restore(ws);
+    const newly = run.failed.filter((f) => !alreadyRed.has(f));
+    const failed = newly.includes(spec.target);
+    console.log(`${head} — ${spec.target}: ${landed.replacements} replacement(s), ` +
+      `${failed ? "CAUGHT" : "SURVIVED"} (${run.verdict}, exit ${run.exit})`);
+    results.push({
+      check: file, target: spec.target, subject: spec.subject, planted: spec.planted,
+      find: spec.redact ? null : spec.find,
+      replace: spec.redact ? null : spec.replace,
+      find_base64: spec.redact ? Buffer.from(spec.find, "utf8").toString("base64") : null,
+      replace_base64: spec.redact ? Buffer.from(spec.replace, "utf8").toString("base64") : null,
+      redacted: spec.redact === true,
+      replacements: landed.replacements,
+      failed, exit: run.exit, verdict: run.verdict,
+      build_failed: run.failed.includes("tsc -b"),
+      baseline_red: alreadyRed.has(spec.target),
+      failed_ids: run.failed, new_failures: newly,
+      snapshot_tree_sha256: ws.digest, subject_kind: subjectKind(spec.subject),
+      restored_digest: digest, digest_matches: digest === ws.digest,
+      duration_ms: run.ms, caveat: spec.caveat ?? null, apply_error: applyError,
+      prebuild_failed: prebuildError !== null, prebuild_error: prebuildError,
+    });
+    if (digest !== ws.digest) {
+      console.error(`      RESTORE FAILED — the tree did not come back to ${ws.digest}`);
+      process.exit(3);
+    }
+  }
+
+  // A `--only` run TOPS UP the report it finds rather than replacing it. The coverage check
+  // demands a row for every declared check, so a narrow re-run that wrote only its own rows
+  // would turn a green report into a report claiming sixty-four checks were never covered.
+  let carried: { check: string }[] = [];
+  let priorGuards: unknown = null;
+  if (only.length) {
+    // A TOP-UP ADDS; IT NEVER SHORTENS. The coverage check demands a row for every declared
+    // check, so a narrow re-run that dropped rows would turn a green report into one claiming
+    // sixty-odd checks were never covered — and it would do it silently, which is the shape
+    // this whole task exists to refuse. Every one of these is a refusal, not a warning.
+    if (!existsSync(out)) die(`--only tops up an existing report and ${out} does not exist`);
+    const prior = JSON.parse(readFileSync(out, "utf8")) as
+      { results: { check: string }[]; guards?: unknown };
+    priorGuards = prior.guards ?? null;
+    carried = prior.results.filter((r) => !wanted.includes(r.check));
+    const produced = new Set([...carried, ...results].map((r) => r.check));
+    const lost = prior.results.map((r) => r.check).filter((c) => !produced.has(c));
+    if (lost.length) die(`this top-up would drop ${lost.length} row(s) it did not re-run: ${lost.slice(0, 5).join(", ")}`);
+  }
+
+  if (dry) {
+    const missed = results.filter((r) => r.replacements === 0);
+    console.log(`\n  ${results.length} spec(s) applied, ${missed.length} did not land`);
+    for (const r of missed) console.log(`      ${r.check} -> ${r.subject}`);
+    if (!keep) execFileSync("rm", ["-rf", workAt]);
+    process.exit(missed.length ? 4 : 0);
+  }
+
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, `${JSON.stringify({
+    schema_version: 1,
+    produced_at: new Date().toISOString(),
+    produced_by: "scripts/mutation-run.ts",
+    source_commit: provenance.commit,
+    source_dirty_paths: provenance.dirty_paths,
+    snapshot_tree_sha256: ws.digest,
+    declared_by: DECLARED_BY,
+    declared_count: declared.length,
+    baseline_verdict: baseline.verdict,
+    baseline_failed_ids: baseline.failed,
+    method: {
+      per_row: [
+        "restore the copy from the pristine snapshot and verify its sha256",
+        "apply one exact substitution and COUNT it — a zero is a failed experiment, not a result",
+        "npm run -s build, as its own process, BEFORE the gate",
+        "node scripts/gate.ts --quiet --report <a path outside the repository>",
+        "read the verdict from that report's failed_ids, restore, verify the sha256 again",
+      ],
+      why_the_build_is_separate:
+        "scripts/gate.ts statically imports every check module, and an ES module graph is " +
+        "instantiated in full before any module body is evaluated — so packages/contracts/dist " +
+        "is already linked when check(\"tsc -b\") rebuilds it, and the rebuilt output cannot " +
+        "reach the process that produced it. Measured: a pristine src with a stale dist rebuilt " +
+        "dist correctly AND failed the check that reads it. Without a separate build step a " +
+        "defect planted in a shared package never reaches the check that imports it.",
+      failed_means:
+        "the target check is in this run's failed_ids and was NOT in the baseline's",
+    },
+    results: [...carried, ...results].sort((a, b) => a.check < b.check ? -1 : 1),
+    guards: guardsBlock(priorGuards, null),
+  }, null, 2)}\n`);
+  console.log(`\n  ${results.length} row(s) written to ${out}` +
+    (carried.length ? `, ${carried.length} carried from the previous run` : ""));
+  if (!keep) execFileSync("rm", ["-rf", workAt]);
+}
+
+main();

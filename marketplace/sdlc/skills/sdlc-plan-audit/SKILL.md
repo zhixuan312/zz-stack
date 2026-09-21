@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan-audit
-version: 2.0
+version: 2.3
 description: Audit plan.md — the eleven prose failure modes plus the plan's own contract: AC traceability, task contracts, checks, the format the executor depends on, dependency order, the full-suite gate. Read-only. Dispatched, at most three rounds.
 when_to_use: "plan.md is written and someone is about to execute it. Runs after sdlc-plan and before sdlc-execute. Dispatched by the main agent, one round at a time."
 ---
@@ -85,3 +85,51 @@ faithfully implements a spec you disagree with, that is not a plan finding.
 The exception is a genuine contradiction between the two — "Task I-4 builds X, but the spec puts X
 explicitly out of scope" — which is among the most valuable findings available here, because
 nothing else in the flow is positioned to see it.
+
+## Skill contract
+
+**Outcome:** one round's findings on `plan.md` — the eleven prose failure modes plus the eleven
+points of the plan's own contract — registered with `source_add` as a SOURCE supporting that
+document, and handed back to the caller as one JSON block. This round writes no document of the
+flow and changes nothing in the plan.
+
+**Required evidence:** every finding in one of the four evidence shapes, each opening with its
+source in square brackets. For a path claim, the tree at HEAD — verify the specific paths the plan
+names rather than enumerating the repository. For a runner claim, that the project actually has
+the entry point the `Run:` command names. And the plan version `document_present` stated when you
+opened it, quoted in the source you register — `sdlc-execute` dispatches from one revision of this
+document, so a round that does not say which one it read cannot be matched to what was built.
+
+**Allowed unknowns:** whether the spec was right. It was agreed and already audited, and a plan
+that faithfully implements a spec you disagree with is not a plan finding. How a task will be
+implemented: the contract, not the implementation, is what you are reading. The one exception to
+the first is a genuine contradiction between the two documents — "Task I-4 builds X, but the spec
+puts X explicitly out of scope" — which is among the most valuable findings available here,
+because nothing else in the flow is positioned to see it.
+
+**Work roles:** dispatched, because the value is a reader who did not write the plan. The person
+who owns the plan decides what to fix, and you present nothing to them. The consumer everything
+here is calibrated against is a low-judgement worker that follows the plan literally and will not
+stop to check. The `semantic-assessment` role answers the bounded questions below by question ID
+from the fixed set below. Nothing in this platform registers those IDs yet, so an implementation
+adopts these spellings rather than minting its own, and severity stays yours to calibrate.
+
+**Checkpoints:**
+
+| Where | Question ID | Asked about |
+|---|---|---|
+| Contract point 1, per business AC in the spec | `requirement_coverage` | whether the traceability table reaches it from at least one task — an untraced AC is scope that will not get built |
+| Contract points 2 to 4, per task | `actionability` | whether a worker that cannot disambiguate could execute this contract literally and know when it is done |
+| On each finding, where the caller said what the last round raised | `repeats_finding` | whether this was already reported, so the round confirms the fix and looks instead for what the changes introduced |
+
+**Action and exit paths:** the action is the eleven failure modes one at a time, then the plan's
+eleven, then consolidation. Two exits, both taken every round: `source_add` carrying the prose
+findings and naming `plan.md`, and the JSON block as your final text. The round loop, and the
+decision to send the plan back to `sdlc-plan`, belong to the caller. The exit that does not exist
+is repairing the plan yourself.
+
+**Degraded behaviour:** a task with no deterministic check is not automatically a finding — a
+missing Checks section is a statement, and only a silently missing one is a defect, so read the
+technical AC for how the claim is established instead. A check path or runner you cannot resolve
+is reported as unverified rather than asserted broken. Read-only here is a discipline and not an
+enforced denial.

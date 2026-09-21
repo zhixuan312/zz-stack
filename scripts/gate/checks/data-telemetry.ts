@@ -215,21 +215,35 @@ check("the platform records its own surface, the way it records everybody else's
   // would report them deleted, and a diff that invents a finding is the one failure this
   // instrument cannot have. So the factories come out of the `serveMcp` calls themselves, and
   // a third door added tomorrow is covered by this check on the day it is mounted.
-  const boot = src.slice(src.indexOf("app.listen(8000"));
   // Everything boot runs BEFORE the record is written. A builder called after it has filled
   // nothing by the time the names are read, so "called at boot" is not the property — "called
   // first" is, and an empty slice here makes every clause below fire rather than pass.
-  const at = boot.indexOf("await recordOwnSurface()");
-  const built = at < 0 ? "" : boot.slice(0, at);
+  //
+  // MEASURED FROM THE TOP OF THE FILE, not from `app.listen`. The builders used to sit inside
+  // the listen callback and a window starting there saw them; they now run ABOVE `listen`,
+  // because the issuance guard has to read the registrations they fill and a refusal has to be
+  // able to stop the process coming up rather than throw at a bound socket. That is the same
+  // property this clause is about — built before recorded — satisfied EARLIER, and a window
+  // anchored at `listen` reported it as absent. Anchor on the record instead: it is the thing
+  // everything here has to precede.
+  // The CALL, not the declaration — `async function recordOwnSurface()` sits near the top of
+  // the file, and anchoring on the bare name put the window before everything.
+  const at = src.search(/(?:await|void)\s+recordOwnSurface\(\)/);
+  const built = at < 0 ? "" : src.slice(0, at);
   const factories = [...src.matchAll(/serveMcp\(app,\s*"[^"]+",\s*(\w+)\)/g)].map((m) => m[1]);
   if (!factories.length) {
     bad.push("no serveMcp(app, \"path\", factory) call found in zz-core — this clause cannot see which doors exist, so it asserted nothing about what the recorded surface covers");
   }
   if (at < 0) {
-    bad.push("boot never awaits recordOwnSurface — nothing records the surface at all");
+    bad.push("boot never calls recordOwnSurface — nothing records the surface at all");
   }
   for (const factory of factories) {
-    if (!new RegExp(`\\b${factory}\\(`).test(built)) {
+    // A CALL, never the declaration. The window now starts at the top of the file so it can see
+    // builders that run above `listen`, and `function buildServer(` lives up there too — so a
+    // bare `${factory}(` matched the declaration and this clause passed for a builder nobody
+    // called. That is the shape of defect this whole gate exists to refuse, introduced while
+    // widening the window; the lookbehind is what makes the widened window honest.
+    if (!new RegExp(`(?<!function\\s)\\b${factory}\\(`).test(built)) {
       bad.push(`boot does not build ${factory} before recording the surface — the doors are stateless, so nothing else has, and that door's tools would be missing from the surface we record`);
     }
     // AND IT BUILDS THE WHOLE SURFACE. A builder that cuts its tool list by the caller's role

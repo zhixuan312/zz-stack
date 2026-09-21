@@ -33,6 +33,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.62.0] — 2026-09-21
+
+**This deployment now runs PostgreSQL 17.11 with pg_textsearch and pg_trgm.** The database was
+cut over from `postgres:16-alpine` on 2026-09-21: drained, dumped, restored into a new volume on
+the pinned image, and verified — 816 documents, 892 knowledge nodes, 3 teams and 3 principals,
+each matching the pre-cutover count. Migration 070 applied on the first boot afterwards, which
+is the first time it has ever run anywhere.
+
+**Nothing a reader or writer does has changed.** `zz.artifact` and the three `zz.search_*`
+projections exist and are empty; no tool reads them; every document tool still uses the schema it
+used yesterday. The platform is upgraded and the data is not migrated, and both halves of that
+sentence are true.
+
+**A source may now have no content revision.** 070 declared
+`current_revision integer not null check (> 0)`, and an immutable SourceArtifact has no revision
+at all — the projection had nothing legal to write. 071 permits null, which is what the rest of
+the platform has always used to mean "this is a source". Found by restoring a production backup
+into the built image and replaying a real owner store through it.
+
+### Upgrade notes
+
+**Migration 071 alters one constraint and is not deferred.** It needs no extension.
+
+**The compose file now names the PostgreSQL 17 image and a NEW volume,
+`postgres-data-17`.** PostgreSQL 17 cannot start on a PostgreSQL 16 data directory. The old
+`postgres-data` volume is kept, untouched, and is the rollback.
+
+**`shared_buffers` is overridden in compose to 512MB.** The image ships the specification's
+reference settings and one of them is 8GB; on a 3 GB host PostgreSQL refuses to start at all.
+Delete that line on a host with the memory to honour the reference values.
+
 ## [0.61.0] — 2026-09-21
 
 **Tenant information gets a shape of its own, and a way to say whether it is finished.**

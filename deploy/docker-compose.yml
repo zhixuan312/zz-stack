@@ -171,14 +171,31 @@ services:
   # The profile was about the front end's worker count, a knob that no longer exists in
   # this stack at all. It was never about whether the platform has somewhere to keep data.
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/zhixuan312/zz-postgres:17.11-pgts1.4.0
     restart: unless-stopped
+    # SIZED TO THE HOST, because the image ships the specification's reference settings and
+    # this deployment is smaller than the reference. `shared_buffers = 8GB` is one of the five
+    # agreed values in deploy/postgres/postgresql.conf, and on a 3 GB machine PostgreSQL 17
+    # refuses to start at all -- "could not map anonymous shared memory ... currently
+    # 8845312000 bytes". It had never bitten before because the previous compose passed NO
+    # config file, so PostgreSQL 16 ran on the image's own 128 MB default and the contract
+    # value never once took effect.
+    #
+    # Overridden here rather than in the conf the image ships, so the reference values stay
+    # readable beside the deployment's own, and an operator moving this to a larger host has
+    # one line to delete rather than a contract to reconstruct.
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf",
+              "-c", "shared_buffers=512MB", "-c", "maintenance_work_mem=128MB"]
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-zz}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD — openssl rand -hex 16}
       - POSTGRES_DB=${POSTGRES_DB:-zz}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # A NEW VOLUME, NEVER THE PG16 DATA DIRECTORY. PostgreSQL 17 cannot start on a
+      # PostgreSQL 16 data directory, and reusing the name would either refuse to boot or --
+      # worse -- invite somebody to "fix" it by deleting the old cluster. `postgres-data` is
+      # kept, untouched and frozen at the cutover, and is the rollback.
+      - postgres-data-17:/var/lib/postgresql/data
     ports: ["${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"]   # bind to a tailscale IP to make the DB tailnet-only
     # The only healthcheck in this file, and it earns its place: it is what `depends_on`
     # below waits on. Without it every service that talks to the database started at the
@@ -197,5 +214,6 @@ services:
 
 volumes:
   cred-data:
-  postgres-data:
+  postgres-data:      # PostgreSQL 16, frozen at the 2026-09-21 cutover — the rollback
+  postgres-data-17:
   zz-artifacts:

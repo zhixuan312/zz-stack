@@ -33,6 +33,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.62.3] — 2026-09-21
+
+**`zz-handover` would have minted a statement that had stopped being true.** Its second pass
+mints the team knowledge nodes a person approved in `handover.md`, "using exactly the title
+and content that line already promised". That rule is right about what it guards — a second
+pass must not re-run an approved judgement or add candidates nobody agreed to. It had no door
+for the case that came up the first time the pass ran for real: a proposed node asserted
+something checkable about the world, somebody read the draft handover and acted on it, and the
+approved sentence became false *because the handover worked*. Transcribing it would have put a
+falsehood into a store whose whole value is that its entries can be trusted.
+
+The rule now carries one narrow exception. Check each factual assertion before minting it;
+where one has moved, keep the node's subject and substance as approved, correct only the
+falsified fact, record in the node that the handover caused the change, and say in the report
+which line was altered so a person can put it back. The door opens for a fact verified to be
+wrong, never for a judgement somebody would make differently today.
+
+**And the broadened search now has a check that runs every release.** 0.62.2's fix had been
+verified once, by hand, against production — which this project's own review calls the thing
+that proves nothing durable. `a question no single document answers is broadened, and the
+answer says so` walks the release's own image with a query that is empty under AND by
+construction, and asserts both halves of the contract: the note telling a reader these match
+only some of the terms, and `via: ["lexical-broad"]` on the rows. Asserting merely that
+something came back would pass on a plain match.
+
+### Upgrade notes
+
+**Update your plugins to pick up the skill change.** `claude plugin marketplace update
+zz-stack`, then `claude plugin update <plugin>@zz-stack` for each, then restart. Nothing
+server-side: no migration, no contract change.
+
 ## [0.62.2] — 2026-09-21
 
 **"Nothing is known about this" was usually "no one document says all of that at once."**

@@ -144,8 +144,20 @@ function invalidRequest(request: unknown): never {
 }
 
 /**
- * ONE PHYSICAL INDEX CARRIES ONE OWNER'S DOCUMENTS. A registry that points two owners at the
- * same `index_name` is refused outright, before a single entry is read for scope.
+ * ONE PHYSICAL INDEX CARRIES ONE VISIBILITY SCOPE — one owner AND one audience. A registry
+ * that points two owners, or two audiences of the same owner, at one `index_name` is refused
+ * outright, before a single entry is read for scope.
+ *
+ * THE AUDIENCE HALF WAS MISSING AND IS THE SUBTLER LEAK. This guard checked `owner_id` alone,
+ * and one owner is not one visibility scope: `zz-platform` holds both private work documents
+ * and knowledge published to every team. Two corpora of that one owner sharing an index passed
+ * the check, and a shared reader's ranking would then be moved by content they cannot see and
+ * cannot ask about. The cross-tenant case is loud — two owners, obviously wrong. This one
+ * leaks INSIDE a tenant, across the exact boundary `audience` exists to draw, and every
+ * returned row stays correct while it happens.
+ *
+ * Found by a review that had the delivery's own reasoning and applied it one step further than
+ * the delivery had.
  *
  * WHAT THIS CLOSES, and how it was found. `testing/tenant-info/isolation.ts`'s mutation case
  * takes owner B's corpus, changes nothing but its `index_name` to owner A's, and measures what
@@ -171,19 +183,28 @@ function invalidRequest(request: unknown): never {
  * select would let a misconfigured registry resolve cleanly for `current` and refuse for
  * `history`, so whether the deployment was safe would depend on what the caller asked for.
  */
-function assertOneOwnerPerIndex(registry: readonly CorpusRegistryEntry[]): void {
-  const ownerByIndex = new Map<string, string>();
+function assertOneVisibilityScopePerIndex(registry: readonly CorpusRegistryEntry[]): void {
+  const seenByIndex = new Map<string, { owner_id: string; audience: string }>();
   for (const entry of registry) {
-    const seen = ownerByIndex.get(entry.index_name);
-    if (seen !== undefined && seen !== entry.owner_id) {
+    const seen = seenByIndex.get(entry.index_name);
+    if (seen !== undefined && seen.owner_id !== entry.owner_id) {
       throw new RetrievalError(
         "REGISTRY_MISCONFIGURED",
         `corpus registry points index ${JSON.stringify(entry.index_name)} at two owners ` +
-        `(${seen} and ${entry.owner_id}) — one physical index carries one owner's documents, ` +
-        "or their term statistics are shared and each one's writes move the other's scores",
+        `(${seen.owner_id} and ${entry.owner_id}) — one physical index carries one owner's ` +
+        "documents, or their term statistics are shared and each one's writes move the other's scores",
       );
     }
-    ownerByIndex.set(entry.index_name, entry.owner_id);
+    if (seen !== undefined && seen.audience !== entry.audience) {
+      throw new RetrievalError(
+        "REGISTRY_MISCONFIGURED",
+        `corpus registry points index ${JSON.stringify(entry.index_name)} at two audiences ` +
+        `(${seen.audience} and ${entry.audience}) for owner ${entry.owner_id} — a shared reader's ` +
+        "ranking would be moved by that owner's private content, which they cannot see and " +
+        "cannot ask about",
+      );
+    }
+    seenByIndex.set(entry.index_name, { owner_id: entry.owner_id, audience: entry.audience });
   }
 }
 
@@ -210,7 +231,7 @@ export function resolveCorpora(
 ): CorpusDescriptor[] {
   const parsed = CorpusRequestSchema.safeParse(request);
   if (!parsed.success) invalidRequest(request);
-  assertOneOwnerPerIndex(registry);
+  assertOneVisibilityScopePerIndex(registry);
 
   // `Set<string>`, not `Set<RetrievalScope>` — `entry.scope` is the registry's own widened
   // `string` field (see `CorpusRegistryEntry`'s comment), and membership here is compared

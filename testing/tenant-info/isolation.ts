@@ -415,11 +415,48 @@ async function caseRegistryPointingTwoOwnersAtOneIndexIsRefused(): Promise<void>
   assert.doesNotThrow(() => resolveCorpora({ owner_id: OWNER_A, shared_allowed: false }, { scopes: ["current", "history"] }, sameOwnerTwoScopes));
 }
 
+/**
+ * ONE OWNER IS NOT ONE VISIBILITY SCOPE, and the guard above only checked the owner.
+ *
+ * `zz-platform` is the case this is about and it is not hypothetical: that owner holds both
+ * its private work documents and the knowledge it publishes to every team. Two of its corpora
+ * sharing one physical index passes an owner check — same owner, no cross-tenant collision —
+ * and a shared reader's ranking is then moved by content they cannot see and cannot ask about.
+ *
+ * The cross-tenant leak is loud: two owners on one index is obviously wrong to anybody reading
+ * the registry. This one is quiet. It happens INSIDE one tenant, across the exact line
+ * `audience` exists to draw, and — like every statistical leak in this delivery — every row
+ * that comes back is one the caller is entitled to.
+ */
+async function caseRegistryPointingTwoAudiencesAtOneIndexIsRefused(): Promise<void> {
+  const PLATFORM = "5c5c5c5c-5c5c-4c5c-8c5c-5c5c5c5c5c5c";
+  const shared = "zz_search_current_platform_shared";
+  const misconfigured = [
+    { corpus_key: "platform-private", owner_id: PLATFORM, scope: "current", audience: "private", index_name: shared },
+    { corpus_key: "platform-published", owner_id: PLATFORM, scope: "current", audience: "published", index_name: shared },
+  ];
+  assert.equal(misconfigured[0].owner_id, misconfigured[1].owner_id,
+    "this case is only meaningful while both corpora belong to the SAME owner — otherwise it is the cross-tenant case");
+  assert.notEqual(misconfigured[0].audience, misconfigured[1].audience);
+
+  assert.throws(
+    () => resolveCorpora({ owner_id: PLATFORM, shared_allowed: true }, {}, misconfigured),
+    (err: unknown) => (err as { code?: string }).code === "REGISTRY_MISCONFIGURED",
+    "an index shared across a private and a published corpus of one owner must be refused",
+  );
+
+  // And the guard still admits the configuration that is correct: one index per corpus.
+  const correct = misconfigured.map((e) => ({ ...e, index_name: `zz_search_current_${e.corpus_key.replace("-", "_")}` }));
+  const resolved = resolveCorpora({ owner_id: PLATFORM, shared_allowed: true }, {}, correct);
+  assert.equal(resolved.length, 2, "two correctly-indexed corpora of one owner both resolve");
+}
+
 const STATISTICS_CASES: Readonly<Record<string, () => Promise<void>>> = {
   seed_then_baseline_is_nonvacuous: caseSeedThenBaselineIsNonvacuous,
   isolated_indexes_leave_a_unchanged: caseIsolatedIndexesLeaveAUnchanged,
   shared_index_misconfiguration_moves_a_scores_and_goes_red: caseSharedIndexMisconfigurationMovesAScoresAndGoesRed,
   registry_pointing_two_owners_at_one_index_is_refused: caseRegistryPointingTwoOwnersAtOneIndexIsRefused,
+  registry_pointing_two_audiences_at_one_index_is_refused: caseRegistryPointingTwoAudiencesAtOneIndexIsRefused,
 };
 
 // ── the "identity" case group: identical paths across two teams never collide on one key ──

@@ -33,6 +33,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.62.2] — 2026-09-21
+
+**"Nothing is known about this" was usually "no one document says all of that at once."**
+`knowledge_search` builds its query with `websearch_to_tsquery`, which joins unquoted terms
+with AND. That is the right default — it is what makes a precise question precise — and it is
+why a long question came back empty: thirteen words demanded a single document containing all
+thirteen. Measured on real use rather than supposed: of one person's 269 searches, 43 returned
+nothing, 16%, none of them Chinese. Re-run against the same corpus and the same index with the
+terms joined by OR, three of those queries returned 33, 7 and 58 candidates. The documents were
+there the whole time.
+
+When the conjunction finds nothing, the same question is now asked again with OR. It runs ONLY
+where the answer was otherwise empty, so no query that works today can be made worse by it; the
+broadened pool is still ranked by cover density, so a document matching six of seven terms
+outranks one matching a single common word, and it is still fused with the tag and evidence
+lanes rather than replacing them.
+
+**A broadened answer says so, first.** Rows come back as `via: ["lexical-broad"]` and the
+response leads with "No document contains all of those terms together — treat them as leads
+rather than as an answer." A reader who cannot tell a broadened result from a match will cite
+several documents as though they jointly said something none of them says. The search event
+records `broadened`, so the rate this exists to move is measurable afterwards and not only
+before.
+
+### Upgrade notes
+
+**Nothing to do.** No migration, no contract change, no new configuration. A search that
+returned results yesterday returns the same results today.
+
 ## [0.62.1] — 2026-09-21
 
 **The release was rehearsing its SQL against a database this deployment no longer runs.** Two

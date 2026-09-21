@@ -206,7 +206,19 @@ export async function applyCommit(
       return { applied: false, reason: "stale_sequence" };
     }
 
-    const latestRevision = manifest.revisions.reduce((m, r) => Math.max(m, r.revision), 0);
+    // NULL FOR A SOURCE, NOT ZERO. `reduce(max, 0)` over an empty revision list returns its
+    // seed, so an immutable SourceArtifact — which has no content revision at all — projected
+    // as `current_revision = 0`. The schema refuses that, correctly: revision numbers start at
+    // 1, and `null` is how the rest of this platform says a source has none. `ArtifactRefSchema`
+    // accepts `revision: null` and resolves it only to a source; `transitions.ts` refuses every
+    // lifecycle operation on `head.revision === null` for the same reason.
+    //
+    // `greatest()` below is NULL-tolerant: it ignores nulls and returns null only when every
+    // argument is null, so a source stays null across replays and a document that later gains
+    // revisions still takes the higher number.
+    const latestRevision = manifest.revisions.length === 0
+      ? null
+      : manifest.revisions.reduce((m, r) => Math.max(m, r.revision), 0);
     const latestEventSequence = manifest.events.reduce((m, e) => Math.max(m, e.sequence), 0);
     const latest = manifest.revisions.find((r) => r.revision === latestRevision);
     const createdAt = manifest.events.find((e) => e.kind === "created")?.at ?? null;

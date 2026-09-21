@@ -99,7 +99,22 @@ create table if not exists zz.artifact (
   artifact_class      text not null
                       check (artifact_class in ('source', 'work_document', 'knowledge_concept')),
   current_path        text not null,
-  current_revision    integer not null check (current_revision > 0),
+  -- NULL IS HOW A SourceArtifact SAYS IT HAS NO CONTENT REVISION, and this column forbade it.
+  --
+  -- `not null check (> 0)` left the schema with no representation for an immutable source at
+  -- all, while the rest of the platform already had one and used it everywhere:
+  -- `ArtifactRefSchema` accepts `revision: null` and resolves it only to a source, and
+  -- `transitions.ts` refuses every lifecycle operation on `head.revision === null` for exactly
+  -- that reason. The projection had nothing legal to write and the insert was refused —
+  -- "new row for relation \"artifact\" violates check constraint
+  -- \"artifact_current_revision_check\"" — the first time a rebuild ran against this schema
+  -- with a real source in the store.
+  --
+  -- Found by restoring a production backup into the built PostgreSQL 17 image and replaying a
+  -- real owner store through it. No offline check could see it: every suite that exercises
+  -- sources runs against the file-backed record, and every suite that exercises this table
+  -- built its fixtures from work documents.
+  current_revision    integer check (current_revision is null or current_revision > 0),
   content_hash        text not null,
   head_event_sequence integer not null check (head_event_sequence > 0),
   -- NULLABLE. "Unknown legacy timestamps are null plus diagnostic, never now()" -- a lossless

@@ -404,6 +404,40 @@ async function caseParityComparesSemanticMapsExactly(): Promise<void> {
 
 // ── isolated database: the real round trip this task's contract insists on ─────────────────
 
+/**
+ * Everything this owner has in the derived database, deleted CHILDREN FIRST.
+ *
+ * This was four deletes written inline, twice, and it named `zz.artifact` without naming the
+ * two tables that reference it: `zz.artifact_event` and `zz.artifact_revision` both carry a
+ * foreign key to (owner_id, artifact_id) with no ON DELETE clause, so the delete was refused —
+ * "update or delete on table artifact violates foreign key constraint
+ * artifact_event_owner_id_artifact_id_fkey".
+ *
+ * Nobody had seen it because this case is gated on an isolated PostgreSQL 17 that did not exist
+ * until today: the reset was written, reviewed and shipped without once being executed against
+ * the schema it deletes from.
+ *
+ * ORDER MATTERS AND IS THE POINT, so it is written once here rather than transcribed at each
+ * call site — a second copy is how the first one came to be missing two tables.
+ */
+async function resetOwnerProjections(client: ProjectionClient, owner: string): Promise<void> {
+  // The order is the foreign-key graph read out of the schema, not guessed one refusal at a
+  // time:  edge -> event -> artifact,  identifier -> passage,  revision -> artifact.
+  // `zz.artifact_edge` is keyed by BOTH ends and has no `owner_id` column at all — an edge
+  // belongs to two artifacts, not one — so it is deleted by its own columns rather than by the
+  // name every other table happens to share.
+  await client.query(
+    "delete from zz.artifact_edge where source_owner_id=$1 or target_owner_id=$1", [owner]);
+  for (const table of [
+    "zz.artifact_identifier", "zz.artifact_passage",
+    "zz.artifact_event", "zz.artifact_revision",
+    "zz.artifact",
+    "zz.artifact_projection_commit", "zz.artifact_projection_watermark",
+  ]) {
+    await client.query(`delete from ${table} where owner_id=$1`, [owner]);
+  }
+}
+
 async function caseRealRebuildAgainstIsolatedCopy(): Promise<void> {
   const url = (process.env.ZZ_TENANT_INFO_ISOLATED_DB_URL ?? "").trim();
   if (!url) {
@@ -423,12 +457,30 @@ async function caseRealRebuildAgainstIsolatedCopy(): Promise<void> {
     // A tail term far past any single passage, so raw_body must carry the whole body for the
     // query below to find it — the property `passagesOf`'s no-truncation guarantee exists for.
     const longBody = `${"filler word ".repeat(3000)}zzuniquetailtermnine\n`;
+
+    // A CAUSE FIRST, because the policy requires one and this fixture did not have it. Every
+    // native create needs at least one explicitly declared cause — "inherited citations alone
+    // do not satisfy a new cause" — so `cause_refs: []` was refused CAUSE_REQUIRED and this
+    // case failed the first time it ever ran. It had never run: it is gated on an isolated
+    // PostgreSQL 17 that did not exist until today, so the fixture was written, reviewed and
+    // shipped without once being executed.
+    const source = await mutate({
+      root, auth, policy: nativePolicy,
+      request: {
+        operation: "create", idempotency_key: `gen-src-${randomUUID()}`, artifact_class: "source",
+        payload: { content: `rebuild-evidence-${randomUUID()}\n`, original_path: "evidence.txt", title: "Evidence", media_type: "text/plain" },
+        cause_refs: [],
+      },
+    });
+    assert.equal(source.committed, true, JSON.stringify(source));
+    if (source.committed !== true) throw new Error("unreachable");
+
     const created = await mutate({
       root, auth, policy: nativePolicy,
       request: {
         operation: "create", idempotency_key: `gen-${randomUUID()}`, artifact_class: "work_document",
         payload: { title: "Long", description: "d", type: "notes", tags: ["alpha-beta"], body: longBody, resource: null, content_fields: {} },
-        cause_refs: [],
+        cause_refs: [{ owner_id: owner, artifact_id: source.artifact_id, revision: null, content_hash: source.content_hash }],
       },
     });
     assert.equal(created.committed, true, JSON.stringify(created));
@@ -445,10 +497,7 @@ async function caseRealRebuildAgainstIsolatedCopy(): Promise<void> {
     assert.equal(outcomeA.status, "ready", JSON.stringify(outcomeA));
     const mapA = await collectSemanticState(client, owner);
 
-    await client.query("delete from zz.artifact_passage where owner_id=$1", [owner]);
-    await client.query("delete from zz.artifact where owner_id=$1", [owner]);
-    await client.query("delete from zz.artifact_projection_commit where owner_id=$1", [owner]);
-    await client.query("delete from zz.artifact_projection_watermark where owner_id=$1", [owner]);
+    await resetOwnerProjections(client, owner);
 
     const outcomeB = await rebuildGeneration({ root: copy, ownerId: owner, corpusKey: "acme_team", baselineWatermark: 0, client });
     assert.equal(outcomeB.status, "ready", JSON.stringify(outcomeB));
@@ -465,10 +514,7 @@ async function caseRealRebuildAgainstIsolatedCopy(): Promise<void> {
   } finally {
     if (copy) await rm(copy, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
-    await client.query("delete from zz.artifact_passage where owner_id=$1", [owner]);
-    await client.query("delete from zz.artifact where owner_id=$1", [owner]);
-    await client.query("delete from zz.artifact_projection_commit where owner_id=$1", [owner]);
-    await client.query("delete from zz.artifact_projection_watermark where owner_id=$1", [owner]);
+    await resetOwnerProjections(client, owner);
     await client.close();
   }
 }

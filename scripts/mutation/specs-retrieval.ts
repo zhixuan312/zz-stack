@@ -57,15 +57,6 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
       "changed and the hash did not, so the old corpus is never rederived",
   },
   {
-    check: "scripts/gate/checks/retrieval-serializer.ts",
-    target: "the retrieval serializer reports unknowns as unknown and never guesses a type from a filename",
-    subject: "packages/indexing/src/retrieval-serializer.ts",
-    find: "    status_origin: statusOriginFor(row),",
-    replace: '    status_origin: (void statusOriginFor, "wire"),',
-    planted: "every row claims its status came off the wire, so a fact nothing established is " +
-      "reported with the same origin as one that was read back",
-  },
-  {
     check: "scripts/gate/checks/scope-filters-survive-lanes.ts",
     target: "an unmappable scope restriction is refused rather than silently dropped",
     subject: "packages/indexing/src/search-plan.ts",

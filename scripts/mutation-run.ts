@@ -432,6 +432,22 @@ function main(): void {
         "mutation run cannot tell the two apart from the outside — in both cases the defect " +
         "is planted and nothing goes red. What caught it was giving the check a subject that " +
         "could fail: the procedure the release actually registers.",
+      a_check_that_reads_instead_of_exercising:
+        "The fourth shape, and the most expensive one found. At fa975c4 `knowledge_search` " +
+        "could not serve a single plain ASCII query: a parameter was bound as a side effect " +
+        "and then never referenced, so the statement numbered $1 and $3 while binding three, " +
+        "and PostgreSQL refuses to parse a statement whose numbering skips one. 534 of the 535 " +
+        "searches this platform has ever received are ASCII. Two checks already read that " +
+        "predicate — one asks whether its text contains a substring, the other which " +
+        "configuration it names — and both passed. THIS SHAPE IS UNLIKE THE OTHER THREE: the " +
+        "subject is reachable, the assertion is exercised, the fixture is real. What is wrong " +
+        "is the QUESTION. Reading what a thing says is not running it, and a statement can " +
+        "satisfy every assertion about its text while being unparseable. A mutation run cannot " +
+        "find this one either — plant a defect that changes only what the text DOES and every " +
+        "text-reading check stays green, which from the outside is indistinguishable from a " +
+        "check that works. What caught it asks about the relationship between two halves the " +
+        "text cannot express: the numbers the SQL references must be exactly 1..args.length, " +
+        "and no database is needed to ask it.",
       what_this_artifact_is_not_evidence_about:
         "Every check this PLAN adds. The declared files also carry pre-existing checks that " +
         "predate this plan and have no row here, so a reader must not read a green report as " +

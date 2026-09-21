@@ -3,7 +3,7 @@
  *
  * WHAT THIS IS NOT, first, because the number it prints invites the opposite reading. It is
  * not evidence that the control-loop kernel is adopted, used, or reached by anything a person
- * runs. Sixty-eight of the door's value names have no importer at all on the day this was
+ * runs. Thirty-seven of the door's value names have no importer at all on the day this was
  * derived, and this check passes on every one of them by name. It says one thing only: the
  * count of them cannot grow, and a name that leaves the list cannot come back into it. A
  * reader who wants to know whether the kernel is load-bearing has to ask a different question
@@ -52,28 +52,17 @@ const DOOR = "packages/contracts/src/control-loop.ts";
  *
  * Derived by reading every `export { … } from` block on the door for names not written
  * `type X`, then every `import { … } from "@zz/contracts"` in `services`, `packages`,
- * `scripts`, `checks` and `testing` outside the contracts package itself. Of the door's one
- * hundred and fourteen value names, forty-two are imported only by gate checks and four reach
- * a service — `createHost`, `moduleDigest`, `INTERNAL_GRANT_ISSUANCE` and `deriveOutcome`.
+ * `scripts`, `checks` and `testing` outside the contracts package itself. Of the door's 81 value names,
+ * 38 are imported only by gate checks and 7 reach a service — `INTERNAL_GRANT_ISSUANCE`, `admitEntry`, `closeInitiative`, `createHost`, `jevAdapter`, `moduleDigest`, `recallResultFrom`.
  * Those two groups are not listed here: they have an importer, which is all this check asks.
  */
 const RESIDUE: readonly string[] = [
-  "procedureSignature", "reusesGatedDocumentPipeline", "matchKindFromVia",
-  "authorizesSemanticAdvance", "interpretBatch", "canonicalTarget", "claimAgainstGrant",
-  "createGrantStore", "dependencySnapshotRef", "effectDigest", "issueControlGrant",
-  "profileDigest", "grantFixtureWorld", "resetGrantFixture", "bindingHistory",
-  "rebindDetectorProbe", "recordCalibration", "recordInvocation", "revokeProfile",
-  "declareProfile", "qualificationKey", "revalidate", "snapshotCoverageProbe",
-  "boundaryDetectorProbe", "reconcileDetectorProbe", "ASSET_ROLES", "CANCEL_STATES",
-  "OBSERVED_COMPLETENESS", "PORT_PROTOCOL", "RECEIPT_ASSURANCE", "RUNTIME_CAPABILITIES",
-  "RUNTIME_OPERATIONS", "STOP_EVIDENCE", "admitToRuntime", "cancelStrength", "declarationDigest",
-  "summariseUsage", "accountFor", "adjudicate", "eligibilityOf", "sliceAdequacy", "sliceKey",
-  "SAMPLE_ADEQUACY_RULE_REF", "assembleProtocol", "conclude", "outcomesOf",
-  "reuseHeldOutForTuning", "AGREEMENT_METRIC", "evalProtocolProbe", "episodeKey",
-  "createController", "stageControlProbe", "UNDETERMINED_CHECK_STATE", "asCheckState",
-  "disputeFinding", "recordAudit", "resolveFinding", "UNAVAILABLE", "auditIdentityProbe",
-  "ACTION_CONTRACTS", "GAP_KINDS", "authorityMintAudit", "citationAudit", "coverageAudit",
-  "deadlockAudit", "gapRoutingProbe", "closeProbe", "recallTrialProbe",
+  "ACTION_CONTRACTS", "GAP_KINDS", "UNDETERMINED_CHECK_STATE", "asCheckState",
+  "authorityMintAudit", "authorizesSemanticAdvance", "bindingHistory",
+  "citationAudit", "coverageAudit", "createController",
+  "deadlockAudit", "declareProfile", "disputeFinding", "episodeKey", "grantFixtureWorld", "interpretBatch", "matchKindFromVia", "procedureSignature",
+  "qualificationKey", "recordAudit", "recordCalibration", "recordInvocation", "resetGrantFixture", "resolveFinding",
+  "reusesGatedDocumentPipeline", "revalidate", "revokeProfile", "UNAVAILABLE",
 ];
 
 /** The names in one brace list, with `X as Y` resolved to the half that matters: a door

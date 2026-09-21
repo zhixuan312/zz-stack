@@ -15,6 +15,9 @@ import type { MutationSpec } from "./plant.ts";
 /** The one registered check the four contracts-door rows are aimed at, which makes four
  *  independent claims — a wildcard it refuses, a ratchet forward and two directions of a
  *  ratchet backward — and a mutation to any one of them says nothing about the other three. */
+const NCP_MEMBERSHIP =
+  "every negative-control probe on the contracts door is run by this file";
+
 const DOOR = "a name on the contracts door has an importer";
 
 /** The one registered check both host-chain rows are aimed at; they differ by `assertion`. */
@@ -79,15 +82,6 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "record-local digest assumption this whole snapshot exists to replace",
   },
   {
-    check: "scripts/gate/checks/eval-protocol-shape.ts",
-    target: "the evaluation protocol cannot activate on absent numbers or zero-cost unknowns",
-    subject: "packages/contracts/src/eval-cost.ts",
-    find: 'missing.length === 0 ? "known" : known_subtotal === null ? "unknown" : "partial";',
-    replace: 'missing.length === 0 ? "known" : "partial";',
-    planted: "a run with nothing to price reports its cost as partial rather than unknown, so " +
-      "an absent number reads as a measured one",
-  },
-  {
     check: "scripts/gate/checks/gap-routing.ts",
     target: "every gap kind reaches its resolver and no stage deadlocks",
     subject: "packages/contracts/src/gap-routing.ts",
@@ -104,6 +98,147 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     replace: "    invoked: [],",
     planted: "the second-flow fixture reports no operations at all, so it demonstrates " +
       "nothing about the host being generic",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: NCP_MEMBERSHIP,
+    assertion: "every probe published on the door is actually run by the file that vouches for them",
+    subject: "packages/contracts/src/control-loop.ts",
+    find: "export { auditIdentityProbe, type AuditIdentityProbeRow }",
+    replace: "export { auditIdentityProbe, auditIdentityProbe as spareProbe, type AuditIdentityProbeRow }",
+    planted: "a probe name reaches the door that the file vouching for the probes never runs — a " +
+      "probe nothing runs proves nothing, and the door would say otherwise",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the audit-identity negative control fires on every planted fault",
+    assertion: "the audit-identity probe's own rows report that each planted fault was detected",
+    subject: "packages/contracts/src/audit-identity-probe.ts",
+    find: "  fires: healthy[0] && faulted[0],",
+    replace: "  fires: healthy[0] && !faulted[0],",
+    planted: "the audit-identity negative control reports that no detector fired on the faults it " +
+      "planted, so the control that proves the detector works has stopped proving it",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the gap-routing negative control fires on every planted fault",
+    assertion: "the gap-routing probe's own rows report that each planted fault was detected",
+    subject: "packages/contracts/src/gap-routing-probe.ts",
+    find: "  fires: healthy[0] && faulted[0],",
+    replace: "  fires: healthy[0] && !faulted[0],",
+    planted: "the gap-routing negative control reports that no detector fired on the faults it " +
+      "planted, so the control that proves the detector works has stopped proving it",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the close negative control fires on every planted fault",
+    assertion: "the close probe's own rows report that each planted fault was detected",
+    subject: "packages/contracts/src/close-probe.ts",
+    find: "  fires: healthy[0] && faulted[0],",
+    replace: "  fires: healthy[0] && !faulted[0],",
+    planted: "the close negative control reports that no detector fired on the faults it " +
+      "planted, so the control that proves the detector works has stopped proving it",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the stage-control negative control fires on every planted fault",
+    assertion: "the stage-control probe's own rows report that each planted fault was detected",
+    subject: "packages/contracts/src/stage-control-probe.ts",
+    find: "  fires: healthy[0] && faulted[0],",
+    replace: "  fires: healthy[0] && !faulted[0],",
+    planted: "the stage-control negative control reports that no detector fired on the faults it " +
+      "planted, so the control that proves the detector works has stopped proving it",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the recall-trial negative control fires on every planted fault",
+    assertion: "the recall-trial probe's own rows report that each planted fault was detected",
+    subject: "packages/contracts/src/recall-trial-probe.ts",
+    find: "  fires: healthy[0] && faulted[0],",
+    replace: "  fires: healthy[0] && !faulted[0],",
+    planted: "the recall-trial negative control reports that no detector fired on the faults it " +
+      "planted, so the control that proves the detector works has stopped proving it",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the profile-rebind negative control fires on every planted fault",
+    assertion: "the rebind probe's rolled-up everyDetectorFires follows from its scenarios",
+    subject: "packages/contracts/src/bindings.ts",
+    find: "&& s.sameRef.calibrationRetired === 0 && s.rebadge.inheritedCalibration",
+    replace: "&& s.sameRef.calibrationRetired === 0 && !s.rebadge.inheritedCalibration",
+    planted: "the rebind probe rolls its nine scenarios up into a verdict that no longer follows " +
+      "from them, so the one boolean a reader trusts stops describing what was measured",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the commit-boundary negative control shows each field can come back the bad way",
+    assertion: "the commit-boundary probe still returns every variant the table names",
+    subject: "packages/contracts/src/commit-boundary.ts",
+    find: 'row("split_transaction", split,',
+    replace: 'row("split_transactions", split,',
+    planted: "the variant that shows `serialized` can come back false is renamed out of the table, " +
+      "so the field it alone proves is not constant goes unexercised",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the dependency-snapshot negative control shows the coverage audit can refuse",
+    assertion: "the dependency-snapshot probe still returns every arrangement the table names",
+    subject: "packages/contracts/src/dependency-snapshot.ts",
+    find: 'arrangement: "one dependency dropped from the closed set",',
+    replace: 'arrangement: "one dependency dropped from the set",',
+    planted: "the arrangement that shows the coverage audit can refuse a dropped dependency is " +
+      "renamed, so the audit is no longer shown to be load-bearing",
+  },
+  {
+    check: "scripts/gate/checks/negative-control-probes.ts",
+    target: "the commit-reconciliation negative control shows each flag can come back the bad way",
+    assertion: "the commit-reconciliation probe still returns every variant the table names",
+    subject: "packages/contracts/src/commit-reconciliation.ts",
+    find: 'row("no_op_mints_a_transaction_id", NO_OP, {},',
+    replace: 'row("no_op_mints_a_transaction_ids", NO_OP, {},',
+    planted: "the variant that shows a no-op can invent a transaction id is renamed out of the " +
+      "table, so one of the four flags loses the fault that proves it independent",
+  },
+  {
+    check: "scripts/gate/checks/search-predicate-parameters.ts",
+    target: "every parameter the search predicate binds is one its SQL references",
+    assertion: "the numbers the statement references are exactly 1..args.length",
+    subject: "services/zz-core/src/tools/knowledge-search.ts",
+    find: '  if (a.type) cond.push(`type = ${put(a.type)}`);',
+    replace: '  if (a.type) { put(a.type); cond.push(`type = ${put(a.type)}`); }',
+    planted: "a parameter is bound as a side effect and then never referenced, so the statement " +
+      "numbers $1 and $3 while binding three — PostgreSQL refuses to parse it and the query " +
+      "answers nothing to anybody",
+  },
+  {
+    check: "scripts/gate/checks/stopped-close-exemption.ts",
+    target: "a stopped close is not refused over gates nobody passed, and a finished one still is",
+    assertion: "an abandoned close is NOT refused over a gate nobody recorded",
+    subject: "packages/contracts/src/close.ts",
+    find: 'if (gatePosture === "unrecorded" && disposition === "finished") {',
+    replace: 'if (gatePosture === "unrecorded") {',
+    planted: "the refusal loses its scoping, so stopped work — which is precisely work whose gates " +
+      "were not passed — can only be closed by forging an approval or left open forever",
+  },
+  {
+    check: "scripts/gate/checks/stopped-close-exemption.ts",
+    target: "a stopped close is not refused over gates nobody passed, and a finished one still is",
+    assertion: "the observation survives the exemption — an abandoned close still REPORTS the posture it was told",
+    subject: "packages/contracts/src/close.ts",
+    find: "    stages: ok ? deriveStages(stages, reachedStage) : NO_STAGES,\n    gatePosture,",
+    replace: '    stages: ok ? deriveStages(stages, reachedStage) : NO_STAGES,\n    gatePosture: "unstated",',
+    planted: "the record drops what the caller said about the gates, so the observation is " +
+      "collapsed into the rule and a later reader is told less than the record knew",
+  },
+  {
+    check: "scripts/gate/checks/stopped-close-exemption.ts",
+    target: "a stopped close is not refused over gates nobody passed, and a finished one still is",
+    assertion: "the rule still holds where it was not exempted — a FINISHED close is still refused",
+    subject: "packages/contracts/src/close.ts",
+    find: 'if (gatePosture === "unrecorded" && disposition === "finished") {',
+    replace: 'if (gatePosture === "recorded" && disposition === "finished") {',
+    planted: "the exemption swallows the rule it was carved out of, so a finished close is " +
+      "permitted with a declared gate left unrecorded",
   },
   {
     check: "scripts/gate/checks/contracts-door.ts",

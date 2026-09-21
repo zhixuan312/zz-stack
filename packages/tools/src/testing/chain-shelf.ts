@@ -98,4 +98,38 @@ export async function walkShelf({ call, check, record, eitherOr, INIT }: ShelfDe
     record(false, "knowledge_supersede marks a node superseded by one that exists",
       `could not read an id back from knowledge_add: ${added}`);
   }
+
+  // knowledge_search refuses the identical way session_whoami's team lookup and knowledge_add's
+  // own team-scope guard do — no platform database, or no team — and that is ordinary on a
+  // deployment run without either, not a broken tool.
+  eitherOr("knowledge_search finds the node this run just wrote",
+    await call("knowledge_search", { query: "chain-check subject probe" }),
+    /no platform database|no platform db|not in a team/);
+
+  /* AND FOUND NOTHING, SO THE OR PASS RUNS — AND THE ANSWER SAYS IT DID.
+   *
+   * `websearch_to_tsquery` joins unquoted terms with AND, so a long question demands one
+   * document containing every word. Measured on real use before this was written: 16% of one
+   * person's 269 searches came back empty, and three of them returned 33, 7 and 58 candidates
+   * when the same terms were joined by `|` against the same corpus and the same index. The
+   * documents were there; the conjunction hid them, and the store answered "nothing is known".
+   *
+   * The query below is empty under AND by construction — the last token appears in no document
+   * anywhere — while every other word is in the probe node this walk just wrote. So the
+   * broadened pass has to fire, and BOTH halves of its contract are asserted: the note that
+   * tells a reader these match only SOME of the terms, and `via: ["lexical-broad"]` on the rows.
+   * Asserting only that something came back would pass on a plain match and prove nothing.
+   *
+   * Refusals are tolerated exactly as the sibling case above tolerates them, and for the same
+   * reason: a deployment with no platform database or no team is ordinary, not broken.
+   */
+  const broadened = await call("knowledge_search",
+    { query: "chain-check subject probe zqxwvnotokeninanydocument" });
+  const refusedLegitimately = /^(ERROR|REFUSED):/i.test(broadened.trim())
+    && /no platform database|no platform db|not in a team/.test(broadened);
+  record(refusedLegitimately
+         || (/No document contains all of those terms together/.test(broadened)
+             && /"lexical-broad"/.test(broadened)),
+         "a question no single document answers is broadened, and the answer says so",
+         broadened);
 }

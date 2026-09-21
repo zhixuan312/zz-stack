@@ -629,13 +629,6 @@ async function main(): Promise<number> {
 
   await walkBugs({ call, check, record, INIT, manage: manageDoor });
 
-  // knowledge_search refuses the identical way session_whoami's team lookup and knowledge_add's
-  // own team-scope guard do — no platform database, or no team — and that is ordinary on a
-  // deployment run without either, not a broken tool.
-  eitherOr("knowledge_search finds the node this run just wrote",
-    await call("knowledge_search", { query: "chain-check subject probe" }),
-    /no platform database|no platform db|not in a team/);
-
   // knowledge_reindex, ON /manage, and probed through its REFUSAL rather than its rebuild.
   //
   // Two reasons, and neither is squeamishness. A bare call means EVERY team on the deployment,

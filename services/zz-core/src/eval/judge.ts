@@ -57,7 +57,7 @@ export interface Mark {
 
 export interface Dim {
   dim_id: string; name: string; five_means: string; one_means: string;
-  /** 2-10 ORDERED level descriptions, low end first — what a qualitative dimension is once a
+  /** 2-5 ORDERED level descriptions, low end first — what a qualitative dimension is once a
    *  ruler names its rungs instead of only its ends. Null on a ruler written before levels
    *  existed, and that is what decides which judge can mark it: a typed judgement service is
    *  asked against named levels, and cannot be asked against two ends and a number. */
@@ -542,6 +542,14 @@ export async function markAll(
   const system = systemFor(control ? "trace" : kind, m.noun, m.name, m.version,
                            qual, control);
   const dimOf = matcher(qual);
+  // THE TOP OF THE SCALE IS THE RULER'S OWN, never a literal. A dimension that names its rungs
+  // declares how many it has and `markTyped` rebases them to 1..N, so a fixed ceiling of 5
+  // stored a mark of 4 or 5 against a three-rung ruler as a figure that ruler never defined —
+  // at the top end, and indistinguishable one table later from a mark the judge really gave.
+  // `plugin_record` caps levels at five so the arithmetic downstream stays true, which bounds
+  // this above; it does not bound it below. The two-ends form names no rungs and its scale has
+  // always been 1-5, so it keeps 5.
+  const ceilingOf = new Map(qual.map((d) => [d.dim_id, d.levels?.length ?? 5]));
   const marked: { subject: string; mean: number; truncated: number }[] = [];
   const skipped: string[] = [], unmatched: string[] = [];
   let stored = 0, uncited = 0, cutTotal = 0;
@@ -644,7 +652,7 @@ export async function markAll(
       // dropped: the row is real, and how well the judge evidenced it is a fact about the
       // judge worth keeping and reporting.
       if (!String(mk.cite ?? "").trim()) uncited++;
-      const score = Math.max(1, Math.min(5, Number(mk.score) || 1));
+      const score = Math.max(1, Math.min(ceilingOf.get(dim) ?? 5, Number(mk.score) || 1));
       await store(subjId, dim, score, String(mk.cite ?? ""), String(mk.why ?? ""),
                   mk.confidence, mk.probabilities);
       sum += score; n++;

@@ -94,6 +94,7 @@ import "./gate/checks/mutation-coverage.ts";
 import "./gate/checks/activation-runbook.ts";
 import "./gate/checks/trial-analyzer-agreement.ts";
 import "./gate/checks/host-chain.ts";
+import "./gate/checks/contracts-door.ts";
 import "./gate/checks/write-path-analysis.ts";
 import "./gate/checks/rederivation-generation.ts";
 import "./gate/checks/retrieval-serializer.ts";

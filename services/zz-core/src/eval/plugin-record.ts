@@ -66,10 +66,17 @@ export function registerPluginRecordTools(server: McpServer): void {
         dimensions: z.array(z.object({
           name: z.string(),
           kind: z.enum(["qualitative", "quantitative"]),
-          /** 2-10 ORDERED level descriptions, low end first. This is what a qualitative
+          /** 2-5 ORDERED level descriptions, low end first. This is what a qualitative
            *  dimension IS — a scale somebody can place an artifact on — and it replaces the
-           *  two-ends form below, which left the rungs between them to whoever was marking. */
-          levels: z.array(z.string()).min(2).max(10).optional(),
+           *  two-ends form below, which left the rungs between them to whoever was marking.
+           *
+           *  FIVE IS THE CEILING BECAUSE THE ARITHMETIC UNDERSTANDS FIVE. `effectiveness` in
+           *  judge-score.ts rescales a mark with `(mean - 1) / 4` and plugin_record prints the
+           *  result out of ten; both read the 1-5 scale as a constant. A schema accepting ten
+           *  rungs while the arithmetic understands five is not a richer ruler — it is a mean
+           *  of 7 on an eight-rung scale reported as an effectiveness of 15. Raising this
+           *  again is a capability decision that belongs with the divisor, not ahead of it. */
+          levels: z.array(z.string()).min(2).max(5).optional(),
           /** The two-ends form. Kept for the rulers written before levels existed; a NEW
            *  qualitative dimension must send `levels`. */
           five_means: z.string().optional(),
@@ -109,7 +116,7 @@ export function registerPluginRecordTools(server: McpServer): void {
           // and a number do not place the middle — they leave three rungs to the marker's
           // taste, and two rounds then mark the same artifact differently for no recorded
           // reason. A level that cannot be described is one nobody should be asked to award.
-          bad.push(`${d.name}: qualitative and carries no levels — give 2-10 ordered level ` +
+          bad.push(`${d.name}: qualitative and carries no levels — give 2-5 ordered level ` +
                    "descriptions, low end first. Two ends and a 1-5 scale leave the rungs " +
                    "between them to whoever is marking, and that is where two rounds stop " +
                    "being comparable");

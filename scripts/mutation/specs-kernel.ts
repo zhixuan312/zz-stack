@@ -12,6 +12,11 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
+/** The one registered check the four contracts-door rows are aimed at, which makes four
+ *  independent claims — a wildcard it refuses, a ratchet forward and two directions of a
+ *  ratchet backward — and a mutation to any one of them says nothing about the other three. */
+const DOOR = "a name on the contracts door has an importer";
+
 /** The one registered check both host-chain rows are aimed at; they differ by `assertion`. */
 const TRIAL_CHAIN =
   "a registered procedure's chain is enforced all the way back, and still grants when it is met";
@@ -99,6 +104,53 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     replace: "    invoked: [],",
     planted: "the second-flow fixture reports no operations at all, so it demonstrates " +
       "nothing about the host being generic",
+  },
+  {
+    check: "scripts/gate/checks/contracts-door.ts",
+    target: DOOR,
+    assertion: "a wildcard re-export is refused, because it publishes names nothing can enumerate",
+    subject: "packages/contracts/src/control-loop.ts",
+    find: "export {\n  createHost,",
+    replace: 'export * from "./check-state.js";\n\nexport {\n  createHost,',
+    planted: "the door gains a wildcard, so a module's whole surface is published without " +
+      "naming any of it — every name it adds is invisible to the reader and to this check",
+  },
+  {
+    check: "scripts/gate/checks/contracts-door.ts",
+    target: DOOR,
+    assertion: "the ratchet forward — a NEW value name on the door with no importer fails",
+    subject: "packages/contracts/src/control-loop.ts",
+    find: "  procedureSignature,\n  reusesGatedDocumentPipeline,",
+    replace: "  procedureSignature,\n  createHost as hostFactory,\n  reusesGatedDocumentPipeline,",
+    planted: "a value name reaches the door that nothing imports and the residue does not " +
+      "list, which is the growth the bound exists to stop",
+  },
+  {
+    check: "scripts/gate/checks/contracts-door.ts",
+    target: DOOR,
+    assertion: "the ratchet backward — a listed name the door no longer publishes fails, so the list cannot outlive what it describes",
+    subject: "packages/contracts/src/control-loop.ts",
+    find: "  procedureSignature,\n  reusesGatedDocumentPipeline,\n",
+    replace: "  reusesGatedDocumentPipeline,\n",
+    planted: "a name the residue still lists comes off the door, so the list describes a " +
+      "surface that has moved and the name could be re-added without ever needing an importer",
+  },
+  {
+    check: "scripts/gate/checks/contracts-door.ts",
+    target: DOOR,
+    assertion: "the ratchet backward — a listed name that has ACQUIRED an importer fails, so it can never return to the residue",
+    subject: "scripts/probes/envelope-shape.ts",
+    // THE PAYLOAD IS SPLIT SO THIS FILE IS NOT ITSELF AN IMPORTER. Written whole, the string
+    // below reads to the check's own sweep as `import { … UNAVAILABLE } from "@zz/contracts"`
+    // in a `scripts/` file — it strips comments, not string literals — so the residue clause
+    // fired against THIS file at baseline, before any mutation ran, and every row was measured
+    // against a red target. Third time tonight that a payload written as a literal became
+    // repository text the repository's own sweeps then read; the seam is the whole fix.
+    find: 'import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/' + 'contracts";',
+    replace: 'import { ENVELOPE_BLOCK, parseEnvelope, UNAVAILABLE } from "@zz/' + 'contracts";\n\nvoid UNAVAILABLE;',
+    planted: "a residue name gains a real importer outside the contracts package while the " +
+      "list still tolerates it, so a name that has earned its place on the door goes on being " +
+      "counted as dormant",
   },
   {
     // HALF ONE, AND IT FIRES ALONE. With the chain not consulted at all, an empty run is still

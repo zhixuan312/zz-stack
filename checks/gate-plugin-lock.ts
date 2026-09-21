@@ -3,7 +3,9 @@
 // Plants each defect the checks exist to catch, asserts RED, restores, asserts GREEN. A check
 // that has only ever been observed passing is a check nobody has evidence for -- and this
 // repository has shipped that mistake before, which is why every new check here gets one.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, cpSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 interface LockEntry { version: string; digest: string; skills: Record<string, string> }
@@ -17,6 +19,28 @@ if (!existsSync(LOCK)) fail(`${LOCK} does not exist — run plugin-versions.ts -
 const VICTIM = "catalog/sdlc/sdlc-flow/skills/sdlc-method/SKILL.md";
 if (!existsSync(VICTIM)) fail(`${VICTIM} is gone — repoint this break-test`);
 if (gate().status !== 0) fail("the gate is already red before planting anything");
+
+// THE GATE REWRITES DERIVED FILES FROM WHATEVER IT FINDS, AND THIS TEST PLANTS INTO THE SOURCE
+// THEY ARE DERIVED FROM. Every `gate()` below regenerates `marketplace/`, `plugins.lock.json`
+// and `skills.lock.json` out of `catalog/` — so a run against a planted defect leaves those
+// three carrying the defect, and restoring only the catalog file is not restoring everything.
+//
+// This test used to do exactly that, and then assert the gate was green. It could not be: the
+// catalog was clean, the derived files still held the plant, and the gate reported "the
+// committed lock is stale", which was TRUE. The next run regenerated them and went green, so
+// the failure healed itself one run later and the assertion that caught it looked flaky
+// rather than right. Measured: plant -> red, restore source -> STILL RED, run again -> green.
+//
+// Snapshotted rather than restored with `git checkout`, deliberately. These paths are
+// regenerated constantly and somebody may legitimately have uncommitted work in them; a
+// break-test that repairs itself by discarding a working tree is a worse bug than the one it
+// was written to catch.
+const DERIVED = ["marketplace", "plugins.lock.json", "skills.lock.json"];
+const snapshot = mkdtempSync(join(tmpdir(), "zz-plugin-lock-derived-"));
+for (const path of DERIVED) cpSync(path, join(snapshot, path), { recursive: true });
+const restoreDerived = (): void => {
+  for (const path of DERIVED) cpSync(join(snapshot, path), path, { recursive: true });
+};
 
 // 1 — content moves, the declared version does not.
 const body = readFileSync(VICTIM, "utf8");
@@ -94,6 +118,8 @@ if (!redStale) {
        "and nothing anywhere would say so");
 }
 
+restoreDerived();
+rmSync(snapshot, { recursive: true, force: true });
 if (gate().status !== 0) fail("the gate did not return to GREEN after restoring everything");
 console.log("PASS: red on a frozen-version content change, red on an extra member, red on a " +
             "missing member, red on a plugin the catalog does not ship, red on a lock a " +

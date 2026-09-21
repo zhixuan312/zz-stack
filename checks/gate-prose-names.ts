@@ -89,12 +89,27 @@ const expectNot = (names: string[], what: string) => {
   restore();
 };
 
-// 1. THE HISTORICAL CASE, and the one nothing else in this gate can see. `set_team_credential`
+// BOTH FIXTURES IN THIS FILE USED TO NAME A CREDENTIAL TOOL, AND THE PLATFORM DELETED THEM.
+// `set_team_credential` was renamed to `credential_set`, and `credential_set` was then removed
+// entirely. That broke this break-test in both directions at once and made the check look
+// wrong when it was right: the "real tool" fixture named something no door registers, so the
+// check fired and the test read it as too broad; and the verb-first fixture stopped being
+// detectable, because `claimsPreRename` only recognises a pre-rename spelling whose RENAMED
+// form is still served -- with the renamed tool gone, `set_team_credential` claims nothing of
+// ours and correctly does not fire.
+//
+// The fixtures now use `write_document`/`document_write`, chosen for the property each case
+// needs rather than by trying names until the test passed: `document_write` is registered
+// today, and `write_document` is its pre-rename spelling, which is exactly what
+// `claimsPreRename` exists to catch. A fixture naming a deleted tool tests nothing, and its
+// failure accuses the check instead of the example.
+//
+// 1. THE HISTORICAL CASE, and the one nothing else in this gate can see. `write_document`
 //    is verb-first: "a skill never names a platform tool that does not exist" derives our
 //    namespace from the NOUN a name starts with, finds no tool registered under `set`, and
 //    reads the whole name as a building block's. It was named in eight places for exactly that
 //    reason.
-plant(SK, skOriginal, "Call `set_team_credential` to store a key for the team.");
+plant(SK, skOriginal, "Call `write_document` to store a document for the team.");
 expect(TOOLS, "prose naming a verb-first tool no door registers");
 
 // 2. AND THE CURRENT SPELLING, which this check reads the same way the skill checks do — the
@@ -121,7 +136,7 @@ expectNot([TOOLS, SKILLS], "ordinary English prose");
 
 // 6. CONTROL — a tool that DOES exist and a skill that IS shipped, both in call shape. Without
 //    this the plant proves only that something fires, not that it fires on the right thing.
-plant(SK, skOriginal, "Call `credential_set` to store a key, then load `zz-handover`.");
+plant(SK, skOriginal, "Call `document_write` to store a document, then load `zz-handover`.");
 expectNot([TOOLS, SKILLS], "a real tool and a real skill, both named in call shape");
 
 // 7. CONTROL — a verb-first name whose noun is NOT one this platform registers under belongs to

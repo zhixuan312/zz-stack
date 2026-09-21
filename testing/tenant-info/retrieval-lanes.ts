@@ -302,7 +302,36 @@ async function caseSearchRanksMultiLaneAgreementAboveOneLaneTopHit(): Promise<vo
   assert.deepEqual([...second!.via], ["lexical"]);
 }
 
+/**
+ * THE LEXICAL LANE USES THE OPERATOR THE EXTENSION ACTUALLY HAS.
+ *
+ * This lane was built against an extrapolation — `raw_body @@ to_bm25query(...)`, reasoned
+ * from PostgreSQL's own `to_tsquery`/`@@` convention and honestly labelled as unverified. It
+ * was wrong: in pg_textsearch v1.4.0 `@@` takes a `tsquery`, and a `bm25query` is consumed by
+ * `<@>` in ORDER BY. The old form would have been refused the first time it ran against the
+ * real extension, and every case in this suite passed both before and after the correction,
+ * because they all assert on which rows come back from a fake store rather than on the SQL
+ * the lane emits.
+ *
+ * So this one asserts the emitted text. It is the only thing standing between a future edit
+ * and a lane that cannot execute — there is no PostgreSQL 17 here to refuse it for us.
+ */
+async function caseLexicalLaneUsesTheBm25RankingOperator(): Promise<void> {
+  const q: LaneQuery = buildLexicalLaneQuery(DESCRIPTOR_P, "widget", EMPTY_PREDICATES, 10);
+  assert.match(q.text, /order by s\.raw_body <@> to_bm25query\(\$\d+, \$\d+\)/,
+    "the bm25 score must be the ORDER BY expression — `<@>` is what consumes a bm25query");
+  assert.doesNotMatch(q.text, /@@/,
+    "`@@` takes a tsquery, not a bm25query; pairing them is an operator the extension does not have");
+  assert.doesNotMatch(q.text, /order by[\s\S]*\bdesc\b/i,
+    "`<@>` returns a NEGATIVE score, so ascending IS descending relevance — a desc here would " +
+    "return the corpus's worst matches and every row-level assertion would still pass");
+  // The tenant boundary is not traded away for a ranking plan.
+  assert.match(q.text, /s\.corpus_key = \$\d+/);
+  assert.match(q.text, /s\.owner_id = \$\d+/);
+}
+
 export const LANE_CASES: Readonly<Record<string, () => Promise<void>>> = {
+  lexical_lane_uses_the_bm25_ranking_operator: caseLexicalLaneUsesTheBm25RankingOperator,
   search_ranks_multi_lane_agreement_above_one_lane_top_hit: caseSearchRanksMultiLaneAgreementAboveOneLaneTopHit,
   exact_lane_owner_predicate_separates_colliding_rows: caseExactLaneOwnerPredicateSeparatesCollidingRows,
   lexical_lane_owner_predicate_separates_colliding_rows: caseLexicalLaneOwnerPredicateSeparatesCollidingRows,

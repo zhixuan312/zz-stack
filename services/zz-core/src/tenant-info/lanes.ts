@@ -135,12 +135,24 @@ export function buildExactLaneQuery(
 // ── lexical lane: pg_textsearch BM25 over the whole-artifact projection ────────────────────
 
 /**
- * See this file's own header for the named gap: `@@` and the ORDER BY here are the most this
- * checkout can verify around `to_bm25query(query,index_name)` — the extension's real match/
- * score surface is unverified, and this function invents nothing beyond the one call spec line
- * 767 names. `descriptor.index_name` is the registry's own field (never caller text), matching
- * "explicit-index prepared queries" and `resolveCorpora`'s existing rule that identifiers come
- * from the registry, values remain bound parameters.
+ * THE MATCH OPERATOR WAS EXTRAPOLATED AND THE EXTRAPOLATION WAS WRONG. This built
+ * `raw_body @@ to_bm25query(...)`, reasoning from PostgreSQL's own `to_tsquery`/`@@`
+ * convention, and said so rather than claiming verification. Resolved against the real
+ * upstream (github.com/timescale/pg_textsearch, v1.4.0): `@@` takes a `tsquery` and does
+ * boolean filtering; a `bm25query` is consumed by `<@>` in ORDER BY, which returns a NEGATIVE
+ * score so an ascending scan is a descending relevance ranking. The old form would have been
+ * refused by the extension the first time it ran — the operator does not exist for that pair.
+ *
+ * SO THERE IS NO TEXT PREDICATE IN THE WHERE CLAUSE, and that is the design rather than a
+ * relaxation. `<@>` + LIMIT against a `USING bm25` index IS the top-k scan — the extension's
+ * Block-Max WAND optimisation is what makes it stop early — and adding a boolean filter
+ * beside it would ask the planner for a different, slower plan. The tenant predicates stay
+ * exactly where they were: `corpus_key` and `owner_id` are the authorization boundary and are
+ * not negotiable for a ranking convenience.
+ *
+ * `descriptor.index_name` is the registry's own field (never caller text), matching "explicit-
+ * index prepared queries" and `resolveCorpora`'s rule that identifiers come from the registry
+ * while values remain bound parameters.
  */
 export function buildLexicalLaneQuery(
   descriptor: CorpusDescriptor, query: string, predicates: HardPredicates, cap: number,
@@ -150,17 +162,19 @@ export function buildLexicalLaneQuery(
   const bind = (v: unknown): string => `$${params.push(v)}`;
   const corpusKey = bind(descriptor.corpus_key);
   const ownerId = bind(descriptor.owner_id);
-  const matchExpr = `s.raw_body @@ to_bm25query(${bind(query)}, ${bind(descriptor.index_name)})`;
-  const conjuncts = [`s.corpus_key = ${corpusKey}`, `s.owner_id = ${ownerId}`, matchExpr];
+  const conjuncts = [`s.corpus_key = ${corpusKey}`, `s.owner_id = ${ownerId}`];
   pushHardPredicates(conjuncts, bind, predicates);
+  const scoreExpr = `s.raw_body <@> to_bm25query(${bind(query)}, ${bind(descriptor.index_name)})`;
   const limitParam = bind(cap);
   return {
     text: "select s.owner_id, s.artifact_id, s.revision, s.content_hash, s.tags "
       + `from ${table} s `
       + `where ${conjuncts.join(" and ")} `
-      // Stable-identity order only — see this file's header on why no BM25 score expression
-      // is invented here.
-      + "order by s.artifact_id, s.revision "
+      // ASCENDING, because `<@>` returns a negative BM25 score: the most relevant row is the
+      // most negative one. Ordering descending here would return the corpus's worst matches
+      // and every test above this would still pass, because they assert on which rows come
+      // back rather than on the sign of a number the extension produces.
+      + `order by ${scoreExpr} `
       + `limit ${limitParam}`,
     params,
   };

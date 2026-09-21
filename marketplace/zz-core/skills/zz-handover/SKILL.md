@@ -148,6 +148,15 @@ altered this way. A node saying only that it was corrected would establish that 
 happened and not that anybody agreed with it — which is the trap the platform's own guardrail
 node 0167 names, arrived at from the other side.
 
+**And pin the second reading, with `verified_against`.** `knowledge_add` takes it and writes it
+into the node's frontmatter. A corrected fact is true as of a version and a day — `review.md
+v3, 2026-09-21`, not `review.md` — and without the pin it has no expiry: the document moves
+again, the node still reads as current, and the entry written to keep the store honest becomes
+the stale one. With it, the next reader sees what was checked and against what, and supersedes
+it through `knowledge_supersede` rather than editing it. A node minted under this exception is
+more exposed to this than most, because its whole point is a claim about a document that had
+just changed once already.
+
 The boundary is where the safety is, and it is the one you will be tempted to widen, because a
 judgement can nearly always be re-described as a fact that moved. If you cannot write the two
 readings as two checkable statements, it was a judgement. Mint the approved line and raise the

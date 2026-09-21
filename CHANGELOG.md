@@ -33,7 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [Unreleased]
+## [0.61.0] — 2026-09-21
 
 **Tenant information gets a shape of its own, and a way to say whether it is finished.**
 
@@ -87,6 +87,39 @@ readiness result would also not be permission to cut over — the production fre
 separate decision, taken afterwards, by the person who operates it.
 
 See `services/zz-core/src/tenant-info/README.md`.
+
+### Upgrade notes
+
+**Nothing in this release changes what a reader or writer of documents sees.** The
+tenant-information tables do not exist on this deployment and are not created by upgrading to
+it. `document_write`, `knowledge_add`, `source_add`, `knowledge_search` and every other tool
+keep the path they have today, against the schema they use today. That is deliberate: the new
+retrieval stack is composed and tested, and the one thing it does not yet have is a database
+to run against.
+
+**Migration 070 defers itself, and that is the feature.** It declares
+`-- requires-extension: pg_textsearch` and `-- requires-extension: pg_trgm`, and
+`services/gateway/src/db.ts` skips — without recording as applied — any migration whose
+extensions the server cannot supply. On PostgreSQL 16 with `citext` and `plpgsql`, 070 is not
+attempted and the boot log says so. Without that guard the first boot after this release would
+fail `create extension`, roll back, un-set the pool and rethrow, and the gateway would start
+anyway by a deliberate choice made elsewhere in that file — leaving the platform serving with
+no database while reporting itself healthy.
+
+**Migration 069 applies on this upgrade**, having been written before 0.60.0 shipped and never
+reached by it. It normalises empty-string `step`/`step_version` values to null and adds a
+partial index on `zz.event`. It rewrites rows; the pre-upgrade backup is the rollback.
+
+**BREAKING — `tenant-info verify --finalize` now returns non-zero here.** A suite with any
+case it did not run is `blocked` at the acceptance profile rather than passed, and four suites
+have cases that need a PostgreSQL 17 with `pg_textsearch` that does not exist yet. Anything
+scripted against a zero exit from that command will now see a failure. This is the command
+reporting the truth it was previously unable to report; it is not a regression.
+
+**The fuzzy retrieval lane requires `pg_trgm`,** which 070 now creates and which this
+deployment already offers. Before this release the lane called `similarity()` and `<->` and no
+migration had ever created the extension — the first fuzzy query would have failed at runtime.
+
 
 ## [0.60.0] — 2026-09-19
 

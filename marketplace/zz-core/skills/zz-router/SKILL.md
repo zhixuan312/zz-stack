@@ -1,7 +1,7 @@
 ---
 name: zz-router
 description: "Use FIRST when the request is delivery work for your team on the ZZ platform — a new capability, a change to a service someone operates, or continuing work already under way. Picks the right installed flow (sdlc-flow, zz-plugin-eval) and loads it. Not for ordinary coding, debugging or questions about this repository."
-version: "0.63.0"
+version: "0.64.0"
 ---
 # zz-router
 
@@ -19,7 +19,7 @@ Never resume from your memory of a conversation.
 
 ## Pick the flow
 
-### sdlc-flow (v0.63.0)
+### sdlc-flow (v0.64.0)
 
 **When:** Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach...
 
@@ -28,7 +28,7 @@ Never resume from your memory of a conversation.
 on the zz-core server, not this client's own skills. Follow those skills
 exactly — they are the method; this file is only the door.
 
-### zz-plugin-eval (v0.63.0)
+### zz-plugin-eval (v0.64.0)
 
 **When:** Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exi...
 

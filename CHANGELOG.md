@@ -33,6 +33,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.64.0] — 2026-09-23
+
+### Fixed
+- **Search could not find documents by words in their own titles.** Every document written
+  since the `zz-lexical-v2` analyzer shipped carried a `body_tsv` the read path could not
+  match on any hyphenated term — `sdlc-flow`, `zz-core`, `plan-audit`, a dated filename.
+  Measured on a copy of this deployment: of the rows written before v2, 1002 of 1010
+  retrieved themselves by their own title; of the 23 written by v2, none did.
+
+  The write path handed PostgreSQL the analyzer's already-split words, which destroys the
+  compound token its parser would have emitted, while the read path — which does not
+  pre-split — went on asking for it. The Latin half of the vector is now built from the row's
+  own text; the Han half is unchanged and still the analyzer's unigrams, which the parser
+  cannot produce at all. Nothing about how a query is written changes.
+
+### Changed
+- The analyzer generation is now `zz-lexical-v3`. A row records which derivation wrote its
+  vector, and a v2 vector is not interchangeable with a v3 one, so rows written under v2 read
+  as stale until they are rederived.
+
+### Upgrade notes
+- **Run the backfill after deploying, not before.** `node scripts/rederive-analyzer-generation.ts --write`
+  against the deployment's database rewrites every row's `body_tsv` under the new generation.
+  It is read-only until `--write`, touches only `body_tsv` and `analyzer_version`, is
+  idempotent, and took ten seconds over 1,943 rows. Running it before the deploy leaves a
+  window in which the old build writes rows the pass has already walked past.
+- Until the backfill runs, a search reads `index_not_ready` for the generation it is querying
+  against. Retrieval keeps working; rows simply answer under the older analysis.
+
 ## [0.63.0] — 2026-09-23
 
 **The control loop now governs something.** Until this release the platform built a reviewed

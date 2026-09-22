@@ -228,7 +228,10 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             from documents and approvals the platform already holds, and where a stage
             genuinely never happened records a waiver naming that fact rather than
             inventing the round. The steps come from the flow's own manifest, never from
-            a list in the script), manifests.ts (where the packages are, read by
+            a list in the script. `--stand-ins` writes the documents those waivers name,
+            through the platform's own document path rather than into the store behind it,
+            and the team comes from the token's own answer so a variable cannot aim it at
+            somebody else's store), manifests.ts (where the packages are, read by
             both), mutation-run.ts (plants a defect in what each gate check
             examines, in a disposable copy of this checkout, and records whether
             the check noticed — mutation/ holds the workspace, the planting and

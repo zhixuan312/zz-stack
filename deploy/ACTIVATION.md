@@ -223,8 +223,11 @@ reports `already complete`; the non-`.zz` content hashes the same before and aft
 activation discards that volume whole.
 
 **Step 8 — rederive the analyzer generation over the real rows.**
-So an existing row's null `analyzer_version` becomes a real generation. 971 documents and 902
-knowledge nodes.
+So every row carries the generation this build derives under. The pass rewrites a row whose
+`analyzer_version` differs from the current one — which is a null on rows written before the
+column existed, and an OLDER generation on rows written under a superseded analyzer. Both
+need it, and reading the step as "fill in the nulls" would leave the second kind behind under
+an analysis the read path no longer agrees with.
 *Verify:* every row in both tables carries a non-null generation, and the counts after equal the
 counts before. The pass writes only on its explicit write flag; a bare run plans and writes
 nothing.

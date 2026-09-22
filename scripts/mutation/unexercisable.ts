@@ -27,6 +27,20 @@ interface Unexercisable {
   readonly why: string;
   /** What would have to become true for it to be plantable again. */
   readonly plantable_when: string;
+  /**
+   * The check file's sha256 WHEN THIS ENTRY WAS WRITTEN, so a reader can tell whether the
+   * entry still describes the file it names.
+   *
+   * WRITTEN BY HAND, AND THAT IS THE POINT. A digest the runner filled in at write time would
+   * match on every run and prove nothing; this one is a claim about the bytes an author
+   * actually read. `mutation-run.ts` compares it to the live file and stamps `stale` beside
+   * it, the same treatment a row gets — which is what a teammate pointed out these entries
+   * were missing while the rows had it. A row about a check that moved announces itself; an
+   * entry that pasted an OBSERVED OUTPUT, as the console one does, could go on asserting what
+   * it saw with nothing comparing it to anything. A record of a real run is stronger evidence
+   * and weaker provenance than a planted mutation, because nothing re-derives it.
+   */
+  readonly observed_check_sha256: string;
 }
 
 export const UNEXERCISABLE: readonly Unexercisable[] = [
@@ -39,6 +53,7 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "— arriving in a check planted the same night the list was emptied.",
     plantable_when: "a value name is tolerated on the door without an importer and is listed " +
       "in RESIDUE again; the clause fires the moment that entry outlives the name it describes.",
+    observed_check_sha256: "a096e75c799b545a8fc936396865e10930c5c49aab43a197d446cbc154c50a44",
   },
   {
     check: "scripts/gate/checks/contracts-door.ts",
@@ -47,6 +62,7 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "because it stopped being so: the row that established it imported a listed name and " +
       "watched the clause fire, and the sweep that emptied the list took its subject away.",
     plantable_when: "RESIDUE holds at least one name; importing that name then fires it.",
+    observed_check_sha256: "a096e75c799b545a8fc936396865e10930c5c49aab43a197d446cbc154c50a44",
   },
   {
     check: "scripts/gate/checks/build.ts",
@@ -60,12 +76,14 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "only its contents. Until then the clause is verified by reading: it was `return null` " +
       "and it is now a returned failure string, and `testing/` is tracked, so the state it " +
       "guards is a broken checkout rather than a checkout without an optional artifact.",
+    observed_check_sha256: "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
   },
   {
     check: "scripts/gate/checks/catalog-stages.ts",
     assertion: "a missing testing/ FAILS rather than passing in silence",
     why: "identical to the entry above, in the sibling check that carried the same escape.",
     plantable_when: "as above.",
+    observed_check_sha256: "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
   },
   {
     check: "scripts/gate/checks/deploy-compose.ts",
@@ -75,6 +93,7 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
     plantable_when: "as above. Note the stake: this check's own comment records that a wrong " +
       "Caddyfile left production answering 502 while every container read as healthy, and " +
       "before this initiative a Caddyfile that was simply gone passed the check in silence.",
+    observed_check_sha256: "80353f208c5c50946321fe902ec7fae974ceff73c369f472d446d465d06ac381",
   },
   {
     check: "scripts/gate/checks/console.ts",
@@ -95,5 +114,6 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "the absence of a directory outside the repository. The evidence for this clause is the " +
       "sibling-less gate run recorded above, which is stronger than a planted mutation because " +
       "it exercises the real condition rather than a stand-in for it.",
+    observed_check_sha256: "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
   },
 ];

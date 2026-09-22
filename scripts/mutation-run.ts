@@ -370,6 +370,25 @@ function main(): void {
     row.stale = was !== null && live !== was;
     if (row.stale) drifted.push(`${row.check} (${row.target ?? "no target"})`);
   }
+  // THE SAME TREATMENT FOR THE ENTRIES THAT CANNOT BE ROWS. An unexercisable entry names a
+  // check and makes a claim about it, and one of them pastes an OBSERVED OUTPUT from a real
+  // run — fifty routes from a sibling-less gate. That is stronger evidence than a planted
+  // mutation and weaker provenance, because nothing re-derives it: if the check's message
+  // changes the entry goes on asserting what it saw, with nothing comparing the two. So each
+  // entry carries the check's sha256 as its author read it, and gets `live`/`stale` stamped
+  // beside it here exactly as a row does. Found by a reader who checked the artifact's fields
+  // rather than assuming the two kinds of record were treated alike; they were not.
+  const entries = UNEXERCISABLE.map((u) => {
+    const live = fileDigest(join(root, u.check));
+    return { ...u, live_check_sha256: live, stale: live !== u.observed_check_sha256 };
+  });
+  const staleEntries = entries.filter((e) => e.stale);
+  if (staleEntries.length) {
+    console.log(`\n  ${staleEntries.length} unexercisable entr(ies) describe a check file that ` +
+      `has since changed — re-read each and re-observe before trusting what it says:\n      ` +
+      staleEntries.map((e) => `${e.check} (${e.assertion.slice(0, 60)}…)`).join("\n      "));
+  }
+
   const mine = new Set(results.map((r) => r.check));
   const driftedInThisRun = drifted.filter((d) => mine.has(d.split(" (")[0]));
   if (driftedInThisRun.length) {
@@ -469,14 +488,18 @@ function main(): void {
         "ENFORCES THIS: the coverage check reads neither, so a stale report still satisfies " +
         "it, and that is a gap rather than a design. What the runner does enforce is narrower " +
         "and worth having: it refuses to write at all if a check file moved while this run was " +
-        "measuring it, and it names any carried row whose check has changed since.",
+        "measuring it, and it names any carried row whose check has changed since. The entries " +
+        "in `unexercisable_assertions` carry the same three fields for the same reason: " +
+        "one of them records an observation from a real run rather than a planted " +
+        "mutation, which is stronger evidence and weaker provenance, since nothing " +
+        "re-derives it.",
     },
     results: [...carried, ...results].sort((a, b) => a.check < b.check ? -1 : 1),
     guards: guardsBlock(priorGuards, null),
     // OUTSIDE `results` DELIBERATELY — see mutation/unexercisable.ts. An assertion nothing
     // could plant against is a finding, and a finding that turned the gate red would be a
     // finding nobody keeps.
-    unexercisable_assertions: UNEXERCISABLE,
+    unexercisable_assertions: entries,
   }, null, 2)}\n`);
   console.log(`\n  ${results.length} row(s) written to ${out}` +
     (carried.length ? `, ${carried.length} carried from the previous run` : ""));

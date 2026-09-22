@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "produced_at": "2026-09-22T04:14:04.160Z",
+  "produced_at": "2026-09-22T05:11:12.012Z",
   "produced_by": "scripts/mutation-run.ts",
-  "source_commit": "1060c40f047bd007a4c0040e70813dd6e05aa2a3",
+  "source_commit": "051bb2c0266791f5e7e43ab3e5ee09cba9602ece",
   "source_dirty_paths": 2,
-  "snapshot_tree_sha256": "470d620670fcc81e94e963b688fa7aee11f8be83d4520ad00368682fedf2551d",
+  "snapshot_tree_sha256": "567df03572759c9808c948c90be93b9d12888057c0e130e3d31c0eeacca4dd99",
   "declared_by": "git ls-files --cached --others --exclude-standard",
   "declared_count": 73,
   "baseline_verdict": "PASSED",
@@ -25,7 +25,7 @@
     "a_subject_too_simple_to_fail": "The third shape, and the one that hid a real kernel defect the longest. `evaluate` checked only the step immediately before, so a seven-step procedure was verified one link deep and a rule-free step became a permanent hole. Two fixtures watched it and neither could disagree with it: the second-flow fixture is two steps, so it has no \"three steps back\" to get wrong, and the negative control gives every step a sign-off rule, so it has no rule-free step in the middle. A test whose SUBJECT cannot express the failure passes for the same reason an unreachable clause does, and a mutation run cannot tell the two apart from the outside — in both cases the defect is planted and nothing goes red. What caught it was giving the check a subject that could fail: the procedure the release actually registers.",
     "a_check_that_reads_instead_of_exercising": "The fourth shape, and the most expensive one found. At fa975c4 `knowledge_search` could not serve a single plain ASCII query: a parameter was bound as a side effect and then never referenced, so the statement numbered $1 and $3 while binding three, and PostgreSQL refuses to parse a statement whose numbering skips one. 534 of the 535 searches this platform has ever received are ASCII. Two checks already read that predicate — one asks whether its text contains a substring, the other which configuration it names — and both passed. THIS SHAPE IS UNLIKE THE OTHER THREE: the subject is reachable, the assertion is exercised, the fixture is real. What is wrong is the QUESTION. Reading what a thing says is not running it, and a statement can satisfy every assertion about its text while being unparseable. A mutation run cannot find this one either — plant a defect that changes only what the text DOES and every text-reading check stays green, which from the outside is indistinguishable from a check that works. What caught it asks about the relationship between two halves the text cannot express: the numbers the SQL references must be exactly 1..args.length, and no database is needed to ask it.",
     "what_this_artifact_is_not_evidence_about": "Every check this PLAN adds. The declared files also carry pre-existing checks that predate this plan and have no row here, so a reader must not read a green report as evidence that every check the gate registers has been shown able to fail.",
-    "binding_to_the_tree": "Each row carries `check_sha256` — the check file's bytes when the row was measured — and `live_check_sha256`/`stale` from the moment the report was written. NOTHING ENFORCES THIS: the coverage check reads neither, so a stale report still satisfies it, and that is a gap rather than a design. What the runner does enforce is narrower and worth having: it refuses to write at all if a check file moved while this run was measuring it, and it names any carried row whose check has changed since."
+    "binding_to_the_tree": "Each row carries `check_sha256` — the check file's bytes when the row was measured — and `live_check_sha256`/`stale` from the moment the report was written. NOTHING ENFORCES THIS: the coverage check reads neither, so a stale report still satisfies it, and that is a gap rather than a design. What the runner does enforce is narrower and worth having: it refuses to write at all if a check file moved while this run was measuring it, and it names any carried row whose check has changed since. The entries in `unexercisable_assertions` carry the same three fields for the same reason: one of them records an observation from a real run rather than a planted mutation, which is stronger evidence and weaker provenance, since nothing re-derives it."
   },
   "results": [
     {
@@ -2447,6 +2447,7 @@
     {
       "check": "scripts/gate/checks/plugin-declaration.ts",
       "target": "a plugin declares every skill it ships, and ships every skill it declares",
+      "assertion": null,
       "subject": "catalog/sdlc/sdlc-flow/flow.json",
       "planted": "the manifest declares a library skill the flow does not ship, so an agent told to load it is refused by the platform",
       "find": "    \"sdlc-recall\",",
@@ -2468,13 +2469,13 @@
         "a plugin declares every skill it ships, and ships every skill it declares",
         "every plugin declares what it is, what it ships, and what each stage leaves behind"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "567df03572759c9808c948c90be93b9d12888057c0e130e3d31c0eeacca4dd99",
       "subject_kind": "declared data or configuration",
       "check_sha256": "3f28edc1eb95f3bf391dc80584d782ea113a118eb0cb44f1df93bf5ccf6352c7",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "567df03572759c9808c948c90be93b9d12888057c0e130e3d31c0eeacca4dd99",
       "digest_matches": true,
-      "duration_ms": 30095,
+      "duration_ms": 26766,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
@@ -3777,37 +3778,55 @@
       "check": "scripts/gate/checks/contracts-door.ts",
       "assertion": "the ratchet backward — a listed name the door no longer publishes fails, so the list cannot outlive what it describes",
       "why": "the check's RESIDUE list is empty. Both backward clauses are `for (const name of RESIDUE)`, so their bodies never execute and no defect planted in the door can reach them. This is the first shape on this run's own list — a clause the data never takes — arriving in a check planted the same night the list was emptied.",
-      "plantable_when": "a value name is tolerated on the door without an importer and is listed in RESIDUE again; the clause fires the moment that entry outlives the name it describes."
+      "plantable_when": "a value name is tolerated on the door without an importer and is listed in RESIDUE again; the clause fires the moment that entry outlives the name it describes.",
+      "observed_check_sha256": "a096e75c799b545a8fc936396865e10930c5c49aab43a197d446cbc154c50a44",
+      "live_check_sha256": "a096e75c799b545a8fc936396865e10930c5c49aab43a197d446cbc154c50a44",
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/contracts-door.ts",
       "assertion": "the ratchet backward — a listed name that has ACQUIRED an importer fails, so it can never return to the residue",
       "why": "the same empty RESIDUE. This one was plantable earlier tonight and is recorded because it stopped being so: the row that established it imported a listed name and watched the clause fire, and the sweep that emptied the list took its subject away.",
-      "plantable_when": "RESIDUE holds at least one name; importing that name then fires it."
+      "plantable_when": "RESIDUE holds at least one name; importing that name then fires it.",
+      "observed_check_sha256": "a096e75c799b545a8fc936396865e10930c5c49aab43a197d446cbc154c50a44",
+      "live_check_sha256": "a096e75c799b545a8fc936396865e10930c5c49aab43a197d446cbc154c50a44",
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/build.ts",
       "assertion": "a missing testing/ FAILS rather than passing in silence",
       "why": "the clause fires only when `testing/` cannot be read, and the sole edit that produces that state is to the check's own path string. `plant()` freezes `scripts/gate/checks/` — a run that edited a check would be measuring itself — and a find/replace spec cannot remove a directory. The subject and the instrument are the same file, which is the one combination this runner refuses by construction.",
-      "plantable_when": "the runner can express a subject's ABSENCE as a mutation, rather than only its contents. Until then the clause is verified by reading: it was `return null` and it is now a returned failure string, and `testing/` is tracked, so the state it guards is a broken checkout rather than a checkout without an optional artifact."
+      "plantable_when": "the runner can express a subject's ABSENCE as a mutation, rather than only its contents. Until then the clause is verified by reading: it was `return null` and it is now a returned failure string, and `testing/` is tracked, so the state it guards is a broken checkout rather than a checkout without an optional artifact.",
+      "observed_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/catalog-stages.ts",
       "assertion": "a missing testing/ FAILS rather than passing in silence",
       "why": "identical to the entry above, in the sibling check that carried the same escape.",
-      "plantable_when": "as above."
+      "plantable_when": "as above.",
+      "observed_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/deploy-compose.ts",
       "assertion": "a Caddyfile that cannot be read FAILS rather than passing in silence",
       "why": "the same shape. `deploy/Caddyfile` is a legitimate subject and other rows mutate its CONTENTS, but no spec can make it absent, and the absence is the whole clause.",
-      "plantable_when": "as above. Note the stake: this check's own comment records that a wrong Caddyfile left production answering 502 while every container read as healthy, and before this initiative a Caddyfile that was simply gone passed the check in silence."
+      "plantable_when": "as above. Note the stake: this check's own comment records that a wrong Caddyfile left production answering 502 while every container read as healthy, and before this initiative a Caddyfile that was simply gone passed the check in silence.",
+      "observed_check_sha256": "80353f208c5c50946321fe902ec7fae974ceff73c369f472d446d465d06ac381",
+      "live_check_sha256": "80353f208c5c50946321fe902ec7fae974ceff73c369f472d446d465d06ac381",
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/console.ts",
       "assertion": "an absent ../zz-stack-dashboard is NAMED, rather than reported as routes nobody calls",
-      "why": "the condition is `!existsSync(dash)` on a SIBLING REPOSITORY, which no edit to a mutable subject can remove — the only lever is the check's own path string, and `plant()` freezes `scripts/gate/checks/`. But unlike the three entries above, this one HAS BEEN EXERCISED, by running the real gate in a copy of the tree placed where no sibling exists. Observed: `50 route(s) cannot be shown to have a caller. This is not evidence that they have none.` Before this change the same run reported fifty live routes as `serves /api/console/... and nothing calls it` — a false accusation that invites a reader to delete working code, which is why it fails with a different sentence rather than passing or shortening its list.",
-      "plantable_when": "never by this runner, and it does not need to be. A spec cannot express the absence of a directory outside the repository. The evidence for this clause is the sibling-less gate run recorded above, which is stronger than a planted mutation because it exercises the real condition rather than a stand-in for it."
+      "why": "the condition is `!existsSync(dash)` on a SIBLING REPOSITORY, which no edit to a mutable subject can remove — the only lever is the check's own path string, and `plant()` freezes `scripts/gate/checks/`. But unlike the three entries above, this one HAS BEEN EXERCISED. REPRODUCE IT: rsync this tree (minus node_modules and .git) into a directory that has no zz-stack-dashboard beside it, symlink node_modules, and run `node scripts/gate.ts` there. The run is disposable and its output is not kept in the tree, which is why the method is written here rather than a transcript — a number in a comment is the thing that goes stale, and the route count moves whenever a route is added. On 2026-09-22 it reported 50 routes it could not show a caller for. Before this change the same run reported each of them as `serves /api/console/... and nothing calls it` — a false accusation that invites a reader to delete working code, which is why it fails with a different sentence rather than passing or shortening its list.",
+      "plantable_when": "never by this runner, and it does not need to be. A spec cannot express the absence of a directory outside the repository. The evidence for this clause is the sibling-less gate run recorded above, which is stronger than a planted mutation because it exercises the real condition rather than a stand-in for it.",
+      "observed_check_sha256": "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
+      "live_check_sha256": "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
+      "stale": false
     }
   ]
 }

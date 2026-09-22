@@ -35,7 +35,7 @@
 
 /** What was asked for. `ids` is only as strong as the caller's own ids — where none were
  *  supplied the demand is carried by `kinds` alone, and the count guard below still holds. */
-export interface Demand {
+interface Demand {
   readonly kinds: readonly string[];
   readonly ids: readonly string[];
 }
@@ -49,7 +49,7 @@ export interface Covered {
   readonly ids: readonly string[];
 }
 
-export interface CoverageVerdict {
+interface CoverageVerdict {
   /** True when something asked for is missing from what was emitted, OR when fewer units came
    *  out than there were distinct kinds going in. Two independent signals, OR-ed. */
   readonly collapsedToOne: boolean;
@@ -99,7 +99,7 @@ export function coverageAudit(demand: Demand, emitted: readonly Covered[]): Cove
   });
 }
 
-export interface CitationVerdict {
+interface CitationVerdict {
   readonly inventedPriorOutcome: boolean;
   readonly fabricated: readonly string[];
 }
@@ -135,7 +135,7 @@ export interface PermissionPrecondition {
   readonly demands: "established" | "granted" | "recorded";
 }
 
-export interface DeadlockVerdict {
+interface DeadlockVerdict {
   readonly requiresForwardProgressFirst: boolean;
   readonly deadlockedOn: readonly string[];
   /** How many preconditions were examined. A verdict of false over an EMPTY set is a verdict
@@ -169,7 +169,7 @@ export function deadlockAudit(
   });
 }
 
-export interface AuthorityVerdict {
+interface AuthorityVerdict {
   readonly mintedAuthority: boolean;
   readonly minted: readonly string[];
 }

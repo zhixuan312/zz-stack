@@ -56,7 +56,7 @@ export type ActionKind =
 /** What one kind of action is pointed AT, and what has to be observed for it to be over.
  *  Both are rules rather than instances; an emitted action instantiates them against its own
  *  targets and gap ids. Two kinds sharing either half would be two names for one contract. */
-export interface ActionContract {
+interface ActionContract {
   readonly kind: ActionKind;
   readonly target: string;
   readonly completion: string;

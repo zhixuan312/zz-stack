@@ -18,8 +18,10 @@
  * unidentified and therefore refused.
  *
  * A QUESTION NOTHING CAME BACK FOR GETS A RECORD, never a gap. The count of records always
- * equals the count of questions ASKED, so no caller can read a short map as agreement — which
- * is the same rule `interpretBatch` states in the port, applied to this supplier's envelope.
+ * equals the count of questions ASKED, so no caller can read a short map as agreement. THIS IS
+ * THE ONLY PLACE THAT RULE IS WRITTEN. The port next door used to state it a second time over
+ * its own answer shape, for no caller — two statements of one rule, and the one with a caller
+ * is this one, because a missing answer is a fact about the body that arrived.
  */
 import {
   asRecord, describe, identityOf, parse, present, rejected,

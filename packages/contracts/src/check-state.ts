@@ -54,7 +54,7 @@ export type CheckState =
   | "unknown";
 
 /** The state a record must carry when it cannot establish any of the other six. */
-export const UNDETERMINED_CHECK_STATE: CheckState = "unknown";
+const UNDETERMINED_CHECK_STATE: CheckState = "unknown";
 
 /**
  * Narrow an arbitrary value to a state, or to `unknown`.

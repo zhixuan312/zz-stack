@@ -298,8 +298,9 @@ export function snapshot(world: DependencyWorld): DependencySnapshot {
 export type ValidityState = "valid" | "invalidated" | "paused";
 
 /** What {@link revalidate} concluded, in terms a host can act on without interpreting any of
- *  the dependency names. */
-export interface ValidityVerdict {
+ *  the dependency names. Not published, because its only producer is not: a verdict type a
+ *  consumer can name and has no way to obtain is a surface that describes nothing. */
+interface ValidityVerdict {
   readonly state: ValidityState;
   /** Dependency names whose token no longer matches. */
   readonly moved: readonly string[];
@@ -317,8 +318,13 @@ export interface ValidityVerdict {
  * worth defending: reading the snapshot's own entries would make a snapshot with a hole
  * indistinguishable from a snapshot of a world with fewer dependencies, and the hole is
  * precisely what a validity check has to be able to see.
+ *
+ * NOT PUBLISHED. {@link stillValid} is the whole of what this module offers a caller, and it is
+ * the form the one consumer asks in. Publishing the verdict as well would put a second, richer
+ * answer on the door that nothing reads — and a reader would have to guess which of the two the
+ * host is supposed to act on. The coverage probe below reaches it as a sibling, not as a door.
  */
-export function revalidate(snap: DependencySnapshot, world: DependencyWorld): ValidityVerdict {
+function revalidate(snap: DependencySnapshot, world: DependencyWorld): ValidityVerdict {
   const moved: string[] = [];
   const unfenceable: string[] = [];
   let widened = false;

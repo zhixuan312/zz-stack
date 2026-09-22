@@ -195,7 +195,7 @@ function firing(rows: readonly FiringRow[], expected: number): string | null {
 }
 
 check("the audit-identity negative control fires on every planted fault", () =>
-  firing(auditIdentityProbe(), 11));
+  firing(auditIdentityProbe(), 10));
 
 check("the gap-routing negative control fires on every planted fault", () =>
   firing(gapRoutingProbe(), 21));

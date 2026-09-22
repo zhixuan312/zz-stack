@@ -390,7 +390,7 @@ export interface ProcedureSignature {
   readonly judgementStepsFollowMaterial: boolean;
 }
 
-export function procedureSignature(module: ReviewedModule): ProcedureSignature {
+function procedureSignature(module: ReviewedModule): ProcedureSignature {
   const steps = module.steps;
   const materialKinds = new Set(steps.flatMap((s) =>
     s.accepts.filter((k) => k.carries === "material").map((k) => k.name)));
@@ -431,7 +431,7 @@ export function procedureSignature(module: ReviewedModule): ProcedureSignature {
  * judgement-only steps behind the material ones is that pipeline whatever its steps are
  * called.
  */
-export function reusesGatedDocumentPipeline(module: ReviewedModule): boolean {
+function reusesGatedDocumentPipeline(module: ReviewedModule): boolean {
   const shape = procedureSignature(module);
   return shape.stepCount >= 5
     && shape.oneMaterialKindThroughout

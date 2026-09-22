@@ -29,7 +29,6 @@
  */
 import {
   applyAssessment,
-  disputeFinding,
   recordAudit,
   recordFinding,
   resolveFinding,
@@ -39,7 +38,6 @@ import {
   type AuditOutcome,
   type Finding,
   type FindingDisposition,
-  type FindingLedger,
   type FindingWithdrawal,
   type RecordedResolution,
   type RequiredTest,
@@ -91,14 +89,6 @@ function closesFinding(finding: Finding, assessment: Assessment): FindingDisposi
     return "resolved";
   }
   return finding.disposition;
-}
-
-/** THE FAULT THE REAL `disputeFinding` CANNOT HAVE: treating the later round as a correction
- *  of the earlier one and keeping only it. It reads as tidying — one row per question instead
- *  of two — and what it throws away is the account somebody has to read to decide which of the
- *  two rounds was right. */
-function collapseToLatest(original: Finding, later: Finding): readonly Finding[] {
-  return [original, later].slice(-1);
 }
 
 /** THE FAULT THE REAL `observedTransitions` CANNOT HAVE: a derivation of a transition from
@@ -254,24 +244,6 @@ function verifiedResolutionStillWorks(): AuditIdentityProbeRow {
   );
 }
 
-function disputeKeepsBoth(): AuditIdentityProbeRow {
-  const later = recordFinding({ id: "probe-f2", disposition: "open", summary: "round 2 disagrees" });
-  const ledger: FindingLedger = disputeFinding(OPEN_FINDING, later);
-  const standing = ledger.entries.map((f) => f.id);
-  const relation = ledger.disputes[0];
-  const collapsed = collapseToLatest(OPEN_FINDING, later).map((f) => f.id);
-  return row(
-    "a disputed finding coexists with the original",
-    [standing.length === 2 && standing.includes(OPEN_FINDING.id)
-      && ledger.entries[0].disposition === OPEN_FINDING.disposition,
-     `both rounds stand and neither is rewritten: ${standing.join(", ")}, with ` +
-     `${relation.by_id} recorded as disputing ${relation.disputed_id}`],
-    [!collapsed.includes(OPEN_FINDING.id),
-     `taking the later round as the correction leaves only ${collapsed.join(", ")}, and the ` +
-     "evidence a reader needs to judge the disagreement is the half that went"],
-  );
-}
-
 function newAuditNeedsSixIdentities(): AuditIdentityProbeRow {
   const complete: AuditOutcome = recordAudit({
     execution_id: "e1", attempt_id: "a1", reviewer_identity: "reviewer-1",
@@ -365,7 +337,6 @@ export function auditIdentityProbe(): readonly AuditIdentityProbeRow[] {
     deletionIsComputed(),
     substitutionIsComputed(),
     verifiedResolutionStillWorks(),
-    disputeKeepsBoth(),
     newAuditNeedsSixIdentities(),
     reviewerIsNeverPromoted(),
     hashIsNeverHistoric(),

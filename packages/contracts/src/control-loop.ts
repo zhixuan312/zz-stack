@@ -24,14 +24,15 @@
  */
 
 // The generic control-loop host: what a reviewed module is, the five operations a host serves
-// (`run_start`, `method_read`, `evidence_record`, `control_evaluate`, `action_claim`), the
-// digest a registration is checked against, and the structural signature that says whether a
-// procedure is a second flow or the platform's own pipeline under other names.
+// (`run_start`, `method_read`, `evidence_record`, `control_evaluate`, `action_claim`), and the
+// digest a registration is checked against. The structural signature that says whether a
+// procedure is a second flow or the platform's own pipeline under other names is computed
+// INSIDE the module and reaches a consumer on `SecondFlowRun`, not as a function to call: the
+// question it answers is about a fixture this door publishes whole, and a detector exported for
+// anyone to point at anything is a detector with no fixture behind its answer.
 export {
   createHost,
   moduleDigest,
-  procedureSignature,
-  reusesGatedDocumentPipeline,
   runSecondFlowFixture,
   type ActionGrant,
   type CompletionRule,
@@ -53,8 +54,13 @@ export {
 // found nothing (`no_relevant_match_in_searched_scope`). A complete empty means no match under
 // that search — never that the team never decided the topic. `RecallBlocker` enumerates every
 // reason the first verdict is owed instead of the second.
+//
+// THE LANE-TO-MATCH-KIND MAPPING IS NOT ON THIS DOOR. Turning the lanes a hit arrived through
+// into a `RecallMatchKind` is a step inside running an episode, and `recall-trial.ts` beside
+// this module is the only thing that runs one. A second copy of that mapping in
+// `@zz/indexing` was deleted rather than published, because two renderings of one vocabulary
+// drift; publishing this one would invite the third.
 export {
-  matchKindFromVia,
   recallResultFrom,
   type RecallBlocker,
   type RecallBudgetLine,
@@ -96,17 +102,19 @@ export {
 // `self_reported` however numeric it looks; only a declared native channel is a distribution.
 // And `unavailable` (the call failed) is kept distinct from `unknown` (the assessor answered
 // and could not tell), because collapsing them turns a timeout into a considered judgement.
+//
+// ONE QUESTION AT A TIME IS WHAT THIS DOOR PUBLISHES. Whether an assessment may carry a
+// semantic advance is asked through `evaluateBranch`, which is where the requirement it is
+// judged against lives; a bare predicate on the door would be that judgement without the
+// requirement beside it.
 export {
   QUESTION_FAMILIES,
-  authorizesSemanticAdvance,
   interpret,
-  interpretBatch,
   type AnswerOption,
   type AnswerSpec,
   type AskedQuestion,
   type AssessmentCall,
   type AssessmentStatus,
-  type BatchAssessment,
   type CallFailure,
   type IdentityAssurance,
   type SemanticAssessment,
@@ -179,37 +187,40 @@ export {
 // version of this module compared qualification keys to audit a key-based retirement
 // mechanism, and the probe is what showed both detectors silent exactly when the mechanism was
 // broken.
+//
+// WHAT A RUN RECORDS IS NOT ON THIS DOOR, and neither is what a profile's withdrawal would do.
+// Filing a threshold or an invocation, and the shapes either produces, are module-private: the
+// retirement rules are written in them and run in the same module, and a caller that could file
+// one from outside could file it under a key no rebind would think to retire. The run's event
+// ledger is private for the same reason — `RebindResult` already answers, from the entries a
+// rebind appended, both questions a reader of the ledger would be asking (`suspendedFirst` and
+// `historyPreserved`), and a second, rawer answer beside it could only disagree with the first.
 export {
-  bindingHistory,
   rebind,
   rebindDetectorProbe,
-  recordCalibration,
-  recordInvocation,
   resolveFor,
-  revokeProfile,
   setDefaultBinding,
   startRun,
-  type BindingEvent,
-  type BindingEventKind,
-  type CalibrationEntry,
   type EnrolledRun,
-  type InvocationRecord,
   type ProbeReport,
-  type ProfileRevocation,
-  type Qualified,
   type RebindRequest,
   type RebindResult,
   type ResolvedBinding,
   type RoleBindings,
 } from "./bindings.js";
 
-// THE REGISTER — what a profile ref IS, separately from what it is bound to. Resolution, the
-// immutable-ref rule, the handle grammar (a ref resolves to a host-held handle and never to a
-// URL or a secret) and the qualification key. Split from `bindings.ts` because those are two
-// subjects: this one is the vocabulary, that one is what changing a binding costs.
+// THE REGISTER'S VOCABULARY, AND ONLY THAT. What a profile ref IS, separately from what it is
+// bound to: the declaration a caller writes, the resolved shape it becomes, and the slice a
+// measurement is qualified on. Split from `bindings.ts` because those are two subjects — this
+// one is the vocabulary, that one is what changing a binding costs.
+//
+// THE REGISTER'S OPERATIONS ARE NOT HERE, and the shape of that is worth stating rather than
+// leaving as an absence. `declareProfile` and `qualificationKey` are reached by `bindings.ts`
+// as a sibling, which is the module that has a run to declare a profile for and evidence to
+// file under a key; nothing outside this package holds either. Publishing them would offer a
+// second way to mint a key, and a key minted outside the module that retires keys is one no
+// rebind can find.
 export {
-  declareProfile,
-  qualificationKey,
   type BoundRole,
   type ProfileDeclaration,
   type QualificationSlice,
@@ -221,8 +232,10 @@ export {
 // moving while the target's own bytes stay put, and that is the whole defect this task exists
 // for. Validity is decided by iterating the CLOSED SET of dependency kinds, not the snapshot's
 // own entries: a kind with no entry is a coverage gap, and a gap pauses rather than passing.
+// `stillValid` is the whole of that offered to a caller — the verdict behind it is computed in
+// the module and stays there, because two ways to ask one question are two answers waiting to
+// be read as different policies.
 export {
-  revalidate,
   snapshot,
   snapshotCoverageProbe,
   stillValid,
@@ -234,7 +247,6 @@ export {
   type DependencyWorld,
   type PinState,
   type ValidityState,
-  type ValidityVerdict,
   type VersionPredicate,
 } from "./dependency-snapshot.js";
 
@@ -346,10 +358,13 @@ export {
 // rather than hidden, so a reader can see it was seen and refused. `advance` is computed from
 // outcome evidence, closed gaps and recorded gates, and from nothing else; a twelve-byte
 // evidenced correction advances and half a megabyte with a gap open does not. An episode is
-// keyed by what it audits (`episodeKey` digests subject and criteria, never the label), so a
-// rename spends the same budget — and exhaustion sets `exhausted` and a blocker, never `advance`.
+// keyed by what it audits — the key digests subject and criteria and never the label, so a
+// rename spends the same budget — and exhaustion sets `exhausted` and a blocker, never
+// `advance`. The keying function itself is not published: `readiness` applies it to every input
+// it is given, and the module's negative control reaches it as a sibling to show a renamed
+// episode keying the same. A caller that could key an episode separately could key one this
+// module would not, which is the rename the budget exists to catch.
 export {
-  episodeKey,
   readiness,
   type AuditContext,
   type AuditEpisode,
@@ -364,15 +379,19 @@ export {
 // has no step list and cannot name one, which is what keeps the kernel generic. A step entered
 // without its entry evidence returns the missing kinds; a call against a superseded revision is
 // refused and carries the current one; `needs_revisit` is COMPUTED from the outcome the
-// controller already holds, never set by a caller. `admitEntry` is the entry rule itself,
-// exported beside the controller because a caller with no execution to hang the question on —
-// a guard on a single write — must not have to fabricate an identity and a revision, and must
-// not keep a second copy of the rule instead. Evidence is required at a STANDARD, and a
+// controller already holds, never set by a caller. Evidence is required at a STANDARD, and a
 // requirement can be DISCHARGED on a named ground rather than met; which standard applies and
 // what grounds exist are caller-supplied facts, like every other input here.
+//
+// `admitEntry` IS THE ONLY HALF ON THIS DOOR, and the split is the finding rather than an
+// oversight. It is the entry rule alone, so a caller with no execution to hang the question on
+// — `services/zz-core/src/guards.ts`, guarding a single write — can ask it without fabricating
+// an identity and a revision, and without keeping a second copy of the rule. The controller
+// that drives a whole declared flow needs all three, and nothing in this repository runs one:
+// it is built and exercised by `stage-control-probe.ts` beside it, which is a sibling and not
+// a consumer. Publishing it would advertise a flow kernel no flow here is driven through.
 export {
   admitEntry,
-  createController,
   type ControlState,
   type EntryAdmission,
   type EntryWaiver,
@@ -404,37 +423,39 @@ export { stageControlProbe, type StageControlProbeRow } from "./stage-control-pr
 // was observed in and an observation manifest says what state it was captured in; both need the
 // same seven words, and a vocabulary owned by one of two equal consumers is two vocabularies
 // waiting to disagree. `unknown` is the default and is never written as `passed` or `failed`.
+//
+// THE LIST AND THE TYPE, NOT THE COERCION. Narrowing an arbitrary value to one of the seven is
+// what a module reading a record off disk does on the way in, and both such modules are in this
+// package; a consumer outside it holds a `CheckState` rather than validating one, and asks
+// `CHECK_STATES.includes(…)` where it has to ask at all.
 export {
   CHECK_STATES,
-  UNDETERMINED_CHECK_STATE,
-  asCheckState,
   type CheckState,
 } from "./check-state.js";
 
 // AUDIT IDENTITY, AND THE THREE THINGS AN ASSESSMENT CANNOT DO. Every audit carries execution,
-// attempt, reviewer, target, report and completion identity; a finding a later round disputes
-// coexists with the original rather than replacing it; and an assessment can neither resolve a
-// finding, delete one, nor stand in for a required test — each of those is a computed refusal
-// rather than a convention. `UNAVAILABLE` is the sentinel for what a record genuinely lacks.
+// attempt, reviewer, target, report and completion identity, and an assessment can neither
+// resolve a finding, delete one, nor stand in for a required test — each of those is a computed
+// refusal rather than a convention.
+//
+// RECORDING AND CLOSING STAY INSIDE. What this door publishes is recording a FINDING and
+// reading an assessment against one, because those are what a consumer outside this package
+// does. Opening an audit record and closing a finding are the two ends of a round, and both are
+// refusals before they are constructors — `recordAudit` refuses six missing identities,
+// `resolveFinding` refuses a verification that did not pass. A refusal is worth publishing when
+// somebody is on the other side of it; nobody outside this package opens a round or closes a
+// finding today, and the flow that decides findings — `finding_decide` in zz-core — keeps its
+// own vocabulary, which this one cannot express. They stay exported to the modules that hold
+// this package's own record honest, and off the surface until there is a caller.
 export {
   applyAssessment,
-  disputeFinding,
-  recordAudit,
   recordFinding,
-  resolveFinding,
-  UNAVAILABLE,
   type AssessedFinding,
   type Assessment,
   type AuditIdentity,
-  type AuditOutcome,
-  type AuditRecord,
-  type AuditRefusal,
   type Finding,
-  type FindingClosure,
   type FindingDisposition,
-  type FindingDispute,
   type FindingInput,
-  type FindingLedger,
   type FindingWithdrawal,
   type RecordedResolution,
   type RequiredTest,
@@ -469,7 +490,7 @@ export {
   type TransitionRelationKind,
 } from "./stage-transition.js";
 
-// The negative control for the three rules above: eleven planted faults, each shown firing on a
+// The negative control for the three rules above: ten planted faults, each shown firing on a
 // damaged subject and silent on a healthy one. A refusal nobody has watched fail is untested.
 export { auditIdentityProbe, type AuditIdentityProbeRow } from "./audit-identity-probe.js";
 
@@ -479,13 +500,16 @@ export { auditIdentityProbe, type AuditIdentityProbeRow } from "./audit-identity
 // units that answer them, not asserted — and a gap with no permitted action resolves to a pause
 // carrying a concrete resumption condition. There is NO `advance` kind: review grants close
 // eligibility, which is why it cannot advance to a stage that does not exist.
+//
+// THE KINDS, NOT THE INVENTORIES BEHIND THEM. `ACTION_CONTRACTS` is what each kind commits to
+// and `GAP_KINDS` is what the router recognises; both are read BY `routeGap` on the way to a
+// routing, and a caller holding the routing has the answer they encode. Published, a caller
+// could read a contract's target and completion and claim to have met them without ever
+// routing the gap that would have said whether the action was permitted at all.
 export {
-  ACTION_CONTRACTS,
   ACTION_KINDS,
-  GAP_KINDS,
   routeGap,
   type Action,
-  type ActionContract,
   type ActionKind,
   type Gap,
   type GapRouting,
@@ -515,17 +539,16 @@ export {
 // gap vocabulary. They answer structural questions about plain string lists, so the mechanism
 // cannot make them agree with it. An audit that shares the mechanism's assumption is the defect
 // this initiative kept finding in its own work, and this module is the shape of not having it.
+//
+// NOT ON THIS DOOR, AND THAT IS THE POINT OF THEM. An audit is what the router and the three
+// progression moves are held to, applied to the lists THEY produce: between them `routeGap`,
+// `bootstrap`, `correctiveReturn` and `reviewClose` run all four on the way to their own
+// verdicts — no single one of them runs every audit, because not every move can commit every
+// fault — and a caller reads the result. Published, they would be four functions anybody could
+// run over lists of their own choosing and quote the answer, which is the mechanism grading its
+// own homework with an extra step. What this door publishes is the precondition shape a caller
+// has to supply to be audited.
 export {
-  authorityMintAudit,
-  citationAudit,
-  coverageAudit,
-  deadlockAudit,
-  type AuthorityVerdict,
-  type CitationVerdict,
-  type CoverageVerdict,
-  type Covered,
-  type Demand,
-  type DeadlockVerdict,
   type PermissionPrecondition,
 } from "./gap-audit.js";
 

@@ -37,7 +37,7 @@
  * a rebind knows which stopped being true. This file imports nothing from it.
  */
 import {
-  declareProfile, declaredRole, markProfileRevoked, profileByDigest, qualificationKey,
+  declareProfile, declaredRole, profileByDigest, qualificationKey,
   resolveProfile, stableDigest, unsupportedProfile,
   type BoundRole, type QualificationSlice, type ResolvedProfile,
 } from "./profiles.js";
@@ -70,18 +70,22 @@ export interface ResolvedBinding extends RoleBindings {
 
 /** What every piece of qualified evidence carries: the role, the slice it was taken on, the key
  *  it is filed under, and the profile that produced it — the last being what makes provenance
- *  checkable after the key has been recomputed. */
-export interface Qualified {
+ *  checkable after the key has been recomputed.
+ *
+ *  NONE OF THE THREE SHAPES BELOW IS PUBLISHED. The two functions that produce them are
+ *  module-private, so a consumer could name the type and never hold one. They are the vocabulary
+ *  the retirement rules are written in, and those rules run here. */
+interface Qualified {
   readonly role: BoundRole; readonly slice: QualificationSlice;
   readonly qualification_key: string; readonly minted_under_profile_digest: string;
 }
 
 /** A measured threshold. `in_force` goes false when the key stops being reachable. */
-export interface CalibrationEntry extends Qualified { readonly threshold: number; readonly in_force: boolean }
+interface CalibrationEntry extends Qualified { readonly threshold: number; readonly in_force: boolean }
 
 /** One invocation that happened, and the answer it produced. `reusable` goes false when the key
  *  stops being reachable; the record is never removed. */
-export interface InvocationRecord extends Qualified {
+interface InvocationRecord extends Qualified {
   readonly checkpoint_id: string; readonly question_digest: string;
   readonly model_identity: string; readonly reusable: boolean;
   readonly options: Readonly<Record<string, string | number | boolean>> | null;
@@ -94,13 +98,18 @@ interface BindingGrant {
   readonly qualified_under: Readonly<Record<string, string>>;
 }
 
-export type BindingEventKind =
+/** THE LEDGER IS INTERNAL TO THIS MODULE, and neither name below is published. `report` reads
+ *  the entries a rebind appended and derives `suspendedFirst` and `historyPreserved` from them,
+ *  which is the form in which the order of what happened is offered to a caller. Handing out
+ *  the entries as well would be a second answer to a question {@link RebindResult} already
+ *  answers, and the two would be free to disagree. */
+type BindingEventKind =
   | "enrolled" | "run_suspended" | "reconciled" | "grants_revoked" | "qualification_retired"
-  | "rebound" | "resumed_pending_reevaluation" | "paused_for_migration" | "profile_revoked";
+  | "rebound" | "resumed_pending_reevaluation" | "paused_for_migration";
 
 /** One append-only entry. `seq` is module-wide and monotonic, so ordering between entries is a
  *  fact rather than an artefact of how an array happened to be built. */
-export interface BindingEvent {
+interface BindingEvent {
   readonly seq: number; readonly kind: BindingEventKind;
   readonly detail: string; readonly binding_digest: string | null;
 }
@@ -215,17 +224,16 @@ function mustFind(run: EnrolledRun): RunState {
  *  drift with it, which is the one thing this module exists to prevent. */
 export const resolveFor = (run: EnrolledRun): ResolvedBinding => mustFind(run).binding;
 
-/** The run's ledger: what it was pinned to, every act that changed it, and in what order. */
-export const bindingHistory = (run: EnrolledRun): readonly BindingEvent[] => mustFind(run).history;
-
 function boundProfile(state: RunState, role: BoundRole): ResolvedProfile {
   const profile = state.binding.profiles[role];
   if (!profile) throw new Error(`the ${role} role is not bound on this run`);
   return profile;
 }
 
-/** File a measured threshold under the key the measurement was actually taken at. */
-export function recordCalibration(
+/** File a measured threshold under the key the measurement was actually taken at. Not published:
+ *  the only caller is {@link rebindDetectorProbe} below, which has to put evidence on a run
+ *  before it can show a rebind retiring it. */
+function recordCalibration(
   run: EnrolledRun, role: BoundRole, slice: QualificationSlice, threshold: number,
 ): CalibrationEntry {
   const state = mustFind(run);
@@ -241,8 +249,9 @@ export function recordCalibration(
 
 /** Record one invocation — which model answered, under which options, for which checkpoint —
  *  filing its answer under the same key, so a later cache hit is a hit on the model that
- *  actually answered rather than on whichever model happens to be bound now. */
-export function recordInvocation(
+ *  actually answered rather than on whichever model happens to be bound now. Not published, for
+ *  the same reason as {@link recordCalibration} above. */
+function recordInvocation(
   run: EnrolledRun, role: BoundRole, slice: QualificationSlice,
   checkpointId: string, questionDigest: string,
 ): InvocationRecord {
@@ -428,56 +437,6 @@ function report(state: RunState, pre: readonly BindingEvent[], facts: RebindFact
     reusedCachedAnswers: inherited(state.invocations.filter((a) => a.reusable)),
     historyPreserved: state.history.length >= pre.length && pre.every((e, i) => state.history[i] === e),
   };
-}
-
-// ── revoking a profile ─────────────────────────────────────────────────────────────────────
-
-export interface ProfileRevocation {
-  readonly profile_ref: string; readonly evidenceErased: number;
-  readonly suspendedRuns: readonly string[];
-  readonly revokedGrants: readonly string[]; readonly retainedGrants: readonly string[];
-}
-
-/**
- * Stop the work that depended on a profile, and stop only that. Runs bound to it are suspended
- * and the grants qualified against it revoked; grants qualified against other roles stay valid,
- * and no threshold, invocation or history entry is removed — deleting the record of what already
- * happened would destroy the evidence somebody needs to decide what the migration should be.
- * `evidenceErased` reports that as a measured count rather than a promise.
- */
-export function revokeProfile(ref: string, reason: string): ProfileRevocation {
-  const before = totalEvidence();
-  markProfileRevoked(ref);
-  const suspendedRuns: string[] = [];
-  const revokedGrants: string[] = [];
-  const retainedGrants: string[] = [];
-  for (const state of runs.values()) {
-    const affected = BOUND_ROLES.filter((r) => state.binding[REF_FIELD[r]] === ref);
-    if (!affected.length) {
-      retainedGrants.push(...activeIds(state));
-      continue;
-    }
-    state.suspended = true;
-    state.grants = state.grants.map((g) => {
-      if (!g.active) return g;
-      if (!g.depends_on.some((r) => affected.includes(r))) {
-        retainedGrants.push(g.grant_id);
-        return g;
-      }
-      revokedGrants.push(g.grant_id);
-      return { ...g, active: false };
-    });
-    suspendedRuns.push(state.run_id);
-    append(state, "profile_revoked", `${ref} was revoked: ${reason}`);
-  }
-  return { profile_ref: ref, suspendedRuns, revokedGrants, retainedGrants,
-    evidenceErased: before - totalEvidence() };
-}
-
-function totalEvidence(): number {
-  let total = 0;
-  for (const st of runs.values()) total += st.calibration.length + st.invocations.length;
-  return total;
 }
 
 // ── the negative control ───────────────────────────────────────────────────────────────────

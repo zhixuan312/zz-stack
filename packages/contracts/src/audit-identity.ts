@@ -30,12 +30,6 @@
  *     an assessment rather than by a run. Nothing in this module ever writes that discharge;
  *     the shape is representable precisely so the guard has something to catch.
  *
- * A LATER ROUND THAT DISPUTES AN EARLIER FINDING ADDS A ROW. {@link disputeFinding} returns
- * both findings, verbatim, and the dispute as a relation between them. Neither is rewritten
- * and neither is dropped: collapsing them would mean the record of what the first round found
- * is whatever the second round thought of it, and the first round's evidence is exactly what a
- * reader needs when the two disagree.
- *
  * CHECK STATES STAY SEVEN. Declared, present, invoked, passed, failed, unrun and unknown are
  * seven different facts about a check and every collapse of them hides a different lie: a
  * check that was never invoked reported as passed, a check that could not run reported as
@@ -61,10 +55,10 @@ import { type CheckState } from "./check-state.js";
  *  headroom in — so a reader moving between the two vocabularies met one word with two
  *  meanings and nothing saying which was in force. `disputed` is live in eval-case.ts's
  *  `LabelStatus`, where it is actually constructed and carries the reasons and the voided
- *  reviewers behind it; here it was a name for a state {@link disputeFinding} deliberately
- *  refuses to write, so the only thing it could do was suggest that function does something it
- *  documents itself as not doing. A vocabulary nothing writes is a vocabulary free to drift
- *  from the one that is real, and neither of these had a way to be found wrong. */
+ *  reviewers behind it; here it was a name for a state nothing in this module writes, so the
+ *  only thing it could do was suggest that a disagreement between two rounds is recorded on the
+ *  row it is about. A vocabulary nothing writes is a vocabulary free to drift from the one that
+ *  is real, and neither of these had a way to be found wrong. */
 export type FindingDisposition = "open" | "resolved";
 
 // ── the six identities ─────────────────────────────────────────────────────────────────────
@@ -98,13 +92,13 @@ export const UNAVAILABLE = "unavailable";
 /** A refusal to record an audit, naming every identity that was missing rather than the first
  *  one found — a caller fixing these one round-trip at a time is a caller who stops after the
  *  third and fills the rest in with something plausible. */
-export interface AuditRefusal {
+interface AuditRefusal {
   readonly recorded: false;
   readonly missing: readonly string[];
   readonly detail: string;
 }
 
-export interface AuditRecord {
+interface AuditRecord {
   readonly recorded: true;
   readonly identity: AuditIdentity;
   readonly findings: readonly Finding[];
@@ -317,7 +311,7 @@ export function applyAssessment(finding: Finding, assessment: Assessment): Asses
 /** What became of an attempt to close a finding. BOTH ARMS CARRY THE FINDING, so a caller
  *  wanting the record as it now stands never has to read `closed` to get it, and `refusal`
  *  says which check was cited and what state it was in. */
-export type FindingClosure =
+type FindingClosure =
   | { readonly closed: true; readonly finding: Finding }
   | { readonly closed: false; readonly finding: Finding; readonly refusal: string };
 
@@ -351,35 +345,5 @@ export function resolveFinding(finding: Finding, resolution: RecordedResolution)
   return Object.freeze({
     closed: true as const,
     finding: Object.freeze({ ...finding, disposition: "resolved" as const, resolution }),
-  });
-}
-
-/** A dispute between two rounds, as a relation rather than an edit. */
-export interface FindingDispute {
-  readonly disputed_id: string;
-  readonly by_id: string;
-}
-
-/** Both findings and the relation between them. There is no winner field: which of two
- *  disagreeing rounds was right is a judgement a reader makes from the evidence, and a field
- *  here would be this module making it for them. */
-export interface FindingLedger {
-  readonly entries: readonly Finding[];
-  readonly disputes: readonly FindingDispute[];
-}
-
-/**
- * A LATER ROUND DISPUTING AN EARLIER FINDING, WITH BOTH SURVIVING.
- *
- * Neither record is rewritten. The earlier finding keeps the disposition it was recorded at,
- * and the disagreement is the relation between the two rather than an edit to either: writing
- * a second round's view onto the first round's row would mean the record of what the first
- * round found is whatever the second thought of it, and the first round's account is exactly
- * what somebody needs when the two conflict.
- */
-export function disputeFinding(original: Finding, later: Finding): FindingLedger {
-  return Object.freeze({
-    entries: Object.freeze([original, later]),
-    disputes: Object.freeze([{ disputed_id: original.id, by_id: later.id }]),
   });
 }

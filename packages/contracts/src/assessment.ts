@@ -184,10 +184,15 @@ export interface SemanticAssessment {
   readonly failure_reason: string | null;
 }
 
-/** Why no reply arrived. `no_answer` is a question a batch left out — no transport failed, but
- *  nothing was assessed either, and both are `unavailable` for the same reason: the absence of
- *  an answer is not an answer. */
-export type CallFailure = "timeout" | "network" | "rate_limited" | "server_error" | "cancelled" | "no_answer";
+/** Why no reply arrived. Every one of them is a transport fact rather than a reading, and all
+ *  of them are `unavailable` for the same reason: the absence of an answer is not an answer.
+ *
+ *  A QUESTION A REPLY LEFT OUT IS NOT ON THIS LIST, and it used to be. Reading one batch's body
+ *  is the supplier adapter's subject, not this port's — the adapter records one result per
+ *  question ASKED and names what is missing, and it is what a caller actually holds. A second
+ *  vocabulary for the same absence, on a union nothing in this port could write, was a variant
+ *  waiting to mean something slightly different from the one that is real. */
+export type CallFailure = "timeout" | "network" | "rate_limited" | "server_error" | "cancelled";
 
 /**
  * WHAT THE ADAPTER KNOWS AND THE INTERPRETER CANNOT. Everything here is supplied by the caller
@@ -566,43 +571,4 @@ function ordinal(
  */
 export function authorizesSemanticAdvance(assessment: SemanticAssessment): boolean {
   return assessment.status === "answered" && assessment.value !== null;
-}
-
-// ── batches ────────────────────────────────────────────────────────────────────────────────
-
-/** Every question asked, every answer interpreted, and the questions nothing came back for.
- *  `complete` is the whole point: a batch that lost one answer is not a batch that finished. */
-export interface BatchAssessment {
-  readonly assessments: readonly SemanticAssessment[];
-  readonly missing: readonly string[];
-  readonly complete: boolean;
-}
-
-/**
- * INTERPRET A BATCH WITHOUT LETTING A PARTIAL ONE PASS AS WHOLE. A question the reply left out
- * gets an explicit `unavailable` row rather than being dropped, so the count of assessments
- * always equals the count of questions asked and a caller cannot read a short array as
- * agreement. Answers are addressed by `question_id`; asking the same question twice in one
- * batch is not addressable and the second occurrence takes the same answer.
- */
-export function interpretBatch(
-  questions: readonly AskedQuestion[],
-  answers: Readonly<Record<string, unknown>>,
-  call?: AssessmentCall,
-): BatchAssessment {
-  const assessments: SemanticAssessment[] = [];
-  const missing: string[] = [];
-  for (const question of questions) {
-    if (has(answers, question.question_id)) {
-      assessments.push(interpret(question, answers[question.question_id], call));
-      continue;
-    }
-    missing.push(question.question_id);
-    assessments.push(interpret(question, undefined, { ...call, failure: "no_answer" }));
-  }
-  return Object.freeze({
-    assessments: Object.freeze(assessments),
-    missing: Object.freeze(missing),
-    complete: missing.length === 0,
-  });
 }

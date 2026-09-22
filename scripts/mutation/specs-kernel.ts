@@ -241,6 +241,46 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
       "permitted with a declared gate left unrecorded",
   },
   {
+    check: "scripts/gate/checks/grant-claim-refusals.ts",
+    target: "a grant stops redeeming when the world it was decided over moves",
+    assertion: "the control redeems — an unperturbed grant is not refused, so a refusal below is evidence of something",
+    subject: "packages/contracts/src/control-grant.ts",
+    find: "  if (grant.use.spent >= grant.use.limit) {",
+    replace: "  if (grant.use.spent >= 0) {",
+    planted: "every grant reads as spent the moment it is issued, so nothing redeems at all — and a " +
+      "guard that refuses everything passes any check that reads only the refusals",
+  },
+  {
+    check: "scripts/gate/checks/grant-claim-refusals.ts",
+    target: "a grant stops redeeming when the world it was decided over moves",
+    assertion: "a world that moved under the grant is CAUGHT — the permission epoch case",
+    subject: "packages/contracts/src/control-grant.ts",
+    find: "  if (grant.permission_epoch !== store.permissionEpoch()) {",
+    replace: "  if (grant.permission_epoch !== grant.permission_epoch) {",
+    planted: "the permission epoch is compared against itself rather than against the store, so a " +
+      "grant issued under permissions that have since changed still redeems",
+  },
+  {
+    check: "scripts/gate/checks/grant-claim-refusals.ts",
+    target: "a grant stops redeeming when the world it was decided over moves",
+    assertion: "a lease is refused as a mutation grant — the one case with nothing to perturb",
+    subject: "packages/contracts/src/control-grant.ts",
+    find: '  if (decision.effect.holds === "lease") {',
+    replace: "  if (decision.effect.holds !== decision.effect.holds) {",
+    planted: "the lease guard can never fire, so holding a resource and being authorised to change " +
+      "it stop being separate decisions",
+  },
+  {
+    check: "scripts/gate/checks/grant-claim-refusals.ts",
+    target: "a grant stops redeeming when the world it was decided over moves",
+    assertion: "a refusal names the guard under test — the expiry case is refused FOR expiry",
+    subject: "packages/contracts/src/control-grant.ts",
+    find: "    return deny(`${grant.id} expired at ${grant.expires_at}`);",
+    replace: "    return deny(`${grant.id} is past its window at ${grant.expires_at}`);",
+    planted: "the expiry refusal stops naming expiry, so a caller — and this check — cannot tell " +
+      "which guard fired, and a different guard firing would read as the right one",
+  },
+  {
     check: "scripts/gate/checks/contracts-door.ts",
     target: DOOR,
     assertion: "a wildcard re-export is refused, because it publishes names nothing can enumerate",
@@ -255,37 +295,10 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     target: DOOR,
     assertion: "the ratchet forward — a NEW value name on the door with no importer fails",
     subject: "packages/contracts/src/control-loop.ts",
-    find: "  procedureSignature,\n  reusesGatedDocumentPipeline,",
-    replace: "  procedureSignature,\n  createHost as hostFactory,\n  reusesGatedDocumentPipeline,",
+    find: "  createHost,\n  moduleDigest,",
+    replace: "  createHost,\n  createHost as hostFactory,\n  moduleDigest,",
     planted: "a value name reaches the door that nothing imports and the residue does not " +
       "list, which is the growth the bound exists to stop",
-  },
-  {
-    check: "scripts/gate/checks/contracts-door.ts",
-    target: DOOR,
-    assertion: "the ratchet backward — a listed name the door no longer publishes fails, so the list cannot outlive what it describes",
-    subject: "packages/contracts/src/control-loop.ts",
-    find: "  procedureSignature,\n  reusesGatedDocumentPipeline,\n",
-    replace: "  reusesGatedDocumentPipeline,\n",
-    planted: "a name the residue still lists comes off the door, so the list describes a " +
-      "surface that has moved and the name could be re-added without ever needing an importer",
-  },
-  {
-    check: "scripts/gate/checks/contracts-door.ts",
-    target: DOOR,
-    assertion: "the ratchet backward — a listed name that has ACQUIRED an importer fails, so it can never return to the residue",
-    subject: "scripts/probes/envelope-shape.ts",
-    // THE PAYLOAD IS SPLIT SO THIS FILE IS NOT ITSELF AN IMPORTER. Written whole, the string
-    // below reads to the check's own sweep as `import { … UNAVAILABLE } from "@zz/contracts"`
-    // in a `scripts/` file — it strips comments, not string literals — so the residue clause
-    // fired against THIS file at baseline, before any mutation ran, and every row was measured
-    // against a red target. Third time tonight that a payload written as a literal became
-    // repository text the repository's own sweeps then read; the seam is the whole fix.
-    find: 'import { ENVELOPE_BLOCK, parseEnvelope } from "@zz/' + 'contracts";',
-    replace: 'import { ENVELOPE_BLOCK, parseEnvelope, UNAVAILABLE } from "@zz/' + 'contracts";\n\nvoid UNAVAILABLE;',
-    planted: "a residue name gains a real importer outside the contracts package while the " +
-      "list still tolerates it, so a name that has earned its place on the door goes on being " +
-      "counted as dormant",
   },
   {
     // HALF ONE, AND IT FIRES ALONE. With the chain not consulted at all, an empty run is still

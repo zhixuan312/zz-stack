@@ -59,7 +59,6 @@ export interface ResolvedProfile {
   readonly endpoint_ref: string | null;
   readonly credential_ref: string | null;
   readonly declared: boolean;
-  readonly revoked: boolean;
   readonly profile_digest: string;
 }
 
@@ -95,7 +94,6 @@ export function qualificationKey(profile: ResolvedProfile, slice: QualificationS
 
 const declarations = new Map<string, ProfileDeclaration>();
 const minted = new Map<string, ResolvedProfile>();
-const revoked = new Set<string>();
 
 /** A host handle, in the only shape this register accepts: dotted or dashed lowercase segments,
  *  optionally namespaced with a colon. A scheme, an authority, a path or whitespace is refused
@@ -135,7 +133,7 @@ export function resolveProfile(ref: string, slot: BoundRole): ResolvedProfile {
     options: d?.options ?? null,
     endpoint_ref: d?.endpoint_ref ?? null,
     credential_ref: d?.credential_ref ?? null,
-    declared: d !== undefined, revoked: revoked.has(ref),
+    declared: d !== undefined,
   };
   const profile = { ...base, profile_digest: stableDigest(base) };
   minted.set(profile.profile_digest, profile);
@@ -152,16 +150,9 @@ export const profileByDigest = (profileDigest: string): ResolvedProfile | undefi
  *  only a ref uses this to learn which role it is being asked to fill. */
 export const declaredRole = (ref: string): BoundRole | undefined => declarations.get(ref)?.role;
 
-/** Withdraw a ref. Only the register records it; what that stops is decided by whoever holds the
- *  runs, because stopping work is not a property of a profile. */
-export function markProfileRevoked(ref: string): void {
-  revoked.add(ref);
-}
-
 /** Is a declared ref usable in this slot, and alongside these other refs? `null` is yes. The
  *  register answers only about the profile; a binding decides what to do with the answer. */
 export function unsupportedProfile(ref: string, slot: BoundRole, alongside: readonly string[]): string | null {
-  if (revoked.has(ref)) return `profile ${ref} is revoked and needs an explicit migration`;
   const d = declarations.get(ref);
   if (d && d.role !== slot) return `profile ${ref} is declared for ${d.role} and cannot fill the ${slot} slot`;
   for (const other of alongside) {

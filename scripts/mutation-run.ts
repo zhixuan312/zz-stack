@@ -40,6 +40,7 @@ import { plant } from "./mutation/plant.ts";
 import type { MutationSpec } from "./mutation/plant.ts";
 import { guardsBlock, probeGuards } from "./mutation/guards.ts";
 import { SPECS } from "./mutation/specs.ts";
+import { UNEXERCISABLE } from "./mutation/unexercisable.ts";
 import { DECLARED_BY, declaredChecks, makeWorkspace, provenanceOf, restore } from "./mutation/workspace.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -462,6 +463,10 @@ function main(): void {
     },
     results: [...carried, ...results].sort((a, b) => a.check < b.check ? -1 : 1),
     guards: guardsBlock(priorGuards, null),
+    // OUTSIDE `results` DELIBERATELY — see mutation/unexercisable.ts. An assertion nothing
+    // could plant against is a finding, and a finding that turned the gate red would be a
+    // finding nobody keeps.
+    unexercisable_assertions: UNEXERCISABLE,
   }, null, 2)}\n`);
   console.log(`\n  ${results.length} row(s) written to ${out}` +
     (carried.length ? `, ${carried.length} carried from the previous run` : ""));

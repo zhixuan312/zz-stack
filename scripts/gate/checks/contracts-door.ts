@@ -3,7 +3,7 @@
  *
  * WHAT THIS IS NOT, first, because the number it prints invites the opposite reading. It is
  * not evidence that the control-loop kernel is adopted, used, or reached by anything a person
- * runs. Thirty-seven of the door's value names have no importer at all on the day this was
+ * runs. Zero of the door's value names have no importer, as of the sweep that emptied this list. It was
  * derived, and this check passes on every one of them by name. It says one thing only: the
  * count of them cannot grow, and a name that leaves the list cannot come back into it. A
  * reader who wants to know whether the kernel is load-bearing has to ask a different question
@@ -22,7 +22,7 @@
  * named anywhere else in the tree" is about dead code inside a package. "Is this name on the
  * package door imported through the package" is about a public surface with no public. A
  * symbol can satisfy the first because a sibling module in its own package names it — forty-
- * six of the sixty-eight do — and still fail the second.
+ * six of the sixty-eight it once held do — and still fail the second.
  *
  * VALUE NAMES ONLY, and the door's own header says why. A type re-exported here reaches a
  * consumer by inference: TypeScript emits it into the `.d.ts` through a return position and
@@ -52,17 +52,16 @@ const DOOR = "packages/contracts/src/control-loop.ts";
  *
  * Derived by reading every `export { … } from` block on the door for names not written
  * `type X`, then every `import { … } from "@zz/contracts"` in `services`, `packages`,
- * `scripts`, `checks` and `testing` outside the contracts package itself. Of the door's 81 value names,
- * 38 are imported only by gate checks and 7 reach a service — `INTERNAL_GRANT_ISSUANCE`, `admitEntry`, `closeInitiative`, `createHost`, `jevAdapter`, `moduleDigest`, `recallResultFrom`.
+ * `scripts`, `checks` and `testing` outside the contracts package itself. Of the door's 55 value names, every one has an importer; the split between gate-only and
+ * service-reaching is recomputed by `scratchpad/census.ts` rather than restated here, because a
+ * number in prose beside a list is the thing that goes stale first.
  * Those two groups are not listed here: they have an importer, which is all this check asks.
  */
 const RESIDUE: readonly string[] = [
-  "ACTION_CONTRACTS", "GAP_KINDS", "UNDETERMINED_CHECK_STATE", "asCheckState",
-  "authorityMintAudit", "authorizesSemanticAdvance", "bindingHistory",
-  "citationAudit", "coverageAudit", "createController",
-  "deadlockAudit", "declareProfile", "disputeFinding", "episodeKey", "grantFixtureWorld", "interpretBatch", "matchKindFromVia", "procedureSignature",
-  "qualificationKey", "recordAudit", "recordCalibration", "recordInvocation", "resetGrantFixture", "resolveFinding",
-  "reusesGatedDocumentPipeline", "revalidate", "revokeProfile", "UNAVAILABLE",
+  // EMPTY, AND THAT IS THE POINT. Every value name this door publishes has an importer.
+  // The list is kept rather than deleted because the rule it bounds is still enforced: add a
+  // name with no importer and the check fails rather than quietly growing an entry here.
+
 ];
 
 /** The names in one brace list, with `X as Y` resolved to the half that matters: a door

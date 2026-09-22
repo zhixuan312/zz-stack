@@ -75,6 +75,7 @@ import "./gate/checks/rule-registry.ts";
 import "./gate/checks/recall-result-contract.ts";
 import "./gate/checks/plan-validator.ts";
 import "./gate/checks/issuer-unreachable.ts";
+import "./gate/checks/grant-claim-refusals.ts";
 import "./gate/checks/assessment-port.ts";
 import "./gate/checks/central-binding.ts";
 import "./gate/checks/dependency-invalidation.ts";

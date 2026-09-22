@@ -24,6 +24,22 @@ assert.equal(zs[zs.length-1].end,buf.length);
 const raw = 'zz.eval_finding/plugin-judge:v2';
 const tokens = identifierTokens(raw);
 for (const t of [raw,'zz','eval','finding','plugin','judge','v','2']) assert.ok(tokens.includes(t));
+// "INDEPENDENTLY ON EVERY ONE OF ITS NAMED FIELDS" is what this check's registered title
+// promises, and for a long time it varied `analyzer` and nothing else — one field of six.
+// The other five could have been dropped from the digest entirely and this stayed green.
+// Found by a reader writing a mutation spec against this file, who noticed that the row
+// they were about to add would prove the title's claim for one sixth of it and said so
+// rather than letting the artifact imply otherwise.
+//
+// KEYS IS ASSERTED AGAINST THE FIXTURE rather than trusted, so a seventh field added to the
+// digest cannot slip past this loop the way the other five slipped past the single line.
 const f = {content_hash:'a'.repeat(64),record_format:1,parser:1,analyzer:1,passage:1,projection:1};
-assert.notEqual(derivationFingerprint(f),derivationFingerprint({...f,analyzer:2}));
+const moved = {content_hash:'b'.repeat(64),record_format:2,parser:2,analyzer:2,passage:2,projection:2};
+const KEYS = ['content_hash','record_format','parser','analyzer','passage','projection'] as const;
+assert.deepEqual([...KEYS].sort(),Object.keys(f).sort(),'KEYS no longer names every field of the fixture');
+const base = derivationFingerprint(f);
+for (const k of KEYS) {
+  assert.notEqual(derivationFingerprint({...f,[k]:moved[k]}),base,
+    `the derivation fingerprint did not move when ${k} alone changed`);
+}
 console.log('tenant-complete-text: ok');

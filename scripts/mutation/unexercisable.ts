@@ -116,4 +116,20 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "it exercises the real condition rather than a stand-in for it.",
     observed_check_sha256: "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
   },
+  {
+    check: "scripts/gate/checks/suites.ts",
+    assertion: "the checks a stricter tooling project superseded are gone, not merely duplicated, " +
+      "and the incident they existed to prevent is still on record",
+    why: "the delegated script `checks/bespoke-checks-gone.ts` reads exactly two things, and " +
+      "both are frozen: `scripts/gate/checks/build.ts` at its line 6, for the two deleted " +
+      "registrations and the 0.26.1 incident narrative, and every sibling under " +
+      "`scripts/gate/checks/` at lines 13-14, to prove those checks were not merely moved " +
+      "elsewhere. `plant()` refuses that whole directory, because a run that edited a check " +
+      "would be measuring itself. Verified by reading the script rather than by accepting the " +
+      "claim: those are its only two reads.",
+    plantable_when: "the 0.26.1 incident narrative, or the registrations this check forbids, " +
+      "live anywhere outside `scripts/gate/checks/`. Nothing else moves it — the only other " +
+      "lever is the judge itself, which is the thing being judged.",
+    observed_check_sha256: "d5075f301a52bb0cbadeb1963342a3c1f88b1ce8fe04aa4ae0c95e5cc8761dea",
+  },
 ];

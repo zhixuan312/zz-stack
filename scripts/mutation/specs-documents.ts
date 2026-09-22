@@ -96,8 +96,32 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
     find: '"failed": true',
     replace: '"failed": false',
     all: true,
+    assertion: "a row recorded as having survived its planted defect is refused",
     planted: "every row in the report claims its check survived the defect planted against it, " +
       "which is precisely the state the coverage check exists to refuse",
+  },
+  {
+    // THE THIRD OUTCOME, WHICH USED TO BE REPORTED AS THE SECOND. A row whose own target was
+    // already failing before anything was planted cannot appear in `new_failures`, so `failed`
+    // comes back false and the row reads exactly like a check that shrugged off a defect. It is
+    // not: nothing was measured, because the experiment had no baseline to move from.
+    //
+    // The wrong message is the whole cost. "This check is weak" sends a reader to rewrite a
+    // check that is probably fine; the truth sends them to whatever turned the gate red before
+    // the mutation landed, which is usually a spec file's own payload — these files are tracked
+    // TypeScript and this repository sweeps tracked files, so a quoted defect reads as a real
+    // one. That happened the same night this spec was written, in another author's batch, four
+    // times in one file.
+    check: NOT_YET_PLANTED,
+    target: "every critical check has been shown to fail on a planted defect",
+    assertion: "a row whose target was already red at baseline is named as having measured nothing, NOT as having survived",
+    subject: "testing/mutation-report.json",
+    find: '"baseline_red": false',
+    replace: '"baseline_red": true',
+    all: true,
+    planted: "every row in the report says its target was already failing before the defect was " +
+      "planted, so not one of them measured anything — the state a reader must never meet " +
+      "wearing the word `survived`",
   },
   {
     check: "scripts/gate/checks/activation-runbook.ts",

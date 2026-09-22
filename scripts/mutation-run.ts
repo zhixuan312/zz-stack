@@ -389,6 +389,27 @@ function main(): void {
       staleEntries.map((e) => `${e.check} (${e.assertion.slice(0, 60)}…)`).join("\n      "));
   }
 
+  // A ROW WHOSE OWN TARGET WAS ALREADY RED MEASURED NOTHING, AND IS REFUSED RATHER THAN
+  // RECORDED. `newly` cannot contain a check that was failing before anything was planted, so
+  // such a row comes back `failed: false` and reads exactly like a check that shrugged off a
+  // defect. Writing it would put a wrong conclusion in the artifact wearing the flattering
+  // column, and the wrong diagnosis — "this check is weak" — sends a reader to rewrite a check
+  // that is probably fine.
+  //
+  // The usual cause is a spec's OWN payload. These spec files are tracked TypeScript and this
+  // repository sweeps tracked files, so a literal import line, a credential shape, or a
+  // sentence counting the platform's own tools turns the gate red at baseline and takes every
+  // row in the batch with it. That has happened three times here. Refusing costs one run;
+  // recording it costs somebody a day chasing the wrong file.
+  const measuredNothing = results.filter((r) => r.baseline_red);
+  if (measuredNothing.length) {
+    die(`${measuredNothing.length} row(s) had their own target already failing at baseline, so ` +
+      `they measured nothing and nothing was written: ` +
+      `${measuredNothing.map((r) => r.target).slice(0, 5).join(", ")}. The baseline was red on: ` +
+      `${baseline.failed.join(", ")} — fix that first. A spec file's own payload is the usual ` +
+      `cause, since these files are tracked and the gate sweeps tracked files.`);
+  }
+
   const mine = new Set(results.map((r) => r.check));
   const driftedInThisRun = drifted.filter((d) => mine.has(d.split(" (")[0]));
   if (driftedInThisRun.length) {

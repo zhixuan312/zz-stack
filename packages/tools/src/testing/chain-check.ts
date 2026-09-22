@@ -21,13 +21,12 @@
  * about the source, while this needs a running deployment and a real token.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { manifestAt, pluginName } from "@zz/catalog";
+import { pluginName } from "@zz/catalog";
 import { parseEnvelope } from "@zz/contracts";
 import { Mcp } from "@zz/mcp-client";
+
+import { flowDeclaration } from "./flow-declaration.js";
 
 import { walkBugs } from "./chain-bugs.js";
 import { walkEvalDoor } from "./chain-eval.js";
@@ -75,41 +74,10 @@ let INIT = parseArgs(process.argv.slice(2)).positional[0] ?? "";
 // had nothing to do with what it tests.
 const FLOW = (process.env.CHAIN_FLOW || "sdlc-flow").trim();
 
-/**
- * The flow's FIRST document, from the flow's own manifest.
- *
- * This opened on a hardcoded `intent.md`. ops-flow declares one and sdlc-flow does not — it
- * opens on explore.md — so CHAIN_FLOW=sdlc-flow wrote a document that flow has never heard
- * of, which no gate governs, and then walked a chain it had already stepped outside of. The
- * whole point of CHAIN_FLOW is that this deployment runs both.
- *
- * Read from the checkout, the way manifest-audit reads it: nothing on the tool surface names
- * a flow's documents before the initiative exists, and the manifest is the same file the
- * platform resolves the chain from.
- */
-function flowDocuments(): { name: string; sections?: string[]; gate?: boolean }[] {
-  const catalog = join(dirname(fileURLToPath(import.meta.url)), "../../../../catalog");
-  if (existsSync(catalog)) {
-    for (const owner of readdirSync(catalog)) {
-      const manifest = join(catalog, owner, FLOW, "flow.json");
-      if (!existsSync(manifest)) continue;
-      // Through @zz/catalog's reader, like every other manifest read. A cast here would accept
-      // a manifest the platform itself refuses, and this probe would then walk a chain the
-      // deployment does not enforce and report the difference as a platform fault. A throw
-      // would be no better: this walks every owner looking for one flow, so one unreadable
-      // manifest anywhere in the catalog ended the probe before it reached the right one.
-      const read = manifestAt(manifest);
-      if (!read.manifest) {
-        console.error(`  (${owner}/${FLOW}/flow.json ${read.why} — looking elsewhere)`);
-        continue;
-      }
-      const docs = read.manifest.documents ?? [];
-      if (docs[0]?.name) return docs;
-    }
-  }
-  return die(`no catalog manifest for flow '${FLOW}' — set CHAIN_FLOW to a flow this checkout declares`);
-}
-const DOCUMENTS = flowDocuments();
+const DECLARED = flowDeclaration(FLOW)
+  ?? die(`no catalog manifest for flow '${FLOW}' — set CHAIN_FLOW to a flow this checkout declares`);
+const FLOW_STAGES = DECLARED.sourceStages;
+const DOCUMENTS = DECLARED.documents;
 const OPENS_ON = DOCUMENTS[0].name;
 /** THE FIRST GATED DOCUMENT, which is where every approval rule can be exercised.
  *
@@ -491,6 +459,33 @@ async function main(): Promise<number> {
   // to pick the document out of it.
   const closing = nxt.next_move?.action === "close" ? nxt.next_move.document! : docs[docs.length - 1];
   console.log(`  (the flow closes on ${closing})`);
+
+  // THE AUDIT ROUNDS THIS PROBE NEVER PERFORMED, and until 0.63.0 nothing asked it to.
+  //
+  // This walks a flow's DOCUMENT chain: every declared document written, gated and approved.
+  // That was the whole contract, so closing worked. A flow also declares a PROCEDURE, and
+  // sdlc-flow's says two of its stages produce a SOURCE supporting the document they audited
+  // — an audit round leaves no document of its own. This probe wrote every document and ran
+  // no audit, and the reviewed module now refuses `close:initiative` for exactly that, naming
+  // what is missing.
+  //
+  // THE REFUSAL IS CORRECT AND THIS PROBE WAS INCOMPLETE. It closed an initiative that had
+  // not followed the flow it claims to drive, which is the thing the control loop exists to
+  // notice. So the fix is to drive the flow properly rather than to exempt the probe: for
+  // every stage that produces a source, attach one supporting the document it supports.
+  //
+  // Derived from the manifest rather than listing `spec.md` and `plan.md`, because a flow
+  // that adds an audit stage tomorrow must make this probe do the extra round, not pass
+  // while skipping it.
+  for (const stage of FLOW_STAGES) {
+    if (!stage.supports) continue;
+    check(`an audit round attaches a source supporting ${stage.supports}`,
+      await call("source_add", {
+        initiative: INIT, title: `chain-check audit of ${stage.supports}`,
+        content: "A round ran and found nothing blocking. Written by chain-check.",
+        supports: [stage.supports],
+      }), false);
+  }
   const before = await call("document_read", { path: "_ledger.md" });
 
   // The close is an ACT. Writing `outcome` into frontmatter by hand is refused, because a

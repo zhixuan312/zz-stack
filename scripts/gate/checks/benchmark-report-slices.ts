@@ -2,14 +2,28 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { evaluateTargets } from "../../tenant-info/benchmark.ts";
 import { root } from "../read.ts";
-import { check } from "../run.ts";
+import { check, note } from "../run.ts";
 
 check("a benchmark report proves each language slice separately or leaves its target blocked", () => {
   const blocked = evaluateTargets({});
   if (blocked.passed) return "an empty measurement set evaluated to a pass; absence must be blocked, never zero";
 
   const p = join(root, "testing/tenant-info/benchmark-report.json");
-  if (!existsSync(p)) return;  // not yet measured: correctly blocked, not a failure of this check
+  if (!existsSync(p)) {
+    // NOT A FAILURE, AND NOT SILENT EITHER. This check's own title is "proves each language
+    // slice separately OR LEAVES ITS TARGET BLOCKED", and on absence the second half is the
+    // satisfied one — the clause above has just proved that an empty measurement set does not
+    // evaluate to a pass. Failing here would contradict the name.
+    //
+    // What was wrong was that the absence was reported NOWHERE, so a reader of a green gate
+    // could not tell that eleven clauses below had not run. It cannot be produced in this
+    // checkout: benchmark-measure-run.ts needs a live database, a workspace, and two runtime
+    // facts only the serving process can supply — and migration 072 is unapplied with the
+    // analyzer_version columns absent.
+    note("    benchmark-report-slices: no benchmark report on disk, so the per-slice clauses " +
+         "below did not run. Their target stays blocked, which is not a pass.");
+    return;
+  }
   const r = JSON.parse(readFileSync(p, "utf8"));
   const want: Record<string, number> = { en: 58, zh: 20, mixed: 20 };
   for (const [lang, denom] of Object.entries(want)) {

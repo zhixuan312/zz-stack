@@ -337,8 +337,18 @@ function main(): void {
 
   if (dry) {
     const missed = results.filter((r) => r.replacements === 0);
-    console.log(`\n  ${results.length} spec(s) applied, ${missed.length} did not land`);
-    for (const r of missed) console.log(`      ${r.check} -> ${r.subject}`);
+    // TWO REASONS A SPEC DOES NOT LAND, AND THEY NEED DIFFERENT WORK. An anchor that moved is
+    // a spec to repair against the current text; a REFUSED subject is a spec that should never
+    // have been written, because `plant()` freezes the checks and the gate's own entry — a run
+    // that edited those would be measuring itself. The rows carry `apply_error` either way, so
+    // the artifact has always distinguished them; this line did not, and a spec forbidden by
+    // construction read here exactly like one whose text had drifted.
+    const refused = missed.filter((r) => r.apply_error !== null);
+    console.log(`\n  ${results.length} spec(s) applied, ${missed.length} did not land` +
+      (refused.length ? ` (${refused.length} REFUSED by plant(), not a moved anchor)` : ""));
+    for (const r of missed) {
+      console.log(`      ${r.check} -> ${r.subject}${r.apply_error ? `\n        REFUSED: ${r.apply_error}` : ""}`);
+    }
     if (!keep) execFileSync("rm", ["-rf", workAt]);
     process.exit(missed.length ? 4 : 0);
   }

@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { firstOf, functionBody, gateOwnSource, gatewaySource, root, sourceFiles, unbuilt, withoutComments, zzCoreSource } from "../read.ts";
-import { check } from "../run.ts";
+import { check, note } from "../run.ts";
 import { catalogRoot } from "../facts.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -119,6 +119,13 @@ check("nothing is exported that nobody imports", () => {
       }
     };
     walk(dash);
+  } else {
+    // SAME SILENCE, DIFFERENT SHAPE. Skipping the sibling inside a loop reports its absence no
+    // more than `return null` did in console.ts — and here it matters more, because this check
+    // calls an export dead when nothing names it, and the console is one of the things that
+    // could have named it.
+    note("    unimported exports: ../zz-stack-dashboard is not checked out beside this " +
+         "repository, so console imports did not count towards reachability here.");
   }
   const dashText = new Map(dashFiles.map((p) => [p, withoutComments(readFileSync(p, "utf8"))]));
   const bad: string[] = [];

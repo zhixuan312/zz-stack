@@ -329,7 +329,8 @@ check("no shell freezes one flow's fixture paths", () => {
     { file: "block-oracle.sh", reason: "derives which BUILDING BLOCKS a requirement needs, and block selection is a stage only some flows declare — scoping it to the flow that does is the fact, not a shortcut" },
   ];
   const dir = join(root, "testing");
-  if (!existsSync(dir)) return null;
+  // TRACKED, SO ITS ABSENCE IS A DEFECT — see the same guard in build.ts.
+  if (!existsSync(dir)) return "testing/ does not exist, so no stage caller could be read at all";
   const bad: string[] = [];
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".sh"))) {
     const exempt = ALLOW.find((a) => a.file === f);

@@ -280,7 +280,10 @@ check("a shell that invokes an evaluation tool passes the flow it means", () => 
   // were the callers, rather than asking which files call. This asks.
   const dir = join(root, "testing");
   const bad: string[] = [];
-  if (!existsSync(dir)) return null;
+  // TRACKED, SO ITS ABSENCE IS A DEFECT. `testing/` is committed; a checkout without it is a
+  // broken one, and returning null here meant this check reported nothing at exactly the
+  // moment it had nothing to read.
+  if (!existsSync(dir)) return "testing/ does not exist, so no suite caller could be read at all";
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".sh"))) {
     const lines = readFileSync(join(dir, f), "utf8").split("\n");
     // A CALL CAN WEAR A VARIABLE'S NAME. judge-all.sh and deviate-all.sh do

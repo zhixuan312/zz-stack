@@ -102,12 +102,56 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/activation-runbook.ts",
     target: "the activation runbook is complete, abortable and not self-authorizing",
+    assertion: "every step keeps an abort point",
     subject: "deploy/activation-runbook.json",
     find: '"abort":',
     replace: '"abort_note":',
     all: true,
     planted: "every step of the activation runbook loses its abort point, so a cutover that " +
       "goes wrong at step seven has no written way back written down anywhere",
+  },
+  {
+    check: "scripts/gate/checks/activation-runbook.ts",
+    target: "the activation runbook is complete, abortable and not self-authorizing",
+    assertion: "a precondition marked met without evidence is refused — the shape that lets an activation mark its own gate",
+    subject: "deploy/activation-runbook.json",
+    find: '"state": "blocked"',
+    replace: '"state": "met"',
+    all: true,
+    planted: "every precondition reads as met while restore_evidence and switch_authorization " +
+      "still carry `evidence: null`, so the switch is cleared by eight fields somebody edited " +
+      "rather than by anything observed",
+  },
+  {
+    check: "scripts/gate/checks/activation-runbook.ts",
+    target: "the activation runbook is complete, abortable and not self-authorizing",
+    assertion: "an operator named by nobody is refused — accountability cannot be self-conferred",
+    subject: "deploy/activation-runbook.json",
+    find: '"name": null',
+    replace: '"name": "the operator"',
+    planted: "the runbook names an accountable operator while `assigned_by` stays null, which " +
+      "is a name no authority ever conferred and the exact shape the old `=== \"unassigned\"` " +
+      "clause was reaching for and could never touch",
+  },
+  {
+    check: "scripts/gate/checks/activation-runbook.ts",
+    target: "the activation runbook is complete, abortable and not self-authorizing",
+    assertion: "a waiver field is refused — and the clause IS reachable, it is a guard on an absent key",
+    subject: "deploy/activation-runbook.json",
+    find: '"preconditions": {',
+    replace: '"waivePreconditions": true,\n  "preconditions": {',
+    planted: "the runbook gains the waiver field that deploy/ACTIVATION.md:53 says does not " +
+      "exist and that activation-rehearsal.ts rehearses against, so a blocked precondition " +
+      "could be stepped past",
+  },
+  {
+    check: "scripts/gate/checks/documents-frontmatter.ts",
+    target: "nothing sends the platform a document with frontmatter in it",
+    subject: "packages/contracts/src/check-state.ts",
+    find: "export const CHECK_STATES",
+    replace: "const ENVELOPE = `---\\nflow: x\\n---\\n`;\nvoid ENVELOPE;\n\nexport const CHECK_STATES",
+    planted: "a module outside zz-core composes a document that opens with frontmatter, which " +
+      "is the third source of envelope fields the platform spent an initiative closing",
   },
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",

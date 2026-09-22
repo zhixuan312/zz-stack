@@ -1,16 +1,14 @@
 {
   "schema_version": 1,
-  "produced_at": "2026-09-22T00:24:05.250Z",
+  "produced_at": "2026-09-22T00:40:41.157Z",
   "produced_by": "scripts/mutation-run.ts",
-  "source_commit": "b645d69dd5b88586aec3e85f3315f81a77073f1a",
-  "source_dirty_paths": 20,
-  "snapshot_tree_sha256": "471ce9d253042323838ea72ad777e9ae0934e514ce04b4847b44d851efc86a14",
+  "source_commit": "ed82211bb04c3427f67d1dee99d385e7ae378e67",
+  "source_dirty_paths": 12,
+  "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
   "declared_by": "git ls-files --cached --others --exclude-standard",
   "declared_count": 73,
-  "baseline_verdict": "FAILED",
-  "baseline_failed_ids": [
-    "nothing is exported that nobody imports"
-  ],
+  "baseline_verdict": "PASSED",
+  "baseline_failed_ids": [],
   "method": {
     "per_row": [
       "restore the copy from the pristine snapshot and verify its sha256",
@@ -33,6 +31,7 @@
     {
       "check": "scripts/gate/checks/activation-runbook.ts",
       "target": "the activation runbook is complete, abortable and not self-authorizing",
+      "assertion": "every step keeps an abort point",
       "subject": "deploy/activation-runbook.json",
       "planted": "every step of the activation runbook loses its abort point, so a cutover that goes wrong at step seven has no written way back written down anywhere",
       "find": "\"abort\":",
@@ -52,18 +51,129 @@
       "new_failures": [
         "the activation runbook is complete, abortable and not self-authorizing"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "bb94380dcc987f39b734cb541de4290e88aa1ee65c36bbead46b9ad71aeed6d6",
-      "subject_sha256": "f04bfaba64a88b5a61a0542401da9de704f2b9a3227812dfbaca10d52d00b87b",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "subject_sha256": "1238da36ecc304cf27c3200ce8feb7c192dfe4102121b0de9deb864669620454",
+      "restored_digest": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
       "digest_matches": true,
-      "duration_ms": 29343,
+      "duration_ms": 26416,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "bb94380dcc987f39b734cb541de4290e88aa1ee65c36bbead46b9ad71aeed6d6",
+      "live_check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/activation-runbook.ts",
+      "target": "the activation runbook is complete, abortable and not self-authorizing",
+      "assertion": "a precondition marked met without evidence is refused — the shape that lets an activation mark its own gate",
+      "subject": "deploy/activation-runbook.json",
+      "planted": "every precondition reads as met while restore_evidence and switch_authorization still carry `evidence: null`, so the switch is cleared by eight fields somebody edited rather than by anything observed",
+      "find": "\"state\": \"blocked\"",
+      "replace": "\"state\": \"met\"",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 8,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "the activation runbook is complete, abortable and not self-authorizing"
+      ],
+      "new_failures": [
+        "the activation runbook is complete, abortable and not self-authorizing"
+      ],
+      "snapshot_tree_sha256": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "subject_kind": "declared data or configuration",
+      "check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "subject_sha256": "1238da36ecc304cf27c3200ce8feb7c192dfe4102121b0de9deb864669620454",
+      "restored_digest": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "digest_matches": true,
+      "duration_ms": 26554,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/activation-runbook.ts",
+      "target": "the activation runbook is complete, abortable and not self-authorizing",
+      "assertion": "an operator named by nobody is refused — accountability cannot be self-conferred",
+      "subject": "deploy/activation-runbook.json",
+      "planted": "the runbook names an accountable operator while `assigned_by` stays null, which is a name no authority ever conferred and the exact shape the old `=== \"unassigned\"` clause was reaching for and could never touch",
+      "find": "\"name\": null",
+      "replace": "\"name\": \"the operator\"",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "the activation runbook is complete, abortable and not self-authorizing"
+      ],
+      "new_failures": [
+        "the activation runbook is complete, abortable and not self-authorizing"
+      ],
+      "snapshot_tree_sha256": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "subject_kind": "declared data or configuration",
+      "check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "subject_sha256": "1238da36ecc304cf27c3200ce8feb7c192dfe4102121b0de9deb864669620454",
+      "restored_digest": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "digest_matches": true,
+      "duration_ms": 27118,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/activation-runbook.ts",
+      "target": "the activation runbook is complete, abortable and not self-authorizing",
+      "assertion": "a waiver field is refused — and the clause IS reachable, it is a guard on an absent key",
+      "subject": "deploy/activation-runbook.json",
+      "planted": "the runbook gains the waiver field that deploy/ACTIVATION.md:53 says does not exist and that activation-rehearsal.ts rehearses against, so a blocked precondition could be stepped past",
+      "find": "\"preconditions\": {",
+      "replace": "\"waivePreconditions\": true,\n  \"preconditions\": {",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "the activation runbook is complete, abortable and not self-authorizing"
+      ],
+      "new_failures": [
+        "the activation runbook is complete, abortable and not self-authorizing"
+      ],
+      "snapshot_tree_sha256": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "subject_kind": "declared data or configuration",
+      "check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
+      "subject_sha256": "1238da36ecc304cf27c3200ce8feb7c192dfe4102121b0de9deb864669620454",
+      "restored_digest": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "digest_matches": true,
+      "duration_ms": 28550,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "376242f1b21adc7b780bc35e1db732ffbd4d52363ff00a86fa5f786f55a2030e",
       "stale": false
     },
     {
@@ -177,6 +287,7 @@
     {
       "check": "scripts/gate/checks/benchmark-report-slices.ts",
       "target": "a benchmark report proves each language slice separately or leaves its target blocked",
+      "assertion": null,
       "subject": "scripts/tenant-info/benchmark.ts",
       "planted": "a target nobody measured stops holding the verdict back, so a run with no observations at all evaluates to a pass — absence read as zero",
       "find": "  return { passed: failed.length === 0 && blocked.length === 0, failed, blocked, outcomes };",
@@ -200,23 +311,24 @@
         "every one of the eighteen release targets is evaluated in its own direction, and a missing observation is blocked rather than zero",
         "a benchmark report is refused when its scale is forged, its corpus distribution is off, a slice divides by nothing, its qrels are not the approved ones or a binding is missing — and the honestly empty report still validates"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "source",
-      "check_sha256": "10bf7caae6b73d166e73284afb698338b279efab41217ecf867a572177727f41",
+      "check_sha256": "a004077c0e062115a311b6c3852b17a7bf1390d39b9aa08e09a6a604abd2bf3f",
       "subject_sha256": "6afb91d2ab3263cadc8a805970d760713a5b498cba0895419fb5cf4612cb2d8f",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 29059,
+      "duration_ms": 32228,
       "caveat": "only the FIRST assertion of this check is reachable in a gate run — see the unreachable-region finding recorded against it",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "10bf7caae6b73d166e73284afb698338b279efab41217ecf867a572177727f41",
+      "live_check_sha256": "a004077c0e062115a311b6c3852b17a7bf1390d39b9aa08e09a6a604abd2bf3f",
       "stale": false
     },
     {
       "check": "scripts/gate/checks/build.ts",
       "target": "a package that imports a workspace package declares it",
+      "assertion": null,
       "subject": "packages/indexing/package.json",
       "planted": "the indexing package stops declaring the workspace package its source imports, so the dependency holds only by the root install happening to have hoisted it",
       "find": "    \"@zz/contracts\": \"*\",\n",
@@ -236,18 +348,18 @@
       "new_failures": [
         "a package that imports a workspace package declares it"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "00acae6fcda0b2b5a023282b03c3c9b93a57812894e5c433012b4dccb905c24f",
+      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
       "subject_sha256": "1206caebcc3e4843659c8bc54cc3f208b1bbbda987a058dbeb79751e67e4a662",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 28809,
+      "duration_ms": 32384,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "00acae6fcda0b2b5a023282b03c3c9b93a57812894e5c433012b4dccb905c24f",
+      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
       "stale": false
     },
     {
@@ -329,6 +441,7 @@
     {
       "check": "scripts/gate/checks/catalog-stages.ts",
       "target": "every flow declares which document closes it",
+      "assertion": null,
       "subject": "catalog/sdlc/sdlc-flow/flow.json",
       "planted": "no document is marked closing, so the closing record silently defaults to whichever document happens to be last — the plan treated as the outcome",
       "find": "      \"closing\": true,",
@@ -350,18 +463,18 @@
         "every flow declares which document closes it",
         "sdlc closes on its review, gates it, and leaves its audits ungated"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "08bb009eb01aeeb1e402b48df37e36411aeac041998e6ddc849192dbfd1f0037",
+      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 29993,
+      "duration_ms": 31432,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "08bb009eb01aeeb1e402b48df37e36411aeac041998e6ddc849192dbfd1f0037",
+      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
       "stale": false
     },
     {
@@ -511,6 +624,7 @@
     {
       "check": "scripts/gate/checks/console.ts",
       "target": "a console query cannot fall back to every team",
+      "assertion": null,
       "subject": "services/gateway/src/console/knowledge.ts",
       "planted": "a null team parameter makes the predicate true for every row, so a caller who simply omits ?team= is served every team's knowledge",
       "find": "        where team_slug = $1",
@@ -530,18 +644,18 @@
       "new_failures": [
         "a console query cannot fall back to every team"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "source",
-      "check_sha256": "73b31a874df8127177360d422ee2fd384b80a456413e8e50a5397c321a7b7320",
+      "check_sha256": "1f3b9ac972858e858626987431b830a41df44c635c1e58a41787299723d298dc",
       "subject_sha256": "9a775a3260c8f1ffa417ea384b7dc2771659c42c7cc29d1cadd2f8d5b681d9fd",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 29268,
+      "duration_ms": 31678,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "73b31a874df8127177360d422ee2fd384b80a456413e8e50a5397c321a7b7320",
+      "live_check_sha256": "1f3b9ac972858e858626987431b830a41df44c635c1e58a41787299723d298dc",
       "stale": false
     },
     {
@@ -767,6 +881,7 @@
     {
       "check": "scripts/gate/checks/deploy-compose.ts",
       "target": "the compose file names this release's images",
+      "assertion": null,
       "subject": "deploy/docker-compose.yml",
       "planted": "the compose image tag stops naming this release, so a bundle that looks correct pulls the previous version on every host",
       "find": "ZZ_VERSION:-",
@@ -788,18 +903,18 @@
         "compose resolves with NO environment at all",
         "the compose file names this release's images"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "4c795bd7e9b66cb861ab679aa0786553577ee0649e902dc7b30dcb79520f35b3",
+      "check_sha256": "80353f208c5c50946321fe902ec7fae974ceff73c369f472d446d465d06ac381",
       "subject_sha256": "a20daaf9944bbb388724135917c7b2f27c93b98bd245527bc82bd8a4b1aaee44",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 30491,
+      "duration_ms": 31116,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c795bd7e9b66cb861ab679aa0786553577ee0649e902dc7b30dcb79520f35b3",
+      "live_check_sha256": "80353f208c5c50946321fe902ec7fae974ceff73c369f472d446d465d06ac381",
       "stale": false
     },
     {
@@ -948,7 +1063,45 @@
     },
     {
       "check": "scripts/gate/checks/documents-frontmatter.ts",
+      "target": "nothing sends the platform a document with frontmatter in it",
+      "assertion": null,
+      "subject": "packages/contracts/src/check-state.ts",
+      "planted": "a module outside zz-core composes a document that opens with frontmatter, which is the third source of envelope fields the platform spent an initiative closing",
+      "find": "export const CHECK_STATES",
+      "replace": "const ENVELOPE = `---\\nflow: x\\n---\\n`;\nvoid ENVELOPE;\n\nexport const CHECK_STATES",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "nothing sends the platform a document with frontmatter in it"
+      ],
+      "new_failures": [
+        "nothing sends the platform a document with frontmatter in it"
+      ],
+      "snapshot_tree_sha256": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "subject_kind": "source",
+      "check_sha256": "ec711e8e0cf41d970ca46a67751948d2ea937411d52bc68bda35e131218c7cbe",
+      "subject_sha256": "b7a3a4731196aac0c2c0eed4bb6361a31aeccbd31539a908929d12ae7274388a",
+      "restored_digest": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
+      "digest_matches": true,
+      "duration_ms": 30160,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "ec711e8e0cf41d970ca46a67751948d2ea937411d52bc68bda35e131218c7cbe",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/documents-frontmatter.ts",
       "target": "generated frontmatter quotes what it interpolates",
+      "assertion": null,
       "subject": "services/gateway/src/client-package.ts",
       "planted": "a YAML scalar is hand-quoted around an interpolation instead of being passed through JSON.stringify, which is how a value containing a quote breaks the document it is written into",
       "find": "const OWNER = { name: \"ZZ Stack\", url: `https://github.com/${MARKETPLACE_REPO}` };",
@@ -968,13 +1121,13 @@
       "new_failures": [
         "generated frontmatter quotes what it interpolates"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
       "subject_kind": "source",
       "check_sha256": "ec711e8e0cf41d970ca46a67751948d2ea937411d52bc68bda35e131218c7cbe",
       "subject_sha256": "a0032dcc0f78574fc362ea67e0119effb4736a5e4c128217181264d1c4ae9ec6",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "f17b3cc0ab9e416c7367219879c240c6fcf17dc656d8de1ff156025e95c6d40d",
       "digest_matches": true,
-      "duration_ms": 41026,
+      "duration_ms": 32240,
       "caveat": "this sweep has NO subject in the repository as it stands — nothing currently builds a hand-quoted frontmatter scalar — so the defect had to be introduced rather than made out of an existing construction",
       "apply_error": null,
       "prebuild_failed": false,
@@ -1431,6 +1584,7 @@
     {
       "check": "scripts/gate/checks/hygiene.ts",
       "target": "no statement is written twice in a row",
+      "assertion": null,
       "subject": "services/gateway/src/scope.ts",
       "planted": "a statement is duplicated onto the line below itself — the debris an edit that copies a line instead of moving it leaves, which reads as deliberate until somebody looks",
       "find": "    return { kind: \"refused\", status: 400, error: \"team must be a slug\" };",
@@ -1450,18 +1604,18 @@
       "new_failures": [
         "no statement is written twice in a row"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "source",
-      "check_sha256": "eab6aa490268331257798fd7fa21732d0d35294cfcd479e57e14d29762344c2b",
+      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
       "subject_sha256": "7c7aed47e759250dee6c19aca1a23c67c3a837ff16834dcfc42b86792187c8ed",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 31848,
+      "duration_ms": 31791,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "eab6aa490268331257798fd7fa21732d0d35294cfcd479e57e14d29762344c2b",
+      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
       "stale": false
     },
     {
@@ -2706,6 +2860,7 @@
     {
       "check": "scripts/gate/checks/search-read-synthesis.ts",
       "target": "search to pinned read to synthesis holds in both languages and cannot be redirected",
+      "assertion": null,
       "subject": "packages/contracts/src/recall-trial.ts",
       "planted": "the asker's language is no longer read off the question, so a question asked in Chinese is answered in English and the reader is handed a language they did not use",
       "find": "  return /\\p{Script=Han}/u.test(question) ? \"zh\" : \"en\";",
@@ -2720,23 +2875,25 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
+        "the recall-trial negative control fires on every planted fault",
         "search to pinned read to synthesis holds in both languages and cannot be redirected"
       ],
       "new_failures": [
+        "the recall-trial negative control fires on every planted fault",
         "search to pinned read to synthesis holds in both languages and cannot be redirected"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "subject_kind": "source",
-      "check_sha256": "24f3b9e0778a9921031f25083caf42817248faea67010da17ea152058445e37c",
+      "check_sha256": "7669ceb14f8a15f3f9cb40e10de0545d996d92f2d8b2d4d0cc1c1ae41583c2d0",
       "subject_sha256": "75784af42f93404257b929f145a09364055218a11bbfd297337238b416a7e409",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
       "digest_matches": true,
-      "duration_ms": 30059,
+      "duration_ms": 31102,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "24f3b9e0778a9921031f25083caf42817248faea67010da17ea152058445e37c",
+      "live_check_sha256": "7669ceb14f8a15f3f9cb40e10de0545d996d92f2d8b2d4d0cc1c1ae41583c2d0",
       "stale": false
     },
     {
@@ -3627,6 +3784,24 @@
       "assertion": "the ratchet backward — a listed name that has ACQUIRED an importer fails, so it can never return to the residue",
       "why": "the same empty RESIDUE. This one was plantable earlier tonight and is recorded because it stopped being so: the row that established it imported a listed name and watched the clause fire, and the sweep that emptied the list took its subject away.",
       "plantable_when": "RESIDUE holds at least one name; importing that name then fires it."
+    },
+    {
+      "check": "scripts/gate/checks/build.ts",
+      "assertion": "a missing testing/ FAILS rather than passing in silence",
+      "why": "the clause fires only when `testing/` cannot be read, and the sole edit that produces that state is to the check's own path string. `plant()` freezes `scripts/gate/checks/` — a run that edited a check would be measuring itself — and a find/replace spec cannot remove a directory. The subject and the instrument are the same file, which is the one combination this runner refuses by construction.",
+      "plantable_when": "the runner can express a subject's ABSENCE as a mutation, rather than only its contents. Until then the clause is verified by reading: it was `return null` and it is now a returned failure string, and `testing/` is tracked, so the state it guards is a broken checkout rather than a checkout without an optional artifact."
+    },
+    {
+      "check": "scripts/gate/checks/catalog-stages.ts",
+      "assertion": "a missing testing/ FAILS rather than passing in silence",
+      "why": "identical to the entry above, in the sibling check that carried the same escape.",
+      "plantable_when": "as above."
+    },
+    {
+      "check": "scripts/gate/checks/deploy-compose.ts",
+      "assertion": "a Caddyfile that cannot be read FAILS rather than passing in silence",
+      "why": "the same shape. `deploy/Caddyfile` is a legitimate subject and other rows mutate its CONTENTS, but no spec can make it absent, and the absence is the whole clause.",
+      "plantable_when": "as above. Note the stake: this check's own comment records that a wrong Caddyfile left production answering 502 while every container read as healthy, and before this initiative a Caddyfile that was simply gone passed the check in silence."
     }
   ]
 }

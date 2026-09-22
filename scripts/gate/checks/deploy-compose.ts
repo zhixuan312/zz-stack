@@ -235,7 +235,11 @@ check("the Caddyfile puts global options where Caddy accepts them", () => {
   // release has just removed, so the public URL answers 502 while every container is healthy
   // and the deployment looks fine. That happened on production during this release.
   const f = join(root, "deploy/Caddyfile");
-  if (!existsSync(f)) return null;
+  // TRACKED, SO ITS ABSENCE IS A DEFECT. deploy/Caddyfile is committed, and the 502 described
+  // above is what a missing or wrong one does to production. Passing silently when the file
+  // is gone is the one answer this check must not give.
+  if (!existsSync(f)) return "deploy/Caddyfile does not exist — the reverse proxy a release "
+                           + "reloads has no configuration in this repository";
   const lines = readFileSync(f, "utf8").split("\n");
   const bad: string[] = [];
   let depth = 0, inSite = false;

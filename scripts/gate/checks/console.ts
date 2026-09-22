@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { consoleSource, root, sourceFiles, unbuilt, withoutComments } from "../read.ts";
-import { check } from "../run.ts";
+import { check, note } from "../run.ts";
 
 check("the initiatives route reads the team filter its caller sends", () => {
   // THE OPPOSITE FAILURE TO THE ONE BELOW, and the one that actually shipped.
@@ -388,7 +388,11 @@ check("the console\'s version and its compose literal move together", () => {
   const dash = join(root, "..", "zz-stack-dashboard");
   // A checkout without the sibling repository cannot answer this, and should not fail on it
   // — the same escape the blocks check carries, for the same reason.
-  if (!existsSync(join(dash, "package.json"))) return null;
+  if (!existsSync(join(dash, "package.json"))) {
+    note("    console compose version: ../zz-stack-dashboard is not checked out beside this "
+       + "repository, so the two versions were not compared.");
+    return null;
+  }
   const pkg = JSON.parse(readFileSync(join(dash, "package.json"), "utf8")).version;
   if (!pkg) return "zz-stack-dashboard/package.json declares no version";
   const composePath = join(dash, "docker-compose.yml");
@@ -422,7 +426,11 @@ check("the server-held LLM client stays off the console", () => {
   const dash = join(root, "..", "zz-stack-dashboard");
   // A checkout without the sibling repository cannot answer this, and should not fail on it
   // — the same escape the compose-version check above carries.
-  if (!existsSync(dash)) return null;
+  if (!existsSync(dash)) {
+    note("    console secret scan: ../zz-stack-dashboard is not checked out beside this "
+       + "repository, so no console file was scanned for an inlined key.");
+    return null;
+  }
 
   const SKIP_DIRS = new Set(["node_modules", ".git", ".next", "dist", "build", "coverage", ".turbo", "docs"]);
   const relevant = (name: string): boolean => name.startsWith(".env") || /\.(ts|tsx|js|jsx|mjs|cjs|json|ya?ml)$/.test(name);

@@ -48,4 +48,32 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "watched the clause fire, and the sweep that emptied the list took its subject away.",
     plantable_when: "RESIDUE holds at least one name; importing that name then fires it.",
   },
+  {
+    check: "scripts/gate/checks/build.ts",
+    assertion: "a missing testing/ FAILS rather than passing in silence",
+    why: "the clause fires only when `testing/` cannot be read, and the sole edit that " +
+      "produces that state is to the check's own path string. `plant()` freezes " +
+      "`scripts/gate/checks/` — a run that edited a check would be measuring itself — and a " +
+      "find/replace spec cannot remove a directory. The subject and the instrument are the " +
+      "same file, which is the one combination this runner refuses by construction.",
+    plantable_when: "the runner can express a subject's ABSENCE as a mutation, rather than " +
+      "only its contents. Until then the clause is verified by reading: it was `return null` " +
+      "and it is now a returned failure string, and `testing/` is tracked, so the state it " +
+      "guards is a broken checkout rather than a checkout without an optional artifact.",
+  },
+  {
+    check: "scripts/gate/checks/catalog-stages.ts",
+    assertion: "a missing testing/ FAILS rather than passing in silence",
+    why: "identical to the entry above, in the sibling check that carried the same escape.",
+    plantable_when: "as above.",
+  },
+  {
+    check: "scripts/gate/checks/deploy-compose.ts",
+    assertion: "a Caddyfile that cannot be read FAILS rather than passing in silence",
+    why: "the same shape. `deploy/Caddyfile` is a legitimate subject and other rows mutate " +
+      "its CONTENTS, but no spec can make it absent, and the absence is the whole clause.",
+    plantable_when: "as above. Note the stake: this check's own comment records that a wrong " +
+      "Caddyfile left production answering 502 while every container read as healthy, and " +
+      "before this initiative a Caddyfile that was simply gone passed the check in silence.",
+  },
 ];

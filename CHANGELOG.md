@@ -33,6 +33,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.63.0] — 2026-09-23
+
+**The control loop now governs something.** Until this release the platform built a reviewed
+module host at boot, verified `sdlc-flow`'s digest, printed a line saying it had registered,
+and never asked it a question. Counted by call site, the host's seven-method surface had zero
+service callers except `register` once; the only caller of its evaluation was a gate check. It
+was a library with a probe, and every instrument agreed because none of them asks whether a
+production request ever reaches the loop.
+
+Five doors now tell it what happened. `initiative_open` starts a run and reports
+`governed_by`; `document_write` and `document_approve` record the document and the approval;
+`source_add` records the audit, because the flow declares its audit stages as producing a
+SOURCE supporting the document they audited rather than a document of their own; and
+`initiative_close` claims `close:initiative` from the module.
+
+**What that catches, and nothing before it could.** An initiative whose documents are all
+written and approved — every gate satisfied, every guard passed — and whose two audit rounds
+never happened. That close used to succeed. It is now refused, naming exactly what is missing:
+*sdlc-spec-audit needs 1 audit about a recorded document*.
+
+**You can still stop at any time.** An abandoned close claims nothing and needs no grant. What
+a grant gates is the claim that the flow was COMPLETED, which is the distinction the outcome
+words already carried: `finished` reaches delivered or accepted, `abandoned` reaches stopped.
+Nothing about stopping changed.
+
+**Existing initiatives are not enrolled by this release.** `scripts/adopt-control-loop.ts`
+opens a run for each one and derives its evidence from documents and approvals the platform
+already holds, and where a stage genuinely never ran it records a waiver naming that ground —
+no fabricated audit. It is dry by default and has not been run against production. Until it is,
+initiatives opened before this release have no run, and the close path treats "not enrolled"
+as a different answer from "enrolled and unsatisfied".
+
+**BREAKING — `profile_digest` changes for every profile**, `44d75e48...` to `6cbc8007...`.
+Profile revocation was removed entirely: `revokeProfile` had no caller, its only effect ran
+through a function nothing else called, which was the sole writer to the set it maintained. The
+digest is taken over a base that no longer carries `revoked`. Nothing persists a digest and no
+32-hex literal exists in the tree, so there is nothing to migrate — but it is a value change,
+not a refactor.
+
+**BREAKING — a `levels` array of six to ten entries is refused.** The schema said `.max(10)`
+while the scoring clamp assumed five, so a ruler could define levels a mark could never reach.
+Zero senders today.
+
+**Every registered check has now been shown able to fail.** 418 rows across 73 check files, up
+from 98. Four checks were found to be incapable of failing at all: one compared a string to an
+object, one had a loop that had never executed in any gate run this repository had ever done,
+one tested a single field of the six its title promised, and one could be satisfied by a
+comment claiming the thing rather than the thing.
+
+**A new script drives a real initiative through the real doors** against a scratch deployment
+and checks that the loop refuses and grants as the flow declares. It refuses to run against
+anything but loopback, because it writes an initiative, four documents, two sources and a
+close. Six defects in this release's own adoption were found by running it and none by reading
+the code — three of them one shape: a name carried from the flow's vocabulary into the
+platform's namespace without translation, which produces a platform that records diligently
+and answers wrongly.
+
 ## [0.62.4] — 2026-09-21
 
 **The setup text told every new person to type a command that does not exist.** `client_setup`

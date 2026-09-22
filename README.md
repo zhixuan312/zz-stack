@@ -216,6 +216,13 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             row's `body_tsv`/`analyzer_version` under the current analyzer generation
             through `@zz/indexing`'s `rederiveAll`, resumable by watermark — `--write`
             is the only path that changes anything),
+            control-loop-e2e.ts (drives a real initiative through the real doors against a
+            SCRATCH deployment and checks the loop refuses and grants as the flow declares —
+            it refuses to run against production by name, because it writes an initiative,
+            four documents, two sources and a close. Not a gate check: the gate is offline and
+            proves things about the source, and this asks whether a run recorded through the
+            platform reaches a grant, which no offline check can answer. Six defects in the
+            adoption were found by running it and none by reading the code),
             adopt-control-loop.ts (dry-run by default: brings every existing initiative
             under the reviewed module governing its flow — opens a run, derives evidence
             from documents and approvals the platform already holds, and where a stage

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "produced_at": "2026-09-22T00:40:41.157Z",
+  "produced_at": "2026-09-22T04:14:04.160Z",
   "produced_by": "scripts/mutation-run.ts",
-  "source_commit": "ed82211bb04c3427f67d1dee99d385e7ae378e67",
-  "source_dirty_paths": 12,
-  "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
+  "source_commit": "1060c40f047bd007a4c0040e70813dd6e05aa2a3",
+  "source_dirty_paths": 2,
+  "snapshot_tree_sha256": "470d620670fcc81e94e963b688fa7aee11f8be83d4520ad00368682fedf2551d",
   "declared_by": "git ls-files --cached --others --exclude-standard",
   "declared_count": 73,
   "baseline_verdict": "PASSED",
@@ -644,18 +644,18 @@
       "new_failures": [
         "a console query cannot fall back to every team"
       ],
-      "snapshot_tree_sha256": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
+      "snapshot_tree_sha256": "470d620670fcc81e94e963b688fa7aee11f8be83d4520ad00368682fedf2551d",
       "subject_kind": "source",
-      "check_sha256": "1f3b9ac972858e858626987431b830a41df44c635c1e58a41787299723d298dc",
+      "check_sha256": "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
       "subject_sha256": "9a775a3260c8f1ffa417ea384b7dc2771659c42c7cc29d1cadd2f8d5b681d9fd",
-      "restored_digest": "79a87138219c65da2bbf5f213d3329a9905ff6aa0e32de6b66ab6dac1cf594da",
+      "restored_digest": "470d620670fcc81e94e963b688fa7aee11f8be83d4520ad00368682fedf2551d",
       "digest_matches": true,
-      "duration_ms": 31678,
+      "duration_ms": 26256,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "1f3b9ac972858e858626987431b830a41df44c635c1e58a41787299723d298dc",
+      "live_check_sha256": "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
       "stale": false
     },
     {
@@ -3802,6 +3802,12 @@
       "assertion": "a Caddyfile that cannot be read FAILS rather than passing in silence",
       "why": "the same shape. `deploy/Caddyfile` is a legitimate subject and other rows mutate its CONTENTS, but no spec can make it absent, and the absence is the whole clause.",
       "plantable_when": "as above. Note the stake: this check's own comment records that a wrong Caddyfile left production answering 502 while every container read as healthy, and before this initiative a Caddyfile that was simply gone passed the check in silence."
+    },
+    {
+      "check": "scripts/gate/checks/console.ts",
+      "assertion": "an absent ../zz-stack-dashboard is NAMED, rather than reported as routes nobody calls",
+      "why": "the condition is `!existsSync(dash)` on a SIBLING REPOSITORY, which no edit to a mutable subject can remove — the only lever is the check's own path string, and `plant()` freezes `scripts/gate/checks/`. But unlike the three entries above, this one HAS BEEN EXERCISED, by running the real gate in a copy of the tree placed where no sibling exists. Observed: `50 route(s) cannot be shown to have a caller. This is not evidence that they have none.` Before this change the same run reported fifty live routes as `serves /api/console/... and nothing calls it` — a false accusation that invites a reader to delete working code, which is why it fails with a different sentence rather than passing or shortening its list.",
+      "plantable_when": "never by this runner, and it does not need to be. A spec cannot express the absence of a directory outside the repository. The evidence for this clause is the sibling-less gate run recorded above, which is stronger than a planted mutation because it exercises the real condition rather than a stand-in for it."
     }
   ]
 }

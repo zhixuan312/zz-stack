@@ -30,6 +30,13 @@ To install it on a server, read **`deploy/README.md`**. That path needs no repos
 no toolchain and no build: it runs published images from a release bundle.
 To work on it, read **`CONTRIBUTING.md`**.
 
+**The gate expects `../zz-stack-dashboard` beside this checkout.** The console lives in its
+own repository and is the only caller of the `/api/console/*` routes, so without it three
+checks cannot answer: two say so and pass, and *"every route this gateway serves has a
+caller"* fails naming the missing repository — it will not report fifty live routes as
+uncalled, which is what it used to do and what would have invited someone to delete them.
+Clone it as a sibling before running `npm run gate`.
+
 ## What is where
 
 Everything here is TypeScript (npm workspaces, `npm run build`) — services and

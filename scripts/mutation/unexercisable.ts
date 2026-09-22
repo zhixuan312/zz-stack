@@ -76,4 +76,21 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "Caddyfile left production answering 502 while every container read as healthy, and " +
       "before this initiative a Caddyfile that was simply gone passed the check in silence.",
   },
+  {
+    check: "scripts/gate/checks/console.ts",
+    assertion: "an absent ../zz-stack-dashboard is NAMED, rather than reported as routes nobody calls",
+    why: "the condition is `!existsSync(dash)` on a SIBLING REPOSITORY, which no edit to a " +
+      "mutable subject can remove — the only lever is the check's own path string, and " +
+      "`plant()` freezes `scripts/gate/checks/`. But unlike the three entries above, this one " +
+      "HAS BEEN EXERCISED, by running the real gate in a copy of the tree placed where no " +
+      "sibling exists. Observed: `50 route(s) cannot be shown to have a caller. This is not " +
+      "evidence that they have none.` Before this change the same run reported fifty live " +
+      "routes as `serves /api/console/... and nothing calls it` — a false accusation that " +
+      "invites a reader to delete working code, which is why it fails with a different " +
+      "sentence rather than passing or shortening its list.",
+    plantable_when: "never by this runner, and it does not need to be. A spec cannot express " +
+      "the absence of a directory outside the repository. The evidence for this clause is the " +
+      "sibling-less gate run recorded above, which is stronger than a planted mutation because " +
+      "it exercises the real condition rather than a stand-in for it.",
+  },
 ];

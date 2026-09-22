@@ -580,5 +580,21 @@ check("every route this gateway serves has a caller", () => {
                      ":(glob)services/gateway/src/client-package.ts"]);
     if (!called) bad.push(`${r.file.replace("services/gateway/src/", "")}:${r.line} serves ${r.path} and nothing calls it`);
   }
+  // "NOTHING CALLS IT" IS A LIE WHEN THE CALLER'S REPOSITORY IS NOT CHECKED OUT, and it is the
+  // expensive kind of lie: the console is the only caller of the /api/console routes, so on a
+  // fresh clone this check reported dozens of live routes as dead and invited a reader to
+  // delete them. The condition is one `existsSync(dash)` term inside `called` above — every
+  // route it guards flips at once — so the honest answer is not a shorter list but a different
+  // sentence. Measured: building a copy without the sibling reported forty-three uncalled.
+  //
+  // It still FAILS rather than passing, because a route with no caller is what this check
+  // exists to find and a gate that cannot answer has not answered. What changes is that the
+  // failure names the missing repository instead of accusing the routes.
+  if (bad.length && !existsSync(dash)) {
+    return `../zz-stack-dashboard is not checked out beside this repository, so the console's ` +
+           `calls could not be read and ${bad.length} route(s) cannot be shown to have a ` +
+           `caller. This is not evidence that they have none. Clone the console beside this ` +
+           `repository and run the gate again.`;
+  }
   return bad.length ? bad.join("; ") : null;
 });

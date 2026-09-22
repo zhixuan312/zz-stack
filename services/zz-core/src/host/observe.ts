@@ -113,7 +113,20 @@ async function note(
   // So the id is derived from the DOCUMENT alone — not from the step, not from the fact —
   // and an approval or an audit points at it. Deterministic, so a replay rebuilds the same
   // graph, and stable across the two tools that record the two halves.
-  const documentEntry = `doc:${aboutDocument ?? relPath}`;
+  // THE POINTER IS AN INITIATIVE-RELATIVE PATH, because that is what the document entry's id
+  // was built from. A `supports` value is the flow's own vocabulary — a bare `spec.md`, the
+  // name the manifest declares — while a document is recorded under `<initiative>/spec.md`.
+  // Pointing an audit at `doc:spec.md` when the document is `doc:<initiative>/spec.md` is a
+  // reference to nothing, and `met()` answers exactly as it should: the requirement is unmet.
+  //
+  // This was the SECOND defect in this one wiring, and the e2e found both. The first pointed
+  // at a filename where an id was owed; this one pointed at the right kind of thing in the
+  // wrong namespace. Neither is visible to a type, a build, or any check in this repository —
+  // both produce a platform that records diligently and answers wrongly.
+  const supported = aboutDocument
+    ? (aboutDocument.includes("/") ? aboutDocument : `${initiative}/${aboutDocument}`)
+    : relPath;
+  const documentEntry = `doc:${supported}`;
   await recordEvidence(runId, step, {
     id: fact === "document" ? documentEntry : `${fact}:${relPath}`,
     stepId: step, kind: fact,

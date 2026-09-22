@@ -456,7 +456,20 @@ export function registerArtifactTools(server: McpServer): void {
       // — so a platform that waited for an audit document would report every audited
       // initiative as un-audited. One source per supported document, because a source
       // supporting two documents is evidence for both stages and the loop should hear it twice.
-      const governing = chainFor(root, rel);
+      // THE CHAIN IS RESOLVED FROM THE INITIATIVE, NOT FROM THE SOURCE'S OWN PATH.
+      //
+      // `chainFor` answers for a DOCUMENT the flow declares. A source is not one — it lives
+      // under `sources/` and carries no `flow:` of its own — so asking it about the source's
+      // path returns EMPTY_CHAIN: name null, zero stages. Wired that way, `noteSource` looked
+      // up the audit step in an empty stage list, found nothing, and returned silently. The
+      // source was recorded, the platform said "source recorded", and the audit evidence the
+      // flow needs was never written. Nothing anywhere reported a problem.
+      //
+      // Found by driving a real initiative through the real doors: every document written and
+      // approved, both audit sources added, and the close still refused for "needs 1 audit
+      // about a recorded document". `<initiative>/x.md` is the same form `initiative_open`
+      // uses to resolve a chain before any document exists.
+      const governing = chainFor(root, `${initiative}/x.md`);
       const sourceTeam = await teamFor(who.email);
       for (const supported of list) {
         await noteSource(governing, rel, supported, who.email, sourceTeam);

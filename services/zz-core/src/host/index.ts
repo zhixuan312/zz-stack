@@ -70,3 +70,27 @@ export function refuseIssuanceOnDoors(registered: ReadonlyMap<string, string>): 
   }
   for (const [door, names] of byDoor) refuseIssuanceInRegistry(door, names);
 }
+
+/**
+ * The module governing one flow, and the digest it was approved under — or null.
+ *
+ * ONE LOOKUP, NOT ONE PER CALLER. Five tools need to ask "is this initiative's flow governed
+ * by a reviewed module", and five copies of `allowlist.find` plus `bodies.get` would be five
+ * places for the pair to come apart — the body from one entry and the digest from another is
+ * a run recorded as judged against something it was not.
+ *
+ * NULL IS AN ANSWER AND NOT A FAILURE. Most flows have no reviewed module and never will;
+ * `zz-plugin-eval` and every freeform initiative reach this and get null, which is the
+ * platform saying "not governed" rather than "something went wrong". A caller must be able to
+ * tell that from a run that exists and is unsatisfied, so nothing here throws.
+ */
+export function moduleForFlow(
+  packaged: PackagedCatalogue, flow: string | null,
+): { module: ReviewedModule; digest: string } | null {
+  if (!flow) return null;
+  const entry = packaged.allowlist.find((e) => e.id === flow);
+  if (!entry) return null;
+  const module = packaged.bodies.get(flow);
+  if (!module) return null;
+  return { module, digest: entry.digest };
+}

@@ -23,6 +23,7 @@ import { z } from "zod";
 import { chainFor } from "../chain.js";
 import { envelopeEditRefusal, fieldRefusal, frontmatterRefusal } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
+import { noteDocument, noteSource } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { unopenedRefusal } from "../initiative-record.js";
 import { PLAIN_TOKEN, platformPath, safeName, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
@@ -106,6 +107,17 @@ export function registerArtifactTools(server: McpServer): void {
       const written = persistDocument(chain, root, path, target, fixed.content, "write");
       logActivity(root, path,
         { user: parseCaller(requestHeaders()).email, action: "document_write", path, chars: written.length });
+      // THE CONTROL LOOP IS TOLD, AFTER THE WRITE SUCCEEDED AND NEVER BEFORE. `noteDocument`
+      // cannot refuse anything: `documentGuards` above has already decided whether this write
+      // is allowed, and a second veto here would be the duplication this adoption removes.
+      // What it does is give the loop the fact — so that when somebody later asks whether this
+      // initiative may close, the answer is derived from what actually happened rather than
+      // from nine hand-written guards re-deciding it.
+      //
+      // Awaited rather than fired and forgotten: a write that returns before its evidence
+      // lands would let a caller write a document and immediately be told the step is unmet.
+      await noteDocument(chain, path, "document",
+                         parseCaller(requestHeaders()).email, team);
       return text(`written: ${path} (${written.length} chars)`
         + (fixed.renamed.length ? `\nRenamed to the heading this flow declares: ${fixed.renamed.join(", ")}.` : ""));
     },
@@ -438,6 +450,17 @@ export function registerArtifactTools(server: McpServer): void {
           ? readFileSync(join(root, initiative, d), "utf8") : "");
         return env.status === "approved";
       });
+      // AN AUDIT EVIDENCES ITSELF WITH A SOURCE, which is why this call is here and not in a
+      // tool named for auditing. The flow declares `sdlc-spec-audit` and `sdlc-plan-audit` as
+      // producing a SOURCE that supports the document they audited — no document of their own
+      // — so a platform that waited for an audit document would report every audited
+      // initiative as un-audited. One source per supported document, because a source
+      // supporting two documents is evidence for both stages and the loop should hear it twice.
+      const governing = chainFor(root, rel);
+      const sourceTeam = await teamFor(who.email);
+      for (const supported of list) {
+        await noteSource(governing, rel, supported, who.email, sourceTeam);
+      }
       return text(
         `source recorded: ${rel}` +
         (list.length ? `\nsupports: ${list.join(", ")}` : "") +

@@ -215,7 +215,13 @@ scripts/    gate.ts (the order the gate runs in — every check itself lives in
             (dry-run by default: rederives every existing `zz.doc`/`zz.knowledge_node`
             row's `body_tsv`/`analyzer_version` under the current analyzer generation
             through `@zz/indexing`'s `rederiveAll`, resumable by watermark — `--write`
-            is the only path that changes anything), manifests.ts (where the packages are, read by
+            is the only path that changes anything),
+            adopt-control-loop.ts (dry-run by default: brings every existing initiative
+            under the reviewed module governing its flow — opens a run, derives evidence
+            from documents and approvals the platform already holds, and where a stage
+            genuinely never happened records a waiver naming that fact rather than
+            inventing the round. The steps come from the flow's own manifest, never from
+            a list in the script), manifests.ts (where the packages are, read by
             both), mutation-run.ts (plants a defect in what each gate check
             examines, in a disposable copy of this checkout, and records whether
             the check noticed — mutation/ holds the workspace, the planting and

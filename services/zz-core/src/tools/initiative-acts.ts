@@ -24,6 +24,7 @@ import { shownSinceLastChange } from "../attest.js";
 import { chainFor } from "../chain.js";
 import { fieldRefusal, frontmatterRefusal, oneLine, renderEnvelope } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
+import { noteDocument } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
@@ -123,6 +124,12 @@ export function registerInitiativeActTools(server: McpServer): void {
       const fetched = shownSinceLastChange(root, relPath);
       persistDocument(chain, root, relPath, target, fixed.content, "document_approve");
       logActivity(root, relPath, { user: who.email, action: "document_approve", path: relPath, signer, fetched });
+      // AN APPROVAL IS A SEPARATE FACT FROM THE DOCUMENT, and the module asks for both: the
+      // spec and plan steps each require `1x document` AND `1x approval`. Recording only the
+      // write would leave every gated step permanently one requirement short, and recording
+      // only the approval would credit a step for a document nobody wrote. Two facts, two
+      // entries, because the declaration asks two questions.
+      await noteDocument(chain, relPath, "approval", who.email, team);
       return text(
         `${relPath} approved — recorded under ${signer}` +
         (on_behalf_of ? ` (on their behalf, by ${who.email})` : "") + ".\n" +

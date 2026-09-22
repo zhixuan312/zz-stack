@@ -19,9 +19,18 @@ import { OPEN_RECORD, openRecord, recordAbandoned } from "../initiative-record.j
 import { chainFor, frontmatterStatus } from "../chain.js";
 import { oneLine } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
+import { moduleForFlow } from "../host/index.js";
+import { claimFor } from "../host/store.js";
 import { safeName, safePath, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
 import { teamFor } from "../platform-db.js";
+import { packagedModules } from "../reviewed-modules.js";
+
+/** The action a completed flow grants. Written once: the module declares it on its closing
+ *  step and this is the only place the service names it, so the two cannot drift into a claim
+ *  for an action no step grants — which `actionClaim` would refuse with a sentence about the
+ *  step rather than about the name, and a reader would go looking in the wrong file. */
+const CLOSE_ACTION = "close:initiative";
 
 export function registerInitiativeCloseTool(server: McpServer): void {
   server.registerTool(
@@ -322,6 +331,47 @@ export function registerInitiativeCloseTool(server: McpServer): void {
       // is the sign-off, so the closer signs unless they name somebody else, and a
       // `no_signoff_reason` says nobody did. `signedBy` above is that policy's answer. The
       // kernel's rule is the narrower one — does an acceptor exist.
+      // THE GRANT, FOR A FINISHED CLOSE ON A GOVERNED FLOW — and only then.
+      //
+      // WHY THIS IS NOT THE DUPLICATION THIS INITIATIVE SPENT ITS LAST DAY REMOVING, which is
+      // the first question a reader should ask. `closeCheck` below answers a DOCUMENT-level
+      // question through `admitEntry`: are the flow's gated documents written and approved.
+      // This answers a PROCEDURE-level one through the reviewed module: is the whole declared
+      // chain satisfied, back to the first step. The second subsumes the first for a flow that
+      // declares a module, and the first is the only answer available for the flows that do
+      // not — most of them. Removing `closeCheck` would leave every ungoverned flow unguarded;
+      // keeping both where a module exists is a stricter requirement, not a second opinion on
+      // the same one.
+      //
+      // AN ABANDON CLAIMS NOTHING. Stopping never needed a grant and still does not: the work
+      // is being reported as unfinished, which is what an unsatisfied chain would have said
+      // anyway. What a grant gates is the claim that the flow was COMPLETED. This is the
+      // distinction `deriveOutcome` already encodes and the one the stakeholder named when
+      // they asked whether an initiative can be closed at any time. It can.
+      //
+      // A WAIVER IS READ BESIDE THE REFUSAL, NEVER FOLDED INTO IT. `standing.clear` is the two
+      // read together; `standing.unmet` stays the engine's own answer. So an initiative whose
+      // audit never happened and whose gap somebody signed for can finish, and the record goes
+      // on saying the audit is missing — because it is.
+      if (disposition !== OUTCOME_STOPPED) {
+        const governed = moduleForFlow(packagedModules, chain.name);
+        if (governed && team) {
+          const closingStep = [...governed.module.steps]
+            .reverse().find((st) => st.grants.includes(CLOSE_ACTION));
+          const claimed = closingStep
+            ? await claimFor(team, initiative, governed.module, closingStep.id, CLOSE_ACTION)
+            : null;
+          if (claimed && !claimed.grant.granted && !claimed.standing.clear) {
+            return text(
+              `ERROR: ${initiative} cannot claim ${CLOSE_ACTION} — ${claimed.grant.refusal}\n\n` +
+              `The flow ${chain.name} declares a procedure and this run has not satisfied it. ` +
+              `Still outstanding: ${claimed.standing.unmet.join("; ")}.\n` +
+              `Record what is missing, or close as abandoned — stopping needs no grant, and a ` +
+              `close that reports the work unfinished is always available.`);
+          }
+        }
+      }
+
       const record = closeInitiative({
         disposition,
         accepted_by: signedBy,

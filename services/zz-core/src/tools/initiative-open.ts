@@ -31,10 +31,15 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
 import { chainFor } from "../chain.js";
+import { moduleForFlow } from "../host/index.js";
+import { openRun } from "../host/store.js";
 import { slugify, slugRefusal } from "../document-rules.js";
 import { initiativeNameFor, OPEN_RECORD, recordOpen, takenRefusal } from "../initiative-record.js";
 import { userRoot } from "../paths.js";
+import { teamFor } from "../platform-db.js";
 import { logActivity } from "../persist.js";
+
+import { packagedModules } from "../reviewed-modules.js";
 
 import { initiativeState } from "./initiative-status.js";
 
@@ -115,6 +120,34 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       logActivity(root, `${name}/${OPEN_RECORD}`,
         { user: who, action: "initiative_open", initiative: name, flow: record.flow ?? "" });
 
+      // THE CONTROL LOOP IS TOLD THE RUN EXISTS, and this is the first place in this platform
+      // that ever tells it anything. Until now `createHost()` was built at boot, handed
+      // `sdlc-flow`, asked to verify its digest — and then never asked a question: `runStart`,
+      // `evidenceRecord` and `actionClaim` had zero callers anywhere in `services/`, and the
+      // one caller of `evaluate` was a gate check. The kernel was a library with a probe.
+      //
+      // NOT EVERY INITIATIVE IS GOVERNED, and null here says so. A freeform initiative and one
+      // on a flow with no reviewed module both reach `moduleForFlow` and get null; no run is
+      // opened and nothing downstream will refuse them, because "not enrolled" and "enrolled
+      // and unsatisfied" are different answers and a caller has to be able to tell them apart.
+      //
+      // A FAILURE HERE MUST NOT LOSE THE INITIATIVE. The folder and its record are already on
+      // disk and are what `initiative_status` reads; the run is how the loop will judge it
+      // later. If the database is unreachable the open still succeeded, so this reports rather
+      // than throws — and `openRun` is idempotent on (team, initiative), so the run can be
+      // opened later without a second one appearing.
+      const governed = moduleForFlow(packagedModules, record.flow ?? null);
+      let control: string | null = null;
+      if (governed) {
+        const team = await teamFor(who);
+        if (team) {
+          control = await openRun({
+            team, initiative: name, module: governed.module, digest: governed.digest,
+            subject: name, profile: [], by: who,
+          });
+        }
+      }
+
       // ONE SOURCE FOR "WHAT COMES NEXT". The same `initiativeState` that `initiative_status`
       // answers from, run over the folder just created — so the sentence a person reads at
       // open time and the one they read a week later come from the same code rather than from
@@ -127,6 +160,11 @@ export function registerInitiativeOpenTool(server: McpServer): void {
         flow: record.flow,
         next_move: state.next_move,
         next_move_absent: state.next_move_absent,
+        // WHICH MODULE GOVERNS THIS, AND WHETHER A RUN IS OPEN. Reported rather than implied:
+        // a reader of this answer should not have to infer from silence whether the control
+        // loop knows about the initiative they just opened.
+        governed_by: governed?.module.id ?? null,
+        control_run: control,
       }, null, 2));
     },
   );

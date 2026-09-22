@@ -82,12 +82,15 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
     why: "the condition is `!existsSync(dash)` on a SIBLING REPOSITORY, which no edit to a " +
       "mutable subject can remove — the only lever is the check's own path string, and " +
       "`plant()` freezes `scripts/gate/checks/`. But unlike the three entries above, this one " +
-      "HAS BEEN EXERCISED, by running the real gate in a copy of the tree placed where no " +
-      "sibling exists. Observed: `50 route(s) cannot be shown to have a caller. This is not " +
-      "evidence that they have none.` Before this change the same run reported fifty live " +
-      "routes as `serves /api/console/... and nothing calls it` — a false accusation that " +
-      "invites a reader to delete working code, which is why it fails with a different " +
-      "sentence rather than passing or shortening its list.",
+      "HAS BEEN EXERCISED. REPRODUCE IT: rsync this tree (minus node_modules and .git) into " +
+      "a directory that has no zz-stack-dashboard beside it, symlink node_modules, and run " +
+      "`node scripts/gate.ts` there. The run is disposable and its output is not kept in the " +
+      "tree, which is why the method is written here rather than a transcript — a number in " +
+      "a comment is the thing that goes stale, and the route count moves whenever a route " +
+      "is added. On 2026-09-22 it reported 50 routes it could not show a caller for. Before " +
+      "this change the same run reported each of them as `serves /api/console/... and nothing " +
+      "calls it` — a false accusation that invites a reader to delete working code, which is " +
+      "why it fails with a different sentence rather than passing or shortening its list.",
     plantable_when: "never by this runner, and it does not need to be. A spec cannot express " +
       "the absence of a directory outside the repository. The evidence for this clause is the " +
       "sibling-less gate run recorded above, which is stronger than a planted mutation because " +

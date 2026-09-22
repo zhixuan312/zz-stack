@@ -563,9 +563,16 @@ async function main(): Promise<number> {
       source_content: "chain-check rewrote its own closing document to prove the outcome survives a revision.",
       source_title: "chain-check: revising a closed document",
     }), false);
+  // MATCHED ON THE KERNEL'S WORDS, because the kernel is where the rule moved.
+  //
+  // This asked for `/closes once/`, which was the service's own sentence before
+  // `closeInitiative` took the rule over and reworded it — "the disposition that closed the
+  // work is not written twice". The refusal never stopped happening; only its wording moved,
+  // and this probe has been failing since that delivery. Nobody saw it because nobody
+  // attempted a release until now, which is the whole argument for the release running it.
   check("revising the closing document does not let the initiative close twice",
     await call("initiative_close", { initiative: INIT, disposition: "finished", accepted_by: "Chain Check" }),
-    true, /closes once/);
+    true, /not written twice/);
 
   // And the document says what the close recorded, not merely that the call was accepted.
   // "not refused" is a claim about the call; this is a claim about the record.

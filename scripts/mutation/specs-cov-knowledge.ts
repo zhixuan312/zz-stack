@@ -48,18 +48,25 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "every flow ends with the platform's handover",
+    assertion: "the skill that performs the close names the handover that follows it",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-flow/SKILL.md",
     find: "handover",
     replace: "learnings",
     all: true,
+    // `planted` deliberately does not spell the renamed skill this produces. A skill name no
+    // plugin ships, written into a tracked file and then into the report, is one of the seven
+    // trip shapes the dispatcher measured — and the sentence needs the consequence anyway,
+    // not the string.
     planted: "the entry skill that performs sdlc-flow's close stops naming the handover " +
-      "anywhere and names `learnings.md` and a `zz-learnings` skill instead — neither of " +
-      "which exists — so an agent closes, reports finished, and meets the platform's " +
-      "handover step with nothing having told it that step was coming",
+      "anywhere — every mention is renamed to the artifact the handover abolished, so the " +
+      "skill that closes points at a document and a stage the platform does not ship, and an " +
+      "agent closes, reports finished, and meets the platform's handover step with nothing " +
+      "having told it that step was coming",
   },
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "the platform's own knowledge has a home, and it is reserved",
+    assertion: "team_create reserves the platform's own team against a tenant claiming it",
     subject: "services/gateway/src/admin/teams.ts",
     find: "  if (slug === PLATFORM_TEAM) {",
     replace: "  if (slug === \"zz-platform\") {",
@@ -70,6 +77,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "the second distillation exists and is reachable",
+    assertion: "the skill states the evidence rule a promoted finding owes",
     subject: "skills/zz-handover/SKILL.md",
     find: "evidence",
     replace: "provenance",
@@ -82,6 +90,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "the shelf is on the door everyone has, and each admin act is in its tier",
+    assertion: "creating a principal is registered in the superadmin tier",
     subject: "services/gateway/src/admin.ts",
     find: "  if (sup) server.registerTool(\"person_add\", {",
     replace: "  if (lead) server.registerTool(\"person_add\", {",
@@ -91,6 +100,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "a knowledge node says which shelf it belongs on",
+    assertion: "scope carries no default, so silence is not a sayable answer",
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "        scope: z.enum([\"team\", \"platform\"]),",
     replace: "        scope: z.enum([\"team\", \"platform\"]).default(\"team\"),",
@@ -101,6 +111,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "a knowledge node is written to the shelf its scope names",
+    assertion: "the platform branch resolves the platform shelf and not the team's",
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      const root = scope === \"platform\" ? knowledgeRoot() : await userRoot();",
     replace: "      const root = scope === \"platform\" ? await userRoot() : knowledgeRoot();",
@@ -111,6 +122,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "a platform-scoped node is about a registry entry",
+    assertion: "a platform-scoped node carrying no registry-entry tag is refused",
     // THE WHOLE GUARD, because the check's other assertion cannot be reached from the code.
     // It tests the handler for the word `SUBJECT_KINDS` WITHOUT stripping comments, and the
     // paragraph directly above this guard says "SUBJECT_KINDS is reused rather than
@@ -143,6 +155,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "a team-scoped node cannot be written by somebody in no team",
+    assertion: "the teamless refusal is scoped to a team-scoped write and leaves the platform shelf alone",
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      if (scope === \"team\" && !team) {",
     replace: "      if (scope === \"platform\" && !team) {",
@@ -153,6 +166,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "every act on the knowledge base leaves a record naming who did it",
+    assertion: "knowledge_supersede leaves a record naming the caller",
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      platformEvent({\n" +
       "        actor: who.email, kind: \"knowledge.supersede\", subject: old_id,\n" +
@@ -166,6 +180,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "supersession stays on one shelf and knows which",
+    assertion: "a supersession spanning both shelves is refused",
     // THE REFUSAL, not the two shelf resolvers. `userRoot()` and `knowledgeRoot()` are each
     // named in the handler's own comments as well as its code, and this check does not strip
     // comments — so removing either lookup leaves it green on the prose explaining the
@@ -196,6 +211,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "every flow that gates a document also carries the handover",
+    assertion: "the derivation tests for a gated document rather than appending to every flow",
     subject: "packages/catalog/src/index.ts",
     find: "  if (!list.some((d) => d.gate) || list.some((d) => d.name === \"handover.md\")) return list;",
     replace: "  if (list.some((d) => d.name === \"handover.md\")) return list;",
@@ -206,6 +222,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "the handover carries a gate and does not carry the close",
+    assertion: "the derived handover is gated, so somebody signs it",
     subject: "packages/catalog/src/index.ts",
     find: "      gate: true,\n      requires: list.find((d) => d.closing)?.name",
     replace: "      gate: false,\n      requires: list.find((d) => d.closing)?.name",
@@ -216,6 +233,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "a closed initiative owes nothing, and can still be handed over",
+    assertion: "initiative_status reports no state after the close",
     subject: "services/zz-core/src/tools/initiative-status.ts",
     find: "    next = { action: \"closed\", waiting_on: \"nobody\",",
     replace: "    next = { action: \"handover\", waiting_on: \"agent\",",
@@ -227,6 +245,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "close names the handover document and not a file that was abolished",
+    assertion: "the close's return text does not name the abolished document",
     subject: "services/zz-core/src/tools/initiative-close.ts",
     find: "mints it and writes handover.md — the close satisfies",
     replace: "mints it and writes learnings.md — the close satisfies",
@@ -248,6 +267,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/knowledge.ts",
     target: "the spine states the handover sequence and nothing it superseded",
+    assertion: "the spine names the handover document every gated flow owes",
     subject: "skills/zz-platform/SKILL.md",
     find: "it writes `handover.md` and mints what generalises.",
     replace: "it writes `learnings.md` and mints what generalises.",
@@ -323,6 +343,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "the published schema is never weaker than the validator",
+    assertion: "the manifest schema is strict, so a mistyped key is refused rather than dropped",
     subject: "packages/contracts/src/index.ts",
     find: "}).strict();\nexport type CatalogManifest",
     replace: "});\nexport type CatalogManifest",
@@ -333,6 +354,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "a section rename the platform reports is a section the document has",
+    assertion: "one author heading containing two required sections is not reported as two renames",
     subject: "services/zz-core/src/write-guards.ts",
     find: "      if (out !== before) renamed.push(",
     replace: "      if (best !== before) renamed.push(",
@@ -343,6 +365,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "a subject tag the platform teaches is a subject tag it accepts",
+    assertion: "the tag rule refuses a tag that cannot be found again once stored",
     subject: "services/zz-core/src/paths.ts",
     find: "const TAG_TOKEN = /^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)?$/;",
     replace: "const TAG_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*(?::[A-Za-z0-9][A-Za-z0-9._-]*)?$/;",
@@ -363,6 +386,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "the published schema is exactly as strict as the validator",
+    assertion: "a minimum the validator enforces is published as that same minimum",
     subject: "packages/contracts/src/index.ts",
     find: "        if (c.kind === \"min\") out.minLength = c.value;",
     replace: "        if (c.kind === \"min\") out.maxLength = c.value;",
@@ -384,6 +408,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "a subject tag is reachable from the word it is about",
+    assertion: "the query tokenizer keeps a colon out of a token, which is what keeps the expansion live",
     subject: "services/zz-core/src/tools/knowledge-search.ts",
     find: "split(/[^a-z0-9\\p{Script=Han}]+/u)",
     replace: "split(/[^a-z0-9:\\p{Script=Han}]+/u)",
@@ -416,6 +441,23 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "a frontmatter field that will not appear is refused, never dropped",
+    assertion: "every tool taking `fields` runs the refusal over what the caller actually sent",
+    subject: "services/zz-core/src/tools/artifacts.ts",
+    find: "frontmatterRefusal(content, \"document_write\") ?? fieldRefusal(fields)",
+    replace: "frontmatterRefusal(content, \"document_write\") ?? fieldRefusal(undefined)",
+    planted: "document_write runs the frontmatter-name refusal over nothing, so it can no " +
+      "longer see the names the caller sent — `buildingBlock` where the skill said " +
+      "`building_block` is dropped in silence, and the call reports the document written " +
+      "with the field the flow was told to carry absent from it",
+    caveat: "the natural form of this defect — deleting the call — orphans the import under " +
+      "`noUnusedLocals` in both of the two files that make it, so the row would come back " +
+      "`build_failed` and measure nothing. Called with nothing is the same defect the check " +
+      "describes (the refusal no longer sees what arrived) in the only shape that compiles",
+  },
+  {
+    check: "scripts/gate/checks/documents-frontmatter.ts",
+    target: "a frontmatter field that will not appear is refused, never dropped",
+    assertion: "the frontmatter-name rule exists once, with no copy in a write path that drops instead",
     // THE DUPLICATE, NOT THE MISSING CALL. Deleting `fieldRefusal(fields)` from a write path
     // orphans its import, and `noUnusedLocals` turns the row into a build failure that
     // measures nothing. The second half of the rule is the one with a plantable defect, and
@@ -435,6 +477,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "a caller's words cannot write a frontmatter field",
+    assertion: "a tag cannot insert an envelope field through the renderer",
     subject: "services/zz-core/src/document-rules.ts",
     find: "keys.map((k) => `${k}: ${oneLine(env[k])}`).join(\"\\n\")",
     replace: "keys.map((k) => `${k}: ${env[k]}`).join(\"\\n\")",
@@ -446,6 +489,7 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-frontmatter.ts",
     target: "no write path lets a caller type an envelope field",
+    assertion: "a patch that relabels the flow governing the initiative is refused",
     subject: "services/zz-core/src/document-rules.ts",
     find: "  if (was === now) return null;",
     replace: "  const ownedOf = (b = \"\") => b.split(\"\\n\")\n" +

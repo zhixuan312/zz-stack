@@ -101,6 +101,33 @@ interface GateRun {
 }
 
 /**
+ * HOW LONG A CHILD MAY TAKE BEFORE IT IS A HANG RATHER THAN A SLOW RUN.
+ *
+ * `spawnSync` WITHOUT A TIMEOUT WAITS FOR EVER, AND SAYS NOTHING WHILE IT DOES. This cost
+ * three and a half hours on row 173 of a 417-row run: `npm run build` in the copy blocked
+ * inside `tsc -b` — state `S`, 0% CPU, not spinning — and the runner sat behind it with no
+ * output, no error and no way for a reader to tell a hang from a long build. The log's last
+ * line was a row that had already finished, so nothing on screen was wrong; there was just
+ * never another line.
+ *
+ * A measured gate run here is 27-31 seconds and a build is faster, so five minutes is not a
+ * budget, it is a diagnosis: past it the child is not working. Killed with SIGKILL rather
+ * than SIGTERM because the thing that hung was a grandchild — npm's `tsc` — and a polite
+ * signal to npm leaves it running.
+ */
+const CHILD_TIMEOUT_MS = 300_000;
+
+/** Kill anything the timed-out child left behind. `spawnSync`'s timeout kills the process it
+ *  started, not the tree below it, and an orphaned `tsc` holding the workspace is what makes
+ *  the NEXT row hang too — one stall becoming every stall after it. */
+function reapUnder(repo: string): void {
+  try {
+    execFileSync("pkill", ["-9", "-f", repo.replace(/[.[\]*+?^${}()|\\]/g, "\\$&")],
+      { stdio: "ignore" });
+  } catch { /* nothing matched, which is the ordinary case */ }
+}
+
+/**
  * THE BUILD IS RUN BEFORE THE GATE, AND THIS IS NOT AN OPTIMISATION.
  *
  * `scripts/gate.ts` statically imports every check module, and a check that reads a shared
@@ -119,7 +146,13 @@ interface GateRun {
  * every such check would "survive" a defect it never saw.
  */
 function prebuild(repo: string): string | null {
-  const r = spawnSync("npm", ["run", "-s", "build"], { cwd: repo, encoding: "utf8" });
+  const r = spawnSync("npm", ["run", "-s", "build"],
+    { cwd: repo, encoding: "utf8", timeout: CHILD_TIMEOUT_MS, killSignal: "SIGKILL" });
+  if (r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+    reapUnder(repo);
+    return `the build did not finish within ${CHILD_TIMEOUT_MS / 1000}s and was killed — ` +
+      "this is a hang, not a slow build; the row it belongs to measured nothing";
+  }
   if (r.status === 0) return null;
   return String(r.stdout || r.stderr || "").slice(-400);
 }
@@ -130,8 +163,15 @@ function prebuild(repo: string): string | null {
 function runGate(repo: string, reportPath: string): GateRun {
   const began = Date.now();
   const r = spawnSync("node", ["scripts/gate.ts", "--quiet", "--report", reportPath],
-    { cwd: repo, encoding: "utf8", env: { ...process.env, ZZ_GATE_RUNNING: "" } });
+    { cwd: repo, encoding: "utf8", env: { ...process.env, ZZ_GATE_RUNNING: "" },
+      timeout: CHILD_TIMEOUT_MS, killSignal: "SIGKILL" });
   const ms = Date.now() - began;
+  // A TIMED-OUT GATE IS NOT A PASSING GATE AND NOT A FAILING ONE. It is a run that did not
+  // happen, and it has to read that way or the row records an answer nobody got.
+  if (r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+    reapUnder(repo);
+    return { verdict: "TIMED OUT", exit: -1, failed: [], ms };
+  }
   if (!existsSync(reportPath)) {
     return { verdict: "NO REPORT", exit: r.status ?? -1, failed: [], ms };
   }

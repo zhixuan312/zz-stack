@@ -142,6 +142,14 @@ export const COV_DEPLOY: readonly MutationSpec[] = [
     find: "#   --gateway http://cred-proxy:8000",
     // SEAMED: the dotless host here is the defect being planted, not one this file commits.
     replace: "#   --gateway http://gate" + "way:8000",
+    // REDACTED, BECAUSE THE REPORT IS A TRACKED FILE THIS REPOSITORY SWEEPS TOO. The payload
+    // above is seamed so it never exists whole in this source — but `plant()` writes the
+    // RECONSTRUCTED string into testing/mutation-report.json, and that file is swept like any
+    // other. Seaming the spec without redacting the row just moves the finding from one
+    // tracked file to another, which is what the gate caught. `redact` base64-encodes it in
+    // the artifact, so the experiment stays exactly reproducible and the report is not the
+    // disclosure.
+    redact: true,
     planted: "the header of the script that runs every day-2 command tells an operator to " +
       "pass an address for a service that has never existed, so the first thing deploy/README " +
       "says to run after installing fails with a DNS error",

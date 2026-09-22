@@ -84,12 +84,18 @@ function stagesOf(flow: string): Array<{ step: string; produces: string; support
  *  where the fact came from — so a reader of the log can tell a migrated entry from one the
  *  platform recorded live, without having to date it. */
 async function record(pool: pg.Pool, runId: string, step: string, kind: string,
-                      about: string): Promise<void> {
+                      document: string): Promise<void> {
+  // THE SAME BACK-REFERENCE THE LIVE PATH BUILDS, and it has to be byte-identical or a
+  // migrated run and a live one would be judged by different graphs. A completion rule
+  // carrying `about` is satisfied only by an entry whose `about` is the ID of an entry of
+  // the named kind, so an approval or an audit points at `doc:<document>` and nothing else.
+  const documentEntry = `doc:${document}`;
   await pool.query(
     `insert into zz.control_evidence
        (run_id, entry_id, step_id, kind, about, note, recorded_at, recorded_by)
      values ($1,$2,$3,$4,$5,$6, now(), 'adopt-control-loop.ts')`,
-    [runId, `${step}/${kind}/${about}`, step, kind, about,
+    [runId, kind === "document" ? documentEntry : `${kind}:${document}`, step, kind,
+     kind === "document" ? document : documentEntry,
      "derived during migration from a fact the platform already held"]);
 }
 
@@ -172,7 +178,7 @@ async function main(): Promise<void> {
         const auditDoc = s.supports === "spec.md" ? "spec-audit.md" : "plan-audit.md";
         if (docs.has(auditDoc)) {
           evidence += 1;
-          if (APPLY && runId) await record(pool, runId, s.step, "audit", auditDoc);
+          if (APPLY && runId) await record(pool, runId, s.step, "audit", s.supports ?? auditDoc);
           continue;
         }
         waivers += 1; standIns += 1;

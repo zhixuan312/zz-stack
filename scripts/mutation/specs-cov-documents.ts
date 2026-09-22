@@ -398,6 +398,14 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
     // the gate goes red at baseline. `find` is left alone: it quotes the healthy current name.
     find: "call, the way `zz-platform`",
     replace: "call, the way `zz-back" + "bone`",
+    // REDACTED, BECAUSE THE REPORT IS A TRACKED FILE THIS REPOSITORY SWEEPS TOO. The payload
+    // above is seamed so it never exists whole in this source — but `plant()` writes the
+    // RECONSTRUCTED string into testing/mutation-report.json, and that file is swept like any
+    // other. Seaming the spec without redacting the row just moves the finding from one
+    // tracked file to another, which is what the gate caught. `redact` base64-encodes it in
+    // the artifact, so the experiment stays exactly reproducible and the report is not the
+    // disclosure.
+    redact: true,
     planted: "the skill every sdlc stage is told to read first sends the reader to a component " +
       "nothing else in the platform calls by that name and no plugin ships, so the rule it " +
       "cites for closing an initiative cannot be found by anybody who goes looking for it",

@@ -67,12 +67,15 @@ export async function noteSource(
 ): Promise<void> {
   const step = stepForSource(chain.stages as readonly DeclaredStage[], supports);
   if (!step) return;   // no stage produces a source supporting that document
-  await note(chain, relPath, "audit", by, team, step);
+  // AN AUDIT IS ABOUT THE DOCUMENT IT AUDITED, which is the document the source supports —
+  // not the source file itself. The rule says `{kind: "audit", about: "document"}`, and the
+  // only document entry in the run that answers it is the one for the audited document.
+  await note(chain, relPath, "audit", by, team, step, supports);
 }
 
 async function note(
   chain: Chain, relPath: string, fact: Fact, by: string, team: string | null,
-  step: string | null,
+  step: string | null, aboutDocument?: string | null,
 ): Promise<void> {
   if (!step || !team) return;
   const initiative = initiativeOf(relPath);
@@ -92,9 +95,30 @@ async function note(
   });
   if (!runId) return;
 
+  // THE BACK-REFERENCE IS THE WHOLE THING, and getting it wrong makes every gated step
+  // permanently unmeetable in a way nothing reports.
+  //
+  // A completion rule carrying `about` is satisfied only by an entry whose `about` is the ID
+  // of another entry of the named kind — `met()` reads
+  // `evidence.some(p => p.kind === rule.about && p.id === e.about)`. Four of this flow's seven
+  // steps carry one: `{kind: "approval", about: "document"}` and `{kind: "audit", about:
+  // "document"}`. An approval recorded `about` a FILENAME satisfies nothing, because no entry
+  // has that filename as its id.
+  //
+  // This was written with `about: relPath` and committed, and the gate stayed green, and the
+  // door census stayed green, and nothing said a word — because no instrument here asks
+  // whether a real run can reach a grant. Driving one against a real database is what found
+  // it: the whole declared procedure, every document and approval recorded, still refused.
+  //
+  // So the id is derived from the DOCUMENT alone — not from the step, not from the fact —
+  // and an approval or an audit points at it. Deterministic, so a replay rebuilds the same
+  // graph, and stable across the two tools that record the two halves.
+  const documentEntry = `doc:${aboutDocument ?? relPath}`;
   await recordEvidence(runId, step, {
-    id: `${step}/${fact}/${relPath}`, stepId: step, kind: fact,
-    about: relPath, note: `recorded by the platform when ${fact} landed`,
+    id: fact === "document" ? documentEntry : `${fact}:${relPath}`,
+    stepId: step, kind: fact,
+    about: fact === "document" ? relPath : documentEntry,
+    note: `recorded by the platform when ${fact} landed`,
   }, by);
 }
 

@@ -84,18 +84,42 @@ function stagesOf(flow: string): Array<{ step: string; produces: string; support
  *  where the fact came from — so a reader of the log can tell a migrated entry from one the
  *  platform recorded live, without having to date it. */
 async function record(pool: pg.Pool, runId: string, step: string, kind: string,
-                      document: string): Promise<void> {
+                      initiative: string, document: string): Promise<void> {
   // THE SAME BACK-REFERENCE THE LIVE PATH BUILDS, and it has to be byte-identical or a
   // migrated run and a live one would be judged by different graphs. A completion rule
   // carrying `about` is satisfied only by an entry whose `about` is the ID of an entry of
   // the named kind, so an approval or an audit points at `doc:<document>` and nothing else.
-  const documentEntry = `doc:${document}`;
+  // INITIATIVE-RELATIVE, LIKE THE LIVE PATH, and this is the third defect of this exact
+  // shape tonight. The flow's manifest names a document `spec.md`; the platform records it
+  // as `<initiative>/spec.md`. Writing `doc:spec.md` here produced a graph that was
+  // internally consistent and therefore SATISFIED ITS OWN RULES — so nothing failed, nothing
+  // was refused, and an initiative with both live and migrated evidence quietly carried two
+  // parallel graphs in two namespaces. Found by migrating an initiative that had just been
+  // driven through the real doors and reading both sets of rows side by side.
+  const path = `${initiative}/${document}`;
+  const documentEntry = `doc:${path}`;
+  // IDEMPOTENT, because a migration that cannot be re-run is a migration nobody dares fix.
+  // `zz.control_evidence` is append-only by design and carries no unique key — a fact is a
+  // fact and the log is the history — so the guard is here: an entry this run would add and
+  // that is already on the run is a fact already recorded, not a second one.
+  // AN AUDIT IS SKIPPED IF THE STEP ALREADY HAS ONE, not merely if this exact id is present.
+  // The live path keys an audit on the SOURCE that carried it — one row per round, which is
+  // right — while this derives one from the audited DOCUMENT, because a migrated initiative
+  // has no source to name. Deduplicating on the id alone would add a third row to a step that
+  // already had two real ones, and a reader counting rounds would be told a round happened
+  // that nobody ran. For a document or an approval the id IS the identity, so that case keeps
+  // the narrower guard.
+  const guard = kind === "audit"
+    ? `where not exists (select 1 from zz.control_evidence
+                          where run_id = $1 and step_id = $3 and kind = 'audit')`
+    : `where not exists (select 1 from zz.control_evidence where run_id = $1 and entry_id = $2)`;
   await pool.query(
     `insert into zz.control_evidence
        (run_id, entry_id, step_id, kind, about, note, recorded_at, recorded_by)
-     values ($1,$2,$3,$4,$5,$6, now(), 'adopt-control-loop.ts')`,
-    [runId, kind === "document" ? documentEntry : `${kind}:${document}`, step, kind,
-     kind === "document" ? document : documentEntry,
+     select $1,$2,$3,$4,$5,$6, now(), 'adopt-control-loop.ts'
+      ${guard}`,
+    [runId, kind === "document" ? documentEntry : `${kind}:${path}`, step, kind,
+     kind === "document" ? path : documentEntry,
      "derived during migration from a fact the platform already held"]);
 }
 
@@ -111,15 +135,29 @@ async function main(): Promise<void> {
   // query asks for facts, not verdicts: which documents exist, which are approved. What that
   // means for a step is decided against the flow's manifest, not here.
   const { rows } = await pool.query(`
-    select initiative, flow,
+    -- THE FLOW IS A PROPERTY OF THE INITIATIVE, NOT OF EVERY ROW IN IT. A source carries no
+    -- a flow stamp — the envelope puts it on documents the flow declares, and a source is not one
+    -- — so filtering every row on flow = 'sdlc-flow' drops every source before the grouping
+    -- ever sees it. Written that way, this counted zero source-form audits and would have
+    -- waived every audit round recorded the way the live path records them. Found by running
+    -- it against a database where an audit had just been added through the real door.
+    select initiative, max(flow) filter (where flow is not null and flow <> '') as flow,
            array_agg(distinct split_part(path,'/',array_length(string_to_array(path,'/'),1))) as docs,
            array_agg(distinct split_part(path,'/',array_length(string_to_array(path,'/'),1)))
              filter (where status = 'approved') as approved,
+           -- BOTH FORMS OF AUDIT EVIDENCE, because this platform has produced both. Historically
+           -- an audit round wrote a spec-audit.md DOCUMENT; the flow's manifest declares the
+           -- audit stages as producing a SOURCE that supports the document they audited, and the
+           -- live path records it that way. Counting only one form would waive audits that
+           -- happened — and which form it missed would depend on when the initiative ran.
+           array_agg(distinct supports) filter (where type = 'source' and supports is not null)
+             as supported,
            bool_or(outcome is not null or closed_by is not null) as closed,
            min(team_slug) as team
       from zz.doc
-     where initiative is not null and flow is not null and flow <> ''
-     group by initiative, flow
+     where initiative is not null
+     group by initiative
+    having max(flow) filter (where flow is not null and flow <> '') is not null
      order by initiative`);
 
   console.log(`  ${rows.length} initiative(s) declare a flow`);
@@ -142,6 +180,7 @@ async function main(): Promise<void> {
 
     const docs = new Set((r.docs as unknown as string[] | null) ?? []);
     const approved = new Set((r.approved as unknown as string[] | null) ?? []);
+    const supported = new Set((r.supported as unknown as string[] | null) ?? []);
     // THE STEPS COME FROM THE FLOW'S MANIFEST, NOT FROM A TABLE IN THIS FILE. An earlier
     // draft of this script listed the seven stages inline, which would have been a second
     // declaration of something `catalog/sdlc/sdlc-flow/flow.json` already declares — the
@@ -176,9 +215,9 @@ async function main(): Promise<void> {
         // The store records that as the audit document sitting beside the one it audited, so
         // its presence is the fact this asks for.
         const auditDoc = s.supports === "spec.md" ? "spec-audit.md" : "plan-audit.md";
-        if (docs.has(auditDoc)) {
+        if (docs.has(auditDoc) || (s.supports !== undefined && supported.has(s.supports))) {
           evidence += 1;
-          if (APPLY && runId) await record(pool, runId, s.step, "audit", s.supports ?? auditDoc);
+          if (APPLY && runId) await record(pool, runId, s.step, "audit", String(r.initiative), s.supports ?? auditDoc);
           continue;
         }
         waivers += 1; standIns += 1;
@@ -193,7 +232,9 @@ async function main(): Promise<void> {
         if (APPLY && runId) {
           await pool.query(
             `insert into zz.control_waiver (run_id, step_id, kind, ground, recorded_at, recorded_by)
-             values ($1,$2,'audit',$3, now(), 'adopt-control-loop.ts')`,
+             select $1,$2,'audit',$3, now(), 'adopt-control-loop.ts'
+              where not exists (select 1 from zz.control_waiver
+                                 where run_id = $1 and step_id = $2 and kind = 'audit')`,
             [runId, s.step,
              `no ${s.step} round was performed and none will now be — this initiative predates ` +
              `automatic control, migrated ${WHEN}. A stand-in document records the gap; it is ` +
@@ -203,11 +244,11 @@ async function main(): Promise<void> {
       }
       if (docs.has(s.produces)) {
         evidence += 1;
-        if (APPLY && runId) await record(pool, runId, s.step, "document", s.produces);
+        if (APPLY && runId) await record(pool, runId, s.step, "document", String(r.initiative), s.produces);
       }
       if (approved.has(s.produces)) {
         evidence += 1;
-        if (APPLY && runId) await record(pool, runId, s.step, "approval", s.produces);
+        if (APPLY && runId) await record(pool, runId, s.step, "approval", String(r.initiative), s.produces);
       }
     }
   }

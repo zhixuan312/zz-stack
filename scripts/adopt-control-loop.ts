@@ -46,12 +46,33 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 const APPLY = process.argv.includes("--apply");
-const DRY = !APPLY;
+const STAND_INS = process.argv.includes("--stand-ins");
+const DRY = !APPLY && !STAND_INS;
+
+/**
+ * THE MARKER THAT MAKES A STAND-IN INERT, and it travels with the document.
+ *
+ * A stand-in sits at `spec-audit.md` — the same path a real audit round used to write to —
+ * and the derivation below reads the presence of that file as the fact "a round happened".
+ * So writing the stand-ins re-created, through the back door, the exact thing this script's
+ * header forbids: a second `--apply` counted all 22 as audits, reported 181 evidence entries
+ * instead of 159, and dropped the waivers to zero. Nothing refused it. The log would simply
+ * have said an audit existed for 22 rounds nobody ran.
+ *
+ * Found by running the migration again after writing the stand-ins, which is the only way it
+ * shows: the first run is correct, and every run after it is wrong.
+ *
+ * The discriminator is in the TITLE rather than in a side table, because a reader asking
+ * "did this round happen" may be looking at the document and not at this platform's control
+ * tables — and because control tables are the thing a migration rebuilds, so a stand-in that
+ * were only recognisable there would come back as evidence the moment they were rebuilt.
+ */
+const NO_ROUND = "— no round was performed";
 
 /** The stand-in's body. It is the whole content, and it is deliberately not audit-shaped:
  *  a reader arriving at this file must not be able to mistake it for a round that happened. */
 const STAND_IN = (step: string, initiative: string, when: string) =>
-  `# ${step} — no round was performed\n\n` +
+  `# ${step} ${NO_ROUND}\n\n` +
   `**This is a stand-in, not a record of work.** No ${step} round was run for ` +
   `\`${initiative}\`. This file exists so the gap is visible in the flow rather than inferred ` +
   `from an absence, and so the initiative can be migrated under the control loop without ` +
@@ -141,8 +162,19 @@ async function main(): Promise<void> {
     -- ever sees it. Written that way, this counted zero source-form audits and would have
     -- waived every audit round recorded the way the live path records them. Found by running
     -- it against a database where an audit had just been added through the real door.
+    -- A STAND-IN IS NOT A DOCUMENT FOR THIS PURPOSE. It occupies the audit slot deliberately,
+    -- so a human reader sees the gap; counting its presence as the round having happened is
+    -- the one thing that must not follow from writing it. Excluded here — once, in the
+    -- aggregate every branch below reads — rather than in the audit branch alone, so a later
+    -- clause that asks docs.has(...) cannot be written wrong.
     select initiative, max(flow) filter (where flow is not null and flow <> '') as flow,
-           array_agg(distinct split_part(path,'/',array_length(string_to_array(path,'/'),1))) as docs,
+           array_agg(distinct split_part(path,'/',array_length(string_to_array(path,'/'),1)))
+             filter (where title is null or position($1 in title) = 0) as docs,
+           -- EVERY file in the initiative, stand-ins included. docs answers "what happened";
+           -- this answers "what is already sitting in the slot", and the two differ by exactly
+           -- the stand-ins. Only the second can say whether a document is still owed.
+           array_agg(distinct split_part(path,'/',array_length(string_to_array(path,'/'),1)))
+             as standing,
            array_agg(distinct split_part(path,'/',array_length(string_to_array(path,'/'),1)))
              filter (where status = 'approved') as approved,
            -- BOTH FORMS OF AUDIT EVIDENCE, because this platform has produced both. Historically
@@ -158,13 +190,13 @@ async function main(): Promise<void> {
      where initiative is not null
      group by initiative
     having max(flow) filter (where flow is not null and flow <> '') is not null
-     order by initiative`);
+     order by initiative`, [NO_ROUND]);
 
   console.log(`  ${rows.length} initiative(s) declare a flow`);
   if (DRY) console.log("  DRY RUN — nothing will be written. Pass --apply to act.\n");
 
   let runs = 0, evidence = 0, waivers = 0, standIns = 0, ungoverned = 0;
-  const owed: string[] = [];
+  const owed: Array<{ team: string; path: string }> = [];
 
   /** The digest sdlc-flow was approved under. Read from the allowlist the service ships, so a
    *  run records what governed it rather than what a later release happens to carry. */
@@ -181,6 +213,7 @@ async function main(): Promise<void> {
     const docs = new Set((r.docs as unknown as string[] | null) ?? []);
     const approved = new Set((r.approved as unknown as string[] | null) ?? []);
     const supported = new Set((r.supported as unknown as string[] | null) ?? []);
+    const standing = new Set((r.standing as unknown as string[] | null) ?? []);
     // THE STEPS COME FROM THE FLOW'S MANIFEST, NOT FROM A TABLE IN THIS FILE. An earlier
     // draft of this script listed the seven stages inline, which would have been a second
     // declaration of something `catalog/sdlc/sdlc-flow/flow.json` already declares — the
@@ -228,7 +261,12 @@ async function main(): Promise<void> {
         // the platform did not stamp, which is the "third source" of envelope fields this
         // platform closed. So the waiver lands now and names the document it is owed, and
         // `--stand-ins` writes them through the proper door afterwards.
-        owed.push(`${r.initiative}/${auditDoc}`);
+        // OWED ONLY IF NOTHING STANDS THERE YET. `standing` is the raw file list, before the
+        // stand-ins are filtered out of `docs`: the waiver is owed a document, and one that
+        // has already been written discharges that debt without discharging the requirement.
+        if (!standing.has(auditDoc)) {
+          owed.push({ team: String(r.team ?? ""), path: `${r.initiative}/${auditDoc}` });
+        }
         if (APPLY && runId) {
           await pool.query(
             `insert into zz.control_waiver (run_id, step_id, kind, ground, recorded_at, recorded_by)
@@ -261,11 +299,10 @@ async function main(): Promise<void> {
   if (owed.length) {
     console.log(`\n  ${owed.length} stand-in document(s) owed, to be written through the ` +
       `platform's own document path rather than into the store behind it:`);
-    for (const o of owed.slice(0, 6)) console.log(`      ${o}`);
+    for (const o of owed.slice(0, 6)) console.log(`      ${o.team}/${o.path}`);
     if (owed.length > 6) console.log(`      … and ${owed.length - 6} more`);
-    console.log(`  Each will carry, verbatim:\n` +
-      STAND_IN("the audit stage", "the initiative", WHEN).split("\n").slice(0, 3).map((l) => `      ${l}`).join("\n"));
   }
+  if (STAND_INS) await writeStandIns(owed, WHEN);
   if (DRY) console.log("\n  DRY RUN — nothing was written.");
   await pool.end();
 }
@@ -274,3 +311,85 @@ main().catch((e: unknown) => {
   console.error(`  FAILED — ${e instanceof Error ? e.message : String(e)}`);
   process.exit(1);
 });
+
+/**
+ * Write the owed stand-ins THROUGH THE PLATFORM'S OWN DOOR, not into the store behind it.
+ *
+ * WHY NOT AN INSERT. Every document in `zz.doc` carries an envelope — status, flow, team,
+ * who wrote it, when — and exactly one thing is allowed to decide those fields: the document
+ * path in `zz-core`. A migration that inserted rows directly would be a second author of the
+ * envelope, producing documents the platform never stamped and which differ from real ones in
+ * ways nobody can see until something reads them. This platform spent an initiative closing
+ * that exact hole; the migration for it must not reopen it.
+ *
+ * THE TOKEN DECIDES THE TEAM, NOT A VARIABLE. `session_whoami` is called first and the team
+ * comes back in the ANSWER; only the owed documents belonging to that team are written. A
+ * `ZZ_TEAM` input would let a typo write fourteen documents into somebody else's store, and
+ * the person who typed it would have no way to tell until the other team read them.
+ *
+ * IDEMPOTENT BY CONSTRUCTION. A stand-in that has been written exists in `zz.doc`, so the
+ * derivation above no longer counts its step as un-evidenced and no longer owes it. Running
+ * this twice writes nothing the second time; there is no marker to keep in step.
+ *
+ *   ZZ_URL=… ZZ_PAT=… node scripts/adopt-control-loop.ts --stand-ins
+ */
+async function writeStandIns(
+  owed: ReadonlyArray<{ team: string; path: string }>, when: string,
+): Promise<void> {
+  const url = process.env.ZZ_URL ?? "";
+  const pat = process.env.ZZ_PAT ?? "";
+  if (!url || !pat) {
+    console.error("\n  REFUSED — --stand-ins needs ZZ_URL and ZZ_PAT. These are written " +
+                  "through the platform's document path, which means a door and a token.");
+    process.exit(2);
+  }
+
+  const call = async (tool: string, args: Record<string, unknown>): Promise<string> => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${pat}`, "Content-Type": "application/json",
+                 "Accept": "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+                             params: { name: tool, arguments: args } }),
+    });
+    const body = await res.text();
+    const line = body.split("\n").find((l) => l.startsWith("data: "))?.slice(6) ?? body;
+    try {
+      const parsed = JSON.parse(line) as
+        { result?: { content?: { text?: string }[] }; error?: unknown };
+      return parsed.result?.content?.[0]?.text ?? JSON.stringify(parsed.error ?? parsed);
+    } catch { return line; }
+  };
+
+  const who = await call("session_whoami", {});
+  const team = (/"team"\s*:\s*"([^"]+)"/.exec(who) ?? [])[1];
+  if (!team) {
+    console.error(`\n  REFUSED — the door did not say which team this token acts for: ${who.slice(0, 200)}`);
+    process.exit(2);
+  }
+
+  const mine = owed.filter((o) => o.team === team);
+  const others = owed.length - mine.length;
+  console.log(`\n  writing stand-ins as team ${team}: ${mine.length} of ${owed.length} owed`);
+  if (others) {
+    console.log(`  ${others} belong to another team and are NOT written by this token — run ` +
+                `this again with a token for that team. They stay owed, and the waiver that ` +
+                `names each one is already on the record either way.`);
+  }
+
+  let wrote = 0, refused = 0;
+  for (const o of mine) {
+    const step = o.path.endsWith("spec-audit.md") ? "sdlc-spec-audit" : "sdlc-plan-audit";
+    const initiative = o.path.split("/")[0] ?? o.path;
+    const answer = await call("document_write",
+      { path: o.path, content: STAND_IN(step, initiative, when) });
+    // The door answers with the written path on success and a sentence naming what is wrong
+    // otherwise. A refusal is REPORTED AND NOT RETRIED: it means a guard this migration does
+    // not understand applies to that document, and writing past it is how a migration puts
+    // something in a store that the platform would not have accepted.
+    if (answer.includes(o.path) && !/error|refus|cannot/i.test(answer)) { wrote += 1; }
+    else { refused += 1; console.log(`      REFUSED ${o.path}: ${answer.slice(0, 160)}`); }
+  }
+  console.log(`  wrote ${wrote}, refused ${refused}`);
+  if (refused) process.exitCode = 1;
+}

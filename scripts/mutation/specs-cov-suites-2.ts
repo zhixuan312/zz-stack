@@ -160,6 +160,12 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     find: "`document_write` before you return",
     // SEAMED: a pre-rename tool name in backticks, which `core-names.ts` reports anywhere.
     replace: "`write" + "_file` before you return",
+    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
+    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
+    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
+    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
+    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    redact: true,
     planted: "the review skill tells the model to call a tool by its pre-rename spelling, which " +
       "no door registers any more. The model gets 'unknown tool' in the middle of the closing " +
       "stage and improvises " +
@@ -174,6 +180,12 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
     find: "how_this_works: 'skill_read(\"zz-platform\")",
     // SEAMED: the retired skill name, which `skill-renames.ts` sweeps every tracked file for.
     replace: "how_this_works: 'skill_read(\"zz-back" + "bone\")",
+    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
+    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
+    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
+    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
+    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    redact: true,
     planted: "session_whoami points every flowless session at a skill that was renamed away and " +
       "no longer exists — so the single instruction a client which reads nothing else ever " +
       "receives leads nowhere, and the gates and the envelope go unread",

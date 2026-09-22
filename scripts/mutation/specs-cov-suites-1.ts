@@ -186,6 +186,11 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
     subject: "skills/zz-platform/SKILL.md",
     find: "| skills | `/core/mcp` | `skill_list` `skill_read` |",
     replace: `| skills | \`/core/mcp\` | \`${MERGED_AWAY}\` \`skill_read\` |`,
+    // REDACTED. The payload is a pre-rename tool name, and this repository sweeps every tracked
+    // file for those — including testing/mutation-report.json, which plant() writes the
+    // RECONSTRUCTED string into. Seaming the source keeps the name out of THIS file and the
+    // report still carries it whole. redact base64-encodes it there.
+    redact: true,
     planted: "the platform skill's door table names the listing tool that was merged away " +
       "into `skill_list(owner?)` and is registered by no door, so an agent that follows the " +
       "one document describing the surface fails with \"tool not found\" mid-stage, with " +

@@ -201,6 +201,12 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     // rename sweep reads every tracked file under scripts/ and cannot tell a spec quoting a
     // dead skill name from a caller still using one.
     replace: "name: zz-back" + "bone",
+    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
+    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
+    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
+    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
+    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    redact: true,
     planted: "the platform skill announces itself under its pre-rename name again, in the " +
       "frontmatter skill_read resolves by, so the rename is a directory that moved and a name " +
       "that did not — every caller asking for zz-platform gets a skill that says it is " +

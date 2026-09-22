@@ -79,6 +79,11 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     // SEAMED: the payload is a pre-rename tool name, which is the whole point of it — and the
     // door-naming sweep reads this file too. `plant()` joins it back before it is written.
     replace: 't.includes("skill_vi' + 'ew")',
+    // REDACTED. The payload is a pre-rename tool name, and this repository sweeps every tracked
+    // file for those — including testing/mutation-report.json, which plant() writes the
+    // RECONSTRUCTED string into. Seaming the source keeps the name out of THIS file and the
+    // report still carries it whole. redact base64-encodes it there.
+    redact: true,
     planted: "the tool report filters resolved subjects for a name the resolver has already " +
       "folded away. It matches no row, ever, so the \"skills this run loaded\" section " +
       "silently stops rendering and the report looks complete while a whole section is gone",
@@ -90,6 +95,12 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     subject: "packages/contracts/src/alias.ts",
     find: '  write_file: "document_write",',
     replace: '  write_file: "document_revise",',
+    // REDACTED. The payload is a pre-rename tool or skill name, and this repository sweeps
+    // every tracked file for those — including `testing/mutation-report.json`, which `plant()`
+    // writes the RECONSTRUCTED string into. Seaming the source is not enough: the seam keeps
+    // the name out of THIS file and the report still carries it whole. `redact` base64-encodes
+    // it there, so the experiment stays exactly reproducible and neither file is the finding.
+    redact: true,
     planted: "calls made before the rename are folded onto the wrong survivor. A window " +
       "spanning the rename reads as one series for write_file and document_revise and another " +
       "for document_write, so both tools' usage figures are wrong and neither is obviously so",

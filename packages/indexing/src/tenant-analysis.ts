@@ -52,14 +52,23 @@ import { createHash } from "node:crypto";
 
 // ── the analyzer's own version, and the size the kernel is contracted to refuse ─────────────
 
-/** `zz-lexical-v2` — named so a later incompatible analyzer is `zz-lexical-v3` rather than a
- *  silent behavior change under the same name. Passed by callers into `derivationFingerprint`
- *  as the `analyzer` field; kept here, once, so "which version is this build" has one answer.
- *  Bumped from `zz-lexical-v1` by `analyze`'s Han unigram/bigram segmentation below — a real
- *  behavior change under the same source bytes, so every row a rebuild derived under v1 must
- *  read as stale under `derivationFingerprint` rather than silently keeping v1's coverage. */
-export const ANALYZER_NAME = "zz-lexical-v2";
-export const CURRENT_ANALYZER_VERSION = 2;
+/** `zz-lexical-v3` — named so an incompatible analyzer is a NEW name rather than a silent
+ *  behavior change under the old one. Passed by callers into `derivationFingerprint` as the
+ *  `analyzer` field; kept here, once, so "which version is this build" has one answer.
+ *
+ *  v1 -> v2 was `analyze`'s Han unigram/bigram segmentation. v2 -> v3 is `bodyTsvParams`
+ *  building the Latin half of `body_tsv` from the row's RAW text instead of from this
+ *  analyzer's already-split words — see `RowVector.raw` for the measurement. `analyze` itself
+ *  is unchanged, and the name still has to move: this column records which derivation wrote a
+ *  row's vector, and a v2 vector is not interchangeable with a v3 one.
+ *
+ *  IT IS ALSO WHAT LETS THE BROKEN ROWS BE REPAIRED. The rederivation walker rewrites a row
+ *  only when `analyzer_version !== request.analyzer`. Leaving the name at v2 would make every
+ *  row already written under the broken construction permanently invisible to the pass meant
+ *  to fix it, and a `--force` flag to work around that is the transitional toggle this
+ *  repository does not keep. */
+export const ANALYZER_NAME = "zz-lexical-v3";
+export const CURRENT_ANALYZER_VERSION = 3;
 
 /** 8 MiB. New artifact text above this is refused by the kernel BEFORE commit — cheaply,
  *  before any passage or identifier work runs on bytes that were never going to be stored.
@@ -370,6 +379,39 @@ export interface RowVector {
    *  from — not grouped by weight; `termsByWeight` below does that for a caller that wants
    *  `to_tsvector('simple', …)`'s three space-joined strings. */
   readonly terms: readonly RowVectorTerm[];
+  /** The RAW text of each weighted field, exactly as the row holds it — the Latin half of
+   *  `body_tsv` is built from this and never from `terms`.
+   *
+   *  WHY THE RAW TEXT IS CARRIED RATHER THAN RECONSTRUCTED. The Latin half must be tokenized
+   *  by the SAME engine that tokenizes the query, and that engine is PostgreSQL's own parser
+   *  running over unsplit text. Handing it this analyzer's already-split words instead
+   *  destroys every compound token the parser would have emitted, while the read path — which
+   *  does not pre-split — goes on asking for them:
+   *
+   *      to_tsvector('english', 'the sdlc-deck plan')  -> 'deck':4 'plan':5 'sdlc':3 'sdlc-deck':2
+   *      to_tsvector('english', 'sdlc deck plan')      -> 'deck':2 'plan':3 'sdlc':1
+   *      websearch_to_tsquery('english', 'Plan: progressive sdlc-deck')
+   *                                                    -> 'plan' & 'progress' & 'sdlc-deck' <-> 'sdlc' <-> 'deck'
+   *
+   *  The query wants the compound AND the adjacency the parser would have given it. Neither
+   *  survives pre-splitting, so the match is simply false — silently, with a vector that looks
+   *  full and a row that looks indexed.
+   *
+   *  MEASURED, not reasoned: on a faithful copy of this deployment, 1002 of 1010 rows written
+   *  before this analyzer retrieved themselves by their own title, and 0 of the 23 written by
+   *  it did. Rederiving the corpus under the pre-split construction took self-retrieval from
+   *  1002 to 255 — 778 documents that could no longer find themselves — because this corpus is
+   *  made of `sdlc-flow`, `zz-core`, `plan-audit` and dated filenames.
+   *
+   *  It lives on the vector rather than in a second argument to `bodyTsvParams` so that the
+   *  two halves of one row cannot be built from different text: there is no call site that
+   *  could pass a body the terms were not derived from.
+   *
+   *  The Han half still comes from `terms`, unchanged and through `simple`, because those
+   *  unigrams are exactly what PostgreSQL's parser cannot produce. `english` over the raw text
+   *  additionally emits each unspaced Han run as one opaque lexeme; that is the pre-v2
+   *  behaviour, it costs nothing, and the retrievable unigrams come from the other half. */
+  readonly raw: Readonly<Record<RowVectorWeight, string>>;
   readonly analyzer: string;
 }
 
@@ -409,12 +451,14 @@ export function buildRowVector(input: {
   readonly tags: readonly string[];
   readonly body: string;
 }): RowVector {
+  const tags = input.tags.join(" ");
   return {
     terms: [
       ...fieldTerms(input.title, "A"),
-      ...fieldTerms(input.tags.join(" "), "B"),
+      ...fieldTerms(tags, "B"),
       ...fieldTerms(input.body, "C"),
     ],
+    raw: { A: input.title, B: tags, C: input.body },
     analyzer: ANALYZER_NAME,
   };
 }
@@ -482,9 +526,9 @@ export function bodyTsvSql(first: number): string {
 export function bodyTsvParams(vector: RowVector): string[] {
   return [
     TEXT_SEARCH_CONFIG.latin, TEXT_SEARCH_CONFIG.han,
-    termsByWeight(vector, "A", "latin"), termsByWeight(vector, "A", "han"),
-    termsByWeight(vector, "B", "latin"), termsByWeight(vector, "B", "han"),
-    termsByWeight(vector, "C", "latin"), termsByWeight(vector, "C", "han"),
+    vector.raw.A, termsByWeight(vector, "A", "han"),
+    vector.raw.B, termsByWeight(vector, "B", "han"),
+    vector.raw.C, termsByWeight(vector, "C", "han"),
   ];
 }
 

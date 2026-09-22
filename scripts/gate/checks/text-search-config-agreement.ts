@@ -89,8 +89,16 @@ check("the analyzer's opaque terms and its stemmable words are stored through di
   for (const weight of ["A", "B", "C"] as const) {
     for (const term of termsByWeight(v, weight, "latin").split(" ").filter(Boolean)) {
       if (han.test(term) || bigram.test(term)) {
-        return `weight ${weight}'s latin half carries ${term}, which the backend would re-parse or `
-             + `stem — an analyzer term the database rewrites cannot be queried back`;
+        // WHAT THIS GUARDS SINCE zz-lexical-v3, which is no longer the storage shape. The
+        // latin half of `body_tsv` is now the row's RAW text, so this list decides nothing
+        // about what is stored. It decides the analyzer's FIELD CLASSIFICATION, and the read
+        // path spends that: `buildSearchPredicate` routes a Han-bearing clause to a literal
+        // `body` match precisely because `websearch_to_tsquery` cannot see inside an unspaced
+        // Han run. A Han scalar classified `latin` is a clause sent down the lane that cannot
+        // match it.
+        return `weight ${weight}'s latin terms carry ${term}, so the analyzer classified a Han `
+             + `scalar as a Latin word — the read path routes that clause to the lane that `
+             + `cannot see inside an unspaced Han run, and it matches nothing`;
       }
     }
     for (const term of termsByWeight(v, weight, "han").split(" ").filter(Boolean)) {

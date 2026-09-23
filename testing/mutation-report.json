@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "produced_at": "2026-09-22T16:44:59.224Z",
+  "produced_at": "2026-09-23T03:31:58.592Z",
   "produced_by": "scripts/mutation-run.ts",
-  "source_commit": "13c86292f94454701021e8407d4d67b65c883edf",
-  "source_dirty_paths": 5,
-  "snapshot_tree_sha256": "1bd37b7a238f736698066913d3bcd256cff6d93fb76a5cb30444869dc6bf57b7",
+  "source_commit": "d23b8de2ceb5187396e624acf8719031d6a2e5e6",
+  "source_dirty_paths": 2,
+  "snapshot_tree_sha256": "8d5fa5925e8300fe3608491b2ac3e83f070a4e124cf5f346253ea4f669c1ff7a",
   "declared_by": "git ls-files --cached --others --exclude-standard",
   "declared_count": 73,
   "baseline_verdict": "PASSED",
@@ -19,7 +19,7 @@
     ],
     "why_the_build_is_separate": "scripts/gate.ts statically imports every check module, and an ES module graph is instantiated in full before any module body is evaluated — so packages/contracts/dist is already linked when check(\"tsc -b\") rebuilds it, and the rebuilt output cannot reach the process that produced it. Measured: a pristine src with a stale dist rebuilt dist correctly AND failed the check that reads it. Without a separate build step a defect planted in a shared package never reaches the check that imports it.",
     "failed_means": "the target check is in this run's failed_ids and was NOT in the baseline's",
-    "rows_are_per_registered_check": "One row per registered check(), not per check FILE. That distinction is load-bearing: the 73 declared files register 418 checks between them, and thirty-odd files register more than one — so a file-shaped roster would let one mutation stand in for every check in its file. Rows may share a `check` path; each names its own `target`, and a mutation that only trips a SIBLING check in the same file is a failed experiment, not evidence about the target.",
+    "rows_are_per_registered_check": "One row per registered check(), not per check FILE. That distinction is load-bearing: the 73 declared files register 425 checks between them, and thirty-odd files register more than one — so a file-shaped roster would let one mutation stand in for every check in its file. Rows may share a `check` path; each names its own `target`, and a mutation that only trips a SIBLING check in the same file is a failed experiment, not evidence about the target.",
     "a_green_row_establishes_one_assertion": "Rows are per registered check, and a registered check may carry SEVERAL INDEPENDENT assertions. A green row therefore establishes that one named assertion of that check can fail — not the check entire. Where a row is about one of several, it says which in `assertion`; two rows may share a `target` and be about different claims.",
     "the_class_nobody_has_counted": "Per-file was fixed by going per-registered-check. Per-ASSERTION is the same problem one level further down: a check with two independent assertions needs two mutations to be fully established. `trial-analyzer-agreement.ts` has two and now has two rows. `rederivation-generation.ts` — the precedent that check was modelled on — has the same shape, an import assertion and a vector-agreement assertion, with one row against it. NOBODY HAS COUNTED HOW MANY OTHERS THERE ARE, and this task deliberately did not sweep for them: it is work for whoever writes the next set of checks, alongside the dormant regions this run found (a clause guarded by a condition the data never takes, invisible to a mutation run as much as to a reader).",
     "a_subject_too_simple_to_fail": "The third shape, and the one that hid a real kernel defect the longest. `evaluate` checked only the step immediately before, so a seven-step procedure was verified one link deep and a rule-free step became a permanent hole. Two fixtures watched it and neither could disagree with it: the second-flow fixture is two steps, so it has no \"three steps back\" to get wrong, and the negative control gives every step a sign-off rule, so it has no rule-free step in the middle. A test whose SUBJECT cannot express the failure passes for the same reason an unreachable clause does, and a mutation run cannot tell the two apart from the outside — in both cases the defect is planted and nothing goes red. What caught it was giving the check a subject that could fail: the procedure the release actually registers.",
@@ -1641,25 +1641,24 @@
       "baseline_red": false,
       "failed_ids": [
         "a close says only what is known and a handover claims only what it verified",
-        "the close negative control fires on every planted fault",
-        "nothing is exported that nobody imports"
+        "the close negative control fires on every planted fault"
       ],
       "new_failures": [
         "a close says only what is known and a handover claims only what it verified",
         "the close negative control fires on every planted fault"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "21f16f9aa6c57575be89a5e3f84459ab41a6231608eb4c780578492d0aa3f11b",
+      "check_sha256": "0add263e76611b1c06ec9e554a90114b3c7914dd1346f74f8c5a13533b1bdaee",
       "subject_sha256": "94d3b49694b1659589400318b55d2eac4615aa7aba2f29c83c68896d25e5fa68",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 31070,
+      "duration_ms": 27147,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "21f16f9aa6c57575be89a5e3f84459ab41a6231608eb4c780578492d0aa3f11b",
+      "live_check_sha256": "0add263e76611b1c06ec9e554a90114b3c7914dd1346f74f8c5a13533b1bdaee",
       "stale": false
     },
     {
@@ -3026,24 +3025,134 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a tool that changes something records that it did",
-        "nothing is exported that nobody imports"
+        "a tool that changes something records that it did"
       ],
       "new_failures": [
         "a tool that changes something records that it did"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
-      "subject_sha256": "14a7adbc36087d1f36f33165d3ea3e0cf8bfb6fa5fcf3739ee1dabe847a0e406",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30540,
+      "duration_ms": 27581,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/data-telemetry.ts",
+      "target": "the answer that names an initiative is actually captured, and an error names nothing",
+      "assertion": "an answer carrying an error teaches the trace nothing",
+      "subject": "services/gateway/src/call-attribution.ts",
+      "planted": "an initiative_status on a slug nobody opened echoes that slug back beside its error, and the trace takes it — so the caller's whole conversation is attributed to an initiative that does not exist, which is the state 436 rows on this deployment were in",
+      "find": "      if (answer.error === undefined && typeof answer.initiative === \"string\" && answer.initiative) {",
+      "replace": "      if (typeof answer.initiative === \"string\" && answer.initiative) {",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "the answer that names an initiative is actually captured, and an error names nothing"
+      ],
+      "new_failures": [
+        "the answer that names an initiative is actually captured, and an error names nothing"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "a4ac2bc8877fe533e67c56066367d2a4cff7d479a206283912bf488c6fd11e91",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 32094,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/data-telemetry.ts",
+      "target": "the telemetry and the control loop name the same stage for the same act",
+      "assertion": "a source is attributed to the stage that declares it supports that document",
+      "subject": "services/gateway/src/call-attribution.ts",
+      "planted": "a source is matched against what the stage PRODUCES rather than what it supports, so no audit round is ever attributed to its stage and every one falls back to whichever skill the caller happened to read last — which is how one act came to be filed as `zz-platform` by the telemetry and `sdlc-spec-audit` by the control loop",
+      "find": "      .find((st) => supported.includes(st.supports))?.name;",
+      "replace": "      .find((st) => supported.includes(st.produces))?.name;",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "the telemetry and the control loop name the same stage for the same act"
+      ],
+      "new_failures": [
+        "the telemetry and the control loop name the same stage for the same act"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "a4ac2bc8877fe533e67c56066367d2a4cff7d479a206283912bf488c6fd11e91",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 31421,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/data-telemetry.ts",
+      "target": "an initiative that does not exist yet is not cached as an initiative with no flow",
+      "assertion": "flowFor caches a hit and never a miss",
+      "subject": "services/gateway/src/step-trace.ts",
+      "planted": "the flow lookup caches its misses as well as its hits, so an initiative asked about before it existed reads as a flowless initiative for the whole TTL — which is exactly the window in which it is opened and its first document written, and which the flow's own first instruction walks into every time",
+      "find": "    if (flow) flowCache.set(key, { flow, at: now });",
+      "replace": "    flowCache.set(key, { flow, at: now });",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "an initiative that does not exist yet is not cached as an initiative with no flow"
+      ],
+      "new_failures": [
+        "an initiative that does not exist yet is not cached as an initiative with no flow"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "eea87c0c12c48c83cbcd03a55d891c57792e4589d6e2082b147d93a2bfbbbd1b",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 31832,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -3064,24 +3173,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every identifier the telemetry keeps is one a tool can send",
-        "nothing is exported that nobody imports"
+        "every identifier the telemetry keeps is one a tool can send"
       ],
       "new_failures": [
         "every identifier the telemetry keeps is one a tool can send"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
-      "subject_sha256": "dafe56620e17d69dc7b3c37c6269705d47459fc7dbc71f08b53de5a3aa20eb44",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "2ad43bf3185bffe72184a44b0dcf83520dff7cee72afa08812641f1b229e19dd",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30240,
+      "duration_ms": 30554,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -3102,24 +3210,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "telemetry keeps identifiers and never the team's own words",
-        "nothing is exported that nobody imports"
+        "telemetry keeps identifiers and never the team's own words"
       ],
       "new_failures": [
         "telemetry keeps identifiers and never the team's own words"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
-      "subject_sha256": "dafe56620e17d69dc7b3c37c6269705d47459fc7dbc71f08b53de5a3aa20eb44",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "2ad43bf3185bffe72184a44b0dcf83520dff7cee72afa08812641f1b229e19dd",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29782,
+      "duration_ms": 30683,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -3140,24 +3247,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a record that is counted is a record that is written once",
-        "nothing is exported that nobody imports"
+        "a record that is counted is a record that is written once"
       ],
       "new_failures": [
         "a record that is counted is a record that is written once"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "subject_sha256": "d1fc8720af55ed7509dce1e431f42878fe9dfa33108e2c574993e42e2359896f",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30171,
+      "duration_ms": 29678,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -3178,24 +3284,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the platform records its own surface, the way it records everybody else's",
-        "nothing is exported that nobody imports"
+        "the platform records its own surface, the way it records everybody else's"
       ],
       "new_failures": [
         "the platform records its own surface, the way it records everybody else's"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "subject_sha256": "eb83017bb1cc5bad11a7881314f23b5af66d27aeea48aa6f7690525b99a10e71",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29283,
+      "duration_ms": 30157,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -3216,24 +3321,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every header the telemetry correlates on is actually sent",
-        "nothing is exported that nobody imports"
+        "every header the telemetry correlates on is actually sent"
       ],
       "new_failures": [
         "every header the telemetry correlates on is actually sent"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "subject_sha256": "584ef50890903bd51efc089880dd23605e0d2ca75890886be0c19193c8c98152",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29927,
+      "duration_ms": 29479,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -3254,24 +3358,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a step's version comes from the skill, never from a file beside it",
-        "nothing is exported that nobody imports"
+        "a step's version comes from the skill, never from a file beside it"
       ],
       "new_failures": [
         "a step's version comes from the skill, never from a file beside it"
       ],
-      "snapshot_tree_sha256": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
-      "subject_sha256": "179a9b1e19f4a207a95ff9ddacfc9a9997307fa8dc90808e1bd3b59c7cd5edd5",
-      "restored_digest": "7cb362f801b30b6eaaa09ddc18cdacf87890965595a2c87263ff24df8646dee7",
+      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "subject_sha256": "eea87c0c12c48c83cbcd03a55d891c57792e4589d6e2082b147d93a2bfbbbd1b",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29388,
+      "duration_ms": 29724,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4f32be69f0aa127f2c969901c91d8d8a6355d79864864853b9bb20ef42dafa4c",
+      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
       "stale": false
     },
     {
@@ -4462,18 +4565,18 @@
       "new_failures": [
         "the README's map names every package, flow and script, and no others"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
-      "subject_sha256": "66b32689323d70dc7b17f519dfd44309e49c47e7924c949b793a966d98fa4934",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
+      "subject_sha256": "0bbb06685464b02a1b570ddae9e9af46283ccb0a2d64c9ccc2326cbd60d9ad8c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 31321,
+      "duration_ms": 29451,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "live_check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "stale": false
     },
     {
@@ -4499,18 +4602,18 @@
       "new_failures": [
         "a gate check cited elsewhere is cited by a name that exists"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "subject_sha256": "c76d2790aeabb774c01fb792753b94e715c708da9aa71ce599a9c564cd18c9ad",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30976,
+      "duration_ms": 30262,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "live_check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "stale": false
     },
     {
@@ -4536,18 +4639,18 @@
       "new_failures": [
         "a document's links point at something that exists"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
-      "subject_sha256": "66b32689323d70dc7b17f519dfd44309e49c47e7924c949b793a966d98fa4934",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
+      "subject_sha256": "0bbb06685464b02a1b570ddae9e9af46283ccb0a2d64c9ccc2326cbd60d9ad8c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30372,
+      "duration_ms": 30009,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "live_check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "stale": false
     },
     {
@@ -4573,18 +4676,18 @@
       "new_failures": [
         "the README describes the tree it ships with"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
-      "subject_sha256": "66b32689323d70dc7b17f519dfd44309e49c47e7924c949b793a966d98fa4934",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
+      "subject_sha256": "0bbb06685464b02a1b570ddae9e9af46283ccb0a2d64c9ccc2326cbd60d9ad8c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30480,
+      "duration_ms": 30299,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "live_check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "stale": false
     },
     {
@@ -4618,18 +4721,18 @@
         "what someone says about a document has one home",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "subject_sha256": "dac29055d62344af38fca90e22f12ace9c4d36d484f8643e53674a6658d5c77a",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30064,
+      "duration_ms": 30111,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "7133b03192874cb74631a2757855c733718caf3346b822963ee335ee84578ee6",
+      "live_check_sha256": "037e619f123a9f1713a0bf8e6ad573b8abf0cc20ff7dab2ec968e83f866c4c6b",
       "stale": false
     },
     {
@@ -5656,18 +5759,55 @@
       "new_failures": [
         "document_revise records the material behind every version"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
-      "subject_sha256": "d93b30e775690554d98b5682598cf1205d1eee59e92568b050477e55db015568",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29922,
+      "duration_ms": 30436,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/documents-lifecycle.ts",
+      "target": "a document the flow does not declare can still record why it changed",
+      "assertion": "document_revise does not refuse an undeclared document",
+      "subject": "services/zz-core/src/tools/initiative-acts.ts",
+      "planted": "the refusal returns, so on a governed initiative an undeclared document can be created and rewritten by document_write forever and is the one document that can never record why it changed — the platform's own law inverted on exactly the documents no flow is watching",
+      "find": "      // is no gate on it, so there is no verdict to record. A revision is not a gate.",
+      "replace": "      // is no gate on it, so there is no verdict to record. A revision is not a gate.\n      if (chain.documents.length && !chain.docs.has(parts[1]))\n        return text(`ERROR: ${parts[1]} is not a document this flow declares`);",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "a document the flow does not declare can still record why it changed"
+      ],
+      "new_failures": [
+        "a document the flow does not declare can still record why it changed"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 29608,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "stale": false
     },
     {
@@ -5693,18 +5833,18 @@
       "new_failures": [
         "document_present returns a document, not a rendering or a summary"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 31417,
+      "duration_ms": 30406,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "stale": false
     },
     {
@@ -5730,18 +5870,18 @@
       "new_failures": [
         "an act and the act that undoes it are recorded the same way"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "subject_sha256": "8141278d6ff82909a3435e58adb65cb7813384418126ab6fdfa01e4ddfb67ec3",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29715,
+      "duration_ms": 29588,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "stale": false
     },
     {
@@ -5767,18 +5907,18 @@
       "new_failures": [
         "the store audit applies the platform's close rules, not stricter ones"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "subject_sha256": "647cb288a19ff5d355b57985bb1a8fba9f47de542f4378e746c5b8c9ecbd5ea0",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30138,
+      "duration_ms": 30041,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "stale": false
     },
     {
@@ -5804,18 +5944,18 @@
       "new_failures": [
         "nothing can clear the field that says an initiative already closed"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
-      "subject_sha256": "d93b30e775690554d98b5682598cf1205d1eee59e92568b050477e55db015568",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29831,
+      "duration_ms": 29467,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "stale": false
     },
     {
@@ -5841,18 +5981,18 @@
       "new_failures": [
         "the closing document is resolved from the list the flow declared"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "subject_sha256": "375dfa15c49ded6c472e38d61d8d10b7bb460488f4e82e77a2bf434d980a65df",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30366,
+      "duration_ms": 29715,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "38defaaa1b8cf2eec6d678f247d5a5c7c516d2d03f5b8a2f25d001d80704a813",
+      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
       "stale": false
     },
     {
@@ -6568,23 +6708,24 @@
       "baseline_red": false,
       "failed_ids": [
         "a registered procedure's chain is enforced all the way back, and still grants when it is met",
-        "a hostname with no dots is a service this compose file defines"
+        "a fact a later entry withdrew stops being counted, and the log still only grows"
       ],
       "new_failures": [
-        "a registered procedure's chain is enforced all the way back, and still grants when it is met"
+        "a registered procedure's chain is enforced all the way back, and still grants when it is met",
+        "a fact a later entry withdrew stops being counted, and the log still only grows"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "bf2e031d638a35e1e2654afe8ff49ebbe2aea79d314e937f72e251a0e69d1639",
-      "subject_sha256": "87e4bede05a3b0f54701d848b390391dfb035635d7acd0fa4b06a2ca45ee47d0",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "9eeb9fc58cc4f94983d28293aba877be00e00954d6d0405e036a509c2943ae82",
+      "subject_sha256": "9338c7d7192262096ae9ade5fbd2b215d6aef7e68ebe08df4b10e97cc0c67c5c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29810,
+      "duration_ms": 29451,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "bf2e031d638a35e1e2654afe8ff49ebbe2aea79d314e937f72e251a0e69d1639",
+      "live_check_sha256": "9eeb9fc58cc4f94983d28293aba877be00e00954d6d0405e036a509c2943ae82",
       "stale": false
     },
     {
@@ -6606,23 +6747,24 @@
       "baseline_red": false,
       "failed_ids": [
         "a registered procedure's chain is enforced all the way back, and still grants when it is met",
-        "a hostname with no dots is a service this compose file defines"
+        "a fact a later entry withdrew stops being counted, and the log still only grows"
       ],
       "new_failures": [
-        "a registered procedure's chain is enforced all the way back, and still grants when it is met"
+        "a registered procedure's chain is enforced all the way back, and still grants when it is met",
+        "a fact a later entry withdrew stops being counted, and the log still only grows"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "bf2e031d638a35e1e2654afe8ff49ebbe2aea79d314e937f72e251a0e69d1639",
-      "subject_sha256": "87e4bede05a3b0f54701d848b390391dfb035635d7acd0fa4b06a2ca45ee47d0",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "9eeb9fc58cc4f94983d28293aba877be00e00954d6d0405e036a509c2943ae82",
+      "subject_sha256": "9338c7d7192262096ae9ade5fbd2b215d6aef7e68ebe08df4b10e97cc0c67c5c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30427,
+      "duration_ms": 29662,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "bf2e031d638a35e1e2654afe8ff49ebbe2aea79d314e937f72e251a0e69d1639",
+      "live_check_sha256": "9eeb9fc58cc4f94983d28293aba877be00e00954d6d0405e036a509c2943ae82",
       "stale": false
     },
     {
@@ -7517,6 +7659,43 @@
     },
     {
       "check": "scripts/gate/checks/judged-corpus-census.ts",
+      "target": "the judge's mark scale is declared once, and both readers of it agree",
+      "assertion": "the rescale reads the declared scale's lower bound",
+      "subject": "services/zz-core/src/eval/judge-score.ts",
+      "planted": "the arithmetic that turns a mark into a score goes back to a literal lower bound while the prompt that produced the mark reads the declared one — so a ruler on any other scale is prompted for one range and normalised against another, silently, with every number downstream still looking ordinary. SPAN stays used, so the tree compiles and only the property breaks",
+      "find": "    ? null : Math.round(((qualMean - MARK_SCALE.min) / SPAN) * 1000) / 100;",
+      "replace": "    ? null : Math.round(((qualMean - 1) / SPAN) * 1000) / 100;",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "the judge's mark scale is declared once, and both readers of it agree"
+      ],
+      "new_failures": [
+        "the judge's mark scale is declared once, and both readers of it agree"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "f6bbfd55ffa50dfe47942a4129b0361cb47fc80ad2b4c6a4c5fde6992b5d2eef",
+      "subject_sha256": "806a70faa2f326ccb6254c3c47d85e85b4f84b689887a111d64d51e464a75b8a",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 29466,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "f6bbfd55ffa50dfe47942a4129b0361cb47fc80ad2b4c6a4c5fde6992b5d2eef",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/judged-corpus-census.ts",
       "target": "the judged corpus still has the census every retrieval target is measured against",
       "assertion": null,
       "subject": "testing/tenant-info/queries.jsonl",
@@ -7534,7 +7713,6 @@
       "baseline_red": false,
       "failed_ids": [
         "the judged corpus still has the census every retrieval target is measured against",
-        "a hostname with no dots is a service this compose file defines",
         "the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
         "the committed judged dataset is exactly what its generator produces, byte for byte"
       ],
@@ -7543,18 +7721,18 @@
         "the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
         "the committed judged dataset is exactly what its generator produces, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "9243c1fd4117371790a6f56e293e2a7435b13f5e1d6d4f0df503343170414bcb",
+      "check_sha256": "f6bbfd55ffa50dfe47942a4129b0361cb47fc80ad2b4c6a4c5fde6992b5d2eef",
       "subject_sha256": "8fe02f4afb7a5ff6d11fa1e55eef4e6e06ae1d3a8ccf92dd1cf6f6d49374a225",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30574,
+      "duration_ms": 30283,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9243c1fd4117371790a6f56e293e2a7435b13f5e1d6d4f0df503343170414bcb",
+      "live_check_sha256": "f6bbfd55ffa50dfe47942a4129b0361cb47fc80ad2b4c6a4c5fde6992b5d2eef",
       "stale": false
     },
     {
@@ -7575,24 +7753,134 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "_knowledge is never recorded as an initiative",
-        "a hostname with no dots is a service this compose file defines"
+        "_knowledge is never recorded as an initiative"
       ],
       "new_failures": [
         "_knowledge is never recorded as an initiative"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "1a9da92aab6136b89d095d2504f6ed0acb5ee9759fed58d4b315d5865b71a5d1",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29924,
+      "duration_ms": 29586,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/knowledge.ts",
+      "target": "every flow ends with the platform's handover",
+      "assertion": "zz-core can tell a handover document apart from an ordinary one",
+      "subject": "services/zz-core/src/tools/initiative-status.ts",
+      "planted": "the recogniser is renamed, so nothing in zz-core identifies a handover document and a derived handover reads as an ordinary pending one — which is how an agent came to be told to write a handover before the close. This clause used to look for `action: \"handover\"`, a phrase that exists in zz-core only inside two comments both saying the state was REMOVED, so it passed on prose describing the absence of the thing it asserted",
+      "find": "isHandover",
+      "replace": "looksLikeTheLastOne",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 2,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "every flow ends with the platform's handover"
+      ],
+      "new_failures": [
+        "every flow ends with the platform's handover"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "subject_sha256": "21bb17f5e4ceaf6a278b44e70ba5652435f437b84db9c7215f3acfd3de5c6268",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 30093,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/knowledge.ts",
+      "target": "a platform-scoped node is about a registry entry",
+      "assertion": "the refusal clause reads code, so a comment carrying the phrase cannot satisfy it",
+      "subject": "services/zz-core/src/tools/knowledge.ts",
+      "planted": "the refusal for a platform node with no registry-entry tag is unreachable, and a comment carrying its exact wording is left in its place — which is what the clause used to be satisfied by, on raw source, for as long as somebody had explained the rule near the code that enforced it",
+      "find": "        if (!hasSubjectTag) {\n          const carried = tags && tags.length ? tags.join(\", \") : \"no tags\";\n          return text(\n            \"ERROR: `scope: \\\"platform\\\"` needs a registry-entry tag — `plugin:`, `flow:`, \" +\n            \"`provider:`, `interface:` or `platform:` — because platform knowledge is by \" +\n            `definition about one of them. This node carries \\`${carried}\\`. Tag what it is ` +\n            \"about, or send `scope: \\\"team\\\"`.\"\n          );\n        }",
+      "replace": "        if (!hasSubjectTag) {\n          // A platform node needs a registry-entry tag — plugin:, flow:, provider:,\n          // interface: or platform: — because platform knowledge is by definition\n          // about one of them.\n        }",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "a platform-scoped node is about a registry entry"
+      ],
+      "new_failures": [
+        "a platform-scoped node is about a registry entry"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 29571,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/knowledge.ts",
+      "target": "a search counts a superseded result the same way it excludes one",
+      "assertion": "the count reads both signals the exclusion reads",
+      "subject": "services/zz-core/src/tools/knowledge-search.ts",
+      "planted": "the superseded count reads `status` alone, which answers for a node and never for a document — 210 documents on this deployment carry a superseded_by and not one carries status: superseded, so the field reports 0 for every document search",
+      "find": "        return row.status === \"superseded\" || Boolean(row.superseded_by);",
+      "replace": "        return row.status === \"superseded\";",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "a search counts a superseded result the same way it excludes one"
+      ],
+      "new_failures": [
+        "a search counts a superseded result the same way it excludes one"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "subject_sha256": "5a56ded6a7b26c090b59f87adbd70eac2e04ced10bc34031581e83ff09568e73",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 30233,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7618,7 +7906,6 @@
         "a skill that changed says so in its version",
         "no shipped prose names a skill no plugin ships",
         "every flow ends with the platform's handover",
-        "a hostname with no dots is a service this compose file defines",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
       "new_failures": [
@@ -7629,18 +7916,18 @@
         "every flow ends with the platform's handover",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "7ebef54afafe8fd9907bdd835c37bc19bd6d692f980c3e71f3596753383b0bba",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30454,
+      "duration_ms": 29513,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7661,24 +7948,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the platform's own knowledge has a home, and it is reserved",
-        "a hostname with no dots is a service this compose file defines"
+        "the platform's own knowledge has a home, and it is reserved"
       ],
       "new_failures": [
         "the platform's own knowledge has a home, and it is reserved"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "8141278d6ff82909a3435e58adb65cb7813384418126ab6fdfa01e4ddfb67ec3",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29810,
+      "duration_ms": 30309,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7703,7 +7989,6 @@
         "the committed marketplace is what the catalog renders",
         "a skill that changed says so in its version",
         "the second distillation exists and is reachable",
-        "a hostname with no dots is a service this compose file defines",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
       "new_failures": [
@@ -7713,18 +7998,18 @@
         "the second distillation exists and is reachable",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "5335aaade5e25511fbbda5668d6945b11286712bf4076b5f0c8a1c895eb108ec",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29771,
+      "duration_ms": 29327,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7746,25 +8031,24 @@
       "baseline_red": false,
       "failed_ids": [
         "the shelf is on the door everyone has, and each admin act is in its tier",
-        "a hostname with no dots is a service this compose file defines",
         "the /manage door is cut by role, the duplicates are gone, and the exception is kept"
       ],
       "new_failures": [
         "the shelf is on the door everyone has, and each admin act is in its tier",
         "the /manage door is cut by role, the duplicates are gone, and the exception is kept"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "1795ec368d20aa80316583a9e4e4fc3d626af8e752fe2fcca27675302d92f014",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29886,
+      "duration_ms": 30398,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7785,24 +8069,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a knowledge node says which shelf it belongs on",
-        "a hostname with no dots is a service this compose file defines"
+        "a knowledge node says which shelf it belongs on"
       ],
       "new_failures": [
         "a knowledge node says which shelf it belongs on"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30271,
+      "duration_ms": 29541,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7823,24 +8106,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a knowledge node is written to the shelf its scope names",
-        "a hostname with no dots is a service this compose file defines"
+        "a knowledge node is written to the shelf its scope names"
       ],
       "new_failures": [
         "a knowledge node is written to the shelf its scope names"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29772,
+      "duration_ms": 29818,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7861,24 +8143,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a platform-scoped node is about a registry entry",
-        "a hostname with no dots is a service this compose file defines"
+        "a platform-scoped node is about a registry entry"
       ],
       "new_failures": [
         "a platform-scoped node is about a registry entry"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 31415,
+      "duration_ms": 29414,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7899,24 +8180,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a team-scoped node cannot be written by somebody in no team",
-        "a hostname with no dots is a service this compose file defines"
+        "a team-scoped node cannot be written by somebody in no team"
       ],
       "new_failures": [
         "a team-scoped node cannot be written by somebody in no team"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29866,
+      "duration_ms": 30091,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7937,24 +8217,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every act on the knowledge base leaves a record naming who did it",
-        "a hostname with no dots is a service this compose file defines"
+        "every act on the knowledge base leaves a record naming who did it"
       ],
       "new_failures": [
         "every act on the knowledge base leaves a record naming who did it"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30356,
+      "duration_ms": 29411,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -7975,24 +8254,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "supersession stays on one shelf and knows which",
-        "a hostname with no dots is a service this compose file defines"
+        "supersession stays on one shelf and knows which"
       ],
       "new_failures": [
         "supersession stays on one shelf and knows which"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29959,
+      "duration_ms": 30194,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8013,24 +8291,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every flow that gates a document also carries the handover",
-        "a hostname with no dots is a service this compose file defines"
+        "every flow that gates a document also carries the handover"
       ],
       "new_failures": [
         "every flow that gates a document also carries the handover"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "1ee4b55ae92e70a5c175ec3b4d3b251caec38c75f6f8e6337f1dd42c669e9842",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30422,
+      "duration_ms": 29604,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8051,24 +8328,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the handover carries a gate and does not carry the close",
-        "a hostname with no dots is a service this compose file defines"
+        "the handover carries a gate and does not carry the close"
       ],
       "new_failures": [
         "the handover carries a gate and does not carry the close"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "1ee4b55ae92e70a5c175ec3b4d3b251caec38c75f6f8e6337f1dd42c669e9842",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29986,
+      "duration_ms": 30212,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8089,24 +8365,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a closed initiative owes nothing, and can still be handed over",
-        "a hostname with no dots is a service this compose file defines"
+        "a closed initiative owes nothing, and can still be handed over"
       ],
       "new_failures": [
         "a closed initiative owes nothing, and can still be handed over"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
-      "subject_sha256": "3c92c5aca00fe7e6191a23bbb9517e2d1e373fb4fa46ff2ed6a7be733ac9e066",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
+      "subject_sha256": "21bb17f5e4ceaf6a278b44e70ba5652435f437b84db9c7215f3acfd3de5c6268",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30419,
+      "duration_ms": 31385,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8127,24 +8402,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "close names the handover document and not a file that was abolished",
-        "a hostname with no dots is a service this compose file defines"
+        "close names the handover document and not a file that was abolished"
       ],
       "new_failures": [
         "close names the handover document and not a file that was abolished"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "335a591f0e7af92408f91ef7f8ee96070bd9874b44c065c8508cce4a870d9fa5",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29811,
+      "duration_ms": 31835,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8171,7 +8445,6 @@
         "no skill references a skill that is not shipped",
         "no shipped prose names a skill no plugin ships",
         "the retired sdlc closing skill is gone, everywhere it was not history",
-        "a hostname with no dots is a service this compose file defines",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
       "new_failures": [
@@ -8183,18 +8456,18 @@
         "the retired sdlc closing skill is gone, everywhere it was not history",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "7ebef54afafe8fd9907bdd835c37bc19bd6d692f980c3e71f3596753383b0bba",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30255,
+      "duration_ms": 33679,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8219,7 +8492,6 @@
         "the committed marketplace is what the catalog renders",
         "a skill that changed says so in its version",
         "the spine states the handover sequence and nothing it superseded",
-        "a hostname with no dots is a service this compose file defines",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
       "new_failures": [
@@ -8229,18 +8501,18 @@
         "the spine states the handover sequence and nothing it superseded",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "dac29055d62344af38fca90e22f12ace9c4d36d484f8643e53674a6658d5c77a",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 29760,
+      "duration_ms": 31159,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8265,7 +8537,6 @@
         "the committed marketplace is what the catalog renders",
         "a skill that changed says so in its version",
         "every skill that documents a knowledge_add call sends scope",
-        "a hostname with no dots is a service this compose file defines",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
       "new_failures": [
@@ -8275,18 +8546,18 @@
         "every skill that documents a knowledge_add call sends scope",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "0f2f26d089d4a88ca4aef1ae2809b2bf6a337413e70cd0ecf7f9f5323099b483",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30604,
+      "duration_ms": 31167,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8311,7 +8582,6 @@
         "the committed marketplace is what the catalog renders",
         "a skill that changed says so in its version",
         "no skill states the abolished learnings.md completion test as current",
-        "a hostname with no dots is a service this compose file defines",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
       "new_failures": [
@@ -8321,18 +8591,18 @@
         "no skill states the abolished learnings.md completion test as current",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "shipped prose",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "f44fb2bf7512967534140735f709ad332228145509c10a551a7b0e8719787795",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30093,
+      "duration_ms": 30261,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8353,24 +8623,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the abandon-contradiction refusal is not disabled by the derived handover",
-        "a hostname with no dots is a service this compose file defines"
+        "the abandon-contradiction refusal is not disabled by the derived handover"
       ],
       "new_failures": [
         "the abandon-contradiction refusal is not disabled by the derived handover"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "subject_sha256": "335a591f0e7af92408f91ef7f8ee96070bd9874b44c065c8508cce4a870d9fa5",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30108,
+      "duration_ms": 30304,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "99983be58c359a583def9711284fb9b51dec53903c08e7966463ac6de4d06a10",
+      "live_check_sha256": "af706d815db49776e481e762a496c4e84060323608b8010a71e14b2558179b5a",
       "stale": false
     },
     {
@@ -8415,7 +8684,7 @@
       "check": "scripts/gate/checks/legacy-han-retrieval.ts",
       "target": "the legacy handler builds a predicate that can match a term inside an unspaced Han run",
       "assertion": null,
-      "subject": "services/zz-core/src/tools/knowledge-search.ts",
+      "subject": "services/zz-core/src/tools/search-predicate.ts",
       "planted": "the scope predicate loses the column it restricts on, so the statement no longer narrows a knowledge query to the caller's own shelves",
       "find": "  const cond = [`team_slug = any(",
       "replace": "  const cond = [`true = any(",
@@ -8429,24 +8698,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the legacy handler builds a predicate that can match a term inside an unspaced Han run",
-        "a hostname with no dots is a service this compose file defines"
+        "the legacy handler builds a predicate that can match a term inside an unspaced Han run"
       ],
       "new_failures": [
         "the legacy handler builds a predicate that can match a term inside an unspaced Han run"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "69230d31202bd10391fceedd75a3d6bcad3d805e9ba385cd0bcb8369a6e3bee1",
-      "subject_sha256": "7c843d0d2d67ef38e8992de26d96415cd0c002718c4e7838043911b9fc8ecc13",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "check_sha256": "ecd09fabeb7e094309122c7669689028724d0feef404e46ec0002cebdaa7b73d",
+      "subject_sha256": "76e26db4179eece3b4194f48372e542525770c3f33c7ddfacbe822d5f28c778c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30003,
+      "duration_ms": 30328,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "69230d31202bd10391fceedd75a3d6bcad3d805e9ba385cd0bcb8369a6e3bee1",
+      "live_check_sha256": "ecd09fabeb7e094309122c7669689028724d0feef404e46ec0002cebdaa7b73d",
       "stale": false
     },
     {
@@ -8504,31 +8772,30 @@
       "find_base64": null,
       "replace_base64": null,
       "redacted": false,
-      "replacements": 248,
+      "replacements": 427,
       "failed": true,
       "exit": 1,
       "verdict": "FAILED",
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every critical check has been shown to fail on a planted defect",
-        "a hostname with no dots is a service this compose file defines"
+        "every critical check has been shown to fail on a planted defect"
       ],
       "new_failures": [
         "every critical check has been shown to fail on a planted defect"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "8d5fa5925e8300fe3608491b2ac3e83f070a4e124cf5f346253ea4f669c1ff7a",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "234401d791f1347da477425cf5a0b90ffb4e95df96186e5fe0f7401a06901b5e",
-      "subject_sha256": "4963837007c17b58773f5db63296448647e977fab718418604823572f732a0a6",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "check_sha256": "e33c33f98c8d1c40ebc9a1f8376911f99a69bed5604306ef24dda2a9e78aa952",
+      "subject_sha256": "23d844d4c60e032397e79482721e751130fca3783cfc203cb3f6c71db5a9d808",
+      "restored_digest": "8d5fa5925e8300fe3608491b2ac3e83f070a4e124cf5f346253ea4f669c1ff7a",
       "digest_matches": true,
-      "duration_ms": 31309,
+      "duration_ms": 26927,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "234401d791f1347da477425cf5a0b90ffb4e95df96186e5fe0f7401a06901b5e",
+      "live_check_sha256": "e33c33f98c8d1c40ebc9a1f8376911f99a69bed5604306ef24dda2a9e78aa952",
       "stale": false
     },
     {
@@ -8542,31 +8809,30 @@
       "find_base64": null,
       "replace_base64": null,
       "redacted": false,
-      "replacements": 248,
+      "replacements": 427,
       "failed": true,
       "exit": 1,
       "verdict": "FAILED",
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every critical check has been shown to fail on a planted defect",
-        "a hostname with no dots is a service this compose file defines"
+        "every critical check has been shown to fail on a planted defect"
       ],
       "new_failures": [
         "every critical check has been shown to fail on a planted defect"
       ],
-      "snapshot_tree_sha256": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "snapshot_tree_sha256": "8d5fa5925e8300fe3608491b2ac3e83f070a4e124cf5f346253ea4f669c1ff7a",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "234401d791f1347da477425cf5a0b90ffb4e95df96186e5fe0f7401a06901b5e",
-      "subject_sha256": "4963837007c17b58773f5db63296448647e977fab718418604823572f732a0a6",
-      "restored_digest": "d945872299e98966c71aa2b2281d15ab9dcd80fef438421c5f71f987f5a63325",
+      "check_sha256": "e33c33f98c8d1c40ebc9a1f8376911f99a69bed5604306ef24dda2a9e78aa952",
+      "subject_sha256": "23d844d4c60e032397e79482721e751130fca3783cfc203cb3f6c71db5a9d808",
+      "restored_digest": "8d5fa5925e8300fe3608491b2ac3e83f070a4e124cf5f346253ea4f669c1ff7a",
       "digest_matches": true,
-      "duration_ms": 31110,
+      "duration_ms": 26791,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "234401d791f1347da477425cf5a0b90ffb4e95df96186e5fe0f7401a06901b5e",
+      "live_check_sha256": "e33c33f98c8d1c40ebc9a1f8376911f99a69bed5604306ef24dda2a9e78aa952",
       "stale": false
     },
     {
@@ -9603,7 +9869,7 @@
       "check": "scripts/gate/checks/search-predicate-parameters.ts",
       "target": "every parameter the search predicate binds is one its SQL references",
       "assertion": "the numbers the statement references are exactly 1..args.length",
-      "subject": "services/zz-core/src/tools/knowledge-search.ts",
+      "subject": "services/zz-core/src/tools/search-predicate.ts",
       "planted": "a parameter is bound as a side effect and then never referenced, so the statement numbers $1 and $3 while binding three — PostgreSQL refuses to parse it and the query answers nothing to anybody",
       "find": "  if (a.type) cond.push(`type = ${put(a.type)}`);",
       "replace": "  if (a.type) { put(a.type); cond.push(`type = ${put(a.type)}`); }",
@@ -9617,25 +9883,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every parameter the search predicate binds is one its SQL references",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "every parameter the search predicate binds is one its SQL references"
       ],
       "new_failures": [
         "every parameter the search predicate binds is one its SQL references"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "5490096721729b473f7ba6f4a410934599c52782cc3bafde219f199e15016c9b",
-      "subject_sha256": "7c843d0d2d67ef38e8992de26d96415cd0c002718c4e7838043911b9fc8ecc13",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "check_sha256": "5577cef14a36d50e9763812979948d2c37ec69cf37af29dbc68f7df887d016af",
+      "subject_sha256": "76e26db4179eece3b4194f48372e542525770c3f33c7ddfacbe822d5f28c778c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30624,
+      "duration_ms": 32444,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "5490096721729b473f7ba6f4a410934599c52782cc3bafde219f199e15016c9b",
+      "live_check_sha256": "5577cef14a36d50e9763812979948d2c37ec69cf37af29dbc68f7df887d016af",
       "stale": false
     },
     {
@@ -16304,6 +16568,7 @@
     {
       "check": "scripts/gate/checks/text-search-config-agreement.ts",
       "target": "the native-projection index is still the only text-search configuration outside the agreement",
+      "assertion": null,
       "subject": "packages/indexing/src/tenant-projections.ts",
       "planted": "the one site excluded from the body_tsv agreement stops being the raw-prose index it was excused for and points at the column the agreement governs, which is the move that would silently put a second configuration in charge of body_tsv",
       "find": "using gin (to_tsvector('english', raw_body))",
@@ -16318,29 +16583,29 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the native-projection index is still the only text-search configuration outside the agreement",
-        "every critical check has been shown to fail on a planted defect"
+        "the native-projection index is still the only text-search configuration outside the agreement"
       ],
       "new_failures": [
         "the native-projection index is still the only text-search configuration outside the agreement"
       ],
-      "snapshot_tree_sha256": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
+      "check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
       "subject_sha256": "c55a5c96907314b00300fce1d5b9e0b4498e2d7edc86c907f40556b08ca383fd",
-      "restored_digest": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 25843,
+      "duration_ms": 31986,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
+      "live_check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
       "stale": false
     },
     {
       "check": "scripts/gate/checks/text-search-config-agreement.ts",
       "target": "no file names a text-search configuration except the one constant that defines them",
+      "assertion": null,
       "subject": "packages/indexing/src/index.ts",
       "planted": "a write path spells its own text-search configuration inline instead of taking it from the one constant, which is how the read and write halves drifted apart before",
       "find": "${bodyTsvSql(19)})",
@@ -16356,31 +16621,31 @@
       "baseline_red": false,
       "failed_ids": [
         "no file names a text-search configuration except the one constant that defines them",
-        "every critical check has been shown to fail on a planted defect",
-        "new writes are analysed by the analyzer, not by a prose text-search configuration"
+        "new writes carry the analyzer's han terms and the row's own latin text, each to its own half"
       ],
       "new_failures": [
         "no file names a text-search configuration except the one constant that defines them",
-        "new writes are analysed by the analyzer, not by a prose text-search configuration"
+        "new writes carry the analyzer's han terms and the row's own latin text, each to its own half"
       ],
-      "snapshot_tree_sha256": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
-      "subject_sha256": "c387178f872b948f2b51ba665fee580b66abc74ef6582bfaf8f7ae6026781db2",
-      "restored_digest": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
+      "subject_sha256": "804e0f91752a018cacf47d7739850b14146a74741c066ee36297e1be80fa3fea",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 25754,
+      "duration_ms": 31932,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
+      "live_check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
       "stale": false
     },
     {
       "check": "scripts/gate/checks/text-search-config-agreement.ts",
       "target": "the read path queries with the configuration the write path stored a latin term through",
-      "subject": "services/zz-core/src/tools/knowledge-search.ts",
+      "assertion": null,
+      "subject": "services/zz-core/src/tools/search-predicate.ts",
       "planted": "the read path parses an ascii query through a non-stemming configuration while the write path stored the word stemmed, so an English word whose stem differs from its surface form stops being findable with no error and nothing in the row to see",
       "find": "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.latin);",
       "replace": "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.han);",
@@ -16394,29 +16659,29 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the read path queries with the configuration the write path stored a latin term through",
-        "every critical check has been shown to fail on a planted defect"
+        "the read path queries with the configuration the write path stored a latin term through"
       ],
       "new_failures": [
         "the read path queries with the configuration the write path stored a latin term through"
       ],
-      "snapshot_tree_sha256": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
-      "subject_sha256": "da3c39a21f268f59ca1057c716c0974a473ceda77a6801201d15003cf17e8abf",
-      "restored_digest": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
+      "subject_sha256": "76e26db4179eece3b4194f48372e542525770c3f33c7ddfacbe822d5f28c778c",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 25983,
+      "duration_ms": 30838,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
+      "live_check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
       "stale": false
     },
     {
       "check": "scripts/gate/checks/text-search-config-agreement.ts",
       "target": "the analyzer's opaque terms and its stemmable words are stored through different configurations",
+      "assertion": null,
       "subject": "packages/indexing/src/tenant-analysis.ts",
       "planted": "the opaque half of the analyzer is stored through a stemming configuration, which rewrites a ranking bigram on its way in and leaves no trace that it did",
       "find": "  han: \"simple\",",
@@ -16431,24 +16696,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the analyzer's opaque terms and its stemmable words are stored through different configurations",
-        "every critical check has been shown to fail on a planted defect"
+        "the analyzer's opaque terms and its stemmable words are stored through different configurations"
       ],
       "new_failures": [
         "the analyzer's opaque terms and its stemmable words are stored through different configurations"
       ],
-      "snapshot_tree_sha256": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
-      "subject_sha256": "070e6bb5b18657f6b8c470648a1fea3ae06cc0032c8575dd941aa2790d958d97",
-      "restored_digest": "370290575b1f5ccc6aa3c996f1342914fb89e1ab19a697eb9fa5233be3b0b7b9",
+      "check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
+      "subject_sha256": "3d694859a87550374b57011431189723b7870e83b9fe047b6381b00f502e5b01",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 26102,
+      "duration_ms": 31669,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2371325aaafdd53dd0e908a995afe3656cd9423ac38db8b02180ba85136a14c7",
+      "live_check_sha256": "7d2381385b26bd268fc3a89a4a5be426f89cccab17d576e94126473f0ecb6f2a",
       "stale": false
     },
     {
@@ -16529,7 +16793,45 @@
     },
     {
       "check": "scripts/gate/checks/write-path-analysis.ts",
-      "target": "new writes are analysed by the analyzer, not by a prose text-search configuration",
+      "target": "new writes carry the analyzer's han terms and the row's own latin text, each to its own half",
+      "assertion": null,
+      "subject": "packages/indexing/src/tenant-analysis.ts",
+      "planted": "the latin half of body_tsv goes back to the analyzer's already-split words, so every compound token PostgreSQL's parser would emit is lost while the read path's websearch_to_tsquery goes on asking for it — the defect that cost 778 of 1033 documents their own title on a faithful copy of this deployment",
+      "find": "    vector.raw.A, termsByWeight(vector, \"A\", \"han\"),",
+      "replace": "    termsByWeight(vector, \"A\", \"latin\"), termsByWeight(vector, \"A\", \"han\"),",
+      "find_base64": null,
+      "replace_base64": null,
+      "redacted": false,
+      "replacements": 1,
+      "failed": true,
+      "exit": 1,
+      "verdict": "FAILED",
+      "build_failed": false,
+      "baseline_red": false,
+      "failed_ids": [
+        "new writes carry the analyzer's han terms and the row's own latin text, each to its own half"
+      ],
+      "new_failures": [
+        "new writes carry the analyzer's han terms and the row's own latin text, each to its own half"
+      ],
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "subject_kind": "source",
+      "check_sha256": "4ec2b7cddfc1e0b1444f8fa7ddac1d9cae93848e5b1485c018d853139ab498b9",
+      "subject_sha256": "3d694859a87550374b57011431189723b7870e83b9fe047b6381b00f502e5b01",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "digest_matches": true,
+      "duration_ms": 31521,
+      "caveat": null,
+      "apply_error": null,
+      "prebuild_failed": false,
+      "prebuild_error": null,
+      "live_check_sha256": "4ec2b7cddfc1e0b1444f8fa7ddac1d9cae93848e5b1485c018d853139ab498b9",
+      "stale": false
+    },
+    {
+      "check": "scripts/gate/checks/write-path-analysis.ts",
+      "target": "new writes carry the analyzer's han terms and the row's own latin text, each to its own half",
+      "assertion": null,
       "subject": "packages/indexing/src/index.ts",
       "planted": "one INSERT stops building its index vector from the shared construction, so a newly written document is indexed by something other than the analyzer",
       "find": "${bodyTsvSql(12)})",
@@ -16544,23 +16846,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "new writes are analysed by the analyzer, not by a prose text-search configuration"
+        "new writes carry the analyzer's han terms and the row's own latin text, each to its own half"
       ],
       "new_failures": [
-        "new writes are analysed by the analyzer, not by a prose text-search configuration"
+        "new writes carry the analyzer's han terms and the row's own latin text, each to its own half"
       ],
-      "snapshot_tree_sha256": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "subject_kind": "source",
-      "check_sha256": "b14533d1b0fc5b31926abf9776526ea28bebb0c3141b129cb69cbc15645f11d6",
-      "subject_sha256": "c387178f872b948f2b51ba665fee580b66abc74ef6582bfaf8f7ae6026781db2",
-      "restored_digest": "3ea2e795bcb6ec6251adef6396cf0819b918a54461b33e0f38523297e3fc439c",
+      "check_sha256": "4ec2b7cddfc1e0b1444f8fa7ddac1d9cae93848e5b1485c018d853139ab498b9",
+      "subject_sha256": "804e0f91752a018cacf47d7739850b14146a74741c066ee36297e1be80fa3fea",
+      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
       "digest_matches": true,
-      "duration_ms": 30411,
+      "duration_ms": 30958,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "b14533d1b0fc5b31926abf9776526ea28bebb0c3141b129cb69cbc15645f11d6",
+      "live_check_sha256": "4ec2b7cddfc1e0b1444f8fa7ddac1d9cae93848e5b1485c018d853139ab498b9",
       "stale": false
     }
   ],

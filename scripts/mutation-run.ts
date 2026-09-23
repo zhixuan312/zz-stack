@@ -231,13 +231,35 @@ function seedProvisional(repo: string, wanted: readonly string[]): void {
     : { results: [] };
   const have = new Set(doc.results.map((r) => r.check));
   const missing = wanted.filter((w) => !have.has(w));
-  if (!missing.length) return;
   for (const check of missing) {
     doc.results.push({
       check, provisional: true, replacements: 1, failed: true,
       planted: "provisional, written into this run's disposable copy so the coverage check is " +
         "answerable at baseline — this run's measured row replaces it",
     } as { check: string });
+  }
+  // AND A ROW WHOSE CHECK HAS SINCE CHANGED IS AS UNANSWERABLE AS A MISSING ONE.
+  //
+  // `mutation-coverage.ts` binds each row to its check's sha256 AT GATE TIME rather than
+  // trusting the `stale` the runner froze into the artifact. That closed a real hole — the
+  // report on disk claimed `stale: false` on 418 rows while thirteen commits had touched
+  // `scripts/gate/checks/` — and it defeated this function, which only ever seeded rows that
+  // were absent.
+  //
+  // The consequence was circular and would have been permanent: editing
+  // `mutation-coverage.ts` drifts its own rows, the gate goes red, and a run to refresh them
+  // refuses because the baseline is red on the very check it is about to test. A check that
+  // cannot be satisfied is what this repository deletes; this is that shape, reached by
+  // adding a check rather than by leaving one behind.
+  //
+  // So the same provisional treatment extends to the sha: a wanted file's rows are stamped
+  // with what it hashes to NOW, in the disposable copy only. The real run rewrites them
+  // minutes later with a measured verdict and the same digest.
+  const want = new Set(wanted);
+  for (const r of doc.results as Array<{ check: string; check_sha256?: string }>) {
+    if (!want.has(r.check)) continue;
+    const full = join(repo, r.check);
+    if (existsSync(full)) r.check_sha256 = createHash("sha256").update(readFileSync(full)).digest("hex");
   }
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, `${JSON.stringify(doc, null, 2)}\n`);

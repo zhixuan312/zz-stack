@@ -36,7 +36,6 @@ export const COV_BUILD: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/build.ts",
     target: "every package manifest carries the same version",
-    subject: "packages/contracts/package.json",
     // ANCHORED ON A LINE THAT DOES NOT CARRY THE VERSION, because a spec that names one stops
     // landing the next time somebody releases. This pinned `0.62.4` and had not landed for six
     // releases — reported as "0 replacements" by every run and hidden behind a carried row

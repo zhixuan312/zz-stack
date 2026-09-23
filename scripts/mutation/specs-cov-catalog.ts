@@ -206,11 +206,20 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/catalog-manifest.ts",
     target: "plugins.lock.json says what the catalog ships, on both version and digest",
     subject: LOCK,
-    // ANCHORED ON THE KEY, NOT ON THE NUMBER. This pinned `0.62.4` and stopped landing six
-    // releases ago. `"sdlc"` opens the block and the injected `"version"` that follows it is
-    // the one JSON.parse keeps, whatever the lock actually records.
-    find: `  "sdlc": {`,
-    replace: `  "sdlc": {\n    "version": "0.0.1",`,
+    // ANCHORED ON THE KEY THAT FOLLOWS THE VERSION, NOT ON THE NUMBER. This pinned `0.62.4`
+    // and stopped landing six releases ago.
+    //
+    // AND THE ORDER MATTERS, which the first attempt got backwards. `JSON.parse` keeps the
+    // LAST of two duplicate keys, so an injected `"version"` before the real one loses and the
+    // row SURVIVED — the plant landed and measured nothing. `"digest"` is the line after
+    // `"version"` in every block of this lock, so injecting there puts the wrong value second.
+    //
+    // THE KEY, NOT ITS VALUE. Anchoring on `"digest": "ed4e9c86"` would have been the same
+    // mistake one field along — a digest changes whenever content does. `all: true` over the
+    // bare key lands in every block and needs no occurrence to be unique.
+    all: true,
+    find: `    "digest": "`,
+    replace: `    "version": "0.0.1",\n    "digest": "`,
     planted: "the lock records a version the catalog no longer declares. The release registers " +
       "zz.plugin_version FROM this file and never regenerates it, so the release writes the " +
       "PREVIOUS release's number into the database and every recording made against the " +

@@ -245,10 +245,30 @@ export function registerInitiativeActTools(server: McpServer): void {
       const target = await safePath(relPath);
       if (!existsSync(target)) return text(`ERROR: ${relPath} does not exist — document_write creates a document; document_revise changes one`);
       const chain = chainFor(root, relPath);
-      // Narrowed by a flow's declaration, never by its absence — see document_approve above.
-      // Unconditionally, this refused every revision on a freeform initiative.
-      if (chain.documents.length && !chain.docs.has(parts[1]))
-        return text(`ERROR: ${parts[1]} is not a document this flow declares`);
+      // A DOCUMENT THE FLOW DOES NOT DECLARE IS EXEMPT FROM ITS RULES, NOT REFUSED BY THEM —
+      // and this refused one, using the very condition that exempts it everywhere else.
+      //
+      // `write-guards.ts` writes `if (chain.documents.length && !chain.docs.has(parts[1]))
+      // return null;` at four separate guards: same test, and the action is to stand aside.
+      // Here the same test returned `ERROR: <name> is not a document this flow declares`, so
+      // on a governed initiative an undeclared document could be created by `document_write`
+      // and rewritten by it forever, and was the one document that could never record WHY it
+      // changed.
+      //
+      // That is the platform's own law inverted. "If someone's input changes a required
+      // document, that input becomes a source and the document goes to the next version" — and
+      // `document_revise` is the only call that refuses a change with no cause. Refusing it
+      // here did not enforce the flow; it removed the one route that keeps a record explaining
+      // itself, on exactly the documents a flow is not watching.
+      //
+      // Reported from a real session on 0.60.0: a standalone article the stakeholder
+      // deliberately chose over a spec, revised with their verbatim feedback as the cause, and
+      // the call answered `blog-zh-CN.md is not a document this flow declares`. The agent fell
+      // back to `source_add` plus an ordinary `document_write` — a change with its cause beside
+      // it instead of attached to it, which is the shape this tool exists to prevent.
+      //
+      // `document_approve` still refuses an undeclared document, and that stays right: there
+      // is no gate on it, so there is no verdict to record. A revision is not a gate.
 
       const prevEnv = parseEnvelope(readFileSync(target, "utf8"));
       // AN INITIATIVE CLOSES ONCE, and this was the way round that.

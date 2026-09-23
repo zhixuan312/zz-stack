@@ -291,6 +291,20 @@ export const COV_DOCUMENTS: readonly MutationSpec[] = [
   /* ── the lifecycle ────────────────────────────────────────────────────── */
   {
     check: "scripts/gate/checks/documents-lifecycle.ts",
+    target: "a document the flow does not declare can still record why it changed",
+    assertion: "document_revise does not refuse an undeclared document",
+    subject: "services/zz-core/src/tools/initiative-acts.ts",
+    find: "      // is no gate on it, so there is no verdict to record. A revision is not a gate.",
+    replace: "      // is no gate on it, so there is no verdict to record. A revision is not a gate.\n" +
+      "      if (chain.documents.length && !chain.docs.has(parts[1]))\n" +
+      "        return text(`ERROR: ${parts[1]} is not a document this flow declares`);",
+    planted: "the refusal returns, so on a governed initiative an undeclared document can be " +
+      "created and rewritten by document_write forever and is the one document that can never " +
+      "record why it changed — the platform's own law inverted on exactly the documents no " +
+      "flow is watching",
+  },
+  {
+    check: "scripts/gate/checks/documents-lifecycle.ts",
     target: "document_present returns a document, not a rendering or a summary",
     assertion: "the refusal names the missing path",
     subject: "services/zz-core/src/tools/artifacts.ts",

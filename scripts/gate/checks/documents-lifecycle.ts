@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, contractsSource, functionBody, gatewaySource, root, sourceFiles, zzCoreSource } from "../read.ts";
+import { between, contractsSource, functionBody, gatewaySource, root, sourceFiles, zzCoreSource, withoutComments } from "../read.ts";
 import { check } from "../run.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -318,4 +318,43 @@ check("the closing document is resolved from the list the flow declared", () => 
     bad.push("`list` is reassigned inside deriveChain — the appended array must live under a different identifier, or the closing fallback can see it");
   }
   return bad.length ? bad.join("; ") : null;
+});
+
+check("a document the flow does not declare can still record why it changed", () => {
+  // THE SAME TEST, AND THE OPPOSITE ACTION. `write-guards.ts` writes
+  // `if (chain.documents.length && !chain.docs.has(parts[1])) return null;` at four guards:
+  // a document the flow does not declare is EXEMPT from its rules. `document_revise` ran the
+  // identical test and returned `ERROR: <name> is not a document this flow declares`.
+  //
+  // So on a governed initiative an undeclared document could be created by document_write and
+  // rewritten by it forever, and was the one document that could never record WHY it changed —
+  // the platform's own law inverted, on exactly the documents no flow is watching. Reported
+  // from a real session on 0.60.0: a standalone article the stakeholder chose over a spec,
+  // revised with their verbatim feedback as the cause, refused by name. The agent fell back to
+  // source_add plus an ordinary write — a change with its cause beside it rather than attached
+  // to it, which is the shape document_revise exists to prevent.
+  //
+  // BOTH HALVES, because deleting the refusal everywhere would be the opposite mistake.
+  // `document_approve` must go on refusing an undeclared document: there is no gate on it, so
+  // there is no verdict to record. A revision is not a gate.
+  const src = readFileSync(join(root, "services/zz-core/src/tools/initiative-acts.ts"), "utf8");
+  const bodyOf = (tool: string): string => {
+    const at = src.indexOf(`"${tool}"`);
+    if (at < 0) return "";
+    const next = src.indexOf("\n  );", at);
+    return next < 0 ? src.slice(at) : src.slice(at, next);
+  };
+  const revise = withoutComments(bodyOf("document_revise"));
+  const approve = withoutComments(bodyOf("document_approve"));
+  if (!revise || !approve) return "document_revise or document_approve is no longer registered here";
+  if (/is not a document this flow declares/.test(revise)) {
+    return "document_revise refuses a document the flow does not declare, so the one call that "
+         + "records WHY a document changed is unavailable on exactly the documents no flow is "
+         + "watching — while document_write creates and rewrites them freely";
+  }
+  if (!/is not a document this flow declares/.test(approve)) {
+    return "document_approve no longer refuses an undeclared document — there is no gate on one, "
+         + "so an approval recorded against it is a verdict on a gate that does not exist";
+  }
+  return null;
 });

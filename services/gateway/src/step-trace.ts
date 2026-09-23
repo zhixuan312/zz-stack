@@ -91,10 +91,17 @@ interface Trace {
   /** THE TEAM THE INITIATIVE WAS NAMED UNDER, so it cannot be carried into another one.
    *
    * A slug is unique per `(team_id, slug)`, not globally — `zz.initiative` says so — and this
-   * Map is keyed by caller alone. So one person working two teams named an initiative in the
-   * first, called `manage:team_switch`, and every call after it was written with the new
-   * team beside the old team's initiative: 11 rows across six initiatives, every one of them
-   * between the same person's two teams.
+   * Map is keyed by caller alone. So a slug named under one team stayed in the trace and was
+   * stamped on the next call whatever team that was made under: 11 rows across six
+   * initiatives, every one of them between the same person's two teams.
+   *
+   * HOW IT GOT THERE WAS A CROSS-TEAM READ, not a switch. `initiative_status` on another
+   * team's initiative SUCCEEDS, and `initiativeFrom` learns the slug from the answer — which
+   * is what `runs.ts` already recorded as "two cross-team echoes from a successful
+   * initiative_status". The evidence is dates: the earliest `manage:team_switch` in the whole
+   * event table is 2026-09-19 01:20:34, and it IS one of the 11 bad rows; the other 10
+   * predate it, so nine of them happened when that tool had never been called at all. A
+   * switch is simply a second way in, and this withholds the slug on either.
    *
    * `flowFor` below already joins the initiative to the team and returns nothing when they
    * disagree, so the flow column was honest while the initiative column beside it was not —

@@ -478,10 +478,15 @@ check("the answer that names an initiative is actually captured, and an error na
 
 check("an initiative is carried forward within a team, never across a switch between two", () => {
   // A SLUG IS UNIQUE PER `(team_id, slug)`, NOT GLOBALLY — `zz.initiative` says so — and the
-  // trace Map is keyed by caller alone. So one person working two teams named an initiative in
-  // the first, called `manage:team_switch`, and every call after it was written with the new
-  // team beside the old team's initiative. 11 rows, six initiatives, all between the same
-  // person's two teams, cleared from the store on 2026-09-23.
+  // trace Map is keyed by caller alone. So a slug named under one team stayed in the trace and
+  // was stamped on the next call whatever team it was made under. 11 rows, six initiatives,
+  // all between the same person's two teams, cleared from the store on 2026-09-23.
+  //
+  // THE WAY IN WAS A CROSS-TEAM READ. `initiative_status` on another team's initiative
+  // succeeds and the answer teaches the trace the slug — `runs.ts` calls these "cross-team
+  // echoes from a successful initiative_status". The first `manage:team_switch` ever called
+  // is itself one of the 11 rows, and ten of them predate it, so a switch is a second way in
+  // rather than the cause. The comparison below holds on either.
   //
   // `flowFor` in the SAME FILE already joins the initiative to the team and returns nothing
   // when they disagree, so the flow column was honest while the initiative column beside it

@@ -43,9 +43,13 @@ shape as every defect this loop has found: two components, each self-consistent,
 about one row.
 
 - **An initiative slug is unique per `(team_id, slug)`, not globally**, and `step-trace.ts`
-  keyed its trace on the caller alone. So one person working two teams named an initiative in
-  the first, called `manage:team_switch`, and every call afterwards was written under the new
-  team beside the old team's initiative. `flowFor`, twenty lines further down the same file,
+  keyed its trace on the caller alone. A slug named under one team therefore stayed in the
+  trace and was stamped on the next call whatever team that was made under. It gets in through
+  a cross-team READ: `initiative_status` on another team's initiative succeeds, and the trace
+  learns the slug from the answer — which is what `runs.ts` had already recorded as "cross-team
+  echoes from a successful initiative_status". Not through `manage:team_switch`, though a
+  switch is a second way in: the earliest switch in the whole event table is itself one of the
+  11 bad rows, and the other ten predate it. `flowFor`, twenty lines further down the same file,
   has always joined the initiative to the team and returned nothing when they disagree — so
   the `flow` column was honest while the `initiative` column beside it was not, on the same
   row. The trace now records which team named an initiative and withholds it from any other;

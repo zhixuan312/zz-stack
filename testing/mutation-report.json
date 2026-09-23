@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "produced_at": "2026-09-23T12:42:03.794Z",
+  "produced_at": "2026-09-23T13:01:38.077Z",
   "produced_by": "scripts/mutation-run.ts",
-  "source_commit": "e7eb8a847dca14ed3227a1a882cfbf276d25e25a",
-  "source_dirty_paths": 7,
-  "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+  "source_commit": "2a00f66bd236c5905f083c2f8c16fc4370b8852b",
+  "source_dirty_paths": 5,
+  "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
   "declared_by": "git ls-files --cached --others --exclude-standard",
   "declared_count": 73,
   "baseline_verdict": "PASSED",
@@ -3093,18 +3093,18 @@
       "new_failures": [
         "a tool that changes something records that it did"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 27426,
+      "duration_ms": 26690,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3132,18 +3132,18 @@
         "tsc -b",
         "an initiative is carried forward within a team, never across a switch between two"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
-      "subject_sha256": "1dc716bcf5974312625dad0026b3c549e579f9057a275a7284a83e7480f76edd",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
+      "subject_sha256": "591cb6281d4c5ff10a6a888dbaaa0f722b9ecfe2f71e22413d2a5ffadab9055f",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 28214,
+      "duration_ms": 26964,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": true,
-      "prebuild_error": "services/gateway/src/step-trace.ts(230,45): error TS6133: 'team' is declared but its value is never read.\n",
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "prebuild_error": "services/gateway/src/step-trace.ts(237,45): error TS6133: 'team' is declared but its value is never read.\n",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3169,18 +3169,18 @@
       "new_failures": [
         "a field that has held an empty string is written as absent, not as two spellings of nothing"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "49f5d9f1a64f011dfd01c810dd4d90b6c75bf40a5f2ca928aef3643f536708e2",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 32508,
+      "duration_ms": 26654,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3206,18 +3206,18 @@
       "new_failures": [
         "the answer that names an initiative is actually captured, and an error names nothing"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "a4ac2bc8877fe533e67c56066367d2a4cff7d479a206283912bf488c6fd11e91",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 31746,
+      "duration_ms": 27256,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3243,18 +3243,18 @@
       "new_failures": [
         "the telemetry and the control loop name the same stage for the same act"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "a4ac2bc8877fe533e67c56066367d2a4cff7d479a206283912bf488c6fd11e91",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 33916,
+      "duration_ms": 27136,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3280,18 +3280,18 @@
       "new_failures": [
         "an initiative that does not exist yet is not cached as an initiative with no flow"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
-      "subject_sha256": "1dc716bcf5974312625dad0026b3c549e579f9057a275a7284a83e7480f76edd",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
+      "subject_sha256": "591cb6281d4c5ff10a6a888dbaaa0f722b9ecfe2f71e22413d2a5ffadab9055f",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 32688,
+      "duration_ms": 27958,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3317,18 +3317,18 @@
       "new_failures": [
         "every identifier the telemetry keeps is one a tool can send"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
-      "subject_sha256": "73a1a70f472ffcf0bc00c0f68df6369cebce689d791ae76f0fbdcfc8068a210b",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
+      "subject_sha256": "54519cb225d9838aa720ec80ce48e384f5068166ad8ab601224568068f299e6d",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 32994,
+      "duration_ms": 28955,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3354,18 +3354,18 @@
       "new_failures": [
         "telemetry keeps identifiers and never the team's own words"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
-      "subject_sha256": "73a1a70f472ffcf0bc00c0f68df6369cebce689d791ae76f0fbdcfc8068a210b",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
+      "subject_sha256": "54519cb225d9838aa720ec80ce48e384f5068166ad8ab601224568068f299e6d",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 32364,
+      "duration_ms": 30182,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3391,18 +3391,18 @@
       "new_failures": [
         "a record that is counted is a record that is written once"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "d1fc8720af55ed7509dce1e431f42878fe9dfa33108e2c574993e42e2359896f",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 32308,
+      "duration_ms": 30530,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3428,18 +3428,18 @@
       "new_failures": [
         "the platform records its own surface, the way it records everybody else's"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "eb83017bb1cc5bad11a7881314f23b5af66d27aeea48aa6f7690525b99a10e71",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 31262,
+      "duration_ms": 30999,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3465,18 +3465,18 @@
       "new_failures": [
         "every header the telemetry correlates on is actually sent"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "subject_sha256": "584ef50890903bd51efc089880dd23605e0d2ca75890886be0c19193c8c98152",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 31759,
+      "duration_ms": 31055,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -3502,18 +3502,18 @@
       "new_failures": [
         "a step's version comes from the skill, never from a file beside it"
       ],
-      "snapshot_tree_sha256": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "snapshot_tree_sha256": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "subject_kind": "source",
-      "check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
-      "subject_sha256": "1dc716bcf5974312625dad0026b3c549e579f9057a275a7284a83e7480f76edd",
-      "restored_digest": "df710a32906714a886b8a88d889fa04ddbe39502ccdabd823bf934661ad1cf83",
+      "check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
+      "subject_sha256": "591cb6281d4c5ff10a6a888dbaaa0f722b9ecfe2f71e22413d2a5ffadab9055f",
+      "restored_digest": "5271a0c3bb6bff70aff3216919a74ea5e194dc4b14f5765e91d4415dbd9349c6",
       "digest_matches": true,
-      "duration_ms": 31128,
+      "duration_ms": 31242,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "f14d037dc80d34686d520346547db6267612bdd557ee66fdf7e6e737cb55b868",
+      "live_check_sha256": "39167b8597ae7c4a5b09c9d80d11027f2a8313d75d074f0f6f03003e67db6eca",
       "stale": false
     },
     {
@@ -17009,18 +17009,18 @@
       "assertion": "a missing testing/ FAILS rather than passing in silence",
       "why": "the clause fires only when `testing/` cannot be read, and the sole edit that produces that state is to the check's own path string. `plant()` freezes `scripts/gate/checks/` — a run that edited a check would be measuring itself — and a find/replace spec cannot remove a directory. The subject and the instrument are the same file, which is the one combination this runner refuses by construction.",
       "plantable_when": "the runner can express a subject's ABSENCE as a mutation, rather than only its contents. Until then the clause is verified by reading: it was `return null` and it is now a returned failure string, and `testing/` is tracked, so the state it guards is a broken checkout rather than a checkout without an optional artifact.",
-      "observed_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "observed_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
-      "stale": true
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/catalog-stages.ts",
       "assertion": "a missing testing/ FAILS rather than passing in silence",
       "why": "identical to the entry above, in the sibling check that carried the same escape.",
       "plantable_when": "as above.",
-      "observed_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "observed_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
-      "stale": true
+      "stale": false
     },
     {
       "check": "scripts/gate/checks/deploy-compose.ts",

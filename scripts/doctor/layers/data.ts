@@ -190,8 +190,9 @@ probe("no document carries a status its flow does not gate", () => {
 probe("no event names an initiative that does not exist in that event's own team", () => {
   // NOT COUNT-BOUNDED, unlike the probe below, because the history behind this one was
   // cleaned rather than left to age out. 11 rows named an initiative belonging to the
-  // caller's OTHER team — the trace carried it across a `manage:team_switch` — and they were
-  // corrected on 2026-09-23, so zero is reachable and anything above it is new.
+  // caller's OTHER team — a cross-team `initiative_status` succeeds, and the trace kept the
+  // slug it learned from the answer — and they were corrected on 2026-09-23, so zero is
+  // reachable and anything above it is new.
   //
   // THE TEAM IS PART OF THE QUESTION. `zz.initiative` is unique on `(team_id, slug)`, not on
   // slug, so "the slug exists" is not the same as "the slug exists here": on 2026-09-23 one

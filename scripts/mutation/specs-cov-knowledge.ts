@@ -47,6 +47,20 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   // ————————————————————————————————— knowledge.ts —————————————————————————————————
   {
     check: "scripts/gate/checks/knowledge.ts",
+    target: "every flow ends with the platform's handover",
+    assertion: "zz-core can tell a handover document apart from an ordinary one",
+    subject: "services/zz-core/src/tools/initiative-status.ts",
+    find: "function isHandover(d: { name: string; role?: string }): boolean {",
+    replace: "function looksLikeTheLastOne(d: { name: string; role?: string }): boolean {",
+    planted: "the recogniser is renamed, so nothing in zz-core identifies a handover document " +
+      "and a derived handover reads as an ordinary pending one — which is how an agent came " +
+      "to be told to write a handover before the close. This clause used to look for " +
+      "`action: \"handover\"`, a phrase that exists in zz-core only inside two comments both " +
+      "saying the state was REMOVED, so it passed on prose describing the absence of the " +
+      "thing it asserted",
+  },
+  {
+    check: "scripts/gate/checks/knowledge.ts",
     target: "a platform-scoped node is about a registry entry",
     assertion: "the refusal clause reads code, so a comment carrying the phrase cannot satisfy it",
     subject: "services/zz-core/src/tools/knowledge.ts",

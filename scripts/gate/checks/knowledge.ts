@@ -75,11 +75,20 @@ check("every flow ends with the platform's handover", () => {
   // about: the clause is the first of the 23 to change its verdict, and the verdict it had
   // was the wrong one.
   //
-  // The handover is now a DOCUMENT the chain derives, recognised by role or by name, and that
-  // is what "every flow ends with the platform's handover" means today.
+  // The handover is now a DOCUMENT, and this clause asserts the half zz-core owns: that it can
+  // TELL ONE APART — by role or by name — wherever a next move is computed. A platform that
+  // could not would report a derived handover as an ordinary pending document and instruct an
+  // agent to write one before the close.
+  //
+  // IT DOES NOT ASSERT THE DERIVATION, and saying so is the point: `withHandover` lives in
+  // @zz/catalog so that zz-core and the console read one answer, and "zz-core calls it" is
+  // asserted by "every flow that gates a document also carries the handover", further down
+  // this file, whose last clause is `if (!/withHandover\(/.test(withoutComments(zzCoreSource())))`.
+  // Repeating it here would be two checks over one property, which is the shape this file
+  // already spent a task removing.
   if (!/isHandover/.test(src) || !/handover\.md/.test(src)) {
-    bad.push("zz-core neither derives a handover document nor recognises one, so a flow can " +
-             "end with nothing handed over");
+    bad.push("zz-core cannot tell a handover document apart, so a derived handover reads as an " +
+             "ordinary pending document and an agent is told to write one before the close");
   }
   if (!/zz-handover/.test(src)) bad.push("nothing in zz-core names the handover skill");
   // And the flow that CLOSES has to know the step exists. A closing skill saying "you are

@@ -33,6 +33,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.68.0] — 2026-09-23
+
+### Fixed
+- **Telemetry filed 436 events against initiatives that were never created.** Two faults, one
+  symptom. `initiative_open` composes the initiative's name from the platform's clock, so its
+  arguments never carry it — the block that reads it out of the ANSWER sat behind a capture
+  that only ran when the same request also loaded a skill, which `initiative_open` never does,
+  so it had executed zero times since it was written. Meanwhile the argument scan learned the
+  slug from an `initiative_status` on an initiative nobody had opened: that answers
+  `{"error": "no such initiative"}` as JSON rather than as an MCP error, so the row is `ok` and
+  the name was kept for the rest of the conversation. Before the change: 110 `initiative_open`
+  events, 20 carrying an initiative, 17 of those naming one that exists.
+
+### Changed
+- Deriving which initiative a call is about moved to `services/gateway/src/call-attribution.ts`,
+  beside deriving which stage an act completes. An answer carrying an `error` now names nothing,
+  however faithfully it echoes the slug it was asked about.
+
+### Upgrade notes
+- Nothing to do. No migration, no environment key, no tool argument changes. Rows already in
+  `zz.event` are not rewritten — a report that counts per initiative will go on seeing the 436
+  historical rows until somebody decides what to do about them.
+
 ## [0.67.0] — 2026-09-23
 
 ### Fixed

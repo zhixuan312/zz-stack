@@ -28,6 +28,7 @@ import { Mcp } from "@zz/mcp-client";
 
 import { flowDeclaration } from "./flow-declaration.js";
 
+import { RESULTS, check, eitherOr, record } from "./chain-report.js";
 import { walkBugs } from "./chain-bugs.js";
 import { walkEvalDoor } from "./chain-eval.js";
 import { walkFreeform } from "./chain-freeform.js";
@@ -155,54 +156,6 @@ const callEval = (tool: string, args: unknown): Promise<string> => evalDoor.call
  * opened no client that could reach it. The probe below would answer "tool not found" at
  * RELEASE, because release.ts runs this and the offline gate deliberately does not. */
 const manageDoor = new Mcp(`${GW}/manage/mcp`, { pat: PAT, client: "chain-check" });
-
-const RESULTS: { ok: boolean; name: string; got: string }[] = [];
-
-function record(ok: boolean, name: string, got: string): void {
-  RESULTS.push({ ok, name, got: got.trim().slice(0, 200) });
-  console.log((ok ? "  ok   " : "  FAIL ") + name);
-}
-
-/**
- * `because` is what stops a check passing on the wrong refusal.
- *
- * "the call errored" and "the rule fired" are different claims, and this file already knows
- * it — the journal probe fills in every other argument precisely so a schema rejection cannot
- * be mistaken for the subject rule. The hand-written-approval probe did not have that, and it
- * patched `status: draft` on a document approved forty lines earlier: document_patch answered
- * "`find` occurs 0 times" long before any guard ran, and the check printed ok having never
- * reached ownershipCheck at all.
- */
-function check(name: string, got: string, wantError: boolean, because?: RegExp): void {
-  const body = got.trim();
-  const err = body.toUpperCase().startsWith("ERROR");
-  let ok = err === wantError;
-  if (ok && err && because && !because.test(body)) {
-    ok = false;
-    console.log(`        refused, but not by the rule this names — wanted /${because.source}/`);
-  }
-  record(ok, name, got);
-  if (!ok && err !== wantError) {
-    console.log(`        wanted ${wantError ? "an ERROR" : "success"}, got: ${body.slice(0, 200)}`);
-  }
-}
-
-/**
- * A tool whose real subject is not this run's throwaway initiative — a plugin's release
- * history, a skill's install state, an evaluation nobody has started — cannot be asserted on
- * the way `check` does: which of "did the work" or "refused" is correct depends on state this
- * script does not control and a fresh initiative does not create. So this asserts on the
- * SHAPE of the answer instead: either the tool did its work, or it refused for a cause it
- * names. An unnamed refusal, or the call throwing at all, is what actually says the tool is
- * broken.
- */
-function eitherOr(name: string, got: string, acceptableRefusal: RegExp): void {
-  const body = got.trim();
-  const refused = /^(ERROR|REFUSED):/i.test(body);
-  const ok = !refused || acceptableRefusal.test(body);
-  record(ok, name, got);
-  if (!ok) console.log(`        refused for an unnamed reason: ${body.slice(0, 200)}`);
-}
 
 /**
  * A probe document: THE BODY, and nothing else.
@@ -436,9 +389,38 @@ async function main(): Promise<number> {
   // the guide only has to exist (`requiredForClose`). A probe that assumed "last document"
   // wrote a perfectly valid guide.md, saw no ledger row, and looked like a platform bug. It
   // was not.
-  const nxt = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
+  // THE STAGES THAT EVIDENCE THEMSELVES WITH A SOURCE, satisfied by FOLLOWING the platform's
+  // own answer rather than by a list here.
+  //
+  // A flow's audit rounds produce a source supporting the document they audited, not a
+  // document of their own, so writing and approving every declared document does not complete
+  // the flow — and this probe used to believe it did. It wrote them all, asked for the next
+  // move, and expected the close; the platform answered the close, and the control loop then
+  // refused `close:initiative` for a round nothing had run. Two authorities over one flow.
+  //
+  // Now `next_move` names the owed stage, and the loop is the assertion: keep doing what the
+  // platform says until it says the close. A probe that listed the audits itself would agree
+  // with whatever it listed; this one can only pass if following the answer actually arrives.
+  let owed = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
     next_move?: { action?: string; document?: string };
   };
+  // NOT A TOOL: `add_source` is a member of next_move.action's own verb vocabulary. The tool
+  // it asks for is `source_add`, which the `why` beside it names.
+  for (let round = 0; owed.next_move?.action === "add_source" && round < 8; round++) {
+    const supported = owed.next_move.document!;
+    check(`the audit round the flow declares for ${supported}`,
+      await call("source_add", {
+        initiative: INIT, title: `chain-check audit of ${supported}`,
+        content: "Recorded by chain-check: this round ran and found nothing blocking.",
+        supports: [supported],
+      }), false);
+    owed = JSON.parse(await call("initiative_status", { initiative: INIT })) as typeof owed;
+  }
+  // NOT A TOOL: `add_source` is next_move.action's own verb vocabulary; the tool is source_add.
+  record(owed.next_move?.action !== "add_source",
+    "following next_move satisfies every stage the flow declares, and it terminates",
+    `next_move still asks for a source after eight rounds: ${JSON.stringify(owed.next_move)}`);
+  const nxt = owed;
   // NOT A TOOL: matched against `next_move.action`, which is initiative_status's own verb
   // vocabulary and not a tool name — see the comment at its registration.
   //

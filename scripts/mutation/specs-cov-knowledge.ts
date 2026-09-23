@@ -50,8 +50,15 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     target: "every flow ends with the platform's handover",
     assertion: "zz-core can tell a handover document apart from an ordinary one",
     subject: "services/zz-core/src/tools/initiative-status.ts",
-    find: "function isHandover(d: { name: string; role?: string }): boolean {",
-    replace: "function looksLikeTheLastOne(d: { name: string; role?: string }): boolean {",
+    // GLOBAL, because the recogniser is DECLARED once and CALLED once, and renaming only the
+    // declaration leaves the call site dangling: `tsc -b` fails and the run reports SURVIVED,
+    // because the gate went red somewhere other than the target. This row was written from a
+    // hand-verified plant that used a global substitution and then registered as a
+    // single-occurrence one — the plant recorded was not the plant tested. The mutation run
+    // caught it, which is the whole reason to record rows rather than trust a hand check.
+    all: true,
+    find: "isHandover",
+    replace: "looksLikeTheLastOne",
     planted: "the recogniser is renamed, so nothing in zz-core identifies a handover document " +
       "and a derived handover reads as an ordinary pending one — which is how an agent came " +
       "to be told to write a handover before the close. This clause used to look for " +
@@ -74,17 +81,12 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     //
     // `carried` goes with the `return text(...)` that referenced it: `noUnusedLocals` is on,
     // and a plant that fails `tsc -b` reports build_failed and measures nothing.
-    find: `        if (!hasSubjectTag) {
-          const carried = tags && tags.length ? tags.join(", ") : "no tags";
-          return text(`,
-    replace: `        if (!hasSubjectTag) {
-          // A platform node needs a registry-entry tag — plugin:, flow:, provider:,
-          // interface: or platform: — because platform knowledge is by definition about
-          // one of them.
-        }
-        if (false) {
-          const carried = tags && tags.length ? tags.join(", ") : "no tags";
-          return text(`,
+    // THE WHOLE BLOCK GOES. The first version of this row parked the `return text(…)`
+    // behind `if (false)`, which leaves the refusal's own text in the CODE — and
+    // `withoutComments` preserves string literals by design, so the clause went on
+    // matching and the row SURVIVED. The plant recorded was not the plant hand-verified.
+    find: "        if (!hasSubjectTag) {\n          const carried = tags && tags.length ? tags.join(\", \") : \"no tags\";\n          return text(\n            \"ERROR: `scope: \\\"platform\\\"` needs a registry-entry tag — `plugin:`, `flow:`, \" +\n            \"`provider:`, `interface:` or `platform:` — because platform knowledge is by \" +\n            `definition about one of them. This node carries \\`${carried}\\`. Tag what it is ` +\n            \"about, or send `scope: \\\"team\\\"`.\"\n          );\n        }",
+    replace: "        if (!hasSubjectTag) {\n          // A platform node needs a registry-entry tag \u2014 plugin:, flow:, provider:,\n          // interface: or platform: \u2014 because platform knowledge is by definition\n          // about one of them.\n        }",
     planted: "the refusal for a platform node with no registry-entry tag is unreachable, and " +
       "a comment carrying its exact wording is left in its place — which is what the clause " +
       "used to be satisfied by, on raw source, for as long as somebody had explained the rule " +

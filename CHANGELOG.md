@@ -33,6 +33,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.70.0] — 2026-09-23
+
+### Fixed
+- **381 telemetry rows carry an empty initiative rather than none.** A skill loaded before any
+  initiative is known wrote `initiative: ""` into a fresh trace, and `??` coalesces null and
+  undefined but not an empty string, so it reached the column verbatim. The identical defect on
+  `step` was fixed on 2026-09-19 and the comment recording it sits four lines above the field
+  that still had it. Every one of the 381 is a `skill_read` at the start of a conversation, and
+  every one is unjoinable to `zz.initiative` exactly as the 1,713 `step` rows were unjoinable to
+  `zz.skill`.
+
+### Changed
+- `events.ts` binds `|| null` rather than `??` on the two fields that have actually held an
+  empty string, at the one place every row is written — a second line of defence, because the
+  source alone has already failed once here.
+
+### Upgrade notes
+- Nothing to do. No migration, no environment key, no tool argument changes.
+- The 381 historical rows are not rewritten by the deploy. Clearing them is a separate,
+  deliberate act on the store.
+
 ## [0.69.0] — 2026-09-23
 
 ### Fixed

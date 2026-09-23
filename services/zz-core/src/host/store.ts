@@ -121,9 +121,13 @@ export async function recordEvidence(
     // does, and one of this repository's own checks asks exactly that question of every
     // column it enforces. Saying it here answers it in the place somebody looks.
     `insert into zz.control_evidence
-       (run_id, entry_id, step_id, kind, about, note, recorded_at, recorded_by)
-     values ($1,$2,$3,$4,$5,$6, now(), $7)`,
-    [runId, entry.id, stepId, entry.kind, entry.about, entry.note ?? "", by],
+       (run_id, entry_id, step_id, kind, about, note, supersedes, recorded_at, recorded_by)
+     values ($1,$2,$3,$4,$5,$6,$7, now(), $8)`,
+    [runId, entry.id, stepId, entry.kind, entry.about, entry.note ?? "",
+     // NULL RATHER THAN THE EMPTY STRING, because `met()` asks whether an id is in the set of
+     // withdrawn ids and an empty string is an id nothing has. The same distinction the
+     // step-trace column had to learn: two spellings of nothing where one is indexed.
+     entry.supersedes || null, by],
   );
 }
 
@@ -170,10 +174,15 @@ async function evidenceFor(runId: string): Promise<(EvidenceEntry & { step_id: s
   const db = db_();
   if (!db) return [];
   const { rows } = await db.query(
-    `select entry_id as id, step_id, kind, about, note from zz.control_evidence
+    `select entry_id as id, step_id, kind, about, note, supersedes from zz.control_evidence
       where run_id = $1 order by seq`, [runId]);
-  return rows.map((r: Record<string, string>) =>
-    ({ id: r.id, stepId: r.step_id, step_id: r.step_id, kind: r.kind, about: r.about, note: r.note }));
+  // `supersedes` RIDES BACK WITH THE REST. A rehydration that dropped it would rebuild a run
+  // whose withdrawals never happened — every verdict computed from the full history instead of
+  // from what still stands, and the column would be written, indexed and read by nothing.
+  return rows.map((r: Record<string, string | null>) =>
+    ({ id: String(r.id), stepId: String(r.step_id), step_id: String(r.step_id),
+       kind: String(r.kind), about: String(r.about), note: String(r.note ?? ""),
+       supersedes: r.supersedes ?? undefined }));
 }
 
 /** Read a verdict together with the waivers that cover it. Exported because the same reading

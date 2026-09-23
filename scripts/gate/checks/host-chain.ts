@@ -133,3 +133,84 @@ check("a registered procedure's chain is enforced all the way back, and still gr
     return `the registered procedures could not be driven: ${execStderr(err).slice(-300)}`;
   }
 });
+
+check("a fact a later entry withdrew stops being counted, and the log still only grows", () => {
+  // THE LOOP ANSWERED A QUESTION ABOUT NOW WITH A FACT THAT NO LONGER STOOD.
+  //
+  // `zz.control_evidence` is append-only, which is right: a fact is a fact and the log is the
+  // history of what the platform was told. But a gated document can be REVISED — the platform
+  // files the signed text, bumps the version and returns the document to draft, clearing the
+  // approval it carried. The approval really was given, so deleting the entry would falsify
+  // the history; counting it says the step is met while the document is a draft nobody has
+  // agreed to.
+  //
+  // Measured by driving sdlc-flow's whole declared procedure through this kernel and then
+  // revising its spec: `close:initiative` granted, and granted again after the revision.
+  // Nothing leaked because `documentGuards` still refuses such a close — and that duplication
+  // is precisely what this control loop exists to replace, so the loop being wrong is the
+  // problem rather than a harmless disagreement.
+  //
+  // BOTH HALVES, because a kernel that counted nothing would pass a check watching only the
+  // refusal and would make every procedure unfinishable. The complete run must still grant.
+  const dist = join(root, "services/zz-core/dist");
+  if (!existsSync(join(dist, "reviewed-modules.js"))) {
+    return "services/zz-core is not built, so the registered procedures cannot be driven — run `npx tsc -b` before the gate";
+  }
+  const probe = `
+    import { reviewedModuleHost } from ${JSON.stringify(join(dist, "host/index.js"))};
+    import { packagedModules } from ${JSON.stringify(join(dist, "reviewed-modules.js"))};
+    const bad = [];
+    for (const m of packagedModules.bodies.values()) {
+      const gated = m.steps.find((s) => s.completion.some((c) => c.kind === "approval"));
+      const last = m.steps[m.steps.length - 1];
+      // Not every registered procedure has an approval to withdraw; one that does not is not
+      // a subject here, and skipping it by name keeps "no subject" apart from "no modules".
+      if (!gated || !last.grants.length) continue;
+      const { host } = reviewedModuleHost(packagedModules);
+      const run = host.runStart(m.id, { subject: "withdrawal probe", profile: m.enrolment.requires });
+      const recorded = [];
+      for (const step of m.steps) {
+        for (const rule of step.completion) {
+          for (let n = 0; n < rule.atLeast; n++) {
+            const about = rule.about === undefined ? "withdrawal probe"
+              : recorded.filter((e) => e.kind === rule.about).map((e) => e.id).pop();
+            const entry = { id: step.id + "/" + rule.kind + "/" + n, kind: rule.kind, about, note: "driven by the gate" };
+            host.evidenceRecord(run, step.id, entry);
+            recorded.push(entry);
+          }
+        }
+      }
+      const whole = host.actionClaim(run, last.id, last.grants[0]);
+      if (!whole.granted) {
+        bad.push(m.id + ": the complete procedure was refused before anything was withdrawn — " + whole.refusal);
+        continue;
+      }
+      const approval = recorded.find((e) => e.kind === "approval" && e.id.startsWith(gated.id + "/"));
+      host.evidenceRecord(run, gated.id, {
+        id: gated.id + "/document/revised", kind: "document", about: "withdrawal probe",
+        note: "revised; the approval this step carried no longer stands",
+        supersedes: approval.id,
+      });
+      const after = host.actionClaim(run, last.id, last.grants[0]);
+      if (after.granted) {
+        bad.push(m.id + ": " + last.grants[0] + " is still granted after the approval it counts was " +
+                 "withdrawn — the loop is answering a question about the run's current state with " +
+                 "a fact that no longer stands");
+      } else if (!after.refusal.includes(gated.id)) {
+        bad.push(m.id + ": the claim was refused after the withdrawal but the refusal does not name " +
+                 gated.id + " — it reads \\"" + after.refusal + "\\", so something else is refusing " +
+                 "and the withdrawal is unproven");
+      }
+    }
+    console.log(JSON.stringify(bad));
+  `;
+  let out: string;
+  try {
+    out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { encoding: "utf8" });
+  } catch (err) {
+    return `the withdrawal probe could not run, so this is unchecked: ${execStderr(err).slice(0, 300)}`;
+  }
+  const bad = JSON.parse(out.trim()) as string[];
+  if (bad.length) return bad.join("; ");
+  return null;
+});

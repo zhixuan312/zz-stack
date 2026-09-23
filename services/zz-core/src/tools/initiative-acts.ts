@@ -24,7 +24,7 @@ import { shownSinceLastChange } from "../attest.js";
 import { chainFor } from "../chain.js";
 import { fieldRefusal, frontmatterRefusal, oneLine, renderEnvelope } from "../document-rules.js";
 import { documentGuards } from "../guards.js";
-import { noteDocument } from "../host/observe.js";
+import { noteDocument, noteRevision } from "../host/observe.js";
 import { sourceDocument } from "../indexing.js";
 import { DOC_REF, safePath, tagRefusal, titleSlug, userRoot, writeGuard } from "../paths.js";
 import { logActivity, persistDocument, putEnvelopeField } from "../persist.js";
@@ -512,6 +512,11 @@ export function registerInitiativeActTools(server: McpServer): void {
         user: who.email, action: "document_revise", path: relPath,
         version: nextVersion, sources: [...linked].join(","), explained,
       });
+      // AND THE CONTROL LOOP IS TOLD, which it was not. A revision returns a gated document to
+      // draft and clears the approval on it; without this the loop went on counting that
+      // approval and reporting the step met, which is a verdict about a document nobody has
+      // agreed to. Nothing is deleted — the entry says which earlier one it withdraws.
+      await noteRevision(chain, relPath, nextVersion, who.email, team);
       return text(
         // SAY WHAT ACTUALLY HAPPENED. This announced "status draft" unconditionally, and on
         // a closed record the status stays approved — so the one message a caller reads

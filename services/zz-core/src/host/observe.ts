@@ -55,6 +55,35 @@ export async function noteDocument(
 }
 
 /**
+ * Record that a document was REVISED, which withdraws whatever approval it carried.
+ *
+ * A REVISION IS A FACT AND SO IS THE APPROVAL IT REPLACES. `document_revise` files the signed
+ * text in `_versions/`, bumps the version and returns a gated document to draft — the approval
+ * really was given, so nothing deletes it, and it no longer stands, so nothing may count it.
+ * The new entry says which earlier entry it withdraws and the log goes on only growing.
+ *
+ * NOTHING RECORDED THIS AT ALL BEFORE. `document_write` and `document_approve` told the loop
+ * what they did; `document_revise` told it nothing, so a run whose spec had been revised back
+ * to draft went on reporting that step met. Measured by driving sdlc-flow's whole declared
+ * procedure through the kernel and then revising: `close:initiative` granted, and granted
+ * again after the revision. `documentGuards` still refuses such a close, which is exactly the
+ * duplication this loop exists to replace — the loop being wrong is the problem, not a
+ * harmless disagreement.
+ *
+ * THE WITHDRAWN ID IS DERIVED, not looked up: `document_approve` records `approval:<relPath>`
+ * and this withdraws that same id. Deterministic, so a replay rebuilds the same graph, and it
+ * costs nothing when the document was never approved — a withdrawal of nothing.
+ */
+export async function noteRevision(
+  chain: Chain, relPath: string, version: number, by: string, team: string | null,
+): Promise<void> {
+  const step = stepForDocument(chain.stages as readonly DeclaredStage[], relPath);
+  if (!step) return;
+  await note(chain, relPath, "document", by, team, step, null,
+             { id: `doc:${relPath}@v${version}`, supersedes: `approval:${relPath}` });
+}
+
+/**
  * Record that a source supporting a document was added — which is how an AUDIT evidences
  * itself, because the flow declares an audit stage as producing a source rather than a
  * document of its own.
@@ -76,6 +105,9 @@ export async function noteSource(
 async function note(
   chain: Chain, relPath: string, fact: Fact, by: string, team: string | null,
   step: string | null, aboutDocument?: string | null,
+  /** A revision's own id and the approval it withdraws — see `noteRevision`. Absent for every
+   *  other fact, which neither renames itself nor withdraws anything. */
+  revision?: { id: string; supersedes: string },
 ): Promise<void> {
   if (!step || !team) return;
   const initiative = initiativeOf(relPath);
@@ -128,10 +160,13 @@ async function note(
     : relPath;
   const documentEntry = `doc:${supported}`;
   await recordEvidence(runId, step, {
-    id: fact === "document" ? documentEntry : `${fact}:${relPath}`,
+    id: revision ? revision.id : (fact === "document" ? documentEntry : `${fact}:${relPath}`),
     stepId: step, kind: fact,
     about: fact === "document" ? relPath : documentEntry,
-    note: `recorded by the platform when ${fact} landed`,
+    note: revision
+      ? "recorded by the platform when the document was revised; the approval it carried no longer stands"
+      : `recorded by the platform when ${fact} landed`,
+    supersedes: revision?.supersedes,
   }, by);
 }
 

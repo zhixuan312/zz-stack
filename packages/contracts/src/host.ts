@@ -111,6 +111,24 @@ export interface EvidenceEntry {
   readonly kind: string;
   readonly about: string;
   readonly note: string;
+  /** The id of an earlier entry this one WITHDRAWS, if any.
+   *
+   *  THE LOG STAYS APPEND-ONLY AND A FACT STAYS A FACT. Something happens that makes an
+   *  earlier fact no longer stand — a gated document is revised, and the platform clears the
+   *  approval it carried and returns it to draft. The approval really was given, so deleting
+   *  the entry would falsify the history; but counting it would answer a question about the
+   *  run's CURRENT state with a fact that has been withdrawn.
+   *
+   *  Measured before this field existed, by driving sdlc-flow's whole declared procedure and
+   *  then revising its spec: `close:initiative` was granted, and granted again after the
+   *  revision had cleared the approval the spec step is counted by. Nothing leaked, because
+   *  `documentGuards` still refuses a draft gated document — which is the duplication this
+   *  control loop exists to replace, so the loop being wrong is the whole problem rather than
+   *  a harmless one.
+   *
+   *  GENERIC BY CONSTRUCTION: an id, not a kind and not a document. The kernel does not know
+   *  what a revision is; it knows that a later entry said an earlier one no longer stands. */
+  readonly supersedes?: string;
 }
 
 /** What a caller hands to `evidence_record`; the step is supplied alongside it and attached
@@ -172,10 +190,19 @@ interface HostRun {
  *  step they were recorded on; `about` follows the back-reference into the whole run, because
  *  the thing an entry points at was usually recorded at an earlier step. */
 function met(rule: CompletionRule, evidence: readonly EvidenceEntry[], stepId: string): boolean {
-  const here = evidence.filter((e) => e.stepId === stepId && e.kind === rule.kind);
+  // WHAT A LATER ENTRY WITHDREW IS NOT COUNTED, on either side of the back-reference.
+  //
+  // Both sides, because withdrawing only the entry being counted would leave an approval
+  // standing on a document entry that had itself been withdrawn — a reference into history
+  // rather than into the run's current state. One set, applied twice.
+  const withdrawn = new Set(
+    evidence.map((e) => e.supersedes).filter((s): s is string => s !== undefined && s !== ""));
+  const here = evidence.filter(
+    (e) => e.stepId === stepId && e.kind === rule.kind && !withdrawn.has(e.id));
   const counted = rule.about === undefined
     ? here
-    : here.filter((e) => evidence.some((p) => p.kind === rule.about && p.id === e.about));
+    : here.filter((e) => evidence.some(
+        (p) => p.kind === rule.about && p.id === e.about && !withdrawn.has(p.id)));
   return counted.length >= rule.atLeast;
 }
 

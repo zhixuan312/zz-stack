@@ -80,6 +80,36 @@ exemption list, because a list of files allowed to be large is a list nobody pru
   before it ships" is a promise somebody will rely on; either write the check or delete
   the sentence. This has gone wrong here before.
 
+### Comments are read by agents
+
+The reader is a coding agent, not a person skimming. That changes the form, not the
+content: it does not skim, it does not need convincing, and every line it reads it pays
+for. Measured on this repository, comments were 40,975 lines against 64,524 of code —
+more tokens than the code they explain.
+
+So: **state the rule first, then at most one clause of why.** Drop what only serves a
+human reader — capitals for emphasis, the same point made three ways, narrative build-up,
+persuasion, ASCII decoration.
+
+Never drop:
+
+- a coupling, **named**: which file, symbol or migration has to move with this one
+- a closed set the code depends on being closed
+- a number somebody measured, when the rule is only credible with it
+
+Two prefixes, because an agent greps before it edits and prose is not greppable:
+
+- `DELIBERATE:` — this looks wrong and is not. Do not "fix" it. Highest-value line in
+  the file; it is what stops a confident wrong change.
+- `COUPLED:` — editing here requires editing there. Name the there.
+
+Before changing anything in a directory, `grep -rn "DELIBERATE:\|COUPLED:"` it.
+
+**Editing a comment can turn the gate red**, and that is not a bug: 206 of the gate's
+source-reading checks match raw text without stripping comments first, and ten mutation
+specs plant a defect INTO a comment line. Run the gate after a comment sweep, and re-run
+the mutation rows of any `scripts/gate/checks/` file you touched.
+
 ## Releasing
 
 `node scripts/release.ts --preflight` reports every fact about a release that is not a

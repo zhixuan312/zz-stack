@@ -1,72 +1,49 @@
 /**
- * The versioned text analyzer for the tenant-information corpus: `zz-lexical-v2`.
+ * The versioned text analyzer for the tenant-information corpus. `ANALYZER_NAME` below is the
+ * answer to "which version is this build"; prose here is not, and goes stale silently.
  *
- * This line said `zz-lexical-v1` until 2026-09-22, after `ANALYZER_NAME` below had already
- * been bumped — so the header of the file that OWNS the analyzer's identity named a version
- * the file itself no longer exported. `ANALYZER_NAME` is the answer to "which version is
- * this build"; this sentence is prose about it, and prose about a value goes stale silently.
- * Where `zz-lexical-v1` still appears below it is provenance — what v1 did, and what v2
- * kept — not a claim about what this file exports.
+ * Three pure functions: string in, no filesystem path and no database row, so every property
+ * is testable without a Postgres or a corpus on disk.
  *
- * Three pure functions, all byte-offset-safe and language-agnostic in the same way: they take
- * a string and never a filesystem path or a database row, so every property below is testable
- * without a Postgres and without a corpus on disk.
+ *   passagesOf            bounded overlapping passages over a body of any length, so a unique
+ *                         term in the tail of a megabyte document is still retrievable.
+ *   identifierTokens      an identifier keeps its exact unsplit spelling AND contributes
+ *                         lowercased parts split at `.` `_` `/` `-` `:`, camelCase, acronym
+ *                         and letter-digit boundaries.
+ *   derivationFingerprint hash over record format, parser, analyzer, passage shape, projection
+ *                         shape and the source content hash. Changing `analyzer` alone, source
+ *                         bytes untouched, changes it — which is how a rebuild tells "this
+ *                         row's derivation is stale" from "this row's source changed".
  *
- *   passagesOf           bounded overlapping passages over a body of any length, so a unique
- *                         term in the tail of a megabyte-sized document is still retrievable —
- *                         the prior indexer's fixed 200,000-character cutoff (`index.ts`'s
- *                         `documentBody(content).slice(0, 200_000)`) does not apply here and
- *                         is not touched by this file. Two different corpora, two different
- *                         write paths: `index.ts` still writes `zz.doc` today, unchanged, and
- *                         is the LIVE indexing path this repository runs in production.
- *                         Passages are a projection input for the derived tables migration 070
- *                         created (`tenant-projections.ts`'s header names exactly this gap),
- *                         wired in by whichever task populates `zz.artifact_passage`.
+ * COUPLED: `index.ts` writes `zz.doc` with a fixed 200,000-character cutoff and is the live
+ * indexing path. Two corpora, two write paths; this file's passages feed the derived tables
+ * migration 070 created. Do not unify the cutoffs.
  *
- *   identifierTokens     `zz-lexical-v1`'s identifier analysis: an identifier keeps its exact,
- *                         unsplit spelling in the vocabulary AND contributes lowercased derived
- *                         parts split at `.`, `_`, `/`, `-`, `:`, camelCase and acronym
- *                         boundaries, and letter-digit boundaries. Operates on text a QUERY
- *                         LEXER has already read for quotes/OR/exclusions — that recognition
- *                         happens in the query path, before this analyzer ever sees the text,
- *                         which is why this function has no operator syntax of its own to trip
- *                         over a `/` or a `-` inside a path.
+ * DELIBERATE: `identifierTokens` has no operator syntax. The query lexer reads quotes, OR and
+ * exclusions before this analyzer sees the text, so a `/` or `-` inside a path cannot trip it.
  *
- *   derivationFingerprint a hash over the exact set of versions that produced a derived row —
- *                         record format, parser, analyzer, passage shape, projection shape —
- *                         plus the source content hash. Changing ANY one of those, including
- *                         `analyzer` alone with the source bytes untouched, changes the
- *                         fingerprint, which is what lets a rebuild decide "this row's
- *                         derivation is stale" independently of "this row's source changed".
- *
- * BYTE OFFSETS, NOT CHARACTER OFFSETS. `start`/`end` on a passage are UTF-8 byte positions —
- * `Buffer.byteLength`, not `.length` and not `[...text].length`. A character offset and a byte
- * offset agree only for pure ASCII; the moment a passage's prefix holds one CJK character (3
- * bytes) or one emoji (4 bytes), the two numbers diverge, and code that stores a character
- * offset under a name that promises a byte offset corrupts every downstream consumer that
- * seeks into the raw bytes with it — silently, because the number is still a valid integer.
- * This corpus is reported at 20% Chinese and 20% mixed, which is exactly where that mistake
- * stops being a rounding error and starts being wrong on every affected document.
+ * DELIBERATE: passage `start`/`end` are UTF-8 BYTE offsets — `Buffer.byteLength`, never
+ * `.length` or `[...text].length`. The two agree only for pure ASCII; one CJK character (3
+ * bytes) or one emoji (4) diverges them, and a character offset stored under a byte-offset name
+ * corrupts every consumer that seeks into raw bytes, silently, because it is still a valid
+ * integer. This corpus is 20% Chinese and 20% mixed.
  */
 import { createHash } from "node:crypto";
 
 // ── the analyzer's own version, and the size the kernel is contracted to refuse ─────────────
 
-/** `zz-lexical-v3` — named so an incompatible analyzer is a NEW name rather than a silent
- *  behavior change under the old one. Passed by callers into `derivationFingerprint` as the
- *  `analyzer` field; kept here, once, so "which version is this build" has one answer.
+/** Named so an incompatible analyzer is a NEW name rather than a silent behaviour change under
+ *  the old one. Callers pass it into `derivationFingerprint` as `analyzer`.
  *
- *  v1 -> v2 was `analyze`'s Han unigram/bigram segmentation. v2 -> v3 is `bodyTsvParams`
- *  building the Latin half of `body_tsv` from the row's RAW text instead of from this
- *  analyzer's already-split words — see `RowVector.raw` for the measurement. `analyze` itself
- *  is unchanged, and the name still has to move: this column records which derivation wrote a
- *  row's vector, and a v2 vector is not interchangeable with a v3 one.
+ *  v1 -> v2: `analyze`'s Han unigram/bigram segmentation. v2 -> v3: `bodyTsvParams` builds the
+ *  Latin half of `body_tsv` from the row's RAW text rather than this analyzer's split words
+ *  (see `RowVector.raw`). `analyze` itself is unchanged and the name still moved, because the
+ *  column records which derivation wrote a row's vector and a v2 vector is not interchangeable.
  *
- *  IT IS ALSO WHAT LETS THE BROKEN ROWS BE REPAIRED. The rederivation walker rewrites a row
- *  only when `analyzer_version !== request.analyzer`. Leaving the name at v2 would make every
- *  row already written under the broken construction permanently invisible to the pass meant
- *  to fix it, and a `--force` flag to work around that is the transitional toggle this
- *  repository does not keep. */
+ *  COUPLED: the rederivation walker rewrites a row only when
+ *  `analyzer_version !== request.analyzer`. Bumping this name is what makes rows written under
+ *  a broken construction repairable; leaving it and adding a `--force` is the transitional
+ *  toggle this repository does not keep. */
 export const ANALYZER_NAME = "zz-lexical-v3";
 export const CURRENT_ANALYZER_VERSION = 3;
 
@@ -379,38 +356,25 @@ export interface RowVector {
    *  from — not grouped by weight; `termsByWeight` below does that for a caller that wants
    *  `to_tsvector('simple', …)`'s three space-joined strings. */
   readonly terms: readonly RowVectorTerm[];
-  /** The RAW text of each weighted field, exactly as the row holds it — the Latin half of
-   *  `body_tsv` is built from this and never from `terms`.
+  /** The RAW text of each weighted field, exactly as the row holds it. The Latin half of
+   *  `body_tsv` is built from this and NEVER from `terms`.
    *
-   *  WHY THE RAW TEXT IS CARRIED RATHER THAN RECONSTRUCTED. The Latin half must be tokenized
-   *  by the SAME engine that tokenizes the query, and that engine is PostgreSQL's own parser
-   *  running over unsplit text. Handing it this analyzer's already-split words instead
-   *  destroys every compound token the parser would have emitted, while the read path — which
-   *  does not pre-split — goes on asking for them:
+   *  DELIBERATE: the Latin half must be tokenized by the same engine as the query, which is
+   *  PostgreSQL's parser over unsplit text. Pre-splitting destroys every compound the parser
+   *  would emit — `sdlc-deck` becomes `sdlc` + `deck`, and the adjacency
+   *  `websearch_to_tsquery` asks for is gone — so the match is false while the vector looks
+   *  full and the row looks indexed.
    *
-   *      to_tsvector('english', 'the sdlc-deck plan')  -> 'deck':4 'plan':5 'sdlc':3 'sdlc-deck':2
-   *      to_tsvector('english', 'sdlc deck plan')      -> 'deck':2 'plan':3 'sdlc':1
-   *      websearch_to_tsquery('english', 'Plan: progressive sdlc-deck')
-   *                                                    -> 'plan' & 'progress' & 'sdlc-deck' <-> 'sdlc' <-> 'deck'
+   *  Measured on a copy of this deployment: 1002 of 1010 rows written before this analyzer
+   *  retrieved themselves by their own title, 0 of the 23 written by it did, and rederiving
+   *  under the pre-split construction took self-retrieval 1002 -> 255. This corpus is made of
+   *  `sdlc-flow`, `zz-core`, `plan-audit` and dated filenames.
    *
-   *  The query wants the compound AND the adjacency the parser would have given it. Neither
-   *  survives pre-splitting, so the match is simply false — silently, with a vector that looks
-   *  full and a row that looks indexed.
+   *  DELIBERATE: it lives on the vector rather than in a second argument to `bodyTsvParams`,
+   *  so no call site can build the two halves of one row from different text.
    *
-   *  MEASURED, not reasoned: on a faithful copy of this deployment, 1002 of 1010 rows written
-   *  before this analyzer retrieved themselves by their own title, and 0 of the 23 written by
-   *  it did. Rederiving the corpus under the pre-split construction took self-retrieval from
-   *  1002 to 255 — 778 documents that could no longer find themselves — because this corpus is
-   *  made of `sdlc-flow`, `zz-core`, `plan-audit` and dated filenames.
-   *
-   *  It lives on the vector rather than in a second argument to `bodyTsvParams` so that the
-   *  two halves of one row cannot be built from different text: there is no call site that
-   *  could pass a body the terms were not derived from.
-   *
-   *  The Han half still comes from `terms`, unchanged and through `simple`, because those
-   *  unigrams are exactly what PostgreSQL's parser cannot produce. `english` over the raw text
-   *  additionally emits each unspaced Han run as one opaque lexeme; that is the pre-v2
-   *  behaviour, it costs nothing, and the retrievable unigrams come from the other half. */
+   *  The Han half still comes from `terms` through `simple`: those unigrams are exactly what
+   *  PostgreSQL's parser cannot produce. */
   readonly raw: Readonly<Record<RowVectorWeight, string>>;
   readonly analyzer: string;
 }

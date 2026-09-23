@@ -11,7 +11,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { manifestPaths } from "../../manifests.ts";
-import { asRecord, readJson, root, sourceFiles, trackedFiles, unbuilt } from "../read.ts";
+import { asRecord, readJson, root, sourceFiles, trackedFiles, unbuilt, withoutComments} from "../read.ts";
 import { check, note } from "../run.ts";
 import { MANIFESTS, catalogRoot, toolEntryPoints } from "../facts.ts";
 
@@ -341,7 +341,7 @@ check("a probe that expects a refusal says which refusal", () => {
       if (src[end] === "(") depth += 1;
       else if (src[end] === ")") { depth -= 1; if (depth === 0) break; }
     }
-    const call = src.slice(i, end + 1);
+    const call = withoutComments(src.slice(i, end + 1));
     if (!/,\s*true\s*[,)]/.test(call)) continue;      // only the ones expecting an ERROR
     if (/,\s*true\s*,\s*\//.test(call)) continue;       // has the pattern
     const line = src.slice(0, i).split("\n").length;
@@ -470,7 +470,7 @@ check("a package's own version is read in one place", () => {
       }
     });
   }
-  const http = readFileSync(join(root, "packages/mcp-http/src/index.ts"), "utf8");
+  const http = withoutComments(readFileSync(join(root, "packages/mcp-http/src/index.ts"), "utf8"));
   if (!/export function serviceVersion\(/.test(http)) {
     bad.push("@zz/mcp-http no longer exports serviceVersion, so every caller must read the " +
              "manifest itself again");

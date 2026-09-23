@@ -409,7 +409,7 @@ check("a team overlay adds and cannot replace", () => {
   //
   // Reads for the shape that guarantees it — the platform's text concatenated ahead of the
   // team's — because an overlay that REPLACED would be a one-character change here.
-  const src = zzCoreSource();
+  const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
   if (!/readFileSync\(path, "utf8"\) \+ await teamOverlay\(name\)/.test(src)) {
     bad.push("skill_read no longer appends the team overlay to the skill — an overlay that is not appended is a replacement");

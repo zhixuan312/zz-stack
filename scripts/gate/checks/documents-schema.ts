@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, contractsSource, firstOf, functionBody, root, sourceFiles, trackedFiles, unbuilt, zzCoreSource, zzCoreTools } from "../read.ts";
+import { between, contractsSource, firstOf, functionBody, root, sourceFiles, trackedFiles, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { flows } from "../facts.ts";
 
@@ -621,7 +621,7 @@ check("a subject tag is reachable from the word it is about", () => {
   // So: wherever the query's own words are matched against the tag column, they are expanded
   // by the kinds first. The caller's explicit `tags` filter is a different thing and is
   // deliberately not expanded — there the caller typed the whole tag.
-  const src = zzCoreSource();
+  const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
 
   // Trailing flags are part of the literal: the class had to become a `u`-mode one to admit

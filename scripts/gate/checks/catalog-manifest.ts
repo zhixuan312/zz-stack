@@ -325,7 +325,7 @@ check("a stray file in the catalog cannot empty it", () => {
       }
     });
   }
-  const core = zzCoreSource();
+  const core = withoutComments(zzCoreSource());
   if (!/catalogPackages\(\)/.test(core)) {
     bad.push("zz-core no longer asks @zz/catalog which packages exist — its skill roots are " +
              "the one reader that must see a package with no flow.json");

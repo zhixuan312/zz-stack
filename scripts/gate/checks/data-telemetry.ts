@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools } from "../read.ts";
+import { between, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
 
@@ -169,7 +169,7 @@ check("the platform records its own surface, the way it records everybody else's
   // The check is that the wiring survives, because its failure is silent: nothing breaks, no
   // call refuses, and the only symptom is that a version leaves no row and "what moved since
   // the last release" quietly answers nothing.
-  const src = zzCoreSource();
+  const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
   if (!/OWN_TOOLS\.set\(name, door\)/.test(src)) {
     bad.push("registerTool no longer records the name it is registering AND the door it is registering it on — the surface would be recorded from something other than what is served, or not at all");
@@ -323,8 +323,8 @@ check("a step's version comes from the skill, never from a file beside it", () =
   // version under the skill's name. runs.ts joins step_version against zz.skill_version, so a
   // blank matches nothing and those calls leave the per-version reports entirely — the numbers
   // still look plausible, which is why nobody noticed.
-  const trace = readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8");
-  const tel = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
+  const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
+  const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const bad: string[] = [];
   if (!/function stepLoaded\([^)]*whole\s*:\s*boolean/s.test(trace)) {
     bad.push("stepLoaded does not take whether the SKILL ITSELF was served — it cannot tell a skill from a file beside it");
@@ -366,7 +366,7 @@ check("an initiative that does not exist yet is not cached as an initiative with
   const src = readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8");
   const at = src.indexOf("export async function flowFor");
   if (at < 0) return "flowFor is gone, and with it the only thing that says which stage owes a document";
-  const body = src.slice(at, src.indexOf("\n}", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n}", at)));
   const sets = [...body.matchAll(/flowCache\.set\(/g)];
   if (!sets.length) return "flowFor no longer caches at all — which is safe, but this check was written about a cache and should be rewritten rather than left passing on its absence";
   if (!/if \(flow\) flowCache\.set\(/.test(body)) {
@@ -451,7 +451,7 @@ check("the answer that names an initiative is actually captured, and an error na
   // nobody opened answers `{"error": "no such initiative"}` — not an MCP error, so the row is
   // recorded `ok` — and the scan took the slug from the arguments and kept it for the rest of
   // the conversation. 436 events across the store name an initiative that was never created.
-  const tel = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
+  const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
   const attr = readFileSync(join(root, "services/gateway/src/call-attribution.ts"), "utf8");
   if (/let served = loading\.length \? "" : null;/.test(tel)) {
     return "the response body is captured only when a skill is loaded, so the block that reads "

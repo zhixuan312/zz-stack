@@ -48,7 +48,7 @@ check("document_revise records the material behind every version", () => {
   const at = src.indexOf('action: "document_revise"');
   if (at < 0) { bad.push("the document_revise activity payload was not found"); }
   else {
-    const payload = src.slice(Math.max(0, at - 600), at + 600);
+    const payload = withoutComments(src.slice(Math.max(0, at - 600), at + 600));
     if (!/\bexplained\b/.test(payload) || !/\bsources\b/.test(payload)) {
       bad.push("the document_revise activity payload does not carry both `explained` and `sources`, so the record cannot say what a version rests on");
     }
@@ -75,7 +75,7 @@ check("document_present returns a document, not a rendering or a summary", () =>
   const src = zzCoreSource();
   const at = src.indexOf('registerTool(\n    "document_present"');
   if (at < 0) return "document_present is not registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (/renderMarkdown|marked|<pre>|escapeHtml/.test(body)) {
     bad.push("document_present emits HTML; the interfaces render markdown (spec D9)");
@@ -309,7 +309,7 @@ check("the closing document is resolved from the list the flow declared", () => 
   const src = zzCoreSource();
   const at = src.indexOf("function deriveChain(");
   if (at < 0) return "deriveChain is gone or was renamed — every document list resolves through it";
-  const body = src.slice(at, src.indexOf("\n}", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n}", at)));
   const bad: string[] = [];
   if (!/closingDoc:\s*list\.find\(/.test(body)) {
     bad.push("closingDoc is not computed from the untouched `list` parameter — reading an augmented array makes an appended handover.md the closing document for any flow that marks none");

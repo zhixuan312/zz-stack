@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { deriveOutcome, closeInitiative, handoverClaims } from "@zz/contracts";
-import { root } from "../read.ts";
+import { root, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
 check("a close says only what is known and a handover claims only what it verified", () => {
@@ -42,7 +42,7 @@ check("the migration's stand-in documents cannot be read back as audit rounds th
   // migration rebuilds, and a stand-in recognisable only there comes back as evidence the
   // moment they are. So the assertion is that the same constant writes the stand-in's title
   // AND filters the aggregate every later branch reads.
-  const src = readFileSync(join(root, "scripts/adopt-control-loop.ts"), "utf8");
+  const src = withoutComments(readFileSync(join(root, "scripts/adopt-control-loop.ts"), "utf8"));
   const marker = /const NO_ROUND = "([^"]+)"/.exec(src)?.[1];
   if (!marker) return "adopt-control-loop.ts no longer declares NO_ROUND, the marker that tells a stand-in from a round";
   if (!new RegExp(`\\\`# \\$\\{step\\} \\$\\{NO_ROUND\\}`).test(src)) {

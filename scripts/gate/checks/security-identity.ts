@@ -60,11 +60,11 @@ check("the team a person acts for is stored, not asserted", () => {
   //
   // A bound token is the ONE exception and stays: automation confined to a team.
   const bad: string[] = [];
-  const idsrc = readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8");
+  const idsrc = withoutComments(readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8"));
   if (/x-zz-team/.test(idsrc)) {
     bad.push("the gateway still reads a team from the request — the active team is a column");
   }
-  const core = zzCoreSource();
+  const core = withoutComments(zzCoreSource());
   if (!/active_team_id/.test(core)) bad.push("zz-core no longer reads the stored active team");
   // The RULE now lives in @zz/contracts, because the gateway needs the same answer for
   // credential resolution and was taking the first row of a differently ordered query — so
@@ -179,7 +179,7 @@ check("identity is a port, and a door that says no ends the request", () => {
   // the forwarded-header adapter would turn a revoked token into an unauthenticated header
   // claim, which is the exact opposite of revoking it. So this RUNS the resolver with stub
   // adapters instead of inspecting it.
-  const src = readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8");
+  const src = withoutComments(readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8"));
   const bad: string[] = [];
   if (!/const ADAPTERS: IdentityAdapter\[\] = \[/.test(src)) {
     bad.push("identity resolution is not an adapter list — a new login method would mean surgery on the core");

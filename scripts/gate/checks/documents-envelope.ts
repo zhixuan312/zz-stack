@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { contractsSource, gateOwnSource, root, sourceFiles, toolAtLine, unbuilt, zzCoreSource } from "../read.ts";
+import { contractsSource, gateOwnSource, root, sourceFiles, toolAtLine, unbuilt, zzCoreSource, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
 /** A caught value is never typed as an Error — narrow the shape actually being read rather
@@ -407,7 +407,7 @@ check("where a frontmatter block starts and ends is spelled once", () => {
     });
   }
   // And the definition has to still be there to point at.
-  const contracts = contractsSource();
+  const contracts = withoutComments(contractsSource());
   if (!/export const ENVELOPE_BLOCK =/.test(contracts)) {
     bad.push("@zz/contracts no longer exports ENVELOPE_BLOCK, so there is nothing to spell once");
   }

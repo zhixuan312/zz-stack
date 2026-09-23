@@ -310,7 +310,7 @@ check("a markdown table row is built, never assembled", () => {
   // zz-core, not one file in it: tableRow moved into document-rules.ts when the pure document
   // rules were split out, and `export const` is what a moved symbol looks like.
   const f = "zz-core";
-  const src = zzCoreSource();
+  const src = withoutComments(zzCoreSource());
   if (!/(export )?const tableRow = /.test(src)) return `${f}: tableRow is gone — the one row builder with it`;
   const bad: string[] = [];
   const lines = src.split("\n");

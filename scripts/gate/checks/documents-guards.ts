@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, gateOwnSource, root, sourceFiles, unbuilt, zzCoreSource, zzCoreTools } from "../read.ts";
+import { between, firstOf, gateOwnSource, root, sourceFiles, unbuilt, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { envelopeFields } from "../facts.ts";
 
@@ -266,7 +266,7 @@ check("every exclusive input pair refuses both-supplied, distinctly", () => {
   for (const p of PAIRS) {
     const at = src.indexOf(`registerTool(\n    "${p.tool}"`);
     if (at < 0) { bad.push(`${p.tool} is no longer registered — remove it from this check or restore it`); continue; }
-    const body = src.slice(at, src.indexOf("\n  );", at));
+    const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
     const refusals = [...body.matchAll(/ERROR:[^"'\n]{0,400}/g)].map((m) => m[0]);
     const both = refusals.filter((r) => r.includes(p.a) && r.includes(p.b) && !r.includes(p.neither));
     if (!both.length) {

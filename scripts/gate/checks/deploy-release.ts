@@ -34,7 +34,7 @@ function errMessage(err: unknown): string {
  *
  * So verify.ts selects layers and defines no probe, and this is what keeps it that way. */
 check("the release verifies through the doctor's probes, not a second list", () => {
-  const rel = readFileSync(join(root, "scripts/release/verify.ts"), "utf8");
+  const rel = withoutComments(readFileSync(join(root, "scripts/release/verify.ts"), "utf8"));
   const bad = [];
   // `probe(` appearing here at all means a probe defined outside the doctor.
   if (/^\s*probe\(/m.test(withoutComments(rel))) {

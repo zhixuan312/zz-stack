@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildRowVector, planRebuild, queryGeneration, rebuildRowVector } from "@zz/indexing";
-import { root } from "../read.ts";
+import { root, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
 check("rederivation covers old rows and refuses to mix analyzer generations", () => {
@@ -25,7 +25,7 @@ check("rederivation covers old rows and refuses to mix analyzer generations", ()
   // write path's builder, AND the two must agree on a row. An earlier form of this check
   // demanded `rebuildRowVector === buildRowVector`, which forces an alias export and makes the
   // agreement test dead code — requiring exactly the dormant code this plan forbids.
-  const rebuildSrc = readFileSync(join(root, "packages/indexing/src/tenant-rebuild.ts"), "utf8");
+  const rebuildSrc = withoutComments(readFileSync(join(root, "packages/indexing/src/tenant-rebuild.ts"), "utf8"));
   if (!/import\s*\{[^}]*\bbuildRowVector\b/.test(rebuildSrc)) {
     return "tenant-rebuild.ts does not import buildRowVector — a second implementation of the same "
          + "weighting is how the write path and the backfill drifted apart in the first place";

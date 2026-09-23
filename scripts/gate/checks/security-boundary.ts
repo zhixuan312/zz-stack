@@ -458,7 +458,7 @@ check("an MCP door is stateless, and never answers with an HTTP error status", (
   // handshake the client is built to act on. A bare 401 is not exempt — with no authProvider
   // configured it falls through to the same `Error POSTing` throw as everything else.
   const bad = [];
-  const src = readFileSync(join(root, "packages/mcp-http/src/index.ts"), "utf8");
+  const src = withoutComments(readFileSync(join(root, "packages/mcp-http/src/index.ts"), "utf8"));
   if (!/sessionIdGenerator:\s*undefined/.test(src)) {
     bad.push("serveMcp no longer runs stateless — a session id that outlives our memory of it is unrecoverable for this client, which is the 404 class");
   }

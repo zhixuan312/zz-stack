@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { trialAnalyze } from "@zz/contracts";
 import { analyze } from "@zz/indexing";
-import { root } from "../read.ts";
+import { root, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 
 check("the recall trial's analyzer finds the same Han terms as zz-lexical-v2", () => {
@@ -23,7 +23,7 @@ check("the recall trial's analyzer finds the same Han terms as zz-lexical-v2", (
   // on a copy nothing calls; and the two must agree on real text, or the import would be
   // ceremony. The first half is a source read because the coupling is a default parameter,
   // which no value passed in can observe.
-  const corpus = readFileSync(join(root, "packages/contracts/src/recall-trial-corpus.ts"), "utf8");
+  const corpus = withoutComments(readFileSync(join(root, "packages/contracts/src/recall-trial-corpus.ts"), "utf8"));
   if (!/analyzer:\s*TrialAnalyzer\s*=\s*trialAnalyze\b/.test(corpus)) {
     return "searchCorpus no longer defaults to trialAnalyze — the trial is searching with some "
          + "other analysis, and the agreement checked below is with a function nothing calls";

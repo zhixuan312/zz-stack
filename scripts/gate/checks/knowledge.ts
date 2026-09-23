@@ -10,7 +10,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { catalogSource, gatewaySource, root, zzCoreSource } from "../read.ts";
+import { catalogSource, gatewaySource, root, withoutComments, zzCoreSource } from "../read.ts";
 import { check } from "../run.ts";
 import { catalogRoot, flows } from "../facts.ts";
 
@@ -56,10 +56,30 @@ check("every flow ends with the platform's handover", () => {
   // Three things have to hold together, and each has broken separately elsewhere: the step
   // is named where the next move is computed, the skill it names exists, and that skill is a
   // platform entry every team can read rather than one a team must install.
-  const src = zzCoreSource();
+  // STRIPPED, because both clauses below ask what the CODE does and neither uses `src` as an
+  // offset anchor. A comment naming `action: "handover"` or `zz-handover` would have satisfied
+  // them on a service that had deleted both.
+  const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
-  if (!/action: "handover"/.test(src)) {
-    bad.push("initiative_status never returns action: handover — a closed initiative reports done with nothing handed over");
+  // WHAT THE PLATFORM ACTUALLY DOES, which is not what this asked for.
+  //
+  // This clause was `/action: "handover"/` and it passed on a COMMENT. The phrase exists in
+  // zz-core in exactly two places, `guards.ts:289` and `initiative-status.ts:311`, and both
+  // say the state was REMOVED: "A CLOSED INITIATIVE OWES NOTHING. The close is the terminal
+  // act." So the check went on asserting a behaviour the platform had deliberately stopped
+  // having, green for as long as the note explaining the removal stayed in the file — and it
+  // would have gone red the day somebody tidied that note away, for a reason that was never
+  // true.
+  //
+  // Found by stripping comments from this check's subject, which is what this initiative is
+  // about: the clause is the first of the 23 to change its verdict, and the verdict it had
+  // was the wrong one.
+  //
+  // The handover is now a DOCUMENT the chain derives, recognised by role or by name, and that
+  // is what "every flow ends with the platform's handover" means today.
+  if (!/isHandover/.test(src) || !/handover\.md/.test(src)) {
+    bad.push("zz-core neither derives a handover document nor recognises one, so a flow can " +
+             "end with nothing handed over");
   }
   if (!/zz-handover/.test(src)) bad.push("nothing in zz-core names the handover skill");
   // And the flow that CLOSES has to know the step exists. A closing skill saying "you are
@@ -115,8 +135,8 @@ check("the platform's own knowledge has a home, and it is reserved", () => {
   // claimable means a tenant can end up reading and writing the platform's own record;
   // reserved but never seeded means the home is a name with nothing behind it.
   const identity = readFileSync(join(root, "services/gateway/src/identity.ts"), "utf8");
-  const db = readFileSync(join(root, "services/gateway/src/db.ts"), "utf8");
-  const admin = gatewaySource();
+  const db = withoutComments(readFileSync(join(root, "services/gateway/src/db.ts"), "utf8"));
+  const admin = withoutComments(gatewaySource());
   const bad: string[] = [];
   const m = /export const PLATFORM_TEAM = "([a-z0-9][a-z0-9_-]*)"/.exec(identity);
   if (!m) {
@@ -253,7 +273,7 @@ check("a knowledge node says which shelf it belongs on", () => {
   const src = zzCoreSource();
   const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
   if (at < 0) return "knowledge_add is no longer registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (!/scope:\s*z\.enum\(\[\s*"team"\s*,\s*"platform"\s*\]\)/.test(body)) {
     bad.push("scope is missing or is not an enum of exactly team and platform");
@@ -274,7 +294,7 @@ check("a knowledge node is written to the shelf its scope names", () => {
   const src = zzCoreSource();
   const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
   if (at < 0) return "knowledge_add is no longer registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (!/knowledgeRoot\(\)/.test(body)) bad.push("the platform shelf is unreachable from knowledge_add");
   if (!/userRoot\(\)/.test(body)) bad.push("the team shelf is unreachable from knowledge_add");
@@ -300,7 +320,7 @@ check("a platform-scoped node is about a registry entry", () => {
   const src = zzCoreSource();
   const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
   if (at < 0) return "knowledge_add is no longer registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   if (!/SUBJECT_KINDS/.test(body)) {
     return "knowledge_add does not consult SUBJECT_KINDS — a platform node's tags are unchecked, or the five kinds were restated somewhere they can drift";
   }
@@ -318,7 +338,7 @@ check("a team-scoped node cannot be written by somebody in no team", () => {
   const src = zzCoreSource();
   const at = src.indexOf(`registerTool(\n    "knowledge_add"`);
   if (at < 0) return "knowledge_add is no longer registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (!/you are not in a team/.test(body)) {
     bad.push("knowledge_add does not refuse a team-scoped write from a caller with no team — the node would land in a personal directory nothing can search");
@@ -361,7 +381,7 @@ check("every act on the knowledge base leaves a record naming who did it", () =>
   for (const name of names) {
     const at = src.indexOf(`registerTool(\n    "${name}"`);
     if (at < 0) { bad.push(`${name} is no longer registered where this can read it`); continue; }
-    const body = src.slice(at, src.indexOf("\n  );", at));
+    const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
     if (!/platformEvent\(/.test(body)) {
       bad.push(`${name} leaves no record naming the caller — it acts on the knowledge base and ` +
                "the journal cannot say who, when, or on what");
@@ -377,7 +397,7 @@ check("supersession stays on one shelf and knows which", () => {
   const src = zzCoreSource();
   const at = src.indexOf(`registerTool(\n    "knowledge_supersede"`);
   if (at < 0) return "knowledge_supersede is no longer registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (!/userRoot\(\)/.test(body)) bad.push("supersede cannot see the team shelf");
   if (!/knowledgeRoot\(\)/.test(body)) bad.push("supersede cannot see the platform shelf");
@@ -445,19 +465,25 @@ check("a closed initiative owes nothing, and can still be handed over", () => {
   // AND THE OLD RULE INSTRUCTED AN ACT ITS OWN GATE REFUSED. handover.md requires the flow's
   // closing document; an initiative abandoned at the plan stage has none and never will, so
   // `document_write` turned the handover away while `initiative_status` demanded it, forever.
-  const src = zzCoreSource();
+  // THE SAME TREATMENT FOR BOTH CLAUSES, which is the change. This check read RAW source for
+  // `knowledgeMentions` and comment-stripped source for `action: "handover"` four lines later,
+  // with the paragraph between them explaining at length why stripping is necessary — "PROSE
+  // IS FREE, CODE IS NOT. The first version of this matched its own subject in the two
+  // comments that explain WHY the state was removed, and went red on a repository that had
+  // already done the thing it asks for." That reasoning applies to the first clause exactly as
+  // it does to the second, and the first is the FORBIDDING one, where a comment makes the
+  // check falsely RED on a repository that is correct.
+  const src = withoutComments(zzCoreSource());
   const bad: string[] = [];
   if (/knowledgeMentions/.test(src)) {
     bad.push("knowledgeMentions still exists -- the blind substring signal must stay deleted");
   }
-  // PROSE IS FREE, CODE IS NOT. The first version of this matched its own subject in the two
-  // comments that explain WHY the state was removed, and went red on a repository that had
-  // already done the thing it asks for. That is the anti-pattern this gate has a node about:
-  // a check that greps for vocabulary passes -- or fails -- on the documentation of the
-  // feature, and thorough comments make it worse rather than better. Line comments are
-  // stripped before the test; a `//` inside a string is not a case this file contains.
-  const code = src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-  if (/action:\s*"handover"/.test(code)) {
+  // PROSE IS FREE, CODE IS NOT — the reason, kept, because it is the reason for both clauses
+  // above and below. The hand-rolled stripper that used to stand here dropped whole lines
+  // whose FIRST non-space character was a comment marker, so a trailing `// …` on a code line
+  // survived it entirely. `withoutComments` replaces a comment with its own newlines wherever
+  // it sits, leaves string and regex literals intact, and is what `src` now carries.
+  if (/action:\s*"handover"/.test(src)) {
     bad.push('initiative_status still reports action: "handover" -- a closed initiative owes ' +
              "nothing, so there is no state after the close to wait in");
   }
@@ -482,7 +508,7 @@ check("close names the handover document and not a file that was abolished", () 
   const src = zzCoreSource();
   const at = src.indexOf(`registerTool(\n    "initiative_close"`);
   if (at < 0) return "close is no longer registered";
-  const body = src.slice(at, src.indexOf("\n  );", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n  );", at)));
   const bad: string[] = [];
   if (/learnings\.md/.test(body)) bad.push("close still names learnings.md, which zz-handover abolished");
   if (!/handover\.md/.test(body)) bad.push("close does not name the handover document the initiative now needs");
@@ -616,7 +642,7 @@ check("the abandon-contradiction refusal is not disabled by the derived handover
   // whole region for `existsSync`. But `requiredPresent`, two lines below, calls existsSync
   // for an unrelated reason, so that escape hatch was always open and the check could never
   // fire. It passed on a mutant that reintroduced the very regression it was written for.
-  const expr = region.slice(i, region.indexOf("requiredPresent", i));
+  const expr = withoutComments(region.slice(i, region.indexOf("requiredPresent", i)));
   if (!/handover\.md/.test(expr) && !/existsSync/.test(expr)) {
     return "the abandon check counts the derived handover.md among the gates a finished initiative must have passed — it can never exist at close time, so the refusal can never fire";
   }
@@ -635,7 +661,7 @@ check("a search counts a superseded result the same way it excludes one", () => 
   // run, including the ones that returned those 210 rows — a field whose only job is to tell a
   // reader that some of what they are looking at has been replaced.
   const src = readFileSync(join(root, "services/zz-core/src/tools/knowledge-search.ts"), "utf8");
-  const pred = readFileSync(join(root, "services/zz-core/src/tools/search-predicate.ts"), "utf8");
+  const pred = withoutComments(readFileSync(join(root, "services/zz-core/src/tools/search-predicate.ts"), "utf8"));
   if (!/superseded_by is null and status <> 'superseded'/.test(pred)) {
     return "the predicate no longer excludes superseded rows on both signals, so this check is "
          + "written about a rule that has moved — rewrite it rather than leave it passing";

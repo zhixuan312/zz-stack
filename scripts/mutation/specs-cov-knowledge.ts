@@ -47,6 +47,37 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   // ————————————————————————————————— knowledge.ts —————————————————————————————————
   {
     check: "scripts/gate/checks/knowledge.ts",
+    target: "a platform-scoped node is about a registry entry",
+    assertion: "the refusal clause reads code, so a comment carrying the phrase cannot satisfy it",
+    subject: "services/zz-core/src/tools/knowledge.ts",
+    // THE DECOY IS THE EXPERIMENT. Deleting the refusal alone proves nothing — the clause
+    // would go red under the old reading too. This deletes the refusal AND leaves a comment
+    // carrying the phrase the old clause matched, so the old reading stays GREEN and only the
+    // new one fires. Verified both ways before it was written down: `needs a registry-entry
+    // tag` is true of the raw body and false of the stripped body under this replacement,
+    // while `SUBJECT_KINDS` stays true of both because the guard above it is deliberately kept
+    // — so the refusal clause is the only one that can be reporting.
+    //
+    // `carried` goes with the `return text(...)` that referenced it: `noUnusedLocals` is on,
+    // and a plant that fails `tsc -b` reports build_failed and measures nothing.
+    find: `        if (!hasSubjectTag) {
+          const carried = tags && tags.length ? tags.join(", ") : "no tags";
+          return text(`,
+    replace: `        if (!hasSubjectTag) {
+          // A platform node needs a registry-entry tag — plugin:, flow:, provider:,
+          // interface: or platform: — because platform knowledge is by definition about
+          // one of them.
+        }
+        if (false) {
+          const carried = tags && tags.length ? tags.join(", ") : "no tags";
+          return text(`,
+    planted: "the refusal for a platform node with no registry-entry tag is unreachable, and " +
+      "a comment carrying its exact wording is left in its place — which is what the clause " +
+      "used to be satisfied by, on raw source, for as long as somebody had explained the rule " +
+      "near the code that enforced it",
+  },
+  {
+    check: "scripts/gate/checks/knowledge.ts",
     target: "a search counts a superseded result the same way it excludes one",
     assertion: "the count reads both signals the exclusion reads",
     subject: "services/zz-core/src/tools/knowledge-search.ts",
@@ -134,13 +165,20 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "a platform-scoped node is about a registry entry",
     assertion: "a platform-scoped node carrying no registry-entry tag is refused",
-    // THE WHOLE GUARD, because the check's other assertion cannot be reached from the code.
-    // It tests the handler for the word `SUBJECT_KINDS` WITHOUT stripping comments, and the
-    // paragraph directly above this guard says "SUBJECT_KINDS is reused rather than
-    // re-declared" — so replacing the call with an inlined copy of the five kinds, which is
-    // the drift the assertion is about, leaves the check green on its own justifying prose.
-    // The refusal is the one lever left, and taking the guard out is the right direction:
-    // the refusal stops firing rather than firing harder.
+    // THE WHOLE GUARD, and the reason this row gives has changed — deliberately, and the old
+    // one is worth keeping in view because it was true when it was written.
+    //
+    // It used to read: the check's other assertion "cannot be reached from the code", because
+    // it tested the handler for `SUBJECT_KINDS` WITHOUT stripping comments and the paragraph
+    // directly above the guard says "SUBJECT_KINDS is reused rather than re-declared" — so
+    // inlining a copy of the five kinds, which is the drift the assertion is about, left the
+    // check green on its own justifying prose. That is no longer the case: the clause reads
+    // comment-stripped source now, so it CAN be reached, and the sentence above would be a
+    // tracked note that lies.
+    //
+    // The guard still goes as a whole, for a different reason: taking it out is the right
+    // DIRECTION for this assertion — the refusal stops firing rather than firing harder — and
+    // the decoy-comment row beside this one covers the refusal clause on its own.
     subject: "services/zz-core/src/tools/knowledge.ts",
     find: "      if (scope === \"platform\") {\n" +
       "        const hasSubjectTag = (tags ?? []).some((raw) => {\n" +
@@ -192,10 +230,12 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/knowledge.ts",
     target: "supersession stays on one shelf and knows which",
     assertion: "a supersession spanning both shelves is refused",
-    // THE REFUSAL, not the two shelf resolvers. `userRoot()` and `knowledgeRoot()` are each
-    // named in the handler's own comments as well as its code, and this check does not strip
-    // comments — so removing either lookup leaves it green on the prose explaining the
-    // lookup. The `ERROR:…shelf` assertion has exactly one reachable subject: `bothShelves`
+    // THE REFUSAL, not the two shelf resolvers — and the reason has changed. It used to be
+    // that `userRoot()` and `knowledgeRoot()` are each named in the handler's own COMMENTS as
+    // well as its code and this check did not strip them, so removing either lookup left the
+    // check green on the prose explaining the lookup. The clause reads comment-stripped source
+    // now, so either resolver would be a usable subject; the refusal stays the chosen one
+    // because it is the assertion this row is about. The `ERROR:…shelf` assertion has exactly one reachable subject: `bothShelves`
     // says "shelves", which does not contain the substring, so the cross-shelf refusal's own
     // first line is the only line that satisfies it. `newNode` goes with the refusal because
     // nothing else reads it and `noUnusedLocals` would otherwise fail the build.

@@ -90,11 +90,15 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
     // the moment it is planted it becomes a declared check that needs a row of its own. Flipping
     // a measured `failed` to false is the defect it is written to catch: a check that survived a
     // planted defect and was recorded as if it had not.
+    // NO SPACE AFTER THE COLON, and that is not a typo. `reportText` in the runner writes each
+    // result row with a bare `JSON.stringify`, one row per line, so the artifact this plants
+    // into spells the field `"failed":true`. A spec carrying the pretty-printed spelling lands
+    // zero replacements, which the coverage check reports as a row that proves nothing.
     check: NOT_YET_PLANTED,
     target: "every critical check has been shown to fail on a planted defect",
     subject: "testing/mutation-report.json",
-    find: '"failed": true',
-    replace: '"failed": false',
+    find: '"failed":true',
+    replace: '"failed":false',
     all: true,
     assertion: "a row recorded as having survived its planted defect is refused",
     planted: "every row in the report claims its check survived the defect planted against it, " +
@@ -116,8 +120,8 @@ export const DOCUMENT_SPECS: readonly MutationSpec[] = [
     target: "every critical check has been shown to fail on a planted defect",
     assertion: "a row whose target was already red at baseline is named as having measured nothing, NOT as having survived",
     subject: "testing/mutation-report.json",
-    find: '"baseline_red": false',
-    replace: '"baseline_red": true',
+    find: '"baseline_red":false',
+    replace: '"baseline_red":true',
     all: true,
     planted: "every row in the report says its target was already failing before the defect was " +
       "planted, so not one of them measured anything — the state a reader must never meet " +

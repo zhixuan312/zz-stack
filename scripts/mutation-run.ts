@@ -213,6 +213,38 @@ function subjectKind(subject: string): string {
 }
 
 /**
+ * The report as text: the envelope pretty-printed, ONE RESULT ROW PER LINE.
+ *
+ * `JSON.stringify(doc, null, 2)` gave all thirty-one fields of all four hundred-odd rows a line
+ * each and made this artifact 17,053 lines, so a run that moved two rows produced a diff nobody
+ * could read. One line per row is about five hundred, and the diff names the rows that changed.
+ *
+ * IT IS THE SAME JSON. Only whitespace between tokens differs, so every reader — the coverage
+ * check, `seedProvisional`, the `--guards` merge — goes on calling `JSON.parse` and sees
+ * identical values. Nothing here may change what a field says.
+ *
+ * A key whose value does not survive `JSON.stringify` is DROPPED, which is what stringifying
+ * the whole object did with it, so both forms agree on which keys exist.
+ */
+function reportText(doc: Record<string, unknown>): string {
+  const rows = Array.isArray(doc.results) ? doc.results as unknown[] : null;
+  if (!rows) return `${JSON.stringify(doc, null, 2)}\n`;
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(doc)) {
+    if (k === "results") {
+      parts.push(`  "results": ${rows.length
+        ? `[\n${rows.map((r) => `    ${JSON.stringify(r)}`).join(",\n")}\n  ]`
+        : "[]"}`);
+      continue;
+    }
+    const text = JSON.stringify(v, null, 2);
+    if (text === undefined) continue;
+    parts.push(`  ${JSON.stringify(k)}: ${text.split("\n").join("\n  ")}`);
+  }
+  return `{\n${parts.join(",\n")}\n}\n`;
+}
+
+/**
  * Give the coverage check a row for every check it will ask about, IN THE COPY ONLY.
  *
  * `scripts/gate/checks/mutation-coverage.ts` reads this report and fails when a declared check
@@ -262,7 +294,7 @@ function seedProvisional(repo: string, wanted: readonly string[]): void {
     if (existsSync(full)) r.check_sha256 = createHash("sha256").update(readFileSync(full)).digest("hex");
   }
   mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, `${JSON.stringify(doc, null, 2)}\n`);
+  writeFileSync(p, reportText(doc));
 }
 
 function main(): void {
@@ -282,7 +314,7 @@ function main(): void {
     for (const g of probes) console.log(`  ${g.held ? "HELD" : "DID NOT HOLD"} — ${g.probe}\n      ${g.observed}`);
     const doc = JSON.parse(readFileSync(out, "utf8")) as Record<string, unknown>;
     doc.guards = guardsBlock(doc.guards, probes);
-    writeFileSync(out, `${JSON.stringify(doc, null, 2)}\n`);
+    writeFileSync(out, reportText(doc));
     console.log(`\n  ${probes.length} guard receipt(s) merged into ${out}`);
     if (!keep) execFileSync("rm", ["-rf", workAt]);
     process.exit(probes.every((g) => g.held) ? 0 : 5);
@@ -484,7 +516,7 @@ function main(): void {
   }
 
   mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, `${JSON.stringify({
+  writeFileSync(out, reportText({
     schema_version: 1,
     produced_at: new Date().toISOString(),
     produced_by: "scripts/mutation-run.ts",
@@ -583,7 +615,7 @@ function main(): void {
     // could plant against is a finding, and a finding that turned the gate red would be a
     // finding nobody keeps.
     unexercisable_assertions: entries,
-  }, null, 2)}\n`);
+  }));
   console.log(`\n  ${results.length} row(s) written to ${out}` +
     (carried.length ? `, ${carried.length} carried from the previous run` : ""));
   if (!keep) execFileSync("rm", ["-rf", workAt]);

@@ -21,9 +21,6 @@
  * trade `specs-documents.ts` made for `NOT_YET_PLANTED`, and for the same reason.
  *
  * NOT COVERED HERE, and reported to the dispatcher rather than invented:
- *   - "every document ours to keep is discovered and dated" — its only live assertion is keyed
- *     to `STATE.md`, which this repository does not ship.
- *   - "no document is older than the code it describes" — it returns null on every path.
  *   - "the gate reads the files it says it reads" — every file it reads is under
  *     `scripts/gate/`, which `plant()` freezes by construction.
  */

@@ -6,7 +6,6 @@
  * tomorrow, which is the exact failure this step exists to prevent arriving through the
  * check meant to prevent it.
  */
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
@@ -107,43 +106,21 @@ check("every document ours to keep is discovered and dated", () => {
   if (docs.length === 0) return "found no documents at all — the discovery is broken";
   note(`      ${docs.length} documents: ${docs.join(", ")}`);
 
-  // Held to a date stamp: STATE.md. It is what someone OUTSIDE this repo reads to answer
-  // "which version of this am I holding", so that has to be answerable from the file itself.
+  // WHAT THIS CHECKED UNTIL NOW, AND WHY IT IS GONE. A second clause held a document to a
+  // `YYYY-MM-DD` stamp near its top, and a whole check below this one warned when code had
+  // moved since that stamp. Both were keyed to `STATE.md` by name, and `STATE.md` was removed
+  // when the changelog became the record — so both filtered a list to nothing and returned
+  // null on every path. Two checks that could not fail, reported in the coverage file as
+  // "not coverable" rather than as what they were.
   //
-  // STATE.md sits beside CHANGELOG.md on purpose — one is the balance, the other the
-  // transaction log, and a reader should meet them together rather than find one at the root
-  // and the other three directories down. It used to be docs/release/direction.md and read
-  // as neither: a document describing where you are GOING has no obligation to be accurate
-  // about where you are, which is how it drifted. That directory is gone; the rule it earned
-  // is not, and it applies to whatever is held to a stamp next.
-  const stamped_ = (x: string): boolean => x === "STATE.md";
-  const bad: string[] = [];
-  for (const d of docs.filter(stamped_)) {
-    const txt = readFileSync(join(root, d), "utf8");
-    if (!/\b\d{4}-\d{2}-\d{2}\b/.test(txt.slice(0, 1200))) bad.push(`${d}: no YYYY-MM-DD near the top`);
-  }
-  return bad.length ? bad.join("; ") : null;
-});
-
-check("no document is older than the code it describes", () => {
-  const notes = [];
-  for (const d of ourDocs().filter((x) => x === "STATE.md")) {
-    const txt = readFileSync(join(root, d), "utf8");
-    const stamped = /\b(\d{4}-\d{2}-\d{2})\b/.exec(txt.slice(0, 1200))?.[1];
-    if (!stamped) continue;
-    const since = execFileSync("git", [
-      "log", "--oneline", `--since=${stamped}`, "--", "services", "catalog", "packages", "deploy",
-    ], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).split("\n").filter(Boolean);
-    if (since.length) notes.push(`${d} stamped ${stamped}, ${since.length} commit(s) since`);
-  }
-  // A warning, not a failure. A direction document is allowed to be steady while code
-  // moves beneath it, and failing here would train people to bump a date instead of
-  // reading — which is worse than a stale date, because it converts "probably out of
-  // date" into "recently confirmed" while confirming nothing.
-  if (notes.length) {
-    console.log(`      note: ${notes.join("; ")}`);
-    console.log("      → read them during the release; bump a stamp only if the content changed");
-  }
+  // The rule they encoded is not lost, it simply has no subject: `/release`'s own step 4 says
+  // "Documents that carry a date stamp — There are none left", and explains that a changelog
+  // entry is written once per release and never maintained between them, so it cannot go stale
+  // the way a stamped document does. If something is held to a stamp again, this is where the
+  // rule comes back — as a check with a live subject.
+  //
+  // The discovery assertion above stays and is the live one: `/release` step 4 reads the
+  // `documents:` line this prints to account for every document in the release.
   return null;
 });
 

@@ -33,6 +33,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.66.0] — 2026-09-23
+
+### Fixed
+- **A revised document went on counting as approved.** `document_revise` files the signed text,
+  bumps the version and returns a gated document to draft, clearing the approval it carried —
+  and told the control loop nothing, so the loop went on reporting that step met. Driving
+  sdlc-flow's whole procedure and then revising its spec granted `close:initiative` both before
+  and after. Nothing leaked, because the document guards still refuse such a close; that
+  duplication is what the control loop exists to replace, so the loop answering wrongly is what
+  kept the guards necessary.
+
+### Changed
+- An evidence entry may name an earlier entry it WITHDRAWS. Nothing is deleted — the log is
+  append-only because a fact is a fact — but a fact a later one withdrew is no longer counted.
+  It is an id rather than a kind, so the kernel learns nothing about what a revision is.
+
+### Upgrade notes
+- **Migration 074** adds `supersedes` to `zz.control_evidence` and a partial index over it. It
+  applies on the gateway's next start; nothing else changes and no existing row moves.
+
 ## [0.65.0] — 2026-09-23
 
 Three defects found by driving the SDLC flow end to end against the live deployment. Each was

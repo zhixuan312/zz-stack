@@ -179,9 +179,10 @@ export function logEvent(e: {
   // `|| null`, NOT `??`, ON THE TWO FIELDS THAT HAVE HELD AN EMPTY STRING. `??` coalesces only
   // null and undefined, so a `""` reaches the column verbatim and the table holds two spellings
   // of nothing where the index holds one. `step` was cleaned at its source on 2026-09-19 and
-  // `initiative` was not; 381 rows carry `''` because of it, every one a `skill_read` at the
-  // start of a conversation. The source is fixed too — this is the second line of defence, at
-  // the one place every row is written.
+  // `initiative` was not; 381 rows carried `''` because of it, every one a `skill_read` at the
+  // start of a conversation. They were cleared from the store on 2026-09-23, after 0.70.0 shipped
+  // the fix — in that order, so nothing refilled behind the clean. The source is fixed too —
+  // this is the second line of defence, at the one place every row is written.
   void platformDb()
     .query(
       `insert into event (actor, team_slug, team_id, kind, subject, detail,

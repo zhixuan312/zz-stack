@@ -76,14 +76,14 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "only its contents. Until then the clause is verified by reading: it was `return null` " +
       "and it is now a returned failure string, and `testing/` is tracked, so the state it " +
       "guards is a broken checkout rather than a checkout without an optional artifact.",
-    observed_check_sha256: "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+    observed_check_sha256: "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
   },
   {
     check: "scripts/gate/checks/catalog-stages.ts",
     assertion: "a missing testing/ FAILS rather than passing in silence",
     why: "identical to the entry above, in the sibling check that carried the same escape.",
     plantable_when: "as above.",
-    observed_check_sha256: "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+    observed_check_sha256: "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
   },
   {
     check: "scripts/gate/checks/deploy-compose.ts",

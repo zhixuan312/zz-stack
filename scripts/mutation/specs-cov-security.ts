@@ -407,6 +407,18 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // ── scripts/gate/checks/data-telemetry.ts ───────────────────────────────────────────────
   {
     check: "scripts/gate/checks/data-telemetry.ts",
+    target: "an initiative is carried forward within a team, never across a switch between two",
+    assertion: "the traced initiative is withheld when the team asking is not the team that named it",
+    subject: "services/gateway/src/step-trace.ts",
+    find: "           initiative: t.team === team ? t.initiative : undefined, run: t.run };",
+    replace: "           initiative: t.initiative, run: t.run };",
+    planted: "the trace goes back to carrying an initiative on the caller alone, so a person " +
+      "working two teams takes the first team's initiative across `manage:team_switch` and " +
+      "every row after it is filed under the new team beside a slug that means nothing there " +
+      "— which is what put 11 rows across six initiatives in the store",
+  },
+  {
+    check: "scripts/gate/checks/data-telemetry.ts",
     target: "a field that has held an empty string is written as absent, not as two spellings of nothing",
     assertion: "the writer refuses an empty initiative, not only a null one",
     subject: "services/gateway/src/events.ts",

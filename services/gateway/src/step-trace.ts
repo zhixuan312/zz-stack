@@ -80,13 +80,29 @@ interface Trace {
    * ABSENT, NOT EMPTY — the same fix as `step` above, which this field did not get. A skill
    * loaded before any initiative is known wrote `initiative: ""` into a fresh trace, and `??`
    * does not coalesce an empty string, so it reached the column verbatim. Measured on
-   * 2026-09-23: 381 rows carry `''` where `step` carries none at all, every one of them a
+   * 2026-09-23: 381 rows carried `''` where `step` carried none at all, every one of them a
    * `skill_read` at the start of a conversation, and every one unjoinable to `zz.initiative`
-   * exactly as the 1,713 step rows were unjoinable to `zz.skill`.
+   * exactly as the 1,713 step rows were unjoinable to `zz.skill`. Cleared from the store the
+   * same day, once this fix had shipped.
    *
    * The comment above this one describes that failure in full and has sat four lines away
    * from a second instance of it since the day it was written. */
   initiative?: string;
+  /** THE TEAM THE INITIATIVE WAS NAMED UNDER, so it cannot be carried into another one.
+   *
+   * A slug is unique per `(team_id, slug)`, not globally — `zz.initiative` says so — and this
+   * Map is keyed by caller alone. So one person working two teams named an initiative in the
+   * first, called `manage:team_switch`, and every call after it was written with the new
+   * team beside the old team's initiative: 11 rows across six initiatives, every one of them
+   * between the same person's two teams.
+   *
+   * `flowFor` below already joins the initiative to the team and returns nothing when they
+   * disagree, so the flow column was honest while the initiative column beside it was not —
+   * two components in this one file, each self-consistent, disagreeing about the same row.
+   *
+   * WITHHELD, NOT FORGOTTEN, when the teams differ: switching away and back is exactly what
+   * an evaluation run does, and the initiative is still theirs when they return. */
+  team?: string;
   /** Absent where nothing established them. A skill served WHOLE carries its declared version
    *  and the hash of the bytes; a supporting file, or a trace with no step at all, carries
    *  neither. These have always said unknown by being absent, which is why `??` works on them
@@ -180,6 +196,9 @@ export function stepLoaded(caller: string, skill: string, servedBody: string, wh
     // A skill load does not change which initiative is being worked on.
     // UNDEFINED, NOT "", when nothing has named one — see `Trace.initiative`.
     initiative: prior && now - prior.at <= FOLLOWS_FOR_MS ? prior.initiative : undefined,
+    // AND THE TEAM TRAVELS WITH IT. Carrying the initiative forward without the team it was
+    // named under is what let it cross a team switch in the first place.
+    team: prior && now - prior.at <= FOLLOWS_FOR_MS ? prior.team : undefined,
     // ONLY FROM THE SKILL ITSELF. A supporting file's frontmatter is its own, not the
     // skill's — see the note above for what reading it out of one cost.
     stepVersion: whole ? declaredVersion(servedBody) : undefined,
@@ -196,19 +215,19 @@ export function stepLoaded(caller: string, skill: string, servedBody: string, wh
  * Most calls do not take an initiative as an argument — 254 of 510 rows on 2026-09-13 — and
  * without it a refusal cannot be joined to the document it was made for, which is the entire
  * left-hand side of the reconciliation between what a step predicted and what happened. */
-export function initiativeSeen(caller: string, initiative: string): void {
+export function initiativeSeen(caller: string, initiative: string, team?: string): void {
   const now = Date.now();
   const t = traces.get(caller);
-  if (t && now - t.at <= FOLLOWS_FOR_MS) { t.initiative = initiative; t.at = now; return; }
+  if (t && now - t.at <= FOLLOWS_FOR_MS) { t.initiative = initiative; t.team = team; t.at = now; return; }
   sweep(now);
   // NO STEP, rather than an empty one — see the note on `Trace.step`. This caller named an
   // initiative and has read no skill, so there is nothing to say about which step it is
   // following, and saying it with "" made 1,713 rows unjoinable to `zz.skill`.
-  traces.set(caller, { initiative, run: mint(caller, now), at: now });
+  traces.set(caller, { initiative, team, run: mint(caller, now), at: now });
 }
 
 /** The step this caller is following, or nothing if none is or the last one has expired. */
-export function currentStep(caller: string):
+export function currentStep(caller: string, team?: string):
   { step?: string; step_version?: string; step_sha?: string; initiative?: string; run: string } | undefined {
   const t = traces.get(caller);
   if (!t) return undefined;
@@ -217,8 +236,11 @@ export function currentStep(caller: string):
   // Touched on read: a conversation that is still making calls is still that conversation, and
   // an unrefreshed window would expire mid-run on any step that takes longer than the window.
   t.at = now;
+  // THE STEP CROSSES A TEAM SWITCH AND THE INITIATIVE DOES NOT. Which skill someone is
+  // following is a fact about them; which initiative they are working on is a fact about a
+  // team, and the slug that names it means something different — or nothing — in the next one.
   return { step: t.step, step_version: t.stepVersion, step_sha: t.stepSha,
-           initiative: t.initiative, run: t.run };
+           initiative: t.team === team ? t.initiative : undefined, run: t.run };
 }
 
 /** The flow the call's initiative runs, cached briefly — the initiative's own `flow`, as

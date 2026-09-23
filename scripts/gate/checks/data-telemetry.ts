@@ -476,6 +476,40 @@ check("the answer that names an initiative is actually captured, and an error na
   return null;
 });
 
+check("an initiative is carried forward within a team, never across a switch between two", () => {
+  // A SLUG IS UNIQUE PER `(team_id, slug)`, NOT GLOBALLY — `zz.initiative` says so — and the
+  // trace Map is keyed by caller alone. So one person working two teams named an initiative in
+  // the first, called `manage:team_switch`, and every call after it was written with the new
+  // team beside the old team's initiative. 11 rows, six initiatives, all between the same
+  // person's two teams, cleared from the store on 2026-09-23.
+  //
+  // `flowFor` in the SAME FILE already joins the initiative to the team and returns nothing
+  // when they disagree, so the flow column was honest while the initiative column beside it
+  // was not. That is why no check caught it: every component was self-consistent, and the
+  // disagreement only existed between them.
+  //
+  // THE EXPRESSION THAT DECIDES, not the block around it. A check that merely finds `team`
+  // somewhere in `currentStep` passes on a declaration that is never compared, which is how
+  // two checks written earlier this session failed to discriminate.
+  const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
+  const tel = withoutComments(readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8"));
+  const bad: string[] = [];
+  if (!/initiative: t\.team === team \? t\.initiative : undefined/.test(trace)) {
+    bad.push("currentStep returns the traced initiative without comparing the team it was named "
+           + "under to the team asking, so a slug that means nothing in this team is written "
+           + "onto its rows");
+  }
+  if (!/initiativeSeen\(caller, learned, team\)/.test(tel)) {
+    bad.push("the writer learns an initiative without telling the trace which team named it, "
+           + "so currentStep has nothing to compare and withholds nothing");
+  }
+  if (!/currentStep\(caller, team\)/.test(tel)) {
+    bad.push("the writer asks currentStep for a trace without naming the team it is asking "
+           + "for, so the comparison in currentStep is against undefined");
+  }
+  return bad.length ? bad.join("; ") : null;
+});
+
 check("a field that has held an empty string is written as absent, not as two spellings of nothing", () => {
   // `??` COALESCES NULL AND UNDEFINED AND NOT `""`, which is how one column comes to hold two
   // spellings of the same absence while its index holds one.
@@ -485,7 +519,9 @@ check("a field that has held an empty string is written as absent, not as two sp
   // tables 1,695 times a pass to resolve one of them. The comment recording that sits four
   // lines above `Trace.initiative`, which had the identical defect and did not get the fix:
   // a skill loaded before any initiative is known wrote `initiative: ""` into a fresh trace.
-  // Measured 2026-09-23: 381 rows, every one a `skill_read` at the start of a conversation.
+  // Measured 2026-09-23: 381 rows, every one a `skill_read` at the start of a conversation,
+  // and cleared from the store that same day once this fix had shipped. The count is kept here
+  // because it is the size of what the check prevents, not a description of the store today.
   //
   // BOTH LINES OF DEFENCE, because either alone has already failed once. The trace says absent
   // by being undefined; the writer refuses an empty string at the one place every row is

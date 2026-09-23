@@ -501,10 +501,16 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
       }
       // WHAT THIS EXCHANGE TAUGHT US ABOUT WHICH INITIATIVE IS BEING WORKED ON —
       // `call-attribution.ts`, beside the question of which stage an act completes.
+      // THE ACTIVE TEAM GOES INTO THE TRACE, not only into the flow lookup below. `flowFor`
+      // has always joined the initiative to the team and returned nothing when they disagree;
+      // the initiative itself was carried forward on the caller alone, so a `team_switch` left
+      // the new team's rows stamped with the old team's initiative while the flow beside it
+      // correctly said nothing.
+      const team = req.zzIdentity?.activeTeam ?? undefined;
       const learned = initiativeFrom(wanted, served);
-      if (learned) initiativeSeen(caller, learned);
-      const step = currentStep(caller);
-      const flow = await flowFor(req.zzIdentity?.activeTeam ?? null, step?.initiative);
+      if (learned) initiativeSeen(caller, learned, team);
+      const step = currentStep(caller, team);
+      const flow = await flowFor(team ?? null, step?.initiative);
 
       for (const call of wanted) {
         const given = call.params?.arguments ?? {};

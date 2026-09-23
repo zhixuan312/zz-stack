@@ -187,6 +187,30 @@ probe("no document carries a status its flow does not gate", () => {
 // A door IS a plugin's declared server, so a call that arrived on one is attributable by
 // construction; the only honest null is a surface no manifest claims, which today is `admin`.
 // So this counts what is NOT attributed and excludes that one.
+probe("no event names an initiative that does not exist in that event's own team", () => {
+  // NOT COUNT-BOUNDED, unlike the probe below, because the history behind this one was
+  // cleaned rather than left to age out. 11 rows named an initiative belonging to the
+  // caller's OTHER team — the trace carried it across a `manage:team_switch` — and they were
+  // corrected on 2026-09-23, so zero is reachable and anything above it is new.
+  //
+  // THE TEAM IS PART OF THE QUESTION. `zz.initiative` is unique on `(team_id, slug)`, not on
+  // slug, so "the slug exists" is not the same as "the slug exists here": on 2026-09-23 one
+  // slug lived in two teams, and a team-blind version of this query called both attributions
+  // valid while calling neither wrong.
+  const bad = psql(
+    "select count(*) from zz.event e where e.initiative is not null" +
+    " and not exists (select 1 from zz.initiative i join zz.team t on t.id = i.team_id" +
+    "                  where i.slug = e.initiative and t.slug is not distinct from e.team_slug)").trim();
+  const n = Number(bad);
+  if (Number.isNaN(n)) throw new Error("could not count cross-team attributions on the host");
+  if (!n) return null;
+  return `${n} event row(s) name an initiative that does not exist in the team the row is ` +
+         `filed under. A slug means something different, or nothing, in the next team, so ` +
+         `these rows attribute work to an initiative that never saw it — and every per-team ` +
+         `report reads them. The trace carries the initiative forward on the caller; it must ` +
+         `withhold it when the team changes.`;
+});
+
 probe("recent tool calls name the plugin whose door they arrived on", () => {
   // THE LAST 200 CALLS, NOT ALL OF THEM, and the bound is the whole design of this probe.
   //

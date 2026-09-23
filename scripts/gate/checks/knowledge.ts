@@ -418,11 +418,11 @@ check("every flow that gates a document also carries the handover", () => {
   const src = catalogSource();
   const at = src.indexOf("export function withHandover(");
   if (at < 0) return "withHandover is gone or was renamed — both the platform and the console resolve a flow's documents through it";
-  const body = src.slice(at, src.indexOf("\n}", at));
+  const body = withoutComments(src.slice(at, src.indexOf("\n}", at)));
   const bad: string[] = [];
   if (!/handover\.md/.test(body)) bad.push("withHandover does not derive handover.md");
   if (!/\.gate/.test(body)) bad.push("the derivation does not test for a gated document");
-  if (!/withHandover\(/.test(zzCoreSource())) {
+  if (!/withHandover\(/.test(withoutComments(zzCoreSource()))) {
     bad.push("zz-core does not call withHandover — deriveChain must delegate, or the platform and the console describe different flows again");
   }
   if (!/What this initiative taught/.test(body)) {
@@ -443,7 +443,7 @@ check("the handover carries a gate and does not carry the close", () => {
   // by before; the entry is identified by the field that only the entry has.
   const at = src.indexOf('name: "handover.md"');
   if (at < 0) return "no handover.md entry is derived anywhere";
-  const region = src.slice(at, at + 700);
+  const region = withoutComments(src.slice(at, at + 700));
   const bad: string[] = [];
   if (!/gate:\s*true/.test(region)) bad.push("the handover is not gated, so nobody signs it");
   if (/requiredForClose:\s*true/.test(region)) bad.push("the handover is requiredForClose, which makes the close demand a document that cannot exist yet");

@@ -55,6 +55,13 @@ than how much code moved.
   build script — kept deliberately rather than tidied away, and the README's file table names
   every file in the directory, so a ninth one it did not mention would have made that table
   quietly wrong.
+- That commit turned the console's gate red, and the check was right to fire: it asserted the
+  icon directory held exactly eight PNGs, which is not the claim it wanted to make. A count
+  passes unchanged if the build script drops an output and emits one junk file. The check now
+  names the eight, asserts each was written by THIS run (a file the script has stopped
+  emitting keeps its old bytes and hashes identically, so being in the directory was never
+  evidence it is still built), and requires anything else there to have a row in the
+  directory's README table — a rule that README already stated in prose and nothing enforced.
 
 ### Upgrade notes
 - Nothing to do. No migration, no environment key, no tool argument changes.

@@ -2,7 +2,7 @@
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
 when_to_use: "The person typed /sdlc:flow. This is a command, not an auto-matched skill."
-version: "0.66.0"
+version: "0.67.0"
 disable-model-invocation: true
 ---
 

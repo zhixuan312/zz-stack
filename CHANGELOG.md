@@ -33,6 +33,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.67.0] — 2026-09-23
+
+### Fixed
+- **`superseded_in_results` has reported 0 for every document search ever run.** The search
+  excludes a superseded row on two signals — a node carries `lifecycle: superseded`, a document
+  keeps `status: approved` and names its successor in `superseded_by` — and the counter read
+  only the first. 210 documents on this deployment carry a `superseded_by` and not one carries
+  `status: superseded`, so the field never once told a reader that part of their result had
+  been replaced.
+- **A document the flow does not declare could not record why it changed.** `document_revise`
+  refused it by name, using the same test that EXEMPTS such a document at four separate write
+  guards. So on a governed initiative an undeclared document could be created and rewritten by
+  `document_write` forever and was the only document that could never carry a cause — the
+  platform's own law inverted, on exactly the documents no flow is watching. Open since 0.60.0,
+  reported from a real session. `document_approve` still refuses one: there is no gate on it,
+  so there is no verdict to record.
+
+### Changed
+- The query-to-predicate half of `knowledge_search` moved to `services/zz-core/src/tools/search-predicate.ts`.
+  Internal; no tool argument or answer changes.
+
 ## [0.66.0] — 2026-09-23
 
 ### Fixed

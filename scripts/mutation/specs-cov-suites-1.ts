@@ -22,7 +22,14 @@
 import type { MutationSpec } from "./plant.ts";
 
 /** Every row in this file is registered by the same module. */
+// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
+// These were all `SUITES` while one file registered ninety-six checks; the split by
+// subject means a row now drifts only when the module its own check lives in moves.
 const SUITES = "scripts/gate/checks/suites.ts";
+const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
+const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
+const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
+const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
 /* THREE TOKENS BELOW ARE SPLIT ACROSS A CONCATENATION, AND THAT IS NOT STYLE.
  *
@@ -64,7 +71,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "closing verdict rests on — reads as an initiative and an outcome that were never written",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "an unsupported Node fails naming both versions and why, as a runtime problem " +
       "rather than a syntax error in the code",
     assertion: "the floor is read from package.json and compared against the running Node",
@@ -76,7 +83,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "the drift a single declared floor exists to make impossible",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "no discovery site under scripts/ or checks/ filters on .mjs alone, matching " +
       "nothing after the rename",
     assertion: "a discovery site that selects an extension nothing carries is found",
@@ -89,7 +96,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "for a check that examined nothing",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "scripts/gate/ carries zero strict errors, the registry it runs is unchanged, " +
       "and none of them was reached by widening to any",
     assertion: "the gate subtree still typechecks clean",
@@ -102,7 +109,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "no longer typechecks — the state this check exists to stop the repository drifting into",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "the command a model is told to run names a file the consumer will actually have",
     assertion: "a shipped command resolves against the built tree, not the catalog source",
     subject: "catalog/zz/zz-access/skills/zz-doctor/SKILL.md",
@@ -113,7 +120,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "\"cannot find module\" at the moment somebody is already trying to diagnose something",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "every script or check a document or a thrown error names by path is a file that " +
       "exists, and CHANGELOG.md alone is left free to remember one that isn't",
     assertion: "a path named in prose still resolves",
@@ -125,7 +132,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "ceiling names something nobody can open",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "an aggregate nothing measured renders as null, never a confident zero",
     assertion: "the overview tests run bytes for null rather than folding a gap to zero",
     subject: "services/gateway/src/console/overview-metrics.ts",
@@ -136,7 +143,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "drags the median size down with it",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "a column nothing reads is not proof a column nothing needs",
     assertion: "the written tool_key is resolved again rather than read outright",
     subject: "packages/tools/src/testing/tool-report.ts",
@@ -147,7 +154,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "unrelated series that never add up",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "the record's own columns exist, and a gap is nullable",
     assertion: "a token column a provider never reported stays nullable",
     // THE SCHEMA, not the migration that added the column. 050 was squashed into 001_init.sql
@@ -162,7 +169,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "a sum over the column reads as complete while it is silently short",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "every completion the judge asks for is recorded, and an unreported figure stays null",
     assertion: "an unreported token count is recorded as null, never as zero",
     subject: "services/zz-core/src/eval/judge.ts",
@@ -173,7 +180,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "becomes spend that did not happen",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "every plugin declares what it is, what it ships, and what each stage leaves behind",
     assertion: "every stage declares what it produces",
     subject: "catalog/sdlc/sdlc-flow/flow.json",
@@ -184,7 +191,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "what the stage after it is supposed to read",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the two tools that left the core door are gone from it and from every caller",
     assertion: "a deleted tool name survives nowhere, prose included",
     subject: "skills/zz-platform/SKILL.md",
@@ -201,7 +208,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "nothing red anywhere",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the evaluation door serves its own tools, and the gateway reaches that door and " +
       "not the other",
     assertion: "the flow's manifest declares the door that serves the tools its skills call",
@@ -213,7 +220,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "— and at one every account already has, which hides the mistake behind a door that answers",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the evaluation door speaks four nouns, three names are deliberately untouched, " +
       "and the graders and the chain check follow",
     assertion: "the release chain check calls names the door actually registers",
@@ -225,7 +232,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "change was fine, and the renamed tool is exercised by nothing",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the written record matches the delivered surface, and no document outgrew the ceiling",
     assertion: "the fit-for-purpose review is a step that actually stops the release",
     subject: "scripts/release/fit-for-purpose.ts",
@@ -236,7 +243,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "message still says it stopped",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "corpus planning arithmetic refuses a fractional fixture count, and the " +
       "deterministic text generator hits its exact byte target",
     assertion: "a scale that gives a fractional fixture count is refused, not rounded",
@@ -248,7 +255,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "undeclared one from the corpus the report says was measured",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "the artifact reference and semantic payload schemas reject malformed input and " +
       "agree on the one semantic-field order",
     assertion: "a reference's revision must be a positive integer or null",
@@ -262,7 +269,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "append-only record carries it forever",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "a subtype policy decision refuses source verify, knowledge approve and an " +
       "undeclared work gate by name, and binds approval/verification to the actual revision " +
       "and record digest",
@@ -278,7 +285,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "approval — a signature carries onto content nobody read",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "a legacy import through the real importer and the real kernel keeps every " +
       "original byte, classifies malformed frontmatter as legacy-raw, leaves an undeclared " +
       "original time null, and applying the same conversion manifest twice adds no identity, " +
@@ -292,7 +299,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "instant and a reader can no longer tell which times the converter invented",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "the rebuild cache decision is exact equality, refuses no prior attempt as always " +
       "stale, and changes on every one of a fingerprint's own named fields",
     assertion: "every version the fingerprint names actually changes it",
@@ -304,7 +311,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "old code is never rebuilt — it just quietly keeps serving",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "an isolation observation is refused as vacuous with no baseline results, and " +
       "refused on a changed statistic, a changed score or leaked forbidden metadata, never " +
       "only on a mismatched shape",
@@ -317,7 +324,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "observation of perfect isolation — the shape matched, and nothing read the number",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "a benchmark report is refused when its scale is forged, its corpus distribution " +
       "is off, a slice divides by nothing, its qrels are not the approved ones or a binding " +
       "is missing — and the honestly empty report still validates",
@@ -334,7 +341,7 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "approval that was never given to it",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the deck skill names one destination, and never the platform's document-write tool",
     assertion: "the skill names one destination and no platform write tool",
     subject: "skills/zz-deck/SKILL.md",

@@ -17,9 +17,14 @@ import { readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 import { isGateLaunchSource } from "../scripts/gate/read.ts";
+import { suiteSources } from "../scripts/gate/suite-runner.ts";
 
 const fail = [];
-const suites = readFileSync("scripts/gate/checks/suites.ts", "utf8");
+// EVERY GATE MODULE, not suites.ts alone. The registrations were split across `suites-*.ts`
+// because `check_sha256` is per file; a rule that kept reading the one file would have called
+// all eighty-five of the moved checks unregistered and told a reader to register each of them a
+// second time.
+const suites = suiteSources();
 // TWO SPELLINGS OF "REGISTERED", both live. Newer checks go through the `runsCheck` helper;
 // three older ones (attest-shown, write-guards, document-rules) are registered by an inline
 // execFileSync naming `checks/<file>` directly. Reading only the helper form reported all three
@@ -56,7 +61,7 @@ const SELF = "working-checks-registered.ts";
 // somebody added an entry, which is the defect this initiative removed from two hand-kept
 // rosters already.
 const declared = new Set(
-  [...readFileSync("scripts/gate/checks/suites.ts", "utf8")
+  [...suiteSources()
     .matchAll(/\[\s*"([A-Za-z0-9._-]+\.(?:ts|sh))"\s*,\s*\n?\s*"/g)].map((m) => m[1]));
 
 for (const f of readdirSync("checks").filter((f) => f.endsWith(".ts"))) {
@@ -76,7 +81,7 @@ for (const f of readdirSync("checks").filter((f) => f.endsWith(".ts"))) {
 
   const r = spawnSync("node", [`checks/${f}`], { encoding: "utf8", timeout: 60_000 });
   if (r.status === 0) {
-    fail.push(`checks/${f} passes and is not registered in suites.ts — the gate does not run ` +
+    fail.push(`checks/${f} passes and is not registered in any suites module — the gate does not run ` +
               `it, so it is green by absence. Add one top-level check(...) line via runsCheck.`);
   }
 }

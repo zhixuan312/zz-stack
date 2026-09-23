@@ -20,7 +20,14 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
+// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
+// These were all `SUITES` while one file registered ninety-six checks; the split by
+// subject means a row now drifts only when the module its own check lives in moves.
 const SUITES = "scripts/gate/checks/suites.ts";
+const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
+const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
+const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
+const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
 
 export const COV_SUITES_3: readonly MutationSpec[] = [
   {
@@ -65,7 +72,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "`## [Unreleased]` and the next release wrote its own sections beside it",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "the tooling project runs standalone through typecheck:tooling, is deliberately " +
       "absent from tsc -b's reference graph, and inherits its strictness rather than " +
       "softening it locally",
@@ -78,7 +85,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "locals and unused imports across scripts/, checks/ and testing/ stop being reported at all",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "every entry point a human types — an npm script, a deploy script — names the .ts " +
       "file that exists, not the .mjs file that no longer does",
     assertion: "an npm script may not name a .mjs entry point the rename deleted",
@@ -95,7 +102,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "found the moment they need it, and no import graph anywhere would have noticed",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "the five shipped skill scripts carry zero strict errors, every construct in them " +
       "is erasable, and none was reached by widening to any",
     assertion: "a shipped skill script may not reach zero errors by widening to any",
@@ -111,7 +118,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "rather than by making it true",
   },
   {
-    check: SUITES,
+    check: SUITES_TOOLING,
     target: "the whole tooling project carries zero strict errors, measured as one project " +
       "rather than subtree by subtree",
     assertion: "a strict error anywhere in the tooling project is reported, not just per subtree",
@@ -123,7 +130,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "carries a strict error again, which is the state the conversion was declared finished from",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "every tool the spec renamed resolves through one frozen map",
     assertion: "a deleted tool takes no alias entry",
     subject: "packages/contracts/src/alias.ts",
@@ -135,7 +142,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "thing a rename map must never do to a deletion",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "a query binds as many parameters as its statement names",
     assertion: "a statement that stops naming a placeholder its caller still binds is caught",
     subject: "services/zz-core/src/tools/bugs.ts",
@@ -147,7 +154,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "already, because nothing offline reads SQL inside a template literal",
   },
   {
-    check: SUITES,
+    check: SUITES_DATA,
     target: "what a call cost is a column, and detail keeps no second copy",
     assertion: "an unmeasured run's byte total stays null rather than being coalesced to zero",
     subject: "services/gateway/src/runs.ts",
@@ -159,7 +166,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "the confident zero migration 051 exists to remove, back in both directions",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "a command is what a manifest declares, not what a function derives from a skill name",
     assertion: "the literal \"flow\" fallback stays deleted, not merely unused",
     subject: "services/gateway/src/client-package.ts",
@@ -171,7 +178,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "is not",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "a revision names its cause — one route or the other, never neither and never both",
     assertion: "words passed as source_content are a cause on their own",
     subject: "services/zz-core/src/tools/initiative-acts.ts",
@@ -183,7 +190,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "tool now ignores",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "opening is explicit and dated by the platform, and freeform gets no next move",
     assertion: "a closed initiative's answer says what is true of its own handover",
     subject: "services/zz-core/src/tools/initiative-status.ts",
@@ -195,7 +202,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "would be naming a thing that was done",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "opening is explicit and dated by the platform, and freeform gets no next move",
     assertion: "a stage that evidences itself with a source is walked like any other stage",
     subject: "services/zz-core/src/tools/initiative-status.ts",
@@ -207,7 +214,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "and the close then refused for a round nothing had told the agent to run",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "opening is explicit and dated by the platform, and freeform gets no next move",
     assertion: "a freeform initiative is given no next move at all",
     subject: "services/zz-core/src/tools/initiative-status.ts",
@@ -221,7 +228,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "longer opens",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the evaluation modules are on the evaluation side, and attest stays on the core one",
     assertion: "only the evaluation side and its door reach into the evaluation modules",
     subject: "services/zz-core/src/tools/initiative-acts.ts",
@@ -233,7 +240,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "surface is scanned out of starts importing the modules that were moved off it",
   },
   {
-    check: SUITES,
+    check: SUITES_SURFACE,
     target: "the two misnamed core skills are renamed, every caller moved, and an old step " +
       "still resolves",
     assertion: "the renamed skill declares its new name in its own frontmatter",
@@ -255,7 +262,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "something else",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "tenant-info's workspace and suite guards refuse what they say they refuse, and " +
       "its CLI carries no import-time side effects",
     assertion: "a workspace that reaches the checkout through a symlink is still refused",
@@ -268,7 +275,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "documents, which is the one thing the required workspace exists to make impossible",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, " +
       "base digest, pg_textsearch release and actual preload membership",
     assertion: "the lock's pinned patch is the patch the Dockerfile actually builds",
@@ -280,7 +287,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "the drift these two files are cross-checked against each other to make impossible",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "a mutation request hashes canonically regardless of key order, changes with its " +
       "payload or expected_etag, and a commit outcome classifies to true/false/unknown " +
       "exactly as the spec's publication/durability table says",
@@ -294,7 +301,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "table where guessing loses data",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "an OKF round trip through the real YAML parser keeps unknown keys, never turns " +
       "verified_against into a fabricated verification event, and OKF conformance and " +
       "native-profile validation report separate verdicts",
@@ -309,7 +316,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "a claim was checked — nobody checked it, and the record now says otherwise",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "zz-lexical-v2 handles empty text, CRLF, a forced long-token split with no " +
       "whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage " +
       "boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger " +
@@ -323,7 +330,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "which phrases those are depends on nothing but how long the document happens to be",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "lane budgets are fixed functions of the limit that refuse a non-integer or " +
       "out-of-range value, RRF sums each lane's max-over-corpora contribution in a fixed lane " +
       "order regardless of input order, and result-key identity is owner-qualified with " +
@@ -337,7 +344,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "nothing and reports no error at all",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "new artifact text over 8 MiB is refused through the real adapter with " +
       "PAYLOAD_TOO_LARGE, the stored content is untouched, and an under-limit write still commits",
     assertion: "a new write is measured against the limit, not exempted as legacy",
@@ -349,7 +356,7 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
       "written down, still exported and still tested in isolation, and no write passes through it",
   },
   {
-    check: SUITES,
+    check: SUITES_TENANT,
     target: "the acceptance decision needs all thirteen criteria, the spec's own method for " +
       "each, a matching binding, verified evidence and a gate that actually executed — and a " +
       "wholly failed report is still structurally valid",

@@ -20,15 +20,9 @@ import { dirname, join } from "node:path";
 import { asRecord, codeOnly, envNamesIn, isGateLaunchSource, readJson, root, trackedFiles, unbuilt, withoutComments }
   from "../read.ts";
 import { check } from "../run.ts";
+import { execFields, suiteSources } from "../suite-runner.ts";
 import { generateJudgedDataset, judgedDatasetToJsonl } from "../../tenant-info/judged-dataset.ts";
 
-/** A caught value is never typed as an Error — narrow the shape actually being read rather
- *  than assume it. Here it is an `execFileSync` failure, which carries `stdout`/`stderr`
- *  rather than a plain `message`. */
-function execFields(err: unknown): { stdout: string; stderr: string } {
-  const e = err && typeof err === "object" ? err as Record<string, unknown> : {};
-  return { stdout: e.stdout !== undefined ? String(e.stdout) : "", stderr: e.stderr !== undefined ? String(e.stderr) : "" };
-}
 
 /** Run one of the offline check tools that live beside the code they are about.
  *
@@ -50,59 +44,7 @@ const runsClean = (tool: string) => (): string | null => {
   }
 };
 
-/** Run a check that lives in `checks/`, the same way `runsClean` runs one that lives in dist.
- *
- * WHY THIS EXISTS. Everything in `checks/` was invoked by hand and nothing else: the gate
- * registered three of them and the other forty-one ran only when somebody typed their name.
- * Five checks this initiative wrote were mutation-tested, reported green, and were never once
- * executed by `scripts/gate.ts` — so "the gate passes" and "the checks pass" were two
- * separate claims that sounded like one. A check nobody runs automatically is documentation.
- *
- * NOT EVERY FILE IN `checks/` BELONGS HERE. Three kinds live in that directory:
- *   - plain checks, which assert a property by reading or importing — these, registered below;
- *   - break-tests, which plant a defect and SPAWN `scripts/gate.ts` to prove it goes red —
- *     registering one of those here makes the gate invoke itself, forever;
- *   - host-dependent checks (`returns-sees-a-backtrack.ts` reaches the live database over
- *     ssh) — those belong to the release, which has a deployment to reach.
- *
- * SPAWNING THE GATE IS THE MARKER for the second kind, and the `gate-` prefix is a naming
- * convention over it rather than the test itself. This paragraph said the prefix WAS the
- * marker, and the file that would have caught an unwired check — `all-checks-wired.ts` —
- * spawns the gate and carries no prefix, so a rule reading the name would have registered it
- * and the gate would have invoked itself until something ran out. The check at the bottom of
- * this file reads the file's own text instead, and reports a `gate-` prefix on a file that
- * spawns nothing as the naming lie it is. */
-const runsCheck = (file: string) => (): string | null => {
-  const nothingToRun = unbuilt();
-  if (nothingToRun) return nothingToRun;
-  try {
-    execFileSync("node", [join(root, `checks/${file}`)],
-                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return null;
-  } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
-    return out.split("\n").filter((l) => l.trim()).join("; ").slice(0, 400)
-      || `checks/${file} exited non-zero`;
-  }
-};
 
-/** The same, for the two checks in `checks/` written as bash rather than as a module.
- *
- * A SECOND HELPER RATHER THAN A FLAG ON THE FIRST, because what differs is the interpreter and
- * nothing else, and `runsCheck(file, { shell: true })` is a parameter every future reader has
- * to go and look up. Both scripts print `FAIL:` lines and exit non-zero, exactly as the .mjs
- * checks do, so the failure text needs no separate handling. */
-const runsShell = (file: string) => (): string | null => {
-  try {
-    execFileSync("bash", [join(root, `checks/${file}`)],
-                 { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return null;
-  } catch (err) {
-    const out = `${execFields(err).stdout}${execFields(err).stderr}`.trim();
-    return out.split("\n").filter((l) => /FAIL/.test(l)).join("; ").slice(0, 400)
-      || `checks/${file} exited non-zero`;
-  }
-};
 
 check("a hostile document cannot become script in a reader's browser", () => {
   const nothingToRun = unbuilt();
@@ -234,71 +176,27 @@ check("the version that shipped has a changelog section of its own", () => {
 // One `check()` per line, deliberately not a loop: STATE.md counts `^check(` and a loop would
 // collapse these seven into one, drifting the declared total by six.
 
-check("the node floor is one decision written in package.json and .nvmrc, and the image does not move with it",
-      runsCheck("engines-floor.ts"));
 
-check("an unsupported Node fails naming both versions and why, as a runtime problem rather than a syntax error in the code",
-      runsCheck("node-floor.ts"));
 
-check("the node floor check fails, and fails informatively, when the floor is not met",
-      runsCheck("node-floor-breaks.ts"));
 
-check("the tooling project runs standalone through typecheck:tooling, is deliberately absent from tsc -b's reference graph, and inherits its strictness rather than softening it locally",
-      runsCheck("tooling-project.ts"));
 
-check("no file this rename touched went missing, and every sibling that imports one now names it by its .ts extension",
-      runsCheck("rename-complete.ts"));
 
-check("no discovery site under scripts/ or checks/ filters on .mjs alone, matching nothing after the rename",
-      runsCheck("no-mjs-filters.ts"));
 
-check("every literal path a script or check names under scripts/ or checks/ is a file that exists, so an import, a spawn or a read cannot outlive its target",
-      runsCheck("literal-paths-resolve.ts"));
 
-check("every entry point a human types — an npm script, a deploy script — names the .ts file that exists, not the .mjs file that no longer does",
-      runsCheck("entry-points-resolve.ts"));
 
-check("checks/ carries zero strict errors, and none of them was reached by widening to any",
-      runsCheck("strict-checks-dir.ts"));
 
-check("scripts/gate/ carries zero strict errors, the registry it runs is unchanged, and none of them was reached by widening to any",
-      runsCheck("strict-gate-dir.ts"));
 
-check("the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
-      runsCheck("strict-scripts-dir.ts"));
 
-check("the five shipped skill scripts carry zero strict errors, every construct in them is erasable, and none was reached by widening to any",
-      runsCheck("strict-catalog-skills.ts"));
 
-check("what consumers receive is JavaScript, never the source, and rebuilding it changes nothing",
-      runsCheck("marketplace-ships-js.ts"));
 
-check("the command a model is told to run names a file the consumer will actually have",
-      runsCheck("skill-commands-runnable.ts"));
 
-check("a lock regenerated from the converted tree comes back unchanged, byte for byte",
-      runsCheck("lock-current.ts"));
 
-check("the whole tooling project carries zero strict errors, measured as one project rather than subtree by subtree",
-      runsCheck("strict-tooling-zero.ts"));
 
-check("the checks a stricter tooling project superseded are gone, not merely duplicated, and the incident they existed to prevent is still on record",
-      runsCheck("bespoke-checks-gone.ts"));
 
-check("every script or check a document or a thrown error names by path is a file that exists, and CHANGELOG.md alone is left free to remember one that isn't",
-      runsCheck("docs-name-real-files.ts"));
 
-check("a plugin's content identity moves with its content and not with its address",
-      runsCheck("digest-per-plugin.ts"));
 
-check("a check that works is a check the gate runs",
-      runsCheck("working-checks-registered.ts"));
 
-check("a file that resolves renamed tools never matches a pre-rename name",
-      runsCheck("pre-rename-literals.ts"));
 
-check("an aggregate nothing measured renders as null, never a confident zero",
-      runsCheck("console-nulls.ts"));
 
 check("every check this gate registers is a file git will carry", () => {
   // suites.ts is TRACKED and the files it names were not. Eight registered checks existed only
@@ -315,7 +213,11 @@ check("every check this gate registers is a file git will carry", () => {
   // contains the spelling it is advising, so this reported `checks/${f}` as untracked, which is
   // true of a file that has never existed. An extension is what separates a name from a
   // sentence about names.
-  const missing = [...readFileSync(join(root, "scripts/gate/checks/suites.ts"), "utf8")
+  // EVERY GATE MODULE, not this one. The registrations moved into `suites-*.ts` the day
+  // suites.ts was split; a rule still reading this file by name would have called all eighty-five
+  // of them untracked. `suiteSources()` reads the whole directory, so it cannot miss the next
+  // module either.
+  const missing = [...suiteSources()
     .matchAll(/runs(?:Check|Shell)\("([A-Za-z0-9._-]+\.(?:ts|sh))"\)/g)]
     .map((m) => m[1]).filter((f) => !known.has(f));
   // AND THE MODULES THE GATE IMPORTS, which this did not cover and had to. The rule above reads
@@ -353,188 +255,66 @@ check("every check this gate registers is a file git will carry", () => {
     : null;
 });
 
-check("every tool the spec renamed resolves through one frozen map", runsCheck("alias-maps.ts"));
 
-check("the resolvers are applied wherever a stored name is read", runsCheck("alias-applied.ts"));
 
-check("a column nothing reads is not proof a column nothing needs", runsCheck("tool-key-read.ts"));
 
-check("an insert names as many values as it names columns",
-      runsCheck("insert-arity.ts"));
 
-check("a query binds as many parameters as its statement names",
-      runsCheck("query-arity.ts"));
 
-check("the definition this platform is built on holds in its source",
-      runsCheck("definition-rules.ts"));
 
-check("the record's own columns exist, and a gap is nullable", runsCheck("record-and-cost-columns.ts"));
 
-check("every tool call says which plugin it was made for", runsCheck("attribution.ts"));
 
-check("what a call cost is a column, and detail keeps no second copy",
-      runsCheck("telemetry-columns.ts"));
 
-check("the chain check runs where a deployment exists, and not in this gate",
-      runsCheck("chain-check-wiring.ts"));
 
-check("every completion the judge asks for is recorded, and an unreported figure stays null",
-      runsCheck("judge-usage.ts"));
 
-check("the manifest can express what the standard requires, and not what it replaced",
-      runsCheck("contract-fields.ts"));
 
-check("a command is what a manifest declares, not what a function derives from a skill name",
-      runsCheck("commands-declared.ts"));
 
-check("a flow is a plugin that declares documents, and zz-access is not one",
-      runsCheck("flow-classification.ts"));
 
-check("every plugin declares what it is, what it ships, and what each stage leaves behind",
-      runsCheck("manifests-conform.ts"));
 
-check("the core door speaks noun-first, and no caller still says the old name",
-      runsCheck("core-names.ts"));
 
-check("a revision names its cause — one route or the other, never neither and never both",
-      runsCheck("revise-cause.ts"));
 
-check("a document read takes a list and a version, and history never vouches for the present",
-      runsCheck("document-reads.ts"));
 
-check("the two tools that left the core door are gone from it and from every caller",
-      runsCheck("core-surface-19.ts"));
 
-check("the core door introduces itself to a client that reads nothing else, and the pointer survives",
-      runsCheck("orientation.ts"));
 
-check("opening is explicit and dated by the platform, and freeform gets no next move",
-      runsCheck("initiative-open.ts"));
 
-check("the /manage door is cut by role, the duplicates are gone, and the exception is kept",
-      runsCheck("manage-surface.ts"));
 
-check("the evaluation door serves its own tools, and the gateway reaches that door and not the other",
-      runsCheck("eval-door.ts"));
 
-check("sdlc closes on its review, gates it, and leaves its audits ungated",
-      runsCheck("sdlc-documents.ts"));
 
-check("the evaluation modules are on the evaluation side, and attest stays on the core one",
-      runsCheck("eval-tools-moved.ts"));
 
-check("the three verification stages leave a document, and keep their independence",
-      runsCheck("verification-stages-write.ts"));
 
-check("the evaluation door speaks four nouns, three names are deliberately untouched, and the graders and the chain check follow",
-      runsCheck("eval-names.ts"));
 
-check("every skill ships from the plugin that owns it, and its commands follow with it",
-      runsCheck("skill-homes.ts"));
 
-check("the two misnamed core skills are renamed, every caller moved, and an old step still resolves",
-      runsCheck("skill-renames.ts"));
 
-check("no shipped file states a count of this platform's own surface",
-      runsCheck("derived-counts.ts"));
 
-check("the written record matches the delivered surface, and no document outgrew the ceiling",
-      runsCheck("docs-current.ts"));
 
-check("a renamed plugin still resolves, and the updater's copy of the map is the contract's",
-      runsCheck("plugin-alias.ts"));
 
-check("tenant-info's workspace and suite guards refuse what they say they refuse, and its CLI carries no import-time side effects",
-      runsCheck("tenant-info-cli.ts"));
 
-check("a baseline receipt carries every required field with its measurement evidence, and never a credential",
-      runsCheck("tenant-info-baseline-fields.ts"));
 
-check("corpus planning arithmetic refuses a fractional fixture count, and the deterministic text generator hits its exact byte target",
-      runsCheck("tenant-info-corpus-shape.ts"));
 
-check("the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
-      runsCheck("tenant-info-qrels-integrity.ts"));
 
-check("the PostgreSQL 17 lock, Dockerfile and config agree on the pinned major/patch, base digest, pg_textsearch release and actual preload membership",
-      runsCheck("postgres-image-pinned.ts"));
 
-check("a backup manifest is refused when it is missing any of the five undisposable component kinds, when the canonical record is not included, or when a component's hash is malformed",
-      runsCheck("backup-covers-the-undisposable.ts"));
 
-check("the artifact reference and semantic payload schemas reject malformed input and agree on the one semantic-field order",
-      runsCheck("tenant-information-contract.ts"));
 
-check("a commit manifest hashes over its own canonical fields, never over bytes containing that hash, and a commit's basename refuses a non-positive sequence",
-      runsCheck("tenant-record-durability.ts"));
 
-check("a mutation request hashes canonically regardless of key order, changes with its payload or expected_etag, and a commit outcome classifies to true/false/unknown exactly as the spec's publication/durability table says",
-      runsCheck("tenant-kernel-codes.ts"));
 
-check("a semantic payload's canonical hash is stable under tag order/dupes, CRLF and sorted content_fields, and changes on every single-field edit the spec names",
-      runsCheck("tenant-revision-boundary.ts"));
 
-check("a subtype policy decision refuses source verify, knowledge approve and an undeclared work gate by name, and binds approval/verification to the actual revision and record digest",
-      runsCheck("tenant-lifecycle-matrix.ts"));
 
-check("the adapter fixture's patch/approve enter the one mutation kernel — a missing etag, a stale retry and a stale approval are each refused, an idempotent replay returns the original transaction, and the materialized read reflects exactly the committed edit",
-      runsCheck("tenant-single-writer.ts"));
 
-check("an OKF round trip through the real YAML parser keeps unknown keys, never turns verified_against into a fabricated verification event, and OKF conformance and native-profile validation report separate verdicts",
-      runsCheck("okf-round-trip.ts"));
 
-check("the actual migrations directory names the migration slug exactly once, every numeric prefix is unique, and a duplicate or missing slug is refused",
-      runsCheck("tenant-migration-shape.ts"));
 
-check("a legacy import through the real importer and the real kernel keeps every original byte, classifies malformed frontmatter as legacy-raw, leaves an undeclared original time null, and applying the same conversion manifest twice adds no identity, revision or event",
-      runsCheck("tenant-migration-losslessness.ts"));
 
-check("bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
-      runsCheck("tenant-complete-text.ts"));
 
-check("zz-lexical-v2 handles empty text, CRLF, a forced long-token split with no whitespace to prefer, a full 1-MiB mixed-language body and a phrase at a passage boundary, and the 8-MiB kernel gate refuses new input while preserving legacy larger content",
-      runsCheck("tenant-passage-analysis.ts"));
 
-check("a migration needing an extension declares it, and the runner still defers rather than taking the database down", runsCheck("migration-extension-declared.ts"));
 
-check("the rebuild cache decision is exact equality, refuses no prior attempt as always stale, and changes on every one of a fingerprint's own named fields",
-      runsCheck("tenant-rebuild-inputs.ts"));
 
-check("corpus resolution defaults to current, admits an explicit scope union, drops shared corpora when sharing is disallowed, and refuses an empty scope, an unknown scope or a caller-supplied owner/index override",
-      runsCheck("tenant-scope-predicates.ts"));
 
-check("lane budgets are fixed functions of the limit that refuse a non-integer or out-of-range value, RRF sums each lane's max-over-corpora contribution in a fixed lane order regardless of input order, and result-key identity is owner-qualified with history alone carrying revision/hash",
-      runsCheck("tenant-fusion-arithmetic.ts"));
 
-check("grammar recognition precedes identifier normalization so a quoted phrase, an OR alternative and a leading exclusion survive intact, an unterminated natural-mode quote refuses by position while websearch tolerates it, and the actual serialized response stays within 24000 UTF-8 bytes with disclosed truncation",
-      runsCheck("tenant-query-syntax.ts"));
 
-check("an isolation observation is refused as vacuous with no baseline results, and refused on a changed statistic, a changed score or leaked forbidden metadata, never only on a mismatched shape",
-      runsCheck("tenant-isolation-statistics.ts"));
 
-check("the acceptance profile blocks a suite on a case that never ran and on a receipt it cannot read case by case, leaves the integration profile unchanged, and keeps a block distinct from a failure",
-      runsCheck("acceptance-profile-refuses-unrun-cases.ts"));
 
-check("new artifact text over 8 MiB is refused through the real adapter with PAYLOAD_TOO_LARGE, the stored content is untouched, and an under-limit write still commits",
-      runsCheck("payload-too-large-is-refused.ts"));
 
-check("every one of the eighteen release targets is evaluated in its own direction, and a missing observation is blocked rather than zero",
-      runsCheck("benchmark-report-completeness.ts"));
 
-check("a benchmark report is refused when its scale is forged, its corpus distribution is off, a slice divides by nothing, its qrels are not the approved ones or a binding is missing — and the honestly empty report still validates",
-      runsCheck("benchmark-report-fixtures.ts"));
 
-check("gate-launch classification reads the syntax — a spawner named in a comment, a string or a regex literal is not a launch, and an aliased or namespaced one still is",
-      runsCheck("tenant-checks-registered.ts"));
 
-// THE ORDINARY GATE NEVER READS THE ACTUAL ACCEPTANCE REPORT, and this line is the closest it
-// comes to the subject. `assessAcceptance` is a pure function of synthetic observations, so
-// running it here costs nothing and proves nothing about whether this delivery is ready — it
-// proves only that the decision function refuses the eight shapes of bad report below. The
-// real report is assembled, hashed and judged by `verify --finalize`, which runs OUTSIDE this
-// gate precisely so that a gate can never come to depend on its own final verdict.
-check("the acceptance decision needs all thirteen criteria, the spec's own method for each, a matching binding, verified evidence and a gate that actually executed — and a wholly failed report is still structurally valid",
-      runsCheck("acceptance-covers-every-criterion.ts"));
 
 check("the committed judged dataset is exactly what its generator produces, byte for byte", () => {
   // H1 signs testing/tenant-info/queries.jsonl and qrels.jsonl BY HASH. A signature over
@@ -562,11 +342,7 @@ check("the committed judged dataset is exactly what its generator produces, byte
 // hid it from the check that hunts for it, because that one reads `.mjs` and these are `.sh`.
 // The check at the bottom of this file counts both extensions for that reason.
 
-check("the deck skill names one destination, and never the platform's document-write tool",
-      runsShell("deck-destination.sh"));
 
-check("the deck chassis carries no slides and the guidebook carries all of them",
-      runsShell("deck-chassis-sections.sh"));
 
 // ── NOTHING IN `checks/` IS INVISIBLE TO THIS FILE ───────────────────────────────────────
 
@@ -599,8 +375,11 @@ check("every check in checks/ is registered here, or named here with a reason", 
   // never read the directory, and `working-checks-registered.ts` runs an unregistered check
   // and reports it only when it PASSES. A check that arrives broken was the one case neither
   // half covered, and a check that arrives broken is what every new check is on its first day.
-  const declared = withoutComments(
-    readFileSync(join(root, "scripts/gate/checks/suites.ts"), "utf8"));
+  // EVERY GATE MODULE, for the reason the rule above gives. Comments are stripped HERE and not
+  // there, which is why `suiteSources()` hands back the raw text: the two rules disagree about
+  // stripping on purpose, each for a reason written beside it, and a helper that decided for
+  // them would quietly settle an argument neither had lost.
+  const declared = withoutComments(suiteSources());
   // COMMENTS STRIPPED FIRST. A sentence naming `checks/foo.mjs` in a paragraph explaining why
   // foo is unregistered would otherwise register it, and this file argues in exactly that way.
   const registered = new Set([

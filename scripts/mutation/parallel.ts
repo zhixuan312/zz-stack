@@ -30,10 +30,13 @@
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
+import { treeDigest } from "./workspace.ts";
+
 interface Row { readonly check: string }
 interface Report {
   readonly results: Row[];
-  readonly snapshot_tree_sha256?: string;
+  readonly source_commit?: string;
+  readonly source_dirty_paths?: number;
   readonly baseline_verdict?: string;
   readonly baseline_failed_ids?: string[];
   readonly produced_at?: string;
@@ -80,18 +83,21 @@ function child(runner: string, files: string[], work: string, out: string,
  * seed is kept only to prove afterwards that nothing it held went missing.
  */
 export async function runSharded(opts: {
-  runner: string; workAt: string; out: string; wanted: string[];
+  runner: string; source: string; workAt: string; out: string; wanted: string[];
   rowsFor: (f: string) => number; workers: number; extras: readonly string[];
   /** Injected rather than re-implemented: `mutation-run.ts` owns the serialisation, and a
    *  second copy of it here is the duplicated-constant shape this repository refuses. */
   reportText: (doc: Record<string, unknown>) => string;
 }): Promise<void> {
-  const { runner, workAt, out, wanted, rowsFor, workers, extras, reportText } = opts;
+  const { runner, source, workAt, out, wanted, rowsFor, workers, extras, reportText } = opts;
   if (!existsSync(out)) {
     console.error(`  REFUSED — a sharded run seeds every worker from ${out}, which does not exist`);
     process.exit(2);
   }
   const seed = JSON.parse(readFileSync(out, "utf8")) as Report;
+  // BEFORE ANYTHING IS COPIED. What every worker is about to duplicate, digested once, so the
+  // same measurement at the end says whether it stayed still.
+  const sourceBefore = treeDigest(source);
   const groups = shard(wanted, rowsFor, workers);
   console.log(`  ${wanted.length} check file(s), ${wanted.reduce((n, f) => n + Math.max(1, rowsFor(f)), 0)} row(s), ${groups.length} worker(s):`);
   groups.forEach((g, k) => console.log(`      w${k}: ${g.reduce((n, f) => n + Math.max(1, rowsFor(f)), 0)} row(s) in ${g.length} file(s)`));
@@ -111,13 +117,30 @@ export async function runSharded(opts: {
 
   const reports = shards.map((s) => JSON.parse(readFileSync(s.out, "utf8")) as Report);
 
-  // THE TREE MUST HAVE BEEN ONE TREE. Each worker digests its own copy of the source; if two
-  // disagree, the checkout was edited while the pass ran and the rows describe two different
-  // repositories. Nothing downstream could tell, so it is refused here.
-  const digests = new Set(reports.map((r) => r.snapshot_tree_sha256 ?? "?"));
-  if (digests.size !== 1) {
-    console.error(`  REFUSED — the workers saw ${digests.size} different source trees ` +
-      `(${[...digests].join(", ")}). Something edited the checkout while the pass was running.`);
+  // THE TREE MUST HAVE BEEN ONE TREE, AND THE WORKERS CANNOT ANSWER THAT.
+  //
+  // This compared their `snapshot_tree_sha256` and refused when they differed — and they always
+  // differ, by construction. `makeWorkspace` runs `seedProvisional` INSIDE the copy before it
+  // takes the snapshot, and what that seeds is the worker's OWN `--only` set, so five workers
+  // produce five legitimately different snapshots. The first sharded pass measured all 105 rows
+  // correctly and then threw them away on that comparison. A cross-check between things that are
+  // meant to differ is not a check, it is a coin toss that happened to come up wrong.
+  //
+  // The question was always about the SOURCE, so the source is what is asked. The parent digests
+  // it before spawning and again now: identical means nothing edited the checkout while the pass
+  // was in flight, whatever each worker's copy of it grew afterwards.
+  const sourceAfter = treeDigest(source);
+  if (sourceAfter !== sourceBefore) {
+    console.error(`  REFUSED — the checkout changed while the pass was running ` +
+      `(${sourceBefore} -> ${sourceAfter}). Every row was measured against a tree that no longer ` +
+      "exists, and two of them may have been measured against different ones.");
+    process.exit(6);
+  }
+  // AND THEY MUST HAVE COPIED THE SAME COMMIT. Weaker than the digest above and free: it catches
+  // a worker launched against a different checkout entirely, which the digest cannot see.
+  const provenance = new Set(reports.map((r) => `${r.source_commit ?? "?"}@${r.source_dirty_paths ?? "?"}`));
+  if (provenance.size !== 1) {
+    console.error(`  REFUSED — the workers report different provenance (${[...provenance].join(", ")})`);
     process.exit(6);
   }
   // A RED BASELINE IS NOT THE FAULT — DISAGREEMENT IS. Re-running drifted rows means the tree

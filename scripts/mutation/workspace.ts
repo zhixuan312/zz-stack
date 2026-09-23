@@ -49,7 +49,7 @@ const git = (cwd: string, args: string[]): string =>
  * covered content alone would not notice a file that moved, and a restore that puts the bytes
  * back under the wrong name is not a restore.
  */
-function treeDigest(dir: string): string {
+export function treeDigest(dir: string): string {
   const files: string[] = [];
   const walk = (d: string): void => {
     for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {

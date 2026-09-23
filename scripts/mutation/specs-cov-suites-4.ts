@@ -11,9 +11,18 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
+// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
+// These were all `SUITES` while one file registered ninety-six checks; the split by
+// subject means a row now drifts only when the module its own check lives in moves.
+const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
+const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
+const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
+const SUITES = "scripts/gate/checks/suites.ts";
+const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
+
 export const COV_SUITES_4: readonly MutationSpec[] = [
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES,
     target: "the write guards refuse what they say they refuse",
     assertion: "a gated approval carrying a signer but no date is refused",
     subject: "services/zz-core/src/write-guards.ts",
@@ -24,7 +33,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "and cannot say when — which is half a signature, and the half an audit reads",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "the node floor is one decision written in package.json and .nvmrc, and the image does not move with it",
     assertion: "the contributor's floor is one decision, written the same in both files",
     subject: ".nvmrc",
@@ -35,7 +44,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "project's own engines field refuses, and finds out at an arbitrary later failure",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "no file this rename touched went missing, and every sibling that imports one now names it by its .ts extension",
     assertion: "a relative import of a converted sibling names it by its .ts extension",
     subject: "catalog/zz/zz-access/skills/zz-migrate/migrate.ts",
@@ -46,7 +55,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "reads as complete while one specifier has quietly gone back to naming build output",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "checks/ carries zero strict errors, and none of them was reached by widening to any",
     assertion: "zero errors under checks/ was not bought by widening a type to any",
     subject: "checks/backup-covers-the-undisposable.ts",
@@ -60,7 +69,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "unchecked fixture proves whatever the fixture happens to contain",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "what consumers receive is JavaScript, never the source, and rebuilding it changes nothing",
     assertion: "the shipped skill scripts carry no source map reference",
     subject: "tsconfig.catalog.json",
@@ -71,7 +80,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "artifacts that are not there, and the compile stops being reproducible from the tree",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "a file that resolves renamed tools never matches a pre-rename name",
     assertion: "a file that folds old names onto new ones never compares against an old one",
     subject: "packages/tools/src/testing/tool-report.ts",
@@ -89,7 +98,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "silently stops rendering and the report looks complete while a whole section is gone",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_DATA,
     target: "the resolvers are applied wherever a stored name is read",
     assertion: "an old tool name folds onto the tool it actually became",
     subject: "packages/contracts/src/alias.ts",
@@ -106,7 +115,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "for document_write, so both tools' usage figures are wrong and neither is obviously so",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_DATA,
     target: "the definition this platform is built on holds in its source",
     assertion: "R5 — nothing may stamp a status where the manifest declares no gate",
     subject: "services/zz-core/src/write-guards.ts",
@@ -117,7 +126,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "stamped `status: draft`, which records a verdict no manifest ever asked anyone for",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_DATA,
     target: "the chain check runs where a deployment exists, and not in this gate",
     assertion: "every tool a door registers is exercised through that door's client",
     subject: "packages/tools/src/testing/chain-check.ts",
@@ -128,7 +137,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "one place this walk runs, and the last place anybody wants to discover a gap in it",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "a flow is a plugin that declares documents, and zz-access is not one",
     assertion: "the prose that defines a flow agrees with the predicate that decides it",
     subject: "ARCHITECTURE.md",
@@ -139,7 +148,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "`stages`, which is the exact confusion that put a non-flow in the flow menu twice",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "a document read takes a list and a version, and history never vouches for the present",
     assertion: "a fetch of an old version is recorded against the bytes it returned",
     subject: "services/zz-core/src/versions.ts",
@@ -150,7 +159,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "the current draft nobody looked at, and an approval leans on exactly that answer",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "the /manage door is cut by role, the duplicates are gone, and the exception is kept",
     assertion: "an administrative tool is behind the role gate that carries it",
     subject: "services/gateway/src/admin.ts",
@@ -161,7 +170,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "everywhere else, which is what makes one missing gate easy to ship",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "the three verification stages leave a document, and keep their independence",
     assertion: "a stage that delegates to a library actually tells its worker to load it",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-spec-audit/SKILL.md",
@@ -173,7 +182,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "block is the final response, and a round that edits what it audits destroys its own evidence",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "no shipped file states a count of this platform's own surface",
     assertion: "no shipped file freezes a count of the surface it sits beside",
     subject: "services/gateway/src/access-door.ts",
@@ -186,7 +195,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "same defect this file already shipped four times, each found by a person, late",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "a baseline receipt carries every required field with its measurement evidence, and never a credential",
     assertion: "every count in a receipt carries the query it was measured with",
     subject: "scripts/tenant-info/baseline.ts",
@@ -197,7 +206,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "or tell a measured zero from a query that quietly returned nothing",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "a backup manifest is refused when it is missing any of the five undisposable component kinds, when the canonical record is not included, or when a component's hash is malformed",
     assertion: "a manifest that declares the canonical record absent is refused",
     subject: "testing/tenant-info/deployment.ts",
@@ -208,7 +217,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "somebody has to make by hand is the one that no longer has to be true",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "a semantic payload's canonical hash is stable under tag order/dupes, CRLF and sorted content_fields, and changes on every single-field edit the spec names",
     assertion: "an edit to any semantic field changes the payload's canonical hash",
     subject: "services/zz-core/src/tenant-info/policies.ts",
@@ -221,7 +230,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "because the hash IS the kernel's notion of what changed",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "the actual migrations directory names the migration slug exactly once, every numeric prefix is unique, and a duplicate or missing slug is refused",
     assertion: "two migrations sharing one numeric prefix are refused",
     subject: "scripts/tenant-info/inventory.ts",
@@ -232,7 +241,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "step depends on directory order rather than on anything anybody decided",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "a migration needing an extension declares it, and the runner still defers rather than taking the database down",
     assertion: "a migration that creates an extension declares that requirement",
     // 070 is squashed into 001_init.sql, which carries the same directive verbatim -- pg_dump
@@ -247,7 +256,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "database while reporting itself healthy",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "grammar recognition precedes identifier normalization so a quoted phrase, an OR alternative and a leading exclusion survive intact, an unterminated natural-mode quote refuses by position while websearch tolerates it, and the actual serialized response stays within 24000 UTF-8 bytes with disclosed truncation",
     assertion: "the serialized response stays inside the agreed byte budget",
     subject: "services/zz-core/src/tenant-info/retrieval.ts",
@@ -259,7 +268,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "one that finds out",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "every one of the eighteen release targets is evaluated in its own direction, and a missing observation is blocked rather than zero",
     assertion: "a latency target is evaluated as an upper bound, not a lower one",
     subject: "scripts/tenant-info/benchmark.ts",
@@ -270,7 +279,7 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
       "genuinely fast one does not. A release report would report the worst result as green",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES,
     target: "the committed judged dataset is exactly what its generator produces, byte for byte",
     assertion: "the committed qrels are byte-identical to what the generator emits",
     subject: "scripts/tenant-info/judged-dataset.ts",

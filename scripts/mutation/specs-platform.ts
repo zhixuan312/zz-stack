@@ -11,6 +11,8 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
+const SUITES = "scripts/gate/checks/suites.ts";
+
 export const PLATFORM_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/build.ts",
@@ -166,7 +168,7 @@ export const PLATFORM_SPECS: readonly MutationSpec[] = [
       "artifact becomes the disclosure the check exists to refuse",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES,
     target: "scope and authority refuse what they say they refuse",
     subject: "services/gateway/src/scope.ts",
     find: "  if (!id.teams.some((t) => t.slug === slug) && !isSuper(id)) {",

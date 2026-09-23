@@ -117,7 +117,7 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
     observed_check_sha256: "e45f3536ccf9e899d0e54f7c3b8970f97dc2c9f198bc668e8c5e14514f28f804",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: "scripts/gate/checks/suites-tooling.ts",
     assertion: "the checks a stricter tooling project superseded are gone, not merely duplicated, " +
       "and the incident they existed to prevent is still on record",
     why: "the delegated script `checks/bespoke-checks-gone.ts` reads exactly two things, and " +
@@ -130,6 +130,6 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
     plantable_when: "the 0.26.1 incident narrative, or the registrations this check forbids, " +
       "live anywhere outside `scripts/gate/checks/`. Nothing else moves it — the only other " +
       "lever is the judge itself, which is the thing being judged.",
-    observed_check_sha256: "be151b08357877d306f3628db58be9cf9c3206d8f44b03745d41a23202d7c6d8",
+    observed_check_sha256: "bcb4f725d0065812e542d9f378a884a1e3a9f67d77e7c5fbc30edf6858aebc55",
   },
 ];

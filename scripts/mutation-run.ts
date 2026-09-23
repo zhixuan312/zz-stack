@@ -324,7 +324,7 @@ function main(): void {
     const counts = new Map<string, number>();
     for (const sp of SPECS) counts.set(sp.check, (counts.get(sp.check) ?? 0) + 1);
     void runSharded({
-      runner: join(root, "scripts/mutation-run.ts"), workAt, out, wanted: seedFor,
+      runner: join(root, "scripts/mutation-run.ts"), source: root, workAt, out, wanted: seedFor,
       rowsFor: (f) => counts.get(f) ?? 1, workers, extras: keep ? ["--keep"] : [],
       reportText,
     }).then(() => process.exit(0));

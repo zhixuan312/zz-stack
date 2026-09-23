@@ -14,8 +14,28 @@ const modules = readdirSync("scripts/gate/checks").filter((f) => f.endsWith(".ts
 // the 700-line ceiling. What must hold is that gate.ts imports every module that exists.
 if (modules.length < 30) fail.push(`scripts/gate/checks holds only ${modules.length} modules — something was lost`);
 const gate = readFileSync("scripts/gate.ts", "utf8");
+// A MODULE THAT REGISTERS NOTHING IS REACHED DIFFERENTLY, AND STILL HAS TO BE REACHED.
+// `gate.ts` is an ORDER of check modules — its own header says so — and `suite-runner.ts`
+// holds the machinery the `suites-*` modules share and registers no check at all. Importing it
+// there to satisfy a rule would put a file in the order that contributes nothing to it. So the
+// question is asked of what the file DOES: a module carrying a top-level `check(` must be in
+// gate.ts, because that import is the only thing that runs it; a module carrying none must be
+// imported by SOMETHING under scripts/gate/, because a module nobody imports is dead code the
+// directory still pays for. Neither arm is weaker than the rule it replaces, and the second
+// catches an orphan the old one could not see.
+const gateTree = readdirSync("scripts/gate", { recursive: true, withFileTypes: true })
+  .filter((e) => e.isFile() && e.name.endsWith(".ts"))
+  .map((e) => readFileSync(join(e.parentPath, e.name), "utf8")).join("\n");
 for (const m of modules) {
-  if (!gate.includes(`./gate/checks/${m}`)) fail.push(`scripts/gate.ts does not import ${m}`);
+  const registers = /^check\(/m.test(readFileSync(join("scripts/gate/checks", m), "utf8"));
+  if (registers) {
+    if (!gate.includes(`./gate/checks/${m}`)) fail.push(`scripts/gate.ts does not import ${m}`);
+    continue;
+  }
+  if (!new RegExp(`from "(?:\\./|\\.\\./checks/)${m.replace(".", "\\.")}"`).test(gateTree)) {
+    fail.push(`${m} registers no check and nothing under scripts/gate/ imports it — it is dead`);
+  }
+  continue;
 }
 // Every check(...) registration still present. A type fix that drops one is invisible otherwise.
 let registered = 0;

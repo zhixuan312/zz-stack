@@ -119,6 +119,10 @@ import "./gate/checks/console.ts";
 import "./gate/checks/docs-integrity.ts";
 import "./gate/checks/hygiene.ts";
 import "./gate/checks/suites.ts";
+import "./gate/checks/suites-tooling.ts";
+import "./gate/checks/suites-data.ts";
+import "./gate/checks/suites-surface.ts";
+import "./gate/checks/suites-tenant.ts";
 
 import { report } from "./gate/run.ts";
 

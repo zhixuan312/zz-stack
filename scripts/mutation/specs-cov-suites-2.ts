@@ -29,10 +29,19 @@
  */
 import type { MutationSpec } from "./plant.ts";
 
+// WHICH MODULE REGISTERS THE TARGET, which is what `check_sha256` is computed over.
+// These were all `SUITES` while one file registered ninety-six checks; the split by
+// subject means a row now drifts only when the module its own check lives in moves.
+const SUITES_DATA = "scripts/gate/checks/suites-data.ts";
+const SUITES_SURFACE = "scripts/gate/checks/suites-surface.ts";
+const SUITES_TENANT = "scripts/gate/checks/suites-tenant.ts";
+const SUITES = "scripts/gate/checks/suites.ts";
+const SUITES_TOOLING = "scripts/gate/checks/suites-tooling.ts";
+
 export const COV_SUITES_2: readonly MutationSpec[] = [
   // ── the compiled engines under services/gateway/dist ───────────────────────────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES,
     target: "a door that refuses ends the request",
     assertion: "a door that says NO ends the walk instead of handing the caller to the next door",
     subject: "services/gateway/src/identity.ts",
@@ -44,7 +53,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "is the whole reason this property is not visible by reading the code",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES,
     target: "redaction lets no secret through, on the real predicate",
     assertion: "the field-name rule catches every secret-shaped name it lists",
     subject: "services/gateway/src/redact.ts",
@@ -57,7 +66,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
 
   // ── the node floor, and the break-test that proves the floor check can fail ─────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "the node floor check fails, and fails informatively, when the floor is not met",
     assertion: "the floor check, when it fails, names the version the project REQUIRES",
     subject: "checks/node-floor.ts",
@@ -70,7 +79,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
 
   // ── the paths, the strictness and the lock that keep this tree buildable ────────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "every literal path a script or check names under scripts/ or checks/ is a file that exists, so an import, a spawn or a read cannot outlive its target",
     assertion: "a spawned path names a file that is really there",
     subject: "scripts/release.ts",
@@ -81,7 +90,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "moment it is most relied on",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
     assertion: "no error in scripts/ or testing/ was silenced by widening a type to any",
     subject: "scripts/deployment.ts",
@@ -93,7 +102,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "— strictness bought by an escape hatch rather than by the code being right",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "a lock regenerated from the converted tree comes back unchanged, byte for byte",
     assertion: "the committed plugins.lock.json is what regenerating it produces",
     subject: "plugins.lock.json",
@@ -104,7 +113,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "that digest is told it received something it did not",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TOOLING,
     target: "a plugin's content identity moves with its content and not with its address",
     assertion: "the per-plugin digest is blind to the deployment's own server URL",
     subject: "services/gateway/src/package/describe.ts",
@@ -117,7 +126,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
 
   // ── SQL and telemetry, read straight out of the source ─────────────────────────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_DATA,
     target: "an insert names as many values as it names columns",
     assertion: "a literal insert's column list and values list are the same length",
     subject: "services/gateway/src/credentials.ts",
@@ -129,7 +138,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "catch: the service starts, the door answers, and issuing a token silently stops working",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_DATA,
     target: "every tool call says which plugin it was made for",
     assertion: "an unresolved plugin stays null rather than defaulting to a name",
     subject: "services/gateway/src/tool-telemetry.ts",
@@ -142,7 +151,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
 
   // ── the manifests and the names a client reads ─────────────────────────────────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "the manifest can express what the standard requires, and not what it replaced",
     assertion: "a stage's `produces` is a document name, \"record\" or \"nothing\" — and nothing else",
     subject: "packages/contracts/src/index.ts",
@@ -153,7 +162,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "or nothing at all decides nothing, and a misspelt document name installs silently",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "the core door speaks noun-first, and no caller still says the old name",
     assertion: "no caller still names a tool by its pre-rename name",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-review/SKILL.md",
@@ -173,7 +182,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "bad answer rather than a broken tool",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "the core door introduces itself to a client that reads nothing else, and the pointer survives",
     assertion: "the one orientation pointer names a skill that exists on disk",
     subject: "services/zz-core/src/tools/skills.ts",
@@ -191,7 +200,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "receives leads nowhere, and the gates and the envelope go unread",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "sdlc closes on its review, gates it, and leaves its audits ungated",
     assertion: "the closing review document still carries its gate",
     subject: "catalog/sdlc/sdlc-flow/flow.json",
@@ -202,7 +211,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "with nobody having agreed to it",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "every skill ships from the plugin that owns it, and its commands follow with it",
     assertion: "every declared command resolves to a skill its own plugin really ships",
     subject: "catalog/zz/zz-core/flow.json",
@@ -213,7 +222,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "simply absent from the built package and nothing tells the person why",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "a renamed plugin still resolves, and the updater's copy of the map is the contract's",
     assertion: "the updater's inlined rename map agrees with @zz/contracts",
     subject: "catalog/zz/zz-access/skills/zz-update/update.ts",
@@ -226,7 +235,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
 
   // ── the tenant-info suites: the heavy end-to-end reads ─────────────────────────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "the judged dataset holds its exact category/language/split counts, no family leaks across dev and held-out, and every qrel resolves to an existing query and an authorized fixture ref",
     assertion: "a query family never appears in both dev and held-out",
     subject: "scripts/tenant-info/benchmark.ts",
@@ -237,7 +246,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "tuned on — every retrieval number measured against it is inflated and nothing says so",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "a commit manifest hashes over its own canonical fields, never over bytes containing that hash, and a commit's basename refuses a non-positive sequence",
     assertion: "the manifest hash excludes the manifest_hash field itself",
     subject: "services/zz-core/src/tenant-info/record.ts",
@@ -249,7 +258,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "real tampering is indistinguishable from it",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "the adapter fixture's patch/approve enter the one mutation kernel — a missing etag, a stale retry and a stale approval are each refused, an idempotent replay returns the original transaction, and the materialized read reflects exactly the committed edit",
     assertion: "an edit naming an existing artifact with no expected_etag is refused",
     subject: "services/zz-core/src/tenant-info/mutations.ts",
@@ -262,7 +271,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "guarantee is gone while every other refusal still works",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "bounded overlapping passages cover every UTF-8 byte with no truncation at any size, identifier analysis keeps exact spellings alongside derived lowercase parts, and a derivation fingerprint changes independently on every one of its named fields",
     assertion: "the derivation fingerprint moves when the analyzer version moves",
     subject: "packages/indexing/src/tenant-analysis.ts",
@@ -273,7 +282,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "reindex and the whole corpus keeps serving terms the old analyzer produced",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "corpus resolution defaults to current, admits an explicit scope union, drops shared corpora when sharing is disallowed, and refuses an empty scope, an unknown scope or a caller-supplied owner/index override",
     assertion: "a published-shared corpus is dropped when the caller is not allowed shared access",
     subject: "services/zz-core/src/tenant-info/retrieval.ts",
@@ -284,7 +293,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
       "platform's published corpus anyway — the setting still exists and no longer does anything",
   },
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_TENANT,
     target: "the acceptance profile blocks a suite on a case that never ran and on a receipt it cannot read case by case, leaves the integration profile unchanged, and keeps a block distinct from a failure",
     assertion: "the acceptance-only block never reaches the integration profile",
     subject: "scripts/tenant-info/verify.ts",
@@ -298,7 +307,7 @@ export const COV_SUITES_2: readonly MutationSpec[] = [
 
   // ── the deck, which is two HTML files and a shell check ────────────────────────────────
   {
-    check: "scripts/gate/checks/suites.ts",
+    check: SUITES_SURFACE,
     target: "the deck chassis carries no slides and the guidebook carries all of them",
     assertion: "the manifest block travelled with the guidebook under the id the chassis looks up",
     subject: "skills/zz-deck/deck-guidebook.html",

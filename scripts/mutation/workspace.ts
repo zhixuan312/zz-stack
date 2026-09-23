@@ -20,7 +20,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 /** Everything outside the tree a mutation can reach: dependencies and git's own store. Both
@@ -156,8 +156,34 @@ export function makeWorkspace(source: string, at: string, prepare?: (repo: strin
       "else entirely — not the repository, not a parent of it, not a directory inside it.");
     process.exit(2);
   }
+  // AND A SECOND RUN IS REFUSED BEFORE THE DELETE, NOT DISCOVERED AFTER IT.
+  //
+  // The work directory defaults to one path, so two runs on one machine share it — and the
+  // first thing each does is delete it. A second run started while a first is walking its rows
+  // removes the pristine snapshot the first restores from, and the first dies at its next row
+  // with an rsync stack trace naming a directory that was there a second ago. Observed in this
+  // repository: a run was killed, a survivor kept writing, the next run raced it, and the
+  // failure read as a bug in `restore` rather than as two runs over one directory.
+  //
+  // A LOCK NAMING THE OWNER, and stale only when that process is genuinely gone — `kill(pid, 0)`
+  // throws ESRCH for a pid nobody holds, which is how a crashed run's lock is reclaimed without
+  // a timeout that would either be too short for a long pass or too long to be useful.
+  const lock = `${resolve(at)}.lock`;
+  if (existsSync(lock)) {
+    const held = Number(readFileSync(lock, "utf8").trim());
+    let alive = false;
+    try { process.kill(held, 0); alive = true; } catch { alive = false; }
+    if (alive) {
+      console.error(`  REFUSED — pid ${held} is already using ${resolve(at)}, and the first ` +
+        "thing this function does is delete that directory. Wait for it, or pass a different " +
+        "--work. Two runs over one work directory take each other's snapshot away mid-pass.");
+      process.exit(2);
+    }
+    console.error(`  the lock at ${lock} names pid ${held}, which is gone — reclaiming it`);
+  }
   rmSync(at, { recursive: true, force: true });
   mkdirSync(at, { recursive: true });
+  writeFileSync(lock, `${process.pid}\n`);
   const parent = join(at, "parent");
   mkdirSync(parent);
   const repo = join(parent, basename(source));

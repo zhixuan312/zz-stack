@@ -13,8 +13,10 @@ const fail: string[] = [];
 const SELF = "checks/telemetry-columns.ts";
 
 // Applied migrations are history: 017 and 020 backfilled from the bag when the bag was the
-// only place the figures were, and rewriting an applied file changes nothing on any host.
-// migrations-next/ is NOT history — it is unapplied text that still has to be right.
+// only place the figures were, and rewriting an applied file changes nothing on any host. That
+// is the whole exemption, and `services/gateway/migrations/` is now the only migration
+// directory it has to name — the `migrations-next/` this paragraph used to carve around, whose
+// unapplied text still had to be right, is deleted.
 const SKIP_DIR = new Set(["node_modules", "dist", ".git", "coverage"]);
 const SKIP_PATH = ["services/gateway/migrations/"];
 

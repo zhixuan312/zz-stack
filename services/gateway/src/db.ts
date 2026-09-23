@@ -5,11 +5,14 @@
  * the same DB as TEAM_DB_URL). On boot: ensure the schema, run the SQL
  * files in ./migrations in name order, record each in zz.schema_migration.
  *
- * ONLY ./migrations. `../migrations-next/` holds migrations that are written and tested and
- * deliberately not applied — one today, waiting on the read paths that must move with it. It is
- * not scanned, and its own README says what has to land alongside each file. Named here because
- * nothing else in the repository named it at all, so the only way to find it was to list the
- * directory.
+ * ONLY ./migrations, AND THERE IS NO SECOND DIRECTORY. There used to be `../migrations-next/`,
+ * for a migration written and tested ahead of the read paths that had to move with it. It is
+ * deleted: the one file left in it had gone from deferred to WRONG. It drops
+ * `zz.event.team_slug`, `.initiative` and `.flow` and `zz.doc.team_slug`, `.initiative` and
+ * `.flow` — columns the deployment carries 11,220, 7,417, 8,173 and 1,082 rows in, that
+ * `events.ts` and `indexing.ts` write on every call, that `runs.ts` joins a team on, and that
+ * `eval/plugin-subjects.ts` records as the CORRECT join after the other one reached 10
+ * documents where 72 exist. A deferred migration nobody re-derives becomes a loaded gun.
  * No framework — migrations are plain SQL. Connections pin
  * search_path=zz,public so platform tables resolve to zz.* while extensions,
  * which install into public, stay resolvable. `public` used to hold the old

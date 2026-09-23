@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
+import { between, functionBody, root, sourceFiles, toolsIn, zzCoreSource, zzCoreTools, withoutComments} from "../read.ts";
 import { check } from "../run.ts";
 import { schemaColumns } from "../facts.ts";
 
@@ -137,8 +137,20 @@ check("a record that is counted is a record that is written once", () => {
   // Either alone is the divergence.
   const src = zzCoreSource();
   const bad: string[] = [];
-  if (!/already closed once/.test(src)) {
-    bad.push("ledgerOnClose no longer skips a second row — a reclose would count twice");
+  // THE GUARD, NOT THE COMMENT THAT EXPLAINS IT. This tested `/already closed once/` against
+  // the whole of zz-core, and that phrase exists in exactly one place: the trailing comment on
+  // `persist.ts`'s early return. The behaviour was never read. Deleting a correct comment would
+  // have turned this red for a reason that was never true, and the red would have arrived
+  // during housekeeping — measured by stripping comments from every subject source and running
+  // the gate, where this was the one check of 427 that went red.
+  //
+  // Sliced first, stripped second: `withoutComments` shortens what it replaces, so stripping
+  // before slicing moves every offset the slice depends on.
+  const ledger = withoutComments(functionBody(src, "ledgerOnClose") ?? "");
+  if (!ledger) {
+    bad.push("ledgerOnClose() is not a function this can read — the append-once guard cannot be checked");
+  } else if (!/parseEnvelope\([a-z]+\)\.outcome\)\s*return/.test(ledger)) {
+    bad.push("ledgerOnClose no longer returns early on a document that already carries an outcome — a reclose would count twice");
   }
   // The refusal, in initiative_close() itself: read the outcome already on the document and stop.
   // From the one parser: `src.indexOf('\n    "initiative_close",')` found the newline registration form

@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { between, firstOf, gatewaySource, root, sourceFiles, zzCoreSource } from "../read.ts";
+import { between, firstOf, functionBody, gatewaySource, root, sourceFiles, zzCoreSource } from "../read.ts";
 import { check, note } from "../run.ts";
 import { catalogRoot, claimsOurs, flows, platformSkills, platformSurface, skillsOf } from "../facts.ts";
 
@@ -494,10 +494,15 @@ check("every tool on the access door is taught by a skill that ships with it", (
   // "Complete and unreachable" is the most expensive shape here, because nothing fails.
   const src = gatewaySource();
   const adm = readFileSync(join(root, "services/gateway/src/admin.ts"), "utf8");
-  const region = between(src, "async function buildAccessServer", "\n// ------");
-  if (!region.text) return `the access server's registrations cannot be located: ${region.why}`;
+  // THE FUNCTION'S OWN BRACES, not a comment divider. This ended the region at "\n// ------",
+  // and `access-door.ts` contains no such divider — the file ends where the function does. The
+  // region therefore ran out of that file, through however much of `gatewaySource()`'s
+  // concatenation came next, and stopped at the first divider in some unrelated file. Its end
+  // depended on file ordering and on a comment nobody knew was load-bearing.
+  const region = functionBody(src, "buildAccessServer");
+  if (!region) return "the access server's registrations cannot be located: buildAccessServer() is not a function this can read";
   const grab = (t: string) => [...t.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
-  const tools = [...new Set([...grab(region.text), ...grab(adm)])];
+  const tools = [...new Set([...grab(region), ...grab(adm)])];
   if (tools.length === 0) return "no tool found on /manage — the extraction is broken";
   const skillsDir = join(catalogRoot, "zz/zz-access/skills");
   const taught = readdirSync(skillsDir)

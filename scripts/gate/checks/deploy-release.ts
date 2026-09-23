@@ -343,7 +343,12 @@ check("a failed rollback is reported, not thrown", () => {
   const src = releaseSource();
   const bad = [];
   // The automatic rollback — the one that runs after a failed verification — must be guarded.
-  const auto = between(src, "6 · roll back if verification failed", "7 · tag");
+  // CODE ANCHORS, not the section headers. This ran from "6 · roll back if verification
+  // failed" to "7 · tag" — both of them comment dividers, so renaming a section, or a comment
+  // sweep, would have taken this check out with a "cannot be located" for a reason that was
+  // never about the rollback. Section 6 is conditional and has no `step(6, …)` call, so its
+  // start is the condition that opens it; both anchors are unique in releaseSource().
+  const auto = between(src, "if (problems.length) {", 'step(7, "tag")');
   if (!auto.text) return `the rollback step cannot be located: ${auto.why}`;
   const block = auto.text;
   if (!/try\s*\{[\s\S]{0,200}rollback\(previous\)/.test(block)) {

@@ -49,6 +49,13 @@ than how much code moved.
   empty string, at the one place every row is written — a second line of defence, because the
   source alone has already failed once here.
 
+### zz-stack-dashboard 0.17.3
+- A stray hand-export that had been sitting untracked in `public/assets/app-icon/` is committed
+  and named in that directory's README. 61 × 61, referenced by nothing, not produced by the
+  build script — kept deliberately rather than tidied away, and the README's file table names
+  every file in the directory, so a ninth one it did not mention would have made that table
+  quietly wrong.
+
 ### Upgrade notes
 - Nothing to do. No migration, no environment key, no tool argument changes.
 - The 381 historical rows are not rewritten by the deploy. Clearing them is a separate,

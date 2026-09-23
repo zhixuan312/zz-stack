@@ -33,6 +33,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.71.0]
+
+### An initiative does not survive a team switch, and 443 rows that said otherwise are corrected
+
+Clearing the 381 empty-initiative rows 0.70.0 made unreachable turned up a second defect the
+cleanup query itself had, and then a third the second one exposed. All three are the same
+shape as every defect this loop has found: two components, each self-consistent, disagreeing
+about one row.
+
+- **An initiative slug is unique per `(team_id, slug)`, not globally**, and `step-trace.ts`
+  keyed its trace on the caller alone. So one person working two teams named an initiative in
+  the first, called `manage:team_switch`, and every call afterwards was written under the new
+  team beside the old team's initiative. `flowFor`, twenty lines further down the same file,
+  has always joined the initiative to the team and returned nothing when they disagree — so
+  the `flow` column was honest while the `initiative` column beside it was not, on the same
+  row. The trace now records which team named an initiative and withholds it from any other;
+  the step still crosses, because which skill somebody is following is a fact about them.
+  Withheld rather than forgotten: switching away and back is what an evaluation run does.
+- **11 rows across six initiatives** carried that cross-team attribution, every one between
+  the same person's two teams. Corrected in the store.
+- **The 432 rows attributed to an initiative that does not exist** are resolved: 381 empty
+  strings and 22 rows that were handed a document PATH where a slug belongs
+  (`<initiative>/spec.md`) and 7 that lost their date prefix. The 29 are repaired rather than
+  cleared — the real slug is a literal prefix or unique suffix of what was recorded, and each
+  row's own team matches that initiative's owning team, so nothing about the repair is a
+  guess. The other 403 name nothing recoverable and are cleared.
+- **A new check and a new probe.** The gate asserts the trace compares the team before
+  carrying an initiative forward, at the expression that decides it rather than the block
+  around it; a mutation spec proves it fails when that comparison is removed. The doctor
+  asserts no event row names an initiative absent from its own team — unbounded, not
+  count-windowed, because the history behind it was corrected rather than left to age out.
+
+`zz.event.flow` is thinner than `zz.initiative.flow` by 257 rows and that is left alone: the
+gap is calls made before any flow was resolved, `zz.initiative.flow` is derived from `zz.doc`,
+and the console groups on that side. `runs.ts` already says so.
+
+### Upgrade notes
+- Nothing to do. No migration, no environment key, no tool argument changes.
+- The store was corrected by hand on 2026-09-23, after 0.70.0 shipped the empty-string fix and
+  before this one ships the team fix. Rows written between the two carry neither defect's new
+  instances, because both sources were fixed before their histories were cleaned.
+
 ## [0.70.0] — 2026-09-23
 
 ### Fixed

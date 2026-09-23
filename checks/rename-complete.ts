@@ -1,16 +1,16 @@
-// Counts, not spot checks. A rename that drops files is the failure this catches, and it is
-// invisible to anything that only looks at what is present.
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
-// NO HARDCODED DENOMINATOR. Earlier tasks in this plan add check files of their own, so any
-// count written here is wrong by the time it runs — and a hand-kept denominator that drifts is
-// a defect this repository has already paid for once. The count comes from git instead.
+// Nothing in scope is .mjs, and every relative specifier names a .ts file that is really there.
 //
-// RUN THIS BEFORE THE RENAME IS COMMITTED. `git ls-tree HEAD` reports the CURRENT commit, so
-// once the rename lands, HEAD lists .ts and the "nothing was lost" comparison below becomes
-// vacuously true. On an uncommitted working tree it is the real assertion. The task is not
-// complete until this has passed once against the uncommitted tree.
+// THERE WAS A THIRD CLAUSE AND IT IS DELETED, not moved. It read `git ls-tree -r HEAD` for the
+// .mjs files tracked before the rename and required each to exist at the same path as .ts —
+// the real assertion while the rename sat uncommitted, and this file's own header said so:
+// "once the rename lands, HEAD lists .ts and the comparison becomes vacuously true". It landed.
+// HEAD carries zero .mjs paths, in these four directories and in the whole repository, so the
+// loop ran over an empty list and could not fail. Clause 1 below is what keeps it that way, and
+// it makes the deleted clause permanently unreachable rather than merely quiet today: no .mjs
+// can exist in the working tree, so none can reach a commit, so HEAD can never list one again.
+// A clause no input can reach is a comment wearing an assertion's clothes.
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 const DIRS = ["scripts", "checks", "testing", "catalog/zz/zz-access/skills"];
 const fail: string[] = [];
 const walk = (dir: string, out: string[] = []): string[] => {
@@ -25,17 +25,7 @@ for (const dir of DIRS) {
   const mjs = walk(dir).filter((f) => f.endsWith(".mjs"));
   if (mjs.length) fail.push(`${dir}: ${mjs.length} .mjs file(s) remain — ${mjs.slice(0, 5).join(", ")}`);
 }
-// 2. Nothing was LOST. git knows how many .mjs were tracked before this commit; every one of
-//    them must now exist at the same path with a .ts extension.
-const previously = execFileSync("git", ["ls-tree", "-r", "--name-only", "HEAD"], { encoding: "utf8" })
-  .split("\n")
-  .filter((p) => p.endsWith(".mjs") && DIRS.some((d) => p.startsWith(d + "/")));
-for (const old of previously) {
-  const expected = old.replace(/\.mjs$/, ".ts");
-  try { statSync(expected); }
-  catch { fail.push(`${old} was tracked at HEAD but ${expected} does not exist — the rename lost a file`); }
-}
-// 3. Every relative specifier names a .ts file that exists. A stale one throws only when the
+// 2. Every relative specifier names a .ts file that exists. A stale one throws only when the
 //    line is reached, which may be during a release.
 for (const dir of DIRS) {
   for (const f of walk(dir).filter((x) => x.endsWith(".ts"))) {

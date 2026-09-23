@@ -404,23 +404,16 @@ async function main(): Promise<number> {
   let owed = JSON.parse(await call("initiative_status", { initiative: INIT })) as {
     next_move?: { action?: string; document?: string };
   };
-  // NOT A TOOL: `add_source` is a member of next_move.action's own verb vocabulary. The tool
-  // it asks for is `source_add`, which the `why` beside it names.
-  for (let round = 0; owed.next_move?.action === "add_source" && round < 8; round++) {
-    const supported = owed.next_move.document!;
-    check(`the audit round the flow declares for ${supported}`,
-      await call("source_add", {
-        initiative: INIT, title: `chain-check audit of ${supported}`,
-        content: "Recorded by chain-check: this round ran and found nothing blocking.",
-        supports: [supported],
-      }), false);
-    owed = JSON.parse(await call("initiative_status", { initiative: INIT })) as typeof owed;
-  }
+  // BEFORE THE ROUNDS, THE PLATFORM MUST NAME THEM. This is the half that was missing: with
+  // every document written and approved and no audit run, `next_move` used to answer the
+  // close — and the close would then be refused. Asserting it here means the probe can only
+  // pass if the platform and the control loop agree about what the flow still owes.
+  //
   // NOT A TOOL: `add_source` is next_move.action's own verb vocabulary; the tool is source_add.
-  record(owed.next_move?.action !== "add_source",
-    "following next_move satisfies every stage the flow declares, and it terminates",
-    `next_move still asks for a source after eight rounds: ${JSON.stringify(owed.next_move)}`);
-  const nxt = owed;
+  record(owed.next_move?.action === "add_source",
+    "with the documents done and no audit run, the next move names the stage that is owed",
+    `next_move was ${JSON.stringify(owed.next_move)}, expected the owed audit stage`);
+
   // NOT A TOOL: matched against `next_move.action`, which is initiative_status's own verb
   // vocabulary and not a tool name — see the comment at its registration.
   //
@@ -432,16 +425,6 @@ async function main(): Promise<number> {
   // obeying that answer wrote a handover about an initiative that had not closed. The
   // fallback stays for the shape of the next line; the claim about what the platform says
   // is now made out loud.
-  // NOT A TOOL: `close` here is `next_move.action`, initiative_status's own verb vocabulary
-  // — the tool it names in its `why` is initiative_close.
-  record(nxt.next_move?.action === "close",
-    "with every gate recorded and no outcome, the next move names the close",
-    `next_move was ${JSON.stringify(nxt.next_move)}, expected the close action`);
-  // NOT A TOOL: `close` is the action word again — the same vocabulary, read a second time
-  // to pick the document out of it.
-  const closing = nxt.next_move?.action === "close" ? nxt.next_move.document! : docs[docs.length - 1];
-  console.log(`  (the flow closes on ${closing})`);
-
   // THE AUDIT ROUNDS THIS PROBE NEVER PERFORMED, and until 0.63.0 nothing asked it to.
   //
   // This walks a flow's DOCUMENT chain: every declared document written, gated and approved.
@@ -468,6 +451,20 @@ async function main(): Promise<number> {
         supports: [stage.supports],
       }), false);
   }
+  // AND ONLY NOW DOES THE CLOSE BECOME THE NEXT MOVE. Re-asked rather than assumed: the
+  // whole point of the assertion above is that this answer changed because the rounds ran.
+  const nxtAfter = JSON.parse(await call("initiative_status", { initiative: INIT })) as typeof owed;
+
+  // NOT A TOOL: `close` here is `next_move.action`, initiative_status's own verb vocabulary
+  // — the tool it names in its `why` is initiative_close.
+  record(nxtAfter.next_move?.action === "close",
+    "with every gate recorded and no outcome, the next move names the close",
+    `next_move was ${JSON.stringify(nxtAfter.next_move)}, expected the close action`);
+  // NOT A TOOL: `close` is the action word again — the same vocabulary, read a second time
+  // to pick the document out of it.
+  const closing = nxtAfter.next_move?.action === "close" ? nxtAfter.next_move.document! : docs[docs.length - 1];
+  console.log(`  (the flow closes on ${closing})`);
+
   const before = await call("document_read", { path: "_ledger.md" });
 
   // The close is an ACT. Writing `outcome` into frontmatter by hand is refused, because a

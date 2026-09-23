@@ -206,8 +206,11 @@ export const COV_CATALOG: readonly MutationSpec[] = [
     check: "scripts/gate/checks/catalog-manifest.ts",
     target: "plugins.lock.json says what the catalog ships, on both version and digest",
     subject: LOCK,
-    find: `  "sdlc": {\n    "version": "0.62.4",`,
-    replace: `  "sdlc": {\n    "version": "0.61.0",`,
+    // ANCHORED ON THE KEY, NOT ON THE NUMBER. This pinned `0.62.4` and stopped landing six
+    // releases ago. `"sdlc"` opens the block and the injected `"version"` that follows it is
+    // the one JSON.parse keeps, whatever the lock actually records.
+    find: `  "sdlc": {`,
+    replace: `  "sdlc": {\n    "version": "0.0.1",`,
     planted: "the lock records a version the catalog no longer declares. The release registers " +
       "zz.plugin_version FROM this file and never regenerates it, so the release writes the " +
       "PREVIOUS release's number into the database and every recording made against the " +

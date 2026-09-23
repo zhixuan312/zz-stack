@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "produced_at": "2026-09-23T03:31:58.592Z",
+  "produced_at": "2026-09-23T05:33:04.312Z",
   "produced_by": "scripts/mutation-run.ts",
-  "source_commit": "d23b8de2ceb5187396e624acf8719031d6a2e5e6",
-  "source_dirty_paths": 2,
-  "snapshot_tree_sha256": "8d5fa5925e8300fe3608491b2ac3e83f070a4e124cf5f346253ea4f669c1ff7a",
+  "source_commit": "d4341c682e4add7e4392965c8aac653074fa893e",
+  "source_dirty_paths": 0,
+  "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
   "declared_by": "git ls-files --cached --others --exclude-standard",
   "declared_count": 73,
   "baseline_verdict": "PASSED",
@@ -351,18 +351,18 @@
       "new_failures": [
         "a package that imports a workspace package declares it"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "subject_sha256": "1206caebcc3e4843659c8bc54cc3f208b1bbbda987a058dbeb79751e67e4a662",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "subject_sha256": "60f9e023f4da99c9b9cd639ad22fb80f1b8b32dde04a8fc7420bb9d3eafedf0f",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30512,
+      "duration_ms": 26811,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -388,18 +388,18 @@
       "new_failures": [
         "tsc -b"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "b8f1f627a095ae83238fc7c422dad2f1729ea94f4db60867f8b6a391bd04219e",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32115,
+      "duration_ms": 27024,
       "caveat": "the one row in this file where a red `tsc -b` is the RESULT rather than a spoiled experiment — `build_failed` will be true and that is what proves the check works",
       "apply_error": null,
       "prebuild_failed": true,
       "prebuild_error": "services/gateway/src/identity.ts(215,61): error TS2551: Property 'teamSlug' does not exist on type '{ id: string; email: string; display_name: string; role: \"superadmin\" | \"member\"; status: string; team_slug: string | null; }'. Did you mean 'team_slug'?\n",
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -413,30 +413,26 @@
       "find_base64": null,
       "replace_base64": null,
       "redacted": false,
-      "replacements": 1,
-      "failed": true,
-      "exit": 1,
-      "verdict": "FAILED",
+      "replacements": 0,
+      "failed": false,
+      "exit": -1,
+      "verdict": "NOT RUN",
       "build_failed": false,
       "baseline_red": false,
-      "failed_ids": [
-        "every package manifest carries the same version"
-      ],
-      "new_failures": [
-        "every package manifest carries the same version"
-      ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "failed_ids": [],
+      "new_failures": [],
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "subject_sha256": "a164f07db2752bc81e4fd978b37ae2ba352ef54f7bb4833a7355dc4c57a849cb",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "subject_sha256": "3681f3767af6f74c0f413a18f2b58b2fff23e9f275d6e052df24403f153698d4",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31958,
+      "duration_ms": 0,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -462,18 +458,18 @@
       "new_failures": [
         "no version is written as a literal in the source"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "eb83017bb1cc5bad11a7881314f23b5af66d27aeea48aa6f7690525b99a10e71",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32069,
+      "duration_ms": 28594,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -487,30 +483,26 @@
       "find_base64": null,
       "replace_base64": null,
       "redacted": false,
-      "replacements": 1,
-      "failed": true,
-      "exit": 1,
-      "verdict": "FAILED",
+      "replacements": 0,
+      "failed": false,
+      "exit": -1,
+      "verdict": "NOT RUN",
       "build_failed": false,
       "baseline_red": false,
-      "failed_ids": [
-        "the lockfile records the version this release ships"
-      ],
-      "new_failures": [
-        "the lockfile records the version this release ships"
-      ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "failed_ids": [],
+      "new_failures": [],
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "subject_sha256": "9a972ca04f9f9f05752360aa60b0f2cb6b3b517c7e06ebbe1c52feb56afa7412",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "subject_sha256": "48471fc5ad24a799da5a4c1d368bf675e831225783015173ef70f7feb6db416c",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30812,
+      "duration_ms": 0,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -538,18 +530,18 @@
         "the workspace build covers every package",
         "a package that imports a workspace package declares it"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "01a47826a12b90fabb183cd48245fb17c6fee4c9115145bba088edec2f9a13b8",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 33355,
+      "duration_ms": 30745,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -575,18 +567,18 @@
       "new_failures": [
         "no workspace package can be published by accident"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "subject_sha256": "f10e484c66dab7a9754a53875522344c19b63f1e2c64537c42f5625fad9ec323",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "subject_sha256": "a985609b653d46bb428126ea904c008d9694c1813e14004b6695d9d809e4fd64",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 34252,
+      "duration_ms": 31585,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -612,18 +604,18 @@
       "new_failures": [
         "a testing engine's exit status comes from its results"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "5e7d2eb31ce50e19c2390e5dec12018e31d04055b5f74ae9c4553b17a66f09b3",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29681,
+      "duration_ms": 30938,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -649,18 +641,18 @@
       "new_failures": [
         "a shell that invokes an evaluation tool passes the flow it means"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "38e09d69e1a005f8f165a5492ce021684f664533229f5610901151ad6c700914",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29718,
+      "duration_ms": 31433,
       "caveat": "eval-judge, eval-grade and eval-store were deleted with skill-level evaluation, so no shell in the tree calls one today and this clause currently guards nothing. The planted line restores the call shape the check is written about; it also names a dist path that no longer exists, which is a second defect this check does not claim to see.",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -694,18 +686,18 @@
         "no shipped prose types a slash command the plugin does not declare",
         "every skill ships from the plugin that owns it, and its commands follow with it"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "e97a769c755b908241236f32b2465e1a09c52d2649dfa37a96d5737b136e2f33",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 28705,
+      "duration_ms": 30525,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -731,18 +723,18 @@
       "new_failures": [
         "a probe that expects a refusal says which refusal"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "subject_sha256": "7458126df7b4e17528b9f71e2324cbb7415bf97b8f731992746fbb87a2f9b9c1",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "subject_sha256": "b1e65c2b39c4fe046fd90a84f6d8d0856111cdcf6737e17d70e8cebcd061c2a3",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 36410,
+      "duration_ms": 31157,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -768,18 +760,18 @@
       "new_failures": [
         "a package's own version is read in one place"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "subject_sha256": "a0032dcc0f78574fc362ea67e0119effb4736a5e4c128217181264d1c4ae9ec6",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 36271,
+      "duration_ms": 30454,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -807,18 +799,18 @@
         "every npm script that runs a built tool has a source file",
         "every tool in packages/tools is reachable from zz-tool"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "subject_sha256": "19db5e9013e42aefef94db4f12eb05f61f51411256f7daac9af182d1eefddaa1",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "subject_sha256": "96fb732fe4664b5944da5a80a2d887bab479433a0e4e56b02fc831b6ef022a65",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 34210,
+      "duration_ms": 30945,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
       "stale": false
     },
     {
@@ -846,18 +838,18 @@
         "every flow.json parses, and its entry names a skill it ships",
         "opening is explicit and dated by the platform, and freeform gets no next move"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 34727,
+      "duration_ms": 30129,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -895,18 +887,18 @@
         "what consumers receive is JavaScript, never the source, and rebuilding it changes nothing",
         "the command a model is told to run names a file the consumer will actually have"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "1f218c0fae75c9604569399a651d70f84626e04048f5c32931abd3e814af83f5",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 37135,
+      "duration_ms": 30844,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -942,18 +934,18 @@
         "the core door introduces itself to a client that reads nothing else, and the pointer survives",
         "the written record matches the delivered surface, and no document outgrew the ceiling"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "1f218c0fae75c9604569399a651d70f84626e04048f5c32931abd3e814af83f5",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 33509,
+      "duration_ms": 30951,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -983,18 +975,18 @@
         "a package declares whether it is a flow, and the console reads the declaration",
         "the core door introduces itself to a client that reads nothing else, and the pointer survives"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "9028a8784586f094618361d6fccd009f9a5e30b46f74b6aaa569809119b785f7",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31336,
+      "duration_ms": 31334,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -1020,18 +1012,18 @@
       "new_failures": [
         "a flow.json is validated wherever it is read"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "25dc1b4c5be28ff422719a9e0e23e4f277ead6d31256bf51e3bdeb53a305e736",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30648,
+      "duration_ms": 30659,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -1057,18 +1049,18 @@
       "new_failures": [
         "a stray file in the catalog cannot empty it"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "1ee4b55ae92e70a5c175ec3b4d3b251caec38c75f6f8e6337f1dd42c669e9842",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31051,
+      "duration_ms": 31152,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -1094,18 +1086,18 @@
       "new_failures": [
         "a flow's manifest is read through one reader"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "subject_sha256": "c7085020f4607ab437fd89acb20414fef85a41ed30a7c9a1bed8978beb66cf3a",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31880,
+      "duration_ms": 30600,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -1119,32 +1111,26 @@
       "find_base64": null,
       "replace_base64": null,
       "redacted": false,
-      "replacements": 1,
-      "failed": true,
-      "exit": 1,
-      "verdict": "FAILED",
+      "replacements": 0,
+      "failed": false,
+      "exit": -1,
+      "verdict": "NOT RUN",
       "build_failed": false,
       "baseline_red": false,
-      "failed_ids": [
-        "plugins.lock.json says what the catalog ships, on both version and digest",
-        "a lock regenerated from the converted tree comes back unchanged, byte for byte"
-      ],
-      "new_failures": [
-        "plugins.lock.json says what the catalog ships, on both version and digest",
-        "a lock regenerated from the converted tree comes back unchanged, byte for byte"
-      ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "failed_ids": [],
+      "new_failures": [],
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
-      "subject_sha256": "630ae5cc1247e8fdad722b92c219ce2953a287b8a827f96bcc52162d845af056",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
+      "subject_sha256": "4dd4ca63cf5c88eb705ce5ea3c61f525d01d7c5e4e177a18b853d13ed9204c9a",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31373,
+      "duration_ms": 0,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -1172,18 +1158,18 @@
         "a plugin's recorded membership is the one it ships",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
-      "subject_sha256": "630ae5cc1247e8fdad722b92c219ce2953a287b8a827f96bcc52162d845af056",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
+      "subject_sha256": "4dd4ca63cf5c88eb705ce5ea3c61f525d01d7c5e4e177a18b853d13ed9204c9a",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31480,
+      "duration_ms": 31212,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "385138206eab0aaafda05218440a4ebe05c1c16edb53a9927c757ec6df34b017",
+      "live_check_sha256": "c6b65078127b1a609af763b001aed3da55298e05fd83ff97c889778d194fb0c7",
       "stale": false
     },
     {
@@ -1250,18 +1236,18 @@
         "every flow declares which document closes it",
         "sdlc closes on its review, gates it, and leaves its audits ungated"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31908,
+      "duration_ms": 30424,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1287,18 +1273,18 @@
       "new_failures": [
         "a document's requirement is met by the only thing its target can offer"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
-      "subject_sha256": "3c92c5aca00fe7e6191a23bbb9517e2d1e373fb4fa46ff2ed6a7be733ac9e066",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
+      "subject_sha256": "ddf1b87837e475b5e4ad87672887761746c354e848f083670d32e6ebf7ff0345",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31838,
+      "duration_ms": 31418,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1321,25 +1307,27 @@
       "failed_ids": [
         "a document's declared stage is a stage its flow has",
         "every stage says what it leaves behind, and the document it names names it back",
-        "every stage that writes a document names document_present, or says why not"
+        "every stage that writes a document names document_present, or says why not",
+        "the telemetry and the control loop name the same stage for the same act"
       ],
       "new_failures": [
         "a document's declared stage is a stage its flow has",
         "every stage says what it leaves behind, and the document it names names it back",
-        "every stage that writes a document names document_present, or says why not"
+        "every stage that writes a document names document_present, or says why not",
+        "the telemetry and the control loop name the same stage for the same act"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 41396,
+      "duration_ms": 30648,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1379,18 +1367,18 @@
         "opening is explicit and dated by the platform, and freeform gets no next move",
         "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 42894,
+      "duration_ms": 32915,
       "caveat": "the state this plants cannot exist in a manifest the platform accepts. `CatalogManifest` is `.strict()`, FlowStage's shape is `{ name, produces(, supports) }` and neither `stages[].blocks` nor the `tools` list this check compares it against is a declared key — so the manifest is REFUSED by the one reader, and the check's clause fires only because it reads the raw JSON itself. The row shows the rule fires; it does not show the state can occur. Worth raising on its own: contracts' own comment says a stage is 'able to declare which building blocks it may call', and no schema key and no `stage-access.ts` exist to make that true",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1418,18 +1406,18 @@
         "a package declares whether it is a flow, and the console reads the declaration",
         "every flow that declares stages ships scenarios, or says why not"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "e97a769c755b908241236f32b2465e1a09c52d2649dfa37a96d5737b136e2f33",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 33395,
+      "duration_ms": 32231,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1457,18 +1445,18 @@
         "every section a manifest declares is taught by one of its skills",
         "a skill that lists a document's sections lists all of them"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "288d416b1ff6319167554a5fb10b98ba3b4f4e469d55f56275be8de4f4c42636",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 35321,
+      "duration_ms": 31264,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1494,18 +1482,18 @@
       "new_failures": [
         "no shell freezes one flow's fixture paths"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "38e09d69e1a005f8f165a5492ce021684f664533229f5610901151ad6c700914",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 39561,
+      "duration_ms": 31372,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1531,18 +1519,18 @@
       "new_failures": [
         "no evaluation tool is wired to one flow"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "10c7d936ecece93e66cd4d743c37f71c16387375382138d65f07041ceff08114",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31982,
+      "duration_ms": 30625,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1568,18 +1556,18 @@
       "new_failures": [
         "a team overlay adds and cannot replace"
       ],
-      "snapshot_tree_sha256": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "subject_sha256": "14d4a702b7f585367f7a40f34fcef1668a740e29fa2e8d335d499cd11ec07dad",
-      "restored_digest": "971c87714156ca12a730666f4cfbf98cba4b8dc870abac61b1718aa3c64f3e53",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32086,
+      "duration_ms": 30952,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
       "stale": false
     },
     {
@@ -1647,18 +1635,18 @@
         "a close says only what is known and a handover claims only what it verified",
         "the close negative control fires on every planted fault"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0add263e76611b1c06ec9e554a90114b3c7914dd1346f74f8c5a13533b1bdaee",
+      "check_sha256": "147e6574b28c49a8ad2736deacdbf1b93bbb1451e3c6d3315af118d7feac6d86",
       "subject_sha256": "94d3b49694b1659589400318b55d2eac4615aa7aba2f29c83c68896d25e5fa68",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 27147,
+      "duration_ms": 30505,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0add263e76611b1c06ec9e554a90114b3c7914dd1346f74f8c5a13533b1bdaee",
+      "live_check_sha256": "147e6574b28c49a8ad2736deacdbf1b93bbb1451e3c6d3315af118d7feac6d86",
       "stale": false
     },
     {
@@ -3030,18 +3018,18 @@
       "new_failures": [
         "a tool that changes something records that it did"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 27581,
+      "duration_ms": 31007,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3067,18 +3055,18 @@
       "new_failures": [
         "the answer that names an initiative is actually captured, and an error names nothing"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "a4ac2bc8877fe533e67c56066367d2a4cff7d479a206283912bf488c6fd11e91",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32094,
+      "duration_ms": 30533,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3104,18 +3092,18 @@
       "new_failures": [
         "the telemetry and the control loop name the same stage for the same act"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "a4ac2bc8877fe533e67c56066367d2a4cff7d479a206283912bf488c6fd11e91",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31421,
+      "duration_ms": 31381,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3141,18 +3129,18 @@
       "new_failures": [
         "an initiative that does not exist yet is not cached as an initiative with no flow"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "eea87c0c12c48c83cbcd03a55d891c57792e4589d6e2082b147d93a2bfbbbd1b",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31832,
+      "duration_ms": 31298,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3178,18 +3166,18 @@
       "new_failures": [
         "every identifier the telemetry keeps is one a tool can send"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "2ad43bf3185bffe72184a44b0dcf83520dff7cee72afa08812641f1b229e19dd",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30554,
+      "duration_ms": 31863,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3215,18 +3203,18 @@
       "new_failures": [
         "telemetry keeps identifiers and never the team's own words"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "2ad43bf3185bffe72184a44b0dcf83520dff7cee72afa08812641f1b229e19dd",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30683,
+      "duration_ms": 30999,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3252,18 +3240,18 @@
       "new_failures": [
         "a record that is counted is a record that is written once"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "d1fc8720af55ed7509dce1e431f42878fe9dfa33108e2c574993e42e2359896f",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29678,
+      "duration_ms": 31313,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3289,18 +3277,18 @@
       "new_failures": [
         "the platform records its own surface, the way it records everybody else's"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "eb83017bb1cc5bad11a7881314f23b5af66d27aeea48aa6f7690525b99a10e71",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30157,
+      "duration_ms": 31015,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3326,18 +3314,18 @@
       "new_failures": [
         "every header the telemetry correlates on is actually sent"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "584ef50890903bd51efc089880dd23605e0d2ca75890886be0c19193c8c98152",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29479,
+      "duration_ms": 31757,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -3363,18 +3351,18 @@
       "new_failures": [
         "a step's version comes from the skill, never from a file beside it"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "subject_sha256": "eea87c0c12c48c83cbcd03a55d891c57792e4589d6e2082b147d93a2bfbbbd1b",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29724,
+      "duration_ms": 31322,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "0d570f55eaab26c37f533368e930a199d02b1c932fee41212a04216bcd2bb324",
+      "live_check_sha256": "72ddc9420a1a4f09d4ea26175c2bf980b8068f0b406b80b409bea700f1b9c526",
       "stale": false
     },
     {
@@ -4115,18 +4103,18 @@
       "new_failures": [
         "no release document points at a repository path that does not exist"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "shipped prose",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
-      "subject_sha256": "66b32689323d70dc7b17f519dfd44309e49c47e7924c949b793a966d98fa4934",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
+      "subject_sha256": "0bbb06685464b02a1b570ddae9e9af46283ccb0a2d64c9ccc2326cbd60d9ad8c",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29879,
+      "duration_ms": 32168,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4152,18 +4140,18 @@
       "new_failures": [
         "the release verifies through the doctor's probes, not a second list"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "9a16515ec9d020c497b1be2258c91282e1ccdbce9e4ebb0571d20ef76c64197d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30598,
+      "duration_ms": 32071,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4189,18 +4177,18 @@
       "new_failures": [
         "the doctor changes nothing"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "a4c97a07701e7e2ed1f3d95817a9edd97518350a8d2f110a5e8ddff3355689cc",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30991,
+      "duration_ms": 31246,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4226,18 +4214,18 @@
       "new_failures": [
         "the doctor runs every layer that is written"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "ccfeff858d23045f98b4b10738b225d39826b96bf928be4aec8ae7703c5b9c13",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30736,
+      "duration_ms": 32049,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4263,18 +4251,18 @@
       "new_failures": [
         "the deploy stops what this release no longer defines"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "3bf0e26703c09b54efa6d162567864e25e8cc500e16300ce8178a4a2dda29b82",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29885,
+      "duration_ms": 30360,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4300,18 +4288,18 @@
       "new_failures": [
         "the deploy bundle carries everything the install steps use"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "f49813cc4002c940a3b6c05d465395c0184c062f3dbe363590d34793caf8969e",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30554,
+      "duration_ms": 30714,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4337,18 +4325,18 @@
       "new_failures": [
         "a dry run cannot write git history"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "3bf0e26703c09b54efa6d162567864e25e8cc500e16300ce8178a4a2dda29b82",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30148,
+      "duration_ms": 29980,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4374,18 +4362,18 @@
       "new_failures": [
         "the deployed image can be rebuilt from this repo"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "f4e046a37560bc38efa7d1e8d08ef82709f3e47ee44025919a0d50344bfbfee7",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31343,
+      "duration_ms": 30416,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4417,18 +4405,18 @@
         "the rest of scripts/ and testing/ carry zero strict errors, and none of them was reached by widening to any",
         "the whole tooling project carries zero strict errors, measured as one project rather than subtree by subtree"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "3bf0e26703c09b54efa6d162567864e25e8cc500e16300ce8178a4a2dda29b82",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29910,
+      "duration_ms": 29651,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4454,18 +4442,18 @@
       "new_failures": [
         "a breaking change says what to do about it"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "shipped prose",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
-      "subject_sha256": "30594adbed4b17ce16ecabda4e67e3b34eb7b4de5cd693844e4d1b039f2e6cdb",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
+      "subject_sha256": "e354f53862730d965b167b5745b4d2352f44405f4e2b2e8e9e4f93b7c21fe20a",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30246,
+      "duration_ms": 30128,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4491,18 +4479,18 @@
       "new_failures": [
         "the release script can read every fact it parses out of source"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "subject_sha256": "584ef50890903bd51efc089880dd23605e0d2ca75890886be0c19193c8c98152",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29861,
+      "duration_ms": 29901,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4528,18 +4516,18 @@
       "new_failures": [
         "a release groups each kind of change once"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "shipped prose",
-      "check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
-      "subject_sha256": "30594adbed4b17ce16ecabda4e67e3b34eb7b4de5cd693844e4d1b039f2e6cdb",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
+      "subject_sha256": "e354f53862730d965b167b5745b4d2352f44405f4e2b2e8e9e4f93b7c21fe20a",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30748,
+      "duration_ms": 30676,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "a0656b90af292b717444f96499ece6f3b8a3447157a20841458b0639d840027e",
+      "live_check_sha256": "b6af36aa4248af2811231916611a784a47e585f1073d9db1d07a83faad6eb0ae",
       "stale": false
     },
     {
@@ -4758,18 +4746,18 @@
       "new_failures": [
         "one function decides what a document's envelope says"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "subject_sha256": "efb6a9a6312cc3dfe792dbcc75e38ca52ae68f10bba1ecbdab1aa72d4afe17ca",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29793,
+      "duration_ms": 30370,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -4795,18 +4783,18 @@
       "new_failures": [
         "nothing reads an envelope field except parseEnvelope"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30424,
+      "duration_ms": 30878,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -4832,18 +4820,18 @@
       "new_failures": [
         "only an act may move the fields the platform owns"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
-      "subject_sha256": "d93b30e775690554d98b5682598cf1205d1eee59e92568b050477e55db015568",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29948,
+      "duration_ms": 30318,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -4869,18 +4857,18 @@
       "new_failures": [
         "the envelope vocabulary is defined once"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "subject_sha256": "647cb288a19ff5d355b57985bb1a8fba9f47de542f4378e746c5b8c9ecbd5ea0",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31783,
+      "duration_ms": 30624,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -4908,18 +4896,18 @@
         "the model writes the body and the platform writes the envelope",
         "no write path lets a caller type an envelope field"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
-      "subject_sha256": "d93b30e775690554d98b5682598cf1205d1eee59e92568b050477e55db015568",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30448,
+      "duration_ms": 30250,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -4945,18 +4933,18 @@
       "new_failures": [
         "the envelope is stamped by what governs the document"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "subject_sha256": "b99a9ede4caef16f3e80187d334cd3398cbf59311352c07d6f21604310a44187",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30727,
+      "duration_ms": 30330,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -4982,18 +4970,18 @@
       "new_failures": [
         "nothing tells an agent to write a field the platform owns"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
-      "subject_sha256": "3c92c5aca00fe7e6191a23bbb9517e2d1e373fb4fa46ff2ed6a7be733ac9e066",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
+      "subject_sha256": "ddf1b87837e475b5e4ad87672887761746c354e848f083670d32e6ebf7ff0345",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30293,
+      "duration_ms": 29649,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -5019,18 +5007,18 @@
       "new_failures": [
         "where a frontmatter block starts and ends is spelled once"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "subject_sha256": "d1fc8720af55ed7509dce1e431f42878fe9dfa33108e2c574993e42e2359896f",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31040,
+      "duration_ms": 30386,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "4c9d51ca2be2b0bbcf9e1b4af8296ebdf450bf02346c0db9e87f419a37838521",
+      "live_check_sha256": "54537963bd356f7ef492358437ab458962217874644913fba932d6f04d70df16",
       "stale": false
     },
     {
@@ -5278,18 +5266,18 @@
       "new_failures": [
         "every store mutation goes through the shared guard and persist"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "d93b30e775690554d98b5682598cf1205d1eee59e92568b050477e55db015568",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31368,
+      "duration_ms": 29771,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5315,18 +5303,18 @@
       "new_failures": [
         "every tool that writes a file also indexes it"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30922,
+      "duration_ms": 31116,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5352,18 +5340,18 @@
       "new_failures": [
         "every document write runs the guards"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30827,
+      "duration_ms": 30974,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5389,18 +5377,18 @@
       "new_failures": [
         "no asymmetric fork in the document guards"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "subject_sha256": "b5d6d0d00eb56ca259445e886b3e6c99a2df9ddddd2b5ca293a13f3da50bb91e",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30722,
+      "duration_ms": 30770,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5426,18 +5414,18 @@
       "new_failures": [
         "a refusal is classified in one place"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "subject_sha256": "4502aa6bf80cde648e525df323e353a7001821ffbdaebd426aa17676a3b5392f",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30284,
+      "duration_ms": 29951,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5463,18 +5451,18 @@
       "new_failures": [
         "a guard's answer is never discarded"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30134,
+      "duration_ms": 30168,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5500,18 +5488,18 @@
       "new_failures": [
         "nothing is written before the guards that would refuse it"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "d93b30e775690554d98b5682598cf1205d1eee59e92568b050477e55db015568",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30521,
+      "duration_ms": 30245,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5537,18 +5525,18 @@
       "new_failures": [
         "every exclusive input pair refuses both-supplied, distinctly"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "subject_sha256": "335a591f0e7af92408f91ef7f8ee96070bd9874b44c065c8508cce4a870d9fa5",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29892,
+      "duration_ms": 29729,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5574,18 +5562,18 @@
       "new_failures": [
         "the claim reader reads a criterion written as a checklist item"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "subject_sha256": "baef10662ddb68f7aa58f7a05c113da0f0f174603422cd0b7f968f0133802e17",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30557,
+      "duration_ms": 30272,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5611,18 +5599,18 @@
       "new_failures": [
         "a tool that builds a path from an initiative name checks it first"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29941,
+      "duration_ms": 30155,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5648,18 +5636,18 @@
       "new_failures": [
         "a refusal names a way out the tool it came from actually has"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "subject_sha256": "16e4aaef134264798bb5f6a648068bf6fc6dba52020129b2a38f0c73fd812ab0",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30570,
+      "duration_ms": 30658,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5685,18 +5673,18 @@
       "new_failures": [
         "a refusal class keeps the number that IS the refusal"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "bc135d60a107ff09300675b8d61b9fa8761aab2478b952605c80a89486ceddb2",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "789437581ef02fcebb5f06154f1e708e23fc4cbc9429d5629cd6db2cca38431f",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29763,
+      "duration_ms": 30022,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5722,18 +5710,18 @@
       "new_failures": [
         "a path is resolved before the document at it is judged"
       ],
-      "snapshot_tree_sha256": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "cb3be072becb1de67a0c4550c3be3cc438fb05ff3600d44f2f11d446b85e32db",
+      "check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29955,
+      "duration_ms": 30441,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "2ac1841e5de0f2c8ab832b1d941e4c1f6f2dc34d3106a306c15fbaad248e9179",
+      "live_check_sha256": "90bc4d7bf182754cb919d226e33c0665663bb81042f8450bac8209b582bc92e7",
       "stale": false
     },
     {
@@ -5759,18 +5747,18 @@
       "new_failures": [
         "document_revise records the material behind every version"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30436,
+      "duration_ms": 29794,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -5796,18 +5784,18 @@
       "new_failures": [
         "a document the flow does not declare can still record why it changed"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29608,
+      "duration_ms": 30225,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -5833,18 +5821,18 @@
       "new_failures": [
         "document_present returns a document, not a rendering or a summary"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30406,
+      "duration_ms": 29808,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -5870,18 +5858,18 @@
       "new_failures": [
         "an act and the act that undoes it are recorded the same way"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "8141278d6ff82909a3435e58adb65cb7813384418126ab6fdfa01e4ddfb67ec3",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29588,
+      "duration_ms": 30441,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -5907,18 +5895,18 @@
       "new_failures": [
         "the store audit applies the platform's close rules, not stricter ones"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "647cb288a19ff5d355b57985bb1a8fba9f47de542f4378e746c5b8c9ecbd5ea0",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30041,
+      "duration_ms": 30142,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -5944,18 +5932,18 @@
       "new_failures": [
         "nothing can clear the field that says an initiative already closed"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "cb22adbc14b30660e1154cf077105c9dbb0ae705a51ac30afb2dc11fe420d7eb",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29467,
+      "duration_ms": 30214,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -5981,18 +5969,18 @@
       "new_failures": [
         "the closing document is resolved from the list the flow declared"
       ],
-      "snapshot_tree_sha256": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "subject_sha256": "375dfa15c49ded6c472e38d61d8d10b7bb460488f4e82e77a2bf434d980a65df",
-      "restored_digest": "ac0cff4327dd51363b817bc7592c01d3e728ecd2e5d2f955a60cc72966bc8515",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29715,
+      "duration_ms": 29751,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "60a6c33b8a32423f30a1f6fb7754cdb483b23637959253adb91a483cc4f1dcf9",
+      "live_check_sha256": "ae71a47f99d79569e73403eb98cd3bd552178fbbccba980bd0b54f721ae53bcd",
       "stale": false
     },
     {
@@ -6014,25 +6002,24 @@
       "baseline_red": false,
       "failed_ids": [
         "every envelope field the platform writes is one the schema declares",
-        "every envelope field the platform reads is one the schema publishes",
-        "a hostname with no dots is a service this compose file defines"
+        "every envelope field the platform reads is one the schema publishes"
       ],
       "new_failures": [
         "every envelope field the platform writes is one the schema declares",
         "every envelope field the platform reads is one the schema publishes"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "subject_sha256": "b99a9ede4caef16f3e80187d334cd3398cbf59311352c07d6f21604310a44187",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30668,
+      "duration_ms": 30127,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6053,24 +6040,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every state the schema allows can actually be reached",
-        "a hostname with no dots is a service this compose file defines"
+        "every state the schema allows can actually be reached"
       ],
       "new_failures": [
         "every state the schema allows can actually be reached"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "subject_sha256": "74a1d11df28791e8a9a34578ffdf2f2d0a97d5a1b58ad778c187a792c06aa340",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29788,
+      "duration_ms": 30078,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6092,25 +6078,24 @@
       "baseline_red": false,
       "failed_ids": [
         "everything that reads a source reads the fields sourceDocument writes",
-        "every envelope field the platform reads is one the schema publishes",
-        "a hostname with no dots is a service this compose file defines"
+        "every envelope field the platform reads is one the schema publishes"
       ],
       "new_failures": [
         "everything that reads a source reads the fields sourceDocument writes",
         "every envelope field the platform reads is one the schema publishes"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30380,
+      "duration_ms": 30589,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6131,24 +6116,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every subject kind the platform accepts is one a skill teaches",
-        "a hostname with no dots is a service this compose file defines"
+        "every subject kind the platform accepts is one a skill teaches"
       ],
       "new_failures": [
         "every subject kind the platform accepts is one a skill teaches"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "subject_sha256": "f4442e7ead7b5718b506557c3bb1db2f55bfacd7a727a55d6703ff51ccb72e7e",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29920,
+      "duration_ms": 30252,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6170,25 +6154,24 @@
       "baseline_red": false,
       "failed_ids": [
         "the published schema is never weaker than the validator",
-        "a hostname with no dots is a service this compose file defines",
         "the manifest can express what the standard requires, and not what it replaced"
       ],
       "new_failures": [
         "the published schema is never weaker than the validator",
         "the manifest can express what the standard requires, and not what it replaced"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
-      "subject_sha256": "bc135d60a107ff09300675b8d61b9fa8761aab2478b952605c80a89486ceddb2",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
+      "subject_sha256": "789437581ef02fcebb5f06154f1e708e23fc4cbc9429d5629cd6db2cca38431f",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30362,
+      "duration_ms": 30681,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6209,24 +6192,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a section rename the platform reports is a section the document has",
-        "a hostname with no dots is a service this compose file defines"
+        "a section rename the platform reports is a section the document has"
       ],
       "new_failures": [
         "a section rename the platform reports is a section the document has"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "subject_sha256": "b99a9ede4caef16f3e80187d334cd3398cbf59311352c07d6f21604310a44187",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29935,
+      "duration_ms": 30013,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6247,24 +6229,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a subject tag the platform teaches is a subject tag it accepts",
-        "a hostname with no dots is a service this compose file defines"
+        "a subject tag the platform teaches is a subject tag it accepts"
       ],
       "new_failures": [
         "a subject tag the platform teaches is a subject tag it accepts"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "subject_sha256": "29a21ebfd9ea619839a6379783221f2f1b2c06c3f229cd40afc726f08ae60f97",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30771,
+      "duration_ms": 30598,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6285,24 +6266,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "every envelope field the platform reads is one the schema publishes",
-        "a hostname with no dots is a service this compose file defines"
+        "every envelope field the platform reads is one the schema publishes"
       ],
       "new_failures": [
         "every envelope field the platform reads is one the schema publishes"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30504,
+      "duration_ms": 30030,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6323,24 +6303,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the published schema is exactly as strict as the validator",
-        "a hostname with no dots is a service this compose file defines"
+        "the published schema is exactly as strict as the validator"
       ],
       "new_failures": [
         "the published schema is exactly as strict as the validator"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
-      "subject_sha256": "bc135d60a107ff09300675b8d61b9fa8761aab2478b952605c80a89486ceddb2",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
+      "subject_sha256": "789437581ef02fcebb5f06154f1e708e23fc4cbc9429d5629cd6db2cca38431f",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29883,
+      "duration_ms": 30925,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6361,24 +6340,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the schema's own document names things that exist",
-        "a hostname with no dots is a service this compose file defines"
+        "the schema's own document names things that exist"
       ],
       "new_failures": [
         "the schema's own document names things that exist"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "subject_sha256": "6106077fb82f1db1013087476fcab30fdc4a55604018d9f3bc997123efb8c010",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30670,
+      "duration_ms": 29893,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6399,24 +6377,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a subject tag is reachable from the word it is about",
-        "a hostname with no dots is a service this compose file defines"
+        "a subject tag is reachable from the word it is about"
       ],
       "new_failures": [
         "a subject tag is reachable from the word it is about"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
-      "subject_sha256": "7c843d0d2d67ef38e8992de26d96415cd0c002718c4e7838043911b9fc8ecc13",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
+      "subject_sha256": "5a56ded6a7b26c090b59f87adbd70eac2e04ced10bc34031581e83ff09568e73",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30194,
+      "duration_ms": 30688,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3d46be39b86e27dba9a5b277525ce57cb079a434cc3d4260f6cc13d95be666bf",
+      "live_check_sha256": "864b0750620c6ccfcb111d6fd6823ed004bfdbf83085097c0ed703c2982f11f2",
       "stale": false
     },
     {
@@ -6785,24 +6762,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "no statement is written twice in a row"
       ],
       "new_failures": [
         "no statement is written twice in a row"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "7c7aed47e759250dee6c19aca1a23c67c3a837ff16834dcfc42b86792187c8ed",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29733,
+      "duration_ms": 30009,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -6823,24 +6799,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "an async guard in a ?? chain is awaited"
       ],
       "new_failures": [
         "an async guard in a ?? chain is awaited"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "61847ee2d437e46ed23e2745536af496fd4a3997f02213bba792386bae59822e",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30410,
+      "duration_ms": 30371,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -6861,7 +6836,6 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "the configuration surface is documented",
         "the platform model is one name, however many places name it"
       ],
@@ -6869,18 +6843,18 @@
         "the configuration surface is documented",
         "the platform model is one name, however many places name it"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "c76ff439e12495855b4be5d8bbace05a7f0c81d6075d7b9fd2ea081f25ebcebe",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30026,
+      "duration_ms": 29706,
       "caveat": "this fires the check's DECLARATION clause. Its comparison clause — the four places that must carry the same name — reads `const found = {}`, an empty object, so `Object.entries(found)` is empty on every run and no disagreement between the front end's model list, its titleModel, its tokenConfig key and this variable can reach it. That clause is unexercisable until `found` is populated again.",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -6901,24 +6875,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "the MCP protocol is written once"
       ],
       "new_failures": [
         "the MCP protocol is written once"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "4f2c371912dfc69bf9eb7daedbba32162df656b3629fcf3a1059a9a4b5adfece",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30267,
+      "duration_ms": 30491,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -6939,24 +6912,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "every doc comment is attached to something"
       ],
       "new_failures": [
         "every doc comment is attached to something"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "584ef50890903bd51efc089880dd23605e0d2ca75890886be0c19193c8c98152",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29832,
+      "duration_ms": 29958,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -6977,24 +6949,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "a markdown table row is built, never assembled"
       ],
       "new_failures": [
         "a markdown table row is built, never assembled"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "d1fc8720af55ed7509dce1e431f42878fe9dfa33108e2c574993e42e2359896f",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30356,
+      "duration_ms": 30633,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7015,24 +6986,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "a plugin is named the same way wherever it is named"
       ],
       "new_failures": [
         "a plugin is named the same way wherever it is named"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "a0032dcc0f78574fc362ea67e0119effb4736a5e4c128217181264d1c4ae9ec6",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29862,
+      "duration_ms": 31045,
       "caveat": "the check's pattern is pinned to the literal `@zz-platform`, and this repository's MARKETPLACE constant is now `\"zz-stack\"` and is interpolated everywhere it is written. So no honest defect in today's code can reach this clause: the planted line has to name the retired marketplace to be seen at all, which is a second defect the check does not claim to catch.",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7058,7 +7028,6 @@
         "a skill that changed says so in its version",
         "no skill references a skill that is not shipped",
         "no shipped prose names a skill no plugin ships",
-        "a hostname with no dots is a service this compose file defines",
         "the audit criteria are written once",
         "a lock regenerated from the converted tree comes back unchanged, byte for byte",
         "the three verification stages leave a document, and keep their independence"
@@ -7073,18 +7042,18 @@
         "a lock regenerated from the converted tree comes back unchanged, byte for byte",
         "the three verification stages leave a document, and keep their independence"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "shipped prose",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "26e91ce98bbc9740a8905fa9b3deac0df0919141636db8d209e638fa18171637",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30353,
+      "duration_ms": 30362,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7105,24 +7074,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "every source file is text a search can read"
       ],
       "new_failures": [
         "every source file is text a search can read"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "1bee11e7072603eeac245fe1f3b4e686452a9df7a20dbdce8d9d46cfde7a909d",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29818,
+      "duration_ms": 31145,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7143,24 +7111,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "the shared MCP client still behaves"
       ],
       "new_failures": [
         "the shared MCP client still behaves"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "584ef50890903bd51efc089880dd23605e0d2ca75890886be0c19193c8c98152",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30179,
+      "duration_ms": 31101,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7181,24 +7148,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "imports run node, then packages, then this directory"
       ],
       "new_failures": [
         "imports run node, then packages, then this directory"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "a0032dcc0f78574fc362ea67e0119effb4736a5e4c128217181264d1c4ae9ec6",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29989,
+      "duration_ms": 32913,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7219,24 +7185,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "a flag given with nothing after it is refused, not read as absent"
       ],
       "new_failures": [
         "a flag given with nothing after it is refused, not read as absent"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "d3d01b0ee793eb451ebeaac4304e2e04348a712705001d950b73b470e9333172",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30561,
+      "duration_ms": 30996,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7257,24 +7222,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "a function is never mistaken for what it returns"
       ],
       "new_failures": [
         "a function is never mistaken for what it returns"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "375dfa15c49ded6c472e38d61d8d10b7bb460488f4e82e77a2bf434d980a65df",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31483,
+      "duration_ms": 31397,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7295,24 +7259,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "no comment repeats a line of itself"
       ],
       "new_failures": [
         "no comment repeats a line of itself"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "375dfa15c49ded6c472e38d61d8d10b7bb460488f4e82e77a2bf434d980a65df",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30012,
+      "duration_ms": 30356,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7333,24 +7296,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "no source file is larger than one subject usually is"
       ],
       "new_failures": [
         "no source file is larger than one subject usually is"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "6666c2779ada07a7e085063f50b884e501d60d473649c23bc1edd4e4fcce3a57",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30112,
+      "duration_ms": 30299,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -7371,24 +7333,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a hostname with no dots is a service this compose file defines",
         "nothing is exported that nobody imports"
       ],
       "new_failures": [
         "nothing is exported that nobody imports"
       ],
-      "snapshot_tree_sha256": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "subject_sha256": "9c38c63075cc54f5c8b738e8c1c02f16299e8013fae0ade788ebe0544c697c9c",
-      "restored_digest": "240c83bbd3f4d2fb8a5cab7ed8321b6d41811f6bbb140e3b94ad80ebe93321cb",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 29637,
+      "duration_ms": 29979,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "9e894ccab980268a376e626779ba7e3ede6e4e8a743daebbf750b51422c2f7e8",
+      "live_check_sha256": "86fce1b3736156827c46ce33341b1172bdc0501ea2f2d16af99edf8946d42a96",
       "stale": false
     },
     {
@@ -9690,24 +9651,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "rederivation covers old rows and refuses to mix analyzer generations",
-        "a hostname with no dots is a service this compose file defines"
+        "rederivation covers old rows and refuses to mix analyzer generations"
       ],
       "new_failures": [
         "rederivation covers old rows and refuses to mix analyzer generations"
       ],
-      "snapshot_tree_sha256": "df38a5002fc3d5f1d223e8249010b717c966e2cd28974474447910fc57e0b9e4",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "8f2dee8acf11b99b3f33ae354b7987200e877993c69857c192796bf52937ac73",
+      "check_sha256": "a3d5c3f5e393b37e504fcdec69e8be9d10e7ea8deccd25dc7cc33b11f87a1003",
       "subject_sha256": "3984b4badccca3a6bf8a9ee9b1894f99b84e700f4c5b31d306dde3f127056f28",
-      "restored_digest": "df38a5002fc3d5f1d223e8249010b717c966e2cd28974474447910fc57e0b9e4",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30687,
+      "duration_ms": 30293,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "8f2dee8acf11b99b3f33ae354b7987200e877993c69857c192796bf52937ac73",
+      "live_check_sha256": "a3d5c3f5e393b37e504fcdec69e8be9d10e7ea8deccd25dc7cc33b11f87a1003",
       "stale": false
     },
     {
@@ -9961,25 +9921,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "nothing under a store root that begins with a dot is reachable",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "nothing under a store root that begins with a dot is reachable"
       ],
       "new_failures": [
         "nothing under a store root that begins with a dot is reachable"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "29a21ebfd9ea619839a6379783221f2f1b2c06c3f229cd40afc726f08ae60f97",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31396,
+      "duration_ms": 29780,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10000,25 +9958,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a value crossing into a shell is quoted for a shell",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "a value crossing into a shell is quoted for a shell"
       ],
       "new_failures": [
         "a value crossing into a shell is quoted for a shell"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "declared data or configuration",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "1a900075938f91cb24f23c93b09ae52f5e3c49f344c6de83de94b8cd8fe7a1e1",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31245,
+      "duration_ms": 30270,
       "caveat": "no shell script in this repository evaluates generated shell today, so the check's own loop skips every file and it cannot currently fail. This row supplies the subject the check was written for; it shows the check fires on one, not that anything shipping is covered by it",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10039,25 +9995,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the write guards see a path traversal cannot hide from",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "the write guards see a path traversal cannot hide from"
       ],
       "new_failures": [
         "the write guards see a path traversal cannot hide from"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "29a21ebfd9ea619839a6379783221f2f1b2c06c3f229cd40afc726f08ae60f97",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32158,
+      "duration_ms": 30342,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10078,25 +10032,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "no replacement string can be read as a pattern",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "no replacement string can be read as a pattern"
       ],
       "new_failures": [
         "no replacement string can be read as a pattern"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
-      "subject_sha256": "c393a2bc2c8f02759b00f1789777a555b2814a31723fe955aa04e55140a5d13d",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
+      "subject_sha256": "c45f679911e5c4ece61dadade5628548d73c57df11275e4770baeb23662e9f8d",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31239,
+      "duration_ms": 30689,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10117,25 +10069,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the gateway is authenticated by default, and the exceptions are the intended ones",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "the gateway is authenticated by default, and the exceptions are the intended ones"
       ],
       "new_failures": [
         "the gateway is authenticated by default, and the exceptions are the intended ones"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "1341e5fb80c82fc47b7ee62b9b15c93b831f44723da20eb10b28b94c65e549ed",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30658,
+      "duration_ms": 29913,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10156,25 +10106,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a psql variable is bound, never interpolated",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "a psql variable is bound, never interpolated"
       ],
       "new_failures": [
         "a psql variable is bound, never interpolated"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "06aac24851a34b2405ec7a10c2777f5454c6eb35959aef05ac95156bc3019b9f",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32581,
+      "duration_ms": 30750,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10195,25 +10143,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "both services authenticate their own network the same way",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "both services authenticate their own network the same way"
       ],
       "new_failures": [
         "both services authenticate their own network the same way"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "139bb80abb7154e6d2b37cf2c48194914e7cd26607ff7fc331442e4fc2f2cfcf",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30226,
+      "duration_ms": 29916,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10234,25 +10180,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the paths documented as public are the ones the gateway exempts",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "the paths documented as public are the ones the gateway exempts"
       ],
       "new_failures": [
         "the paths documented as public are the ones the gateway exempts"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "shipped prose",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "991834d3b9c5ab50b304d9c77f9716a37b4455cb4745ccfa7e274e5ac69fbbf1",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30484,
+      "duration_ms": 30770,
       "caveat": "neither README makes the claim today — the check reads only where a document actually lists the unauthenticated paths, and both skip — so it cannot currently fail. This row supplies the claim and shows the check catches an incomplete one",
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10273,25 +10217,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "an MCP door is stateless, and never answers with an HTTP error status",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "an MCP door is stateless, and never answers with an HTTP error status"
       ],
       "new_failures": [
         "an MCP door is stateless, and never answers with an HTTP error status"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "subject_sha256": "3f0885030449659f8b9e5bf1fe4de97c44b1aab7a3ec24f4f2168a4e8118cbbc",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30132,
+      "duration_ms": 30082,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "3563f3ebe64e72c86a1f1bf96f68df00c8e5c03f2af67331ccfd795814ab7ff4",
+      "live_check_sha256": "795f482d20de59c718305205e6c2f23cc073b7808dc748fc1972b7918f35b145",
       "stale": false
     },
     {
@@ -10312,25 +10254,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "authority is decided by one function, never by comparing the role",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "authority is decided by one function, never by comparing the role"
       ],
       "new_failures": [
         "authority is decided by one function, never by comparing the role"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "7c7aed47e759250dee6c19aca1a23c67c3a837ff16834dcfc42b86792187c8ed",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 32102,
+      "duration_ms": 30300,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -10351,25 +10291,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the team a person acts for is stored, not asserted",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "the team a person acts for is stored, not asserted"
       ],
       "new_failures": [
         "the team a person acts for is stored, not asserted"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "776ee31aa361991959dc0c23426777609e24b3025d3d2b3dc9e513a8c065768f",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30096,
+      "duration_ms": 29758,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -10390,25 +10328,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a tool picks the caller's team the platform's way",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "a tool picks the caller's team the platform's way"
       ],
       "new_failures": [
         "a tool picks the caller's team the platform's way"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "776ee31aa361991959dc0c23426777609e24b3025d3d2b3dc9e513a8c065768f",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30733,
+      "duration_ms": 32123,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -10430,26 +10366,24 @@
       "baseline_red": false,
       "failed_ids": [
         "identity is a port, and a door that says no ends the request",
-        "a hostname with no dots is a service this compose file defines",
-        "a door that refuses ends the request",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "a door that refuses ends the request"
       ],
       "new_failures": [
         "identity is a port, and a door that says no ends the request",
         "a door that refuses ends the request"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "b8f1f627a095ae83238fc7c422dad2f1729ea94f4db60867f8b6a391bd04219e",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30138,
+      "duration_ms": 30931,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -10470,25 +10404,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "a caller's email is normalised at the boundary, never at the call site",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "a caller's email is normalised at the boundary, never at the call site"
       ],
       "new_failures": [
         "a caller's email is normalised at the boundary, never at the call site"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "139bb80abb7154e6d2b37cf2c48194914e7cd26607ff7fc331442e4fc2f2cfcf",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 30692,
+      "duration_ms": 30059,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -10509,25 +10441,23 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
-        "the request-scoped header store is only read where it exists",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "the request-scoped header store is only read where it exists"
       ],
       "new_failures": [
         "the request-scoped header store is only read where it exists"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "eb83017bb1cc5bad11a7881314f23b5af66d27aeea48aa6f7690525b99a10e71",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31762,
+      "duration_ms": 30498,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -10549,26 +10479,24 @@
       "baseline_red": false,
       "failed_ids": [
         "the team a person acts for is stored, not asserted",
-        "nothing picks a team by taking the first membership row",
-        "a hostname with no dots is a service this compose file defines",
-        "the two misnamed core skills are renamed, every caller moved, and an old step still resolves"
+        "nothing picks a team by taking the first membership row"
       ],
       "new_failures": [
         "the team a person acts for is stored, not asserted",
         "nothing picks a team by taking the first membership row"
       ],
-      "snapshot_tree_sha256": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "subject_sha256": "3990de508b000225e31ac387541094078cf80bb13b6aea17d0faf532c25cfe6e",
-      "restored_digest": "b473e1dd5fe102c45731f571959a842a59637441cc53f56f0c211f49d8889431",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 31019,
+      "duration_ms": 29979,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "43e66c789284c24a9462234f46ac9dfe758e1610a677a8ad03c0a26a67902efc",
+      "live_check_sha256": "80aca1c37941d761b25a765a214672b9903a2b69e9afb62f19ee20eb718e5d24",
       "stale": false
     },
     {
@@ -16738,18 +16666,18 @@
       "new_failures": [
         "the recall trial's analyzer finds the same Han terms as zz-lexical-v2"
       ],
-      "snapshot_tree_sha256": "428879117dd0c59107fa66ba4dfda47d19dca6e6727f782910d56db41b66a9b3",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "d5a87f84d90ce6005844aabfbd1d254c0d351922a17788d14f93c734ca048ed7",
+      "check_sha256": "e113d7058f26a709192e9f3a635202e12403b22ed630fd8d3624a6742d03afbc",
       "subject_sha256": "75c43cfb0b0e8de9a385d88c0e9fb677af24e644d3e23163d84ea5a68eab58b2",
-      "restored_digest": "428879117dd0c59107fa66ba4dfda47d19dca6e6727f782910d56db41b66a9b3",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 26055,
+      "duration_ms": 30458,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "d5a87f84d90ce6005844aabfbd1d254c0d351922a17788d14f93c734ca048ed7",
+      "live_check_sha256": "e113d7058f26a709192e9f3a635202e12403b22ed630fd8d3624a6742d03afbc",
       "stale": false
     },
     {
@@ -16770,25 +16698,27 @@
       "build_failed": false,
       "baseline_red": false,
       "failed_ids": [
+        "the recall-trial negative control fires on every planted fault",
         "search to pinned read to synthesis holds in both languages and cannot be redirected",
         "the recall trial's analyzer finds the same Han terms as zz-lexical-v2"
       ],
       "new_failures": [
+        "the recall-trial negative control fires on every planted fault",
         "search to pinned read to synthesis holds in both languages and cannot be redirected",
         "the recall trial's analyzer finds the same Han terms as zz-lexical-v2"
       ],
-      "snapshot_tree_sha256": "428879117dd0c59107fa66ba4dfda47d19dca6e6727f782910d56db41b66a9b3",
+      "snapshot_tree_sha256": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "subject_kind": "source",
-      "check_sha256": "d5a87f84d90ce6005844aabfbd1d254c0d351922a17788d14f93c734ca048ed7",
+      "check_sha256": "e113d7058f26a709192e9f3a635202e12403b22ed630fd8d3624a6742d03afbc",
       "subject_sha256": "75c43cfb0b0e8de9a385d88c0e9fb677af24e644d3e23163d84ea5a68eab58b2",
-      "restored_digest": "428879117dd0c59107fa66ba4dfda47d19dca6e6727f782910d56db41b66a9b3",
+      "restored_digest": "ed922b42685fd3a0f5647e0ce3d3fcaa0d50d25fa64d5c87e228665bd5d11706",
       "digest_matches": true,
-      "duration_ms": 25942,
+      "duration_ms": 30281,
       "caveat": null,
       "apply_error": null,
       "prebuild_failed": false,
       "prebuild_error": null,
-      "live_check_sha256": "d5a87f84d90ce6005844aabfbd1d254c0d351922a17788d14f93c734ca048ed7",
+      "live_check_sha256": "e113d7058f26a709192e9f3a635202e12403b22ed630fd8d3624a6742d03afbc",
       "stale": false
     },
     {
@@ -16929,8 +16859,8 @@
       "why": "the clause fires only when `testing/` cannot be read, and the sole edit that produces that state is to the check's own path string. `plant()` freezes `scripts/gate/checks/` — a run that edited a check would be measuring itself — and a find/replace spec cannot remove a directory. The subject and the instrument are the same file, which is the one combination this runner refuses by construction.",
       "plantable_when": "the runner can express a subject's ABSENCE as a mutation, rather than only its contents. Until then the clause is verified by reading: it was `return null` and it is now a returned failure string, and `testing/` is tracked, so the state it guards is a broken checkout rather than a checkout without an optional artifact.",
       "observed_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "live_check_sha256": "93c4bd2f1c7f3756e42e9cba4907e66fa5729e04ed7a9286dfcc63b753dc5e73",
-      "stale": false
+      "live_check_sha256": "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+      "stale": true
     },
     {
       "check": "scripts/gate/checks/catalog-stages.ts",
@@ -16938,8 +16868,8 @@
       "why": "identical to the entry above, in the sibling check that carried the same escape.",
       "plantable_when": "as above.",
       "observed_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
-      "live_check_sha256": "ce1453cacf43adb5faa72d5dcff32dd1fceb8341d162b7db4616c83e09e5a82c",
-      "stale": false
+      "live_check_sha256": "fd37d484ad83beccf81350711b64003e3277a81ae0e8f348bdad605114d176f9",
+      "stale": true
     },
     {
       "check": "scripts/gate/checks/deploy-compose.ts",

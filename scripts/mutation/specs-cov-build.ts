@@ -37,8 +37,17 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/build.ts",
     target: "every package manifest carries the same version",
     subject: "packages/contracts/package.json",
-    find: '"version": "0.62.4",',
-    replace: '"version": "0.62.3",',
+    // ANCHORED ON A LINE THAT DOES NOT CARRY THE VERSION, because a spec that names one stops
+    // landing the next time somebody releases. This pinned `0.62.4` and had not landed for six
+    // releases — reported as "0 replacements" by every run and hidden behind a carried row
+    // until the artifact was bound to the tree at gate time.
+    //
+    // `"type"` sits AFTER `"version"` in this manifest and `readJson` is `JSON.parse`, where a
+    // duplicate key takes the LAST value — so an injected key here is the one the check reads,
+    // whatever the real version happens to be that week.
+    subject: "packages/contracts/package.json",
+    find: '  "type": "module",',
+    replace: '  "version": "0.0.1",\n  "type": "module",',
     planted: "one workspace manifest keeps the previous release's number while the other seven " +
       "moved, which is the half-done version bump set-version.ts exists to make impossible",
   },
@@ -55,8 +64,10 @@ export const COV_BUILD: readonly MutationSpec[] = [
     check: "scripts/gate/checks/build.ts",
     target: "the lockfile records the version this release ships",
     subject: "package-lock.json",
-    find: '"version": "0.62.4",\n  "lockfileVersion": 3,',
-    replace: '"version": "0.62.3",\n  "lockfileVersion": 3,',
+    // Same shape, same reason: `"lockfileVersion"` follows `"version"` at the top of the file,
+    // so the injected key is the later one and wins under JSON.parse.
+    find: '  "lockfileVersion": 3,',
+    replace: '  "version": "0.0.1",\n  "lockfileVersion": 3,',
     planted: "the lockfile still records the previous release while every manifest has moved — " +
       "`npm ci` tolerates it, so the wrong number ships with nothing saying anything",
   },

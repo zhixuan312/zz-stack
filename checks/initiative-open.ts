@@ -309,6 +309,50 @@ is(drafted.next_move?.action === "await_approval" && drafted.next_move?.document
    `with spec.md still draft the next move is ${JSON.stringify(drafted.next_move)} — the audit ` +
    "of an unapproved document must not be demanded ahead of its gate");
 
+// ── 3d. A CLOSED INITIATIVE'S ANSWER SAYS WHAT IS TRUE OF ITS OWN HANDOVER ───────────────
+//
+// `next_move.why` was one static sentence for every closed initiative: "if the cycle taught
+// something worth keeping, skill_read(\"zz-handover\") mints it and writes handover.md". It said
+// that to an initiative whose handover.md was already written, approved and signed — telling
+// somebody to do a thing they had done, in the one field that exists to say what is left.
+//
+// The information was in scope the whole time: `states` holds the document and `isHandover`
+// identifies it, two branches further down the same function.
+const CLOSING = ((): Chain => {
+  const c = chainOf("sdlc-flow", [
+    { name: "spec.md", role: "spec", gate: true, closing: true },
+    { name: "handover.md", role: "handover", gate: true, requires: "spec.md" },
+  ]);
+  return { ...c, stages: [{ name: "sdlc-spec", produces: "spec.md" }] };
+})();
+const CLO = "2026-09-14-closed-with-a-handover";
+mkdirSync(join(root, CLO), { recursive: true });
+const signedSpec = doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test",
+  approved_at: "2026-09-14", outcome: "accepted", closed_by: "ada@zz.test" }, "# Spec");
+
+// (a) no handover at all — the invitation is the right answer.
+writeFileSync(join(root, CLO, "spec.md"), signedSpec);
+let clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
+is(/skill_read/.test(clo.next_move?.why ?? ""),
+   `a closed initiative with no handover was told ${JSON.stringify(clo.next_move?.why)} — it ` +
+   "should be invited to write one, which is the only case the old static sentence fitted");
+
+// (b) written and unapproved — waiting on a verdict, and owed by nobody.
+writeFileSync(join(root, CLO, "handover.md"), doc({ title: "Handover", status: "draft" }, "# H"));
+clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
+is(!/skill_read/.test(clo.next_move?.why ?? "") && /verdict/.test(clo.next_move?.why ?? ""),
+   `a closed initiative whose handover is written and unapproved was told ` +
+   `${JSON.stringify(clo.next_move?.why)} — it is not being asked to write one again`);
+
+// (c) approved — say so, and name who signed it. THE HALF THAT WAS WRONG.
+writeFileSync(join(root, CLO, "handover.md"),
+  doc({ title: "Handover", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" }, "# H"));
+clo = initiativeState(root, CLO, CLOSING, CLOSING.documents);
+is(/recorded/.test(clo.next_move?.why ?? "") && /ada@zz\.test/.test(clo.next_move?.why ?? "")
+   && !/skill_read/.test(clo.next_move?.why ?? ""),
+   `a closed initiative with an APPROVED handover was told ${JSON.stringify(clo.next_move?.why)} ` +
+   "— it was being told to write a document it had already signed");
+
 // ── 4. The open record: written, invisible as a document, and read by chainFor ───────────
 const GOVERNED_NAME = `${isoToday()}-with-a-flow`;
 const written = rec.recordOpen(root, GOVERNED_NAME, "sdlc-flow", "ada@zz.test");

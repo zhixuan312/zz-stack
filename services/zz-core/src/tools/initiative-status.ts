@@ -328,11 +328,28 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     // one can, and an abandoned initiative on this platform produced the most durable node in
     // the store. What changed is only that it is no longer owed, and therefore no longer a
     // reason to report a closed initiative as open.
+    // AND IT SAYS WHAT IS TRUE OF THIS INITIATIVE'S HANDOVER, not one static sentence.
+    //
+    // This told every closed initiative to go and write a handover — including one whose
+    // handover.md was already written, approved and carrying a signature. The information was
+    // in scope the whole time: `states` holds the document, and the role that identifies it is
+    // the same `isHandover` this file already uses two branches down.
+    //
+    // A record that tells somebody to do a thing they have done is the shape this platform
+    // spends its checks on elsewhere, and it costs the reader the one question the field
+    // exists to answer.
+    const handover = states.find(isHandover);
+    const handoverNote = handover?.status === "approved"
+      ? `The handover is recorded: ${handover.name} was approved by ${handover.approved_by ?? "somebody"}` +
+        `${handover.approved_at ? ` on ${handover.approved_at}` : ""}.`
+      : handover?.exists
+        ? `${handover.name} is written and waiting on a verdict — \`document_approve\` records it, ` +
+          "and nothing is owed either way."
+        : "If the cycle taught something worth keeping, `skill_read(\"zz-handover\")` mints it and " +
+          "writes handover.md; the close satisfies that document's prerequisite.";
     next = { action: "closed", waiting_on: "nobody",
              why: `closed with outcome: ${outcome}. Nothing further is owed — the ledger row is ` +
-                  "the record. If the cycle taught something worth keeping, `skill_read" +
-                  "(\"zz-handover\")` mints it and writes handover.md; the close satisfies that " +
-                  "document's prerequisite." };
+                  `the record. ${handoverNote}` };
   } else {
     // A REQUIREMENT IS MET BY THE ONLY THING ITS TARGET CAN OFFER.
     //

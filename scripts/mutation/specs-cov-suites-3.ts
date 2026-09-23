@@ -167,6 +167,18 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   {
     check: SUITES,
     target: "opening is explicit and dated by the platform, and freeform gets no next move",
+    assertion: "a closed initiative's answer says what is true of its own handover",
+    subject: "services/zz-core/src/tools/initiative-status.ts",
+    find: "    const handover = states.find(isHandover);",
+    replace: "    const handover = undefined as (typeof states)[number] | undefined;",
+    planted: "the closed answer stops looking at the handover it has, so every closed " +
+      "initiative is told to go and write one — including the one whose handover.md is " +
+      "already written, approved and signed. The field exists to say what is left, and it " +
+      "would be naming a thing that was done",
+  },
+  {
+    check: SUITES,
+    target: "opening is explicit and dated by the platform, and freeform gets no next move",
     assertion: "a stage that evidences itself with a source is walked like any other stage",
     subject: "services/zz-core/src/tools/initiative-status.ts",
     find: "      .filter((a) => !sourcesSupport(dir, a.document));",

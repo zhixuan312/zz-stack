@@ -16,9 +16,9 @@
  * to call — not yet called from inside `lanes.ts`'s `search()`, which this task does not touch.
  *
  * A NAMED GAP ON `record_digest`. `checkVisibility`'s own SELECT (`retrieval.ts`) reads
- * `content_hash` from `zz.search_current/evidence/history` — migration 070
- * (`services/gateway/migrations/070_artifacts_revisions_events_and_scoped_search.sql`) declares
- * no separate `record_digest` column on any of those three tables. `dereferencePinned` below
+ * `content_hash` from `zz.search_current/evidence/history` — the schema
+ * (`services/gateway/migrations/001_init.sql`, into which migration 070 was squashed with the
+ * rest) declares no separate `record_digest` column on any of those three tables. `dereferencePinned` below
  * surfaces `content_hash` as `record_digest` rather than inventing a second value nothing in
  * this schema carries; if a future migration adds a genuinely distinct record digest, this is
  * the one place that needs to start reading it.

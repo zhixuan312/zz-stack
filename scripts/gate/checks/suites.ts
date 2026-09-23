@@ -368,7 +368,7 @@ check("a query binds as many parameters as its statement names",
 check("the definition this platform is built on holds in its source",
       runsCheck("definition-rules.ts"));
 
-check("the record's own columns exist, and a gap is nullable", runsCheck("migration-050.ts"));
+check("the record's own columns exist, and a gap is nullable", runsCheck("record-and-cost-columns.ts"));
 
 check("every tool call says which plugin it was made for", runsCheck("attribution.ts"));
 

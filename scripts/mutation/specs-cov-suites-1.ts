@@ -150,9 +150,13 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
     check: SUITES,
     target: "the record's own columns exist, and a gap is nullable",
     assertion: "a token column a provider never reported stays nullable",
-    subject: "services/gateway/migrations/050_record_and_cost.sql",
-    find: "  input_tokens       integer,",
-    replace: "  input_tokens       integer not null default 0,",
+    // THE SCHEMA, not the migration that added the column. 050 was squashed into 001_init.sql
+    // with the other seventy-three, so this planted into a file that is no longer there and
+    // landed zero replacements -- which the coverage check reports as a row proving nothing.
+    // The spelling is pg_dump's, four spaces and one before the type.
+    subject: "services/gateway/migrations/001_init.sql",
+    find: "    input_tokens integer,",
+    replace: "    input_tokens integer NOT NULL DEFAULT 0,",
     planted: "the input-token column is made not-null with a zero default, so a provider that " +
       "reported no usage and a call that genuinely consumed nothing land as the same row and " +
       "a sum over the column reads as complete while it is silently short",

@@ -97,9 +97,18 @@ if (!/batched/.test(readFileSync("packages/tools/src/testing/tool-report.ts", "u
 // Missing reads as empty rather than throwing: a check that crashes exits nonzero but prints
 // a stack trace instead of the sentence saying what is wrong.
 const read = (f: string) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
-const runsSql = read("services/gateway/migrations/051_run_bytes_nullable.sql");
-if (!/drop\s+not\s+null/i.test(runsSql)) fail.push("051 does not drop bytes_total's NOT NULL");
-if (!/drop\s+default/i.test(runsSql)) fail.push("051 does not drop bytes_total's zero default");
+// ASKED OF THE SCHEMA, NOT OF THE MIGRATION THAT GOT IT THERE. This read
+// `051_run_bytes_nullable.sql` for a `drop not null` and a `drop default`. 051 is applied
+// everywhere and its text is squashed into 001_init.sql with the other seventy-three, and
+// rewriting an applied file changes nothing on any host -- so "051 says drop" was a claim about
+// a file, while the thing worth defending is the column: nullable, and no default underneath it.
+// The new form also holds for a schema that never had a 051, which the old one could not.
+const runsSql = read("services/gateway/migrations/001_init.sql");
+const runTable = /create table zz\.run \(([\s\S]*?)\n\);/i.exec(runsSql)?.[1] ?? "";
+const bytesTotal = /^\s+bytes_total\s+([^\n]*?),?$/im.exec(runTable)?.[1] ?? "";
+if (!bytesTotal) fail.push("zz.run has no bytes_total column");
+if (/not null/i.test(bytesTotal)) fail.push("zz.run.bytes_total is NOT NULL — an unmeasured run cannot say so");
+if (/default/i.test(bytesTotal)) fail.push("zz.run.bytes_total has a default — an unmeasured run would read as a measured zero");
 const runs = readFileSync("services/gateway/src/runs.ts", "utf8");
 if (/coalesce\s*\(\s*sum\s*\(\s*e\.response_bytes/i.test(runs)) {
   fail.push("runs.ts still coalesces an unmeasured total to 0");

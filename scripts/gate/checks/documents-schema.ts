@@ -68,9 +68,18 @@ check("every state the schema allows can actually be reached", () => {
   const droppedTables = new Set(
     [...sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?(?:zz\.)?(\w+)/gi)].map((d) => d[1]),
   );
-  for (const m of sql.matchAll(/(\w+)\s+text[^,]*?check\s*\(\s*(\w+)\s+in\s*\(([^)]*)\)\s*\)|check\s*\(\s*(\w+)\s+in\s*\(([^)]*)\)\s*\)/gi)) {
-    const col = m[2] ?? m[4];
-    const values = m[3] ?? m[5];
+  // A THIRD SPELLING, BECAUSE THE SCHEMA IS A pg_dump NOW. The two forms above are how a person
+  // writes an inline constraint -- `check (status in ('active','deactivated'))` -- and they were
+  // the only two while the directory held seventy-four hand-written migrations. `001_init.sql` is
+  // the squash of all of them, produced by pg_dump, which renders the same constraint as
+  // `CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text])))`. Measured the day the
+  // squash landed: the two old patterns matched ZERO constraints in the new file where the schema
+  // has 24, so this check read nothing and passed for that reason alone -- green because it was
+  // blind, which is the one way a check fails that no green gate can show you. The mutation run
+  // is what found it: a third principal state nothing can write was planted and SURVIVED.
+  for (const m of sql.matchAll(/(\w+)\s+text[^,]*?check\s*\(\s*(\w+)\s+in\s*\(([^)]*)\)\s*\)|check\s*\(\s*(\w+)\s+in\s*\(([^)]*)\)\s*\)|check\s*\(\(\s*(\w+)\s*=\s*any\s*\(\s*array\[([^\]]*)\]/gi)) {
+    const col = m[2] ?? m[4] ?? m[6];
+    const values = m[3] ?? m[5] ?? m[7];
     // The table this column sits in — the NEAREST `create table` above the match,
     // not the first one in the file. A greedy anchored regex finds the first, which
     // named the earliest table in the earliest migration for every column in the set.

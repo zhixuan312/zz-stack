@@ -425,7 +425,7 @@ check("no skill names a package file the packager does not emit", () => {
   // command, not by the skill, because the key IS the command.
   //
   // The consequence is not cosmetic. That table exists so the skill can find
-  // `../skills/sdlc-deck/deck-chassis.html` from where it is actually reading, and a deck
+  // `../skills/zz-deck/deck-chassis.html` from where it is actually reading, and a deck
   // built without the chassis is the one failure the skill says to stop on. The string form
   // had already been corrected across twelve places; this form reads as a path rather than a
   // command, so the same sweep did not see it.

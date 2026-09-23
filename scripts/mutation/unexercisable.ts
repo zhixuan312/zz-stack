@@ -76,7 +76,7 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
       "only its contents. Until then the clause is verified by reading: it was `return null` " +
       "and it is now a returned failure string, and `testing/` is tracked, so the state it " +
       "guards is a broken checkout rather than a checkout without an optional artifact.",
-    observed_check_sha256: "1934e0d4f0c336c2570a5b54850bec27bb34c06d593f21760831c5afaeb5e107",
+    observed_check_sha256: "f16d3af30e5ada0215336e32708854949fcf28349ab6c25c5f5ca9bbbac5d256",
   },
   {
     check: "scripts/gate/checks/catalog-stages.ts",
@@ -130,6 +130,6 @@ export const UNEXERCISABLE: readonly Unexercisable[] = [
     plantable_when: "the 0.26.1 incident narrative, or the registrations this check forbids, " +
       "live anywhere outside `scripts/gate/checks/`. Nothing else moves it — the only other " +
       "lever is the judge itself, which is the thing being judged.",
-    observed_check_sha256: "d5075f301a52bb0cbadeb1963342a3c1f88b1ce8fe04aa4ae0c95e5cc8761dea",
+    observed_check_sha256: "be151b08357877d306f3628db58be9cf9c3206d8f44b03745d41a23202d7c6d8",
   },
 ];

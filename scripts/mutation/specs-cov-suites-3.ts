@@ -40,11 +40,29 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
     target: "the version that shipped has a changelog section of its own",
     assertion: "a tagged release has a section under its own version, not under Unreleased",
     subject: "CHANGELOG.md",
-    find: "## [0.62.4]",
-    replace: "## [Unreleased]",
-    planted: "the version that is tagged, shipped and deployed keeps its entry under " +
-      "`## [Unreleased]`, exactly as 0.25.0 did — the next release then writes its own " +
-      "sections beside it and nobody reading the changelog can tell which release changed what",
+    // NOT A VERSION NUMBER, AND THIS FILE IS THE FOURTH PLACE TO LEARN IT. `specs-cov-build.ts`,
+    // `specs-cov-catalog.ts` and `specs-cov-deploy.ts` each carry a paragraph about a spec that
+    // pinned `0.62.4` and stopped landing; this one pinned `0.62.4` too and was missed. It is a
+    // worse case than theirs, because theirs stopped LANDING — zero replacements, which the
+    // coverage check refuses out loud. This one kept landing on a section the check deliberately
+    // does not read. Its own comment says so: "THE CURRENT VERSION, not every tag". So the plant
+    // succeeded, the check was right to ignore it, and the row read CAUGHT for nine releases on
+    // the strength of one measurement taken when 0.62.4 WAS the current version. Nothing
+    // re-measures a row whose check file has not moved; this one surfaced only because suites.ts
+    // was edited for an unrelated reason, and then it SURVIVED.
+    //
+    // THE ANCHOR IS THE HEADING FORM, WHICH NO RELEASE REWRITES. The check asks whether
+    // CHANGELOG.md carries `## [<the version in package.json>]`. Taking the brackets off every
+    // heading makes that false whatever the version is, so this lands on every release for ever
+    // — which is the property the three files above went looking for and found in JSON's
+    // last-duplicate-key rule. Markdown has no such rule; the stable thing here is the syntax.
+    find: "## [",
+    replace: "## ",
+    all: true,
+    planted: "no release has a section under its own version any more — the heading form the " +
+      "changelog is read by is gone, so the version that is tagged, shipped and deployed has " +
+      "nowhere its entry can be found, exactly as 0.25.0 had when it shipped under " +
+      "`## [Unreleased]` and the next release wrote its own sections beside it",
   },
   {
     check: SUITES,

@@ -235,7 +235,10 @@ export const COV_SUITES_4: readonly MutationSpec[] = [
     check: "scripts/gate/checks/suites.ts",
     target: "a migration needing an extension declares it, and the runner still defers rather than taking the database down",
     assertion: "a migration that creates an extension declares that requirement",
-    subject: "services/gateway/migrations/070_artifacts_revisions_events_and_scoped_search.sql",
+    // 070 is squashed into 001_init.sql, which carries the same directive verbatim -- pg_dump
+    // does not emit extensions, so they are written back into the squashed file's header along
+    // with the two lines the runner reads to decide whether to defer.
+    subject: "services/gateway/migrations/001_init.sql",
     find: "-- requires-extension: pg_trgm",
     replace: "-- note: this migration also needs pg_trgm",
     planted: "the migration's second extension requirement stops being machine-readable, so " +

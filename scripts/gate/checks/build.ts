@@ -286,10 +286,12 @@ check("a shell that invokes an evaluation tool passes the flow it means", () => 
   if (!existsSync(dir)) return "testing/ does not exist, so no suite caller could be read at all";
   for (const f of readdirSync(dir).filter((x) => x.endsWith(".sh"))) {
     const lines = readFileSync(join(dir, f), "utf8").split("\n");
-    // A CALL CAN WEAR A VARIABLE'S NAME. judge-all.sh and deviate-all.sh do
+    // A CALL CAN WEAR A VARIABLE'S NAME. judge-all.sh and deviate-all.sh DID
     // `J=packages/tools/dist/testing/eval-judge.js` and then `node "$J" ...`, so a check
-    // matching only the literal path inspects measure-variance.sh — the one script that WAS
-    // broken — and never the two that were fixed. That is guarding the exception and leaving
+    // matching only the literal path inspected measure-variance.sh — the one script that WAS
+    // broken — and never the two that were fixed. All three scripts have since been deleted;
+    // the rule below is kept and reads every `testing/*.sh` there is, because what it defends
+    // against is the shape rather than those three files. That is guarding the exception and leaving
     // the rule unwatched. Collect the variables holding an eval-tool path first, then treat a
     // call through any of them as a call.
     const alias = new Set<string>();

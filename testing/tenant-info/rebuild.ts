@@ -19,7 +19,7 @@
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,8 +33,15 @@ import {
 import { GENERATION_CASES } from "./rebuild-generation.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const MIGRATION_PATH = join(repoRoot,
-  "services/gateway/migrations/070_artifacts_revisions_events_and_scoped_search.sql");
+// THE SCHEMA, NOT THE MIGRATION THAT INTRODUCED IT. This was
+// `070_artifacts_revisions_events_and_scoped_search.sql`. 070 is applied on every deployment and
+// its text has been squashed into `001_init.sql` with the other seventy-three; editing an applied
+// migration changes nothing on any host, so a case reading 070's bytes was asking about a file
+// rather than about the database. Every claim below was always a claim about the schema, and each
+// one is now made against the schema itself -- which also means they keep holding on a database
+// that never had a 070.
+const SCHEMA_PATH = join(repoRoot, "services/gateway/migrations/001_init.sql");
+const MIGRATIONS_DIR = join(repoRoot, "services/gateway/migrations");
 
 // ── offline: the compatibility-id map is stable across a reload, never reallocated ─────────
 
@@ -119,7 +126,7 @@ function caseSemanticHashChangesWithAnySemanticField(): void {
   assert.notEqual(semanticProjectionHash({ ...base, artifact_class: "source" }), baseline);
 }
 
-// ── offline: the migration file's own text ──────────────────────────────────────────────────
+// ── offline: the schema's own text ──────────────────────────────────────────────────────────
 
 const REQUIRED_OBJECTS = [
   "zz.artifact", "zz.artifact_revision", "zz.artifact_event", "zz.artifact_edge",
@@ -128,22 +135,32 @@ const REQUIRED_OBJECTS = [
   "zz.artifact_passage", "zz.artifact_identifier",
 ];
 
-function migrationSource(): string {
-  return readFileSync(MIGRATION_PATH, "utf8");
+function schemaSource(): string {
+  return readFileSync(SCHEMA_PATH, "utf8");
 }
 
 function caseMigrationCreatesEveryRequiredObject(): void {
-  const sql = migrationSource();
-  const missing = REQUIRED_OBJECTS.filter((name) => !sql.includes(`create table if not exists ${name}`));
-  assert.deepEqual(missing, [], `migration 070 is missing: ${missing.join(", ")}`);
+  const sql = schemaSource();
+  const missing = REQUIRED_OBJECTS.filter(
+    (name) => !new RegExp(`create table ${name.replace(".", "\\.")} \\(`, "i").test(sql));
+  assert.deepEqual(missing, [], `the schema is missing: ${missing.join(", ")}`);
 }
 
 function caseMigrationCarriesNoNestedTransactionControl(): void {
-  const lines = migrationSource().split("\n").map((l) => l.trim().toLowerCase());
-  const offenders = lines.filter((l) => l === "begin;" || l === "commit;");
+  // EVERY FILE IN THE DIRECTORY, not one of them. Scoped to 070 this asked whether one author
+  // had made the mistake; the runner wraps EVERY file it applies, so the hazard belongs to the
+  // directory. Two of the squashed seventy-four did carry their own begin;/commit;, which is
+  // exactly what a one-file scope could not see.
+  const offenders: string[] = [];
+  for (const f of readdirSync(MIGRATIONS_DIR).filter((x) => x.endsWith(".sql")).sort()) {
+    for (const l of readFileSync(join(MIGRATIONS_DIR, f), "utf8").split("\n")) {
+      const t = l.trim().toLowerCase();
+      if (t === "begin;" || t === "commit;") offenders.push(`${f}: ${t}`);
+    }
+  }
   assert.deepEqual(offenders, [],
     "the runner in services/gateway/src/db.ts already wraps the whole file in begin/commit; " +
-    "a literal begin;/commit; inside the file would end that transaction early");
+    "a literal begin;/commit; inside a migration would end that transaction early");
 }
 
 function caseExtensionPrecedesAnyBm25Reference(): void {
@@ -153,10 +170,10 @@ function caseExtensionPrecedesAnyBm25Reference(): void {
   // executable-text position against a full-text position — as an earlier version of this case
   // did — finds the comment's own earlier mention of the word and reports a real, correctly
   // ordered bm25 index as failing, the day one is finally added here.
-  const executable = migrationSource().split("\n")
+  const executable = schemaSource().split("\n")
     .filter((line) => !line.trim().startsWith("--")).join("\n").toLowerCase();
   const extensionAt = executable.indexOf("create extension if not exists pg_textsearch");
-  assert.ok(extensionAt >= 0, "migration 070 must create the pinned extension");
+  assert.ok(extensionAt >= 0, "the schema must create the pinned extension");
   const bm25At = executable.indexOf("bm25");
   // No bm25-dependent OBJECT exists yet (see the migration's own header on why), so this is
   // vacuously true today — asserted anyway so the case means something the day one is added.
@@ -166,14 +183,27 @@ function caseExtensionPrecedesAnyBm25Reference(): void {
 }
 
 function caseMigrationIsAdditiveOnly(): void {
-  // Comment lines are stripped first — this file's own header PROSE explains, in words, why
-  // an ALTER on zz.doc/zz.knowledge_node was rejected in favor of a bridge table, and reading
-  // that explanation as executable SQL would refuse the migration for naming the very thing
-  // it avoids doing.
-  const executable = migrationSource().split("\n")
-    .filter((line) => !line.trim().startsWith("--")).join("\n").toLowerCase();
-  for (const forbidden of ["drop table", "drop column", "alter table", "truncate", "delete from"]) {
-    assert.ok(!executable.includes(forbidden), `migration 070 must be additive only — found "${forbidden}"`);
+  // THE DECISION, NOT THE DIFF. This swept 070's executable text for `alter table`, `drop
+  // column` and their kin — a way of asking "did this migration modify the tables that were
+  // already there, or add beside them?" A schema file cannot be asked that: a pg_dump of any
+  // database on earth is full of `ALTER TABLE ONLY ... ADD CONSTRAINT`, and 070 is applied
+  // everywhere anyway, so its text can no longer move a row.
+  //
+  // What the sweep was defending is still checkable, and is checked here instead: an ALTER on
+  // zz.doc and zz.knowledge_node was REJECTED in favour of a bridge table, so neither of those
+  // two carries a column pointing at an artifact, and the two bridge tables are what carry the
+  // link. That is the decision; the absence of the word `alter` was only ever its shadow.
+  const sql = schemaSource();
+  const bodyOf = (t: string): string =>
+    new RegExp(`create table ${t.replace(".", "\\.")} \\(([\\s\\S]*?)\\n\\);`, "i").exec(sql)?.[1] ?? "";
+  for (const t of ["zz.doc", "zz.knowledge_node"]) {
+    const body = bodyOf(t);
+    assert.ok(body, `${t} is not in the schema`);
+    assert.ok(!/^\s+\w*artifact\w*\s/im.test(body),
+      `${t} carries an artifact column — the bridge table was chosen precisely so it would not`);
+  }
+  for (const bridge of ["zz.doc_artifact", "zz.knowledge_node_artifact"]) {
+    assert.ok(bodyOf(bridge), `${bridge} is not in the schema — the link has nowhere to live`);
   }
 }
 

@@ -270,21 +270,27 @@ check("the platform records its own surface, the way it records everybody else's
   // diff showed, every `plugin_*` name claiming to have started on the core door. That is NO
   // CHANGE with the sign flipped, committed for good.
   //
-  // `zz.plugin_tool` is a new table whose writer always knows the door, and 058 carries forward
-  // only rows that already recorded one (`where bt.door is not null`). So the honest constraint
+  // `zz.plugin_tool` is a new table whose writer always knows the door, so the honest constraint
   // is NOT NULL: there is no row here whose door nobody knew, and a nullable column would let
   // one back in.
-  const mig = "services/gateway/migrations/058_plugin_owns_its_surface.sql";
-  const sql = (() => { try { return readFileSync(join(root, mig), "utf8"); } catch { return ""; } })();
+  //
+  // ONE CLAUSE WAS DROPPED AND IT IS NOT COVERAGE. This also read
+  // `058_plugin_owns_its_surface.sql` for `where bt.door is not null`, the filter on the
+  // one-time carry-forward out of `zz.block_tool`. That move ran once, on every deployment, and
+  // its text is now squashed into 001_init.sql with the other seventy-three; editing an applied
+  // migration moves no row on any host, so the clause was guarding a sentence rather than a
+  // fact. What it was protecting — no row claiming a door nobody recorded — is what NOT NULL
+  // below enforces from here on, against every future writer rather than against one past one.
+  const schema = "services/gateway/migrations/001_init.sql";
+  const sql = (() => { try { return readFileSync(join(root, schema), "utf8"); } catch { return ""; } })();
+  const door = /create table zz\.plugin_tool \(([\s\S]*?)\n\);/i.exec(sql)?.[1]
+    ?.match(/^\s+door\s+([^\n]*?),?$/im)?.[1] ?? "";
   if (!schemaColumns().includes("plugin_tool.door")) {
     bad.push("no migration leaves zz.plugin_tool.door standing — the insert above names a column nothing creates, and it fails inside the catch that makes recording non-fatal, so the service starts and records nothing");
-  }
-  if (!sql) {
-    bad.push(`${mig} could not be read, so nothing about which rows it carries forward was checked`);
-  } else if (!/door\s+text not null/i.test(sql)) {
-    bad.push(`${mig} leaves door nullable — a row whose door nobody recorded reads as a tool that moved from nowhere, which is the wrong answer this column exists to prevent`);
-  } else if (!/where bt\.door is not null/i.test(sql)) {
-    bad.push(`${mig} carries forward rows with no door — those are rows written before the door was recorded, and filing them under NOT NULL would make them claim one`);
+  } else if (!sql) {
+    bad.push(`${schema} could not be read, so nothing about the door column's nullability was checked`);
+  } else if (!/^text\b[^\n]*not null/i.test(door)) {
+    bad.push(`${schema} leaves zz.plugin_tool.door nullable — a row whose door nobody recorded reads as a tool that moved from nowhere, which is the wrong answer this column exists to prevent`);
   }
   return bad.length ? bad.join("; ") : null;
 });

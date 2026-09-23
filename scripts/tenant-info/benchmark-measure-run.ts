@@ -17,9 +17,13 @@
  *     like every other tenant-info write. `assembleBenchmarkReport` already loads that file and
  *     feeds its numbers to `evaluateTargets`, so a measured run turns blocked targets into
  *     observations with no edit to that 696-line module.
- *   · `testing/tenant-info/benchmark-report.json` is repo-resident committed evidence of the
- *     same class as `testing/tenant-info/analyzer-opacity.golden.json`: a fixture a gate check
- *     reads, produced by a generator that fails rather than invent one. It is the only write
+ *   · `testing/tenant-info/benchmark-report.json` is where a measured run writes, and it is
+ *     meant to become repo-resident evidence of the same class as
+ *     `testing/tenant-info/analyzer-opacity.golden.json`: a fixture a gate check reads,
+ *     produced by a generator that fails rather than invent one. IT IS NOT COMMITTED TODAY and
+ *     this sentence used to say it was. `benchmark-report-slices.ts` finds nothing on disk,
+ *     notes that its eleven per-slice clauses did not run, and leaves the target BLOCKED —
+ *     which is the honest state, and not the one a reader of that sentence would expect. It is the only write
  *     this repository's tooling makes inside its own checkout, and it is not a workspace write
  *     wearing a disguise — `ZZ_TENANT_INFO_WORKSPACE` is still required, and everything
  *     scratch still goes there.

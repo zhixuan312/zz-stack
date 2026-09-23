@@ -18,8 +18,13 @@ check("a benchmark report proves each language slice separately or leaves its ta
     // What was wrong was that the absence was reported NOWHERE, so a reader of a green gate
     // could not tell that eleven clauses below had not run. It cannot be produced in this
     // checkout: benchmark-measure-run.ts needs a live database, a workspace, and two runtime
-    // facts only the serving process can supply — and migration 072 is unapplied with the
-    // analyzer_version columns absent.
+    // facts only the serving process can supply.
+    //
+    // THAT LIST USED TO CARRY A FOURTH REASON AND IT IS NO LONGER TRUE: "migration 072 is
+    // unapplied with the analyzer_version columns absent". 072 is applied on the deployment and
+    // `analyzer_version` stands on nine relations there, so the migration is not what is
+    // stopping this. Left in, that sentence would send whoever tries to produce the report to
+    // apply a migration that is already applied and conclude the problem is elsewhere.
     note("    benchmark-report-slices: no benchmark report on disk, so the per-slice clauses " +
          "below did not run. Their target stays blocked, which is not a pass.");
     return;

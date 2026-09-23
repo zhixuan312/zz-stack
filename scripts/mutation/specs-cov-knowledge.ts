@@ -380,8 +380,10 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
     check: "scripts/gate/checks/documents-schema.ts",
     target: "every state the schema allows can actually be reached",
     subject: "services/gateway/migrations/001_init.sql",
-    find: "               check (status in ('active','deactivated')),",
-    replace: "               check (status in ('active','deactivated','suspended')),",
+    // pg_dump's spelling of the same constraint, since 001_init.sql is now a dump of the schema
+    // the seventy-four files built rather than the first of them.
+    find: "    CONSTRAINT principal_status_check CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text])))",
+    replace: "    CONSTRAINT principal_status_check CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text, 'suspended'::text])))",
     planted: "a principal gains a third state nothing in the platform can ever set, so any " +
       "guard written to read it looks like working access control over a branch no code path " +
       "can reach",
@@ -464,9 +466,13 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/documents-schema.ts",
     target: "the schema's own document names things that exist",
-    subject: "services/gateway/migrations/003_flow_manifest.sql",
-    find: "-- `agent_name` is what the TEAM sees",
-    replace: `-- \`${ABSENT_COLUMN}\` is what the TEAM sees`,
+    // 003 is squashed into 001_init.sql, and pg_dump keeps no `--` prose at all, so the comment
+    // this used to deface no longer exists anywhere. The header of the squashed file is what
+    // carries the schema's prose now, and `zz.schema_migration` is the one backticked name in
+    // it -- which is exactly what this check reads.
+    subject: "services/gateway/migrations/001_init.sql",
+    find: "-- it applies in `zz.schema_migration` BY NAME and skips what that table already lists. Every",
+    replace: `-- it applies in \`${ABSENT_COLUMN}\` BY NAME and skips what that table already lists. Every`,
     redact: true,
     planted: "the migrations are the schema's only design document, and one of them now names " +
       "a column this repository does not have — so the single description a reader gets of " +

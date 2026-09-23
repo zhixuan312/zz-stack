@@ -87,16 +87,39 @@ export function schemaColumns() {
       // `primary key (...)`, `unique (...)` and friends match the column shape and are not
       // columns. Named rather than guessed at, because a table constraint reading as a column
       // is how a check ends up asking who writes to `primary`.
+      //
+      // FOLDED TO LOWER CASE, because the pattern above is case-INSENSITIVE and this set was
+      // not. Every keyword written in capitals walked straight past it. It never fired while
+      // the directory held seventy-four hand-written files, all lower case; `001_init.sql` is
+      // a pg_dump, which writes `    CONSTRAINT x CHECK (...)`, and the mismatch turned 52 of
+      // those lines into a column named CONSTRAINT on 51 tables. A filter that disagrees with
+      // its own matcher about case is wrong whatever the input happens to be today.
       const NOT_A_COLUMN = new Set(["primary", "unique", "foreign", "constraint", "check", "exclude"]);
       const cols = new Set([...m[2].matchAll(/^\s+([a-z_]+)\s+[a-z]/gim)]
-        .map((c) => c[1]).filter((c) => !NOT_A_COLUMN.has(c)));
+        .map((c) => c[1]).filter((c) => !NOT_A_COLUMN.has(c.toLowerCase())));
       tables.set(bare(m[1]), cols);
     }
-    for (const m of sql.matchAll(/alter table\s+([a-z_.]+)[\s\S]*?add column (?:if not exists )?([a-z_]+)/gi)) {
-      tables.get(bare(m[1]))?.add(m[2]);
-    }
-    for (const m of sql.matchAll(/alter table\s+([a-z_.]+)[\s\S]*?drop column (?:if exists )?([a-z_]+)/gi)) {
-      tables.get(bare(m[1]))?.delete(m[2]);
+    // ONE STATEMENT AT A TIME, AND EVERY CLAUSE IN IT.
+    //
+    // This was two patterns of the shape `alter table X [\s\S]*? add column Y`, each lazy and
+    // each global — so from one `alter table` they reached the NEXT `add column` anywhere in
+    // the file and then resumed past it. A statement adding several columns at once had its
+    // first clause read and the rest discarded, and the same for drops. Measured against the
+    // database the migrations actually build: that form reported 441 columns where there are
+    // 494 — 60 real columns it had never heard of, including every one migration 050 added to
+    // zz.event (plugin, plugin_version, tool_key, request_bytes, response_bytes, batched,
+    // duration_ms), and 7 columns it still listed that had been dropped. Checks that ask "does
+    // anything write this column" were answering about a schema that does not exist.
+    //
+    // So the statement is bounded at its semicolon first, and every add and drop inside it is
+    // applied. The bound is textual: a `;` inside a string literal in an ALTER TABLE would cut
+    // the statement early. Nothing in this directory has one, and a column default that needs a
+    // semicolon is a stronger smell than this parser is.
+    for (const stmt of sql.matchAll(/alter table\s+(?:only\s+)?([a-z_.]+)([\s\S]*?);/gi)) {
+      const cols = tables.get(bare(stmt[1]));
+      if (!cols) continue;
+      for (const a of stmt[2].matchAll(/add column (?:if not exists )?([a-z_]+)/gi)) cols.add(a[1]);
+      for (const d of stmt[2].matchAll(/drop column (?:if exists )?([a-z_]+)/gi)) cols.delete(d[1]);
     }
     for (const m of sql.matchAll(/drop table (?:if exists )?([a-z_.]+)/gi)) tables.delete(bare(m[1]));
   }

@@ -33,6 +33,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.65.0] — 2026-09-23
+
+Three defects found by driving the SDLC flow end to end against the live deployment. Each was
+invisible to the 420 checks because every instrument involved was self-consistent on its own.
+
+### Fixed
+- **The platform told an agent to skip a stage it would later refuse the close for.**
+  `initiative_status` walked the flow's DOCUMENTS, and sdlc-flow's two audit rounds evidence
+  themselves with a source rather than a document of their own — so with `spec.md` approved it
+  answered "write plan.md" and never named the spec audit, while the control loop went on
+  requiring that round before `close:initiative` could be claimed. `next_move` now walks the
+  manifest's stages in their declared order and reports `add_source` for a source-producing
+  stage that is owed.
+- **The stage was lost on every call that opened a piece of work.** The flow lookup cached its
+  misses for sixty seconds as well as its hits. The flow's own first instruction is to ask
+  where an initiative stands — on a slug that does not exist yet — so the status call poisoned
+  the key and the `initiative_open` and first `document_write` that followed were recorded as
+  though the initiative had no flow. Only hits are cached now: a flow is decided at open and
+  cannot change, an absence changes immediately.
+- **One act was filed under two different steps.** A spec-audit round recorded through
+  `source_add` was `zz-platform` in `zz.event` and `sdlc-spec-audit` in `zz.control_evidence`;
+  an approval was attributed the same two ways. The telemetry read only the manifest's
+  `documents`, and neither table says the other exists, so neither could disagree out loud.
+
+### Changed
+- Tool-call attribution moved to `services/gateway/src/call-attribution.ts`, and a check now
+  asserts that it and the control loop's own derivation name the same stage for the same act,
+  over every registered flow. They read different manifest fields to answer one question, which
+  is how they came apart.
+
+### Upgrade notes
+- Nothing to do. No migration, no new environment key, no change to any tool's arguments.
+- `next_move` can now answer `add_source`, which is a new member of its vocabulary. A caller
+  that switches on the action and does not recognise it should treat it the way it treats
+  `write_document`: the `why` names the tool to call.
+
 ## [0.64.0] — 2026-09-23
 
 ### Fixed

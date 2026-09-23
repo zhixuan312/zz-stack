@@ -341,3 +341,37 @@ check("a step's version comes from the skill, never from a file beside it", () =
   }
   return bad.length ? bad.join("; ") : null;
 });
+
+check("an initiative that does not exist yet is not cached as an initiative with no flow", () => {
+  // THE ASYMMETRY IS THE WHOLE CHECK. `flowFor` answers which flow an initiative runs, and
+  // `tool-telemetry.ts` spends that answer on `owedBy` — which stage of the manifest owes the
+  // document being written. A flow it HAS found cannot change: the platform decides `flow` at
+  // `initiative_open` and offers no way to adopt one afterwards, so caching a hit is free.
+  //
+  // Caching a MISS is not. The miss is the answer for an initiative that does not exist yet,
+  // and the next thing that happens is somebody creating it — so the cached absence outlives
+  // the thing it described, and for the rest of the TTL every call is attributed as though the
+  // initiative had no flow.
+  //
+  // AND THE FLOW'S OWN FIRST INSTRUCTION WALKS INTO IT. sdlc-flow opens with "ask the platform
+  // where the initiative stands before anything else", so the opening sequence is a status
+  // call on a slug that does not exist, then the open, then the first document — all inside
+  // one TTL. Measured by driving exactly that on this deployment: status at 0s, explore.md
+  // written at 29s with no step on its event, spec.md at 116s — past the TTL — carrying
+  // `sdlc-spec`. Same caller, same initiative; the only difference was the clock.
+  //
+  // It never failed loudly because `stepName` falls back to the traced skill, so the row is
+  // written and only the STAGE is missing — on precisely the calls that open a piece of work.
+  const src = readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8");
+  const at = src.indexOf("export async function flowFor");
+  if (at < 0) return "flowFor is gone, and with it the only thing that says which stage owes a document";
+  const body = src.slice(at, src.indexOf("\n}", at));
+  const sets = [...body.matchAll(/flowCache\.set\(/g)];
+  if (!sets.length) return "flowFor no longer caches at all — which is safe, but this check was written about a cache and should be rewritten rather than left passing on its absence";
+  if (!/if \(flow\) flowCache\.set\(/.test(body)) {
+    return "flowFor caches its lookup unconditionally, so an initiative that did not exist when "
+         + "it was first asked about reads as a flowless initiative for the whole TTL — which is "
+         + "the window in which it is created and its first document written";
+  }
+  return null;
+});

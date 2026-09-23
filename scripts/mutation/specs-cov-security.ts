@@ -407,6 +407,18 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // ── scripts/gate/checks/data-telemetry.ts ───────────────────────────────────────────────
   {
     check: "scripts/gate/checks/data-telemetry.ts",
+    target: "an initiative that does not exist yet is not cached as an initiative with no flow",
+    assertion: "flowFor caches a hit and never a miss",
+    subject: "services/gateway/src/step-trace.ts",
+    find: "    if (flow) flowCache.set(key, { flow, at: now });",
+    replace: "    flowCache.set(key, { flow, at: now });",
+    planted: "the flow lookup caches its misses as well as its hits, so an initiative asked " +
+      "about before it existed reads as a flowless initiative for the whole TTL — which is " +
+      "exactly the window in which it is opened and its first document written, and which the " +
+      "flow's own first instruction walks into every time",
+  },
+  {
+    check: "scripts/gate/checks/data-telemetry.ts",
     target: "every identifier the telemetry keeps is one a tool can send",
     assertion: "the allowlist holds no entry no tool declares",
     subject: "services/gateway/src/tool-telemetry.ts",

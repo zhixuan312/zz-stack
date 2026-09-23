@@ -234,7 +234,30 @@ export async function flowFor(teamSlug: string | null, initiative: string | unde
       `select i.flow from zz.initiative i join zz.team t on t.id = i.team_id
         where t.slug = $1 and i.slug = $2`, [teamSlug, initiative]);
     const flow = rows[0]?.flow ?? "";
-    flowCache.set(key, { flow, at: now });
+    // ONLY A POSITIVE ANSWER IS CACHED, and the asymmetry is the whole point.
+    //
+    // An initiative's flow is decided at `initiative_open` and only there — the platform says
+    // so in as many words and offers no way to adopt one afterwards — so a flow this lookup
+    // HAS found cannot change under the cache, and sixty seconds of it costs nothing.
+    //
+    // An ABSENCE is the opposite: it is the answer for an initiative that does not exist YET,
+    // and the next thing that happens is somebody creating it. Cached, it outlives the thing
+    // it described and every call in the following minute is attributed as if the initiative
+    // had no flow.
+    //
+    // THE FLOW'S OWN FIRST INSTRUCTION GUARANTEES THE MISS. sdlc-flow opens with "ask the
+    // platform where the initiative stands before anything else", so the opening sequence is
+    // `initiative_status` on a slug that does not exist, then `initiative_open`, then the
+    // first `document_write` — and the whole sequence fits inside one TTL. Measured on this
+    // deployment, driving that exact sequence: status at 0s poisoned the key, explore.md was
+    // written at 29s and its event carries no step, and spec.md at 116s — past the TTL —
+    // carries `sdlc-spec`. Same caller, same initiative, same document rule; the only
+    // difference was the clock.
+    //
+    // `stepName` falls back to the traced skill when the manifest cannot answer, so this does
+    // not lose the row — it loses the STAGE, silently, on exactly the calls that open a piece
+    // of work.
+    if (flow) flowCache.set(key, { flow, at: now });
     return flow ? { flow } : undefined;
   } catch {
     // A lookup failure must not cost the row. An event that vanishes because a side lookup

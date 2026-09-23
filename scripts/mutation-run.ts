@@ -41,6 +41,7 @@ import type { MutationSpec } from "./mutation/plant.ts";
 import { guardsBlock, probeGuards } from "./mutation/guards.ts";
 import { SPECS } from "./mutation/specs.ts";
 import { UNEXERCISABLE } from "./mutation/unexercisable.ts";
+import { runSharded } from "./mutation/parallel.ts";
 import { DECLARED_BY, declaredChecks, makeWorkspace, provenanceOf, restore } from "./mutation/workspace.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -91,6 +92,11 @@ const dry = process.argv.includes("--dry");
 // redoing those rows. They are about the gate as a process rather than about any one check.
 const guardsOnly = process.argv.includes("--guards");
 const workAt = flag("work") ?? join(tmpdir(), "zz-mutation");
+// HOW MANY CHECKOUTS AT ONCE. One by default, because that is what every invocation in every
+// runbook already means. Above one, this process runs no rows itself: it shards the check files
+// and spawns THIS SAME SCRIPT once per shard, each with a work directory of its own, then merges
+// what they wrote. See mutation/parallel.ts for why that is the shape rather than an async loop.
+const workers = Math.max(1, Number(flag("workers") ?? 1));
 const out = resolve(flag("out") ?? join(root, "testing/mutation-report.json"));
 
 interface GateRun {
@@ -307,6 +313,24 @@ function main(): void {
   const unknown = only.filter((o) => !declaredNow.includes(o));
   if (unknown.length) die(`--only names ${unknown.join(", ")}, which the declared set does not contain`);
   const seedFor = only.length ? declaredNow.filter((d) => only.includes(d)) : declaredNow;
+
+  // SHARDED, AND THIS PROCESS THEN MEASURES NOTHING. Everything above is cheap and has to happen
+  // in either case — the declared set is what gets split, and a mistyped `--only` is still
+  // refused before a single copy is made. Below this line the work is per-row, so a sharded run
+  // hands it to children and becomes a merger. `--dry` and `--guards` are deliberately excluded:
+  // one plants without running a gate and finishes in seconds, the other is two probes, and
+  // neither is what anybody is waiting on.
+  if (workers > 1 && !dry && !guardsOnly) {
+    const counts = new Map<string, number>();
+    for (const sp of SPECS) counts.set(sp.check, (counts.get(sp.check) ?? 0) + 1);
+    void runSharded({
+      runner: join(root, "scripts/mutation-run.ts"), workAt, out, wanted: seedFor,
+      rowsFor: (f) => counts.get(f) ?? 1, workers, extras: keep ? ["--keep"] : [],
+      reportText,
+    }).then(() => process.exit(0));
+    return;
+  }
+
   const ws = makeWorkspace(root, workAt, (repo) => seedProvisional(repo, seedFor));
 
   if (guardsOnly) {
@@ -599,10 +623,14 @@ function main(): void {
         "evidence that every check the gate registers has been shown able to fail.",
       binding_to_the_tree:
         "Each row carries `check_sha256` — the check file's bytes when the row was measured — " +
-        "and `live_check_sha256`/`stale` from the moment the report was written. NOTHING " +
-        "ENFORCES THIS: the coverage check reads neither, so a stale report still satisfies " +
-        "it, and that is a gap rather than a design. What the runner does enforce is narrower " +
-        "and worth having: it refuses to write at all if a check file moved while this run was " +
+        "and `live_check_sha256`/`stale` from the moment the report was written. THE FIRST OF " +
+        "THOSE IS ENFORCED AT GATE TIME: mutation-coverage.ts recomputes each check file's " +
+        "digest against the tree in front of it and fails on any row whose check has moved, " +
+        "naming the files to re-run with --only. It does NOT read `live_check_sha256`/`stale`, " +
+        "and deliberately: those were frozen when this file was written and answer about a tree " +
+        "that may no longer exist. This paragraph used to say nothing enforced any of it, which " +
+        "was true of an earlier coverage check and has not been true since. The runner enforces " +
+        "its own half too: it refuses to write at all if a check file moved while this run was " +
         "measuring it, and it names any carried row whose check has changed since. The entries " +
         "in `unexercisable_assertions` carry the same three fields for the same reason: " +
         "one of them records an observation from a real run rather than a planted " +

@@ -45,7 +45,7 @@ import { StringDecoder } from "node:string_decoder";
 
 import type { NextFunction, Request, Response } from "express";
 
-import { catalogManifest, pluginForDoor } from "@zz/catalog";
+import { pluginForDoor } from "@zz/catalog";
 import { refusalClass } from "@zz/contracts";
 import { lastJson } from "@zz/mcp-client";
 // The alias resolver, from @zz/contracts, where the maps it reads also live. It briefly lived
@@ -57,6 +57,7 @@ import { lastJson } from "@zz/mcp-client";
 import { resolveToolKey } from "@zz/contracts";
 
 import { logEvent } from "./events.js";
+import { stageOwing } from "./call-attribution.js";
 import { callerKey, currentStep, doorHandshake, doorVersion, flowFor, initiativeSeen,
          stepLoaded } from "./step-trace.js";
 
@@ -534,13 +535,11 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         // A regex literal is invisible to `checks/pre-rename-literals.ts`, which only reads
         // quoted strings, so this marker is the only thing standing between the next rename
         // and three document writes that stop being stamped with the stage that owes them.
-        const wroteDoc = /^(document_write|document_revise|document_patch)$/.test(String(call.params?.name ?? ""));
-        const docName = wroteDoc
-          ? String((given as Record<string, unknown>).path ?? "").split("/").pop() ?? "" : "";
-        const owedBy = docName && flow
-          ? (catalogManifest(flow.flow, true)?.documents ?? [])
-              .find((d) => d.name === docName)?.stage
-          : undefined;
+        // WHICH STAGE THIS ACT COMPLETES, from the flow's own manifest — `call-attribution.ts`,
+        // which is also what the evidence side reads, so one act cannot be filed under two
+        // different steps depending on which table you ask.
+        const owedBy = stageOwing(flow?.flow, String(call.params?.name ?? ""),
+                                  given as Record<string, unknown>);
         const stepName = owedBy ?? step?.step;
         // AND THE VERSION AND THE HASH FOLLOW THE NAME, or they are not written at all.
         //

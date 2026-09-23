@@ -407,6 +407,18 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // ── scripts/gate/checks/data-telemetry.ts ───────────────────────────────────────────────
   {
     check: "scripts/gate/checks/data-telemetry.ts",
+    target: "the telemetry and the control loop name the same stage for the same act",
+    assertion: "a source is attributed to the stage that declares it supports that document",
+    subject: "services/gateway/src/call-attribution.ts",
+    find: "      .find((st) => supported.includes(st.supports))?.name;",
+    replace: "      .find((st) => supported.includes(st.produces))?.name;",
+    planted: "a source is matched against what the stage PRODUCES rather than what it " +
+      "supports, so no audit round is ever attributed to its stage and every one falls back " +
+      "to whichever skill the caller happened to read last — which is how one act came to be " +
+      "filed as `zz-platform` by the telemetry and `sdlc-spec-audit` by the control loop",
+  },
+  {
+    check: "scripts/gate/checks/data-telemetry.ts",
     target: "an initiative that does not exist yet is not cached as an initiative with no flow",
     assertion: "flowFor caches a hit and never a miss",
     subject: "services/gateway/src/step-trace.ts",

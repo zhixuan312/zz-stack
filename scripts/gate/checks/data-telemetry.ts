@@ -7,6 +7,7 @@
  * The read side — whether a report, a count or a reader actually depends on what got
  * written here — is checks/data-telemetry-reports.ts.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -373,5 +374,64 @@ check("an initiative that does not exist yet is not cached as an initiative with
          + "it was first asked about reads as a flowless initiative for the whole TTL — which is "
          + "the window in which it is created and its first document written";
   }
+  return null;
+});
+
+check("the telemetry and the control loop name the same stage for the same act", () => {
+  // ONE ACT MUST NOT HAVE TWO STEPS, and it had. The two sides of this platform each derive
+  // "which stage does this complete" from the flow's manifest, and they read DIFFERENT fields
+  // to do it: the telemetry reads `documents[].stage`, the evidence side reads which stage
+  // `produces` that document. Two spellings of one answer, and nothing compared them.
+  //
+  // Measured while driving sdlc-flow end to end: a spec-audit round recorded through
+  // `source_add` was filed by `zz.event` as `zz-platform` — the skill the agent happened to
+  // have read last — and by `zz.control_evidence` as `sdlc-spec-audit`. An approval was filed
+  // the same two ways. Neither table says the other exists, so neither could disagree out loud.
+  //
+  // THE SUBJECT IS EVERY REGISTERED FLOW, not a fixture, because a fixture agrees with itself.
+  const probe = `
+    import { stageOwing } from ${JSON.stringify(join(root, "services/gateway/dist/call-attribution.js"))};
+    import { stepForDocument, stepForSource } from ${JSON.stringify(join(root, "services/zz-core/dist/host/enrolment.js"))};
+    import { governingFlows, catalogManifest } from ${JSON.stringify(join(root, "packages/catalog/dist/index.js"))};
+    const bad = [];
+    for (const flow of governingFlows(true)) {
+      const m = catalogManifest(flow, true);
+      if (!m?.documents?.length) continue;
+      for (const d of m.documents) {
+        // The document side: telemetry from documents[].stage, evidence from stages[].produces.
+        const viaTelemetry = stageOwing(flow, "document_write", { path: "2026-01-01-x/" + d.name });
+        const viaEvidence = stepForDocument(m.stages ?? [], "2026-01-01-x/" + d.name);
+        if (viaTelemetry !== viaEvidence) {
+          bad.push(flow + "/" + d.name + ": telemetry says " + viaTelemetry + ", the control loop says " + viaEvidence);
+        }
+        // An approval completes the same stage as the write it approves.
+        const approval = stageOwing(flow, "document_approve", { path: "2026-01-01-x/" + d.name });
+        if (approval !== viaEvidence) {
+          bad.push(flow + "/" + d.name + ": an approval is filed under " + approval + " while the document is " + viaEvidence);
+        }
+      }
+      for (const st of (m.stages ?? []).filter((s) => s.produces === "source" && s.supports)) {
+        const viaTelemetry = stageOwing(flow, "source_add", { supports: [st.supports] });
+        const viaEvidence = stepForSource(m.stages ?? [], st.supports);
+        if (viaTelemetry !== viaEvidence) {
+          bad.push(flow + " source supporting " + st.supports + ": telemetry says " + viaTelemetry + ", the control loop says " + viaEvidence);
+        }
+        if (!viaTelemetry) {
+          bad.push(flow + " source supporting " + st.supports + " is attributed to no stage at all, so the round falls back to whichever skill was read last");
+        }
+      }
+    }
+    console.log(JSON.stringify(bad));
+  `;
+  let out: string;
+  try {
+    out = execFileSync(process.execPath, ["--input-type=module", "-e", probe],
+      { encoding: "utf8", env: { ...process.env, ZZ_CATALOG_DIR: join(root, "catalog") } });
+  } catch (err) {
+    const e = err as { stderr?: Buffer | string; message?: string };
+    return `the attribution probe could not run, so this agreement is unchecked: ${String(e.stderr ?? e.message ?? err).slice(0, 300)}`;
+  }
+  const bad = JSON.parse(out.trim()) as string[];
+  if (bad.length) return bad.join("; ");
   return null;
 });

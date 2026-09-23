@@ -167,6 +167,18 @@ export const COV_SUITES_3: readonly MutationSpec[] = [
   {
     check: SUITES,
     target: "opening is explicit and dated by the platform, and freeform gets no next move",
+    assertion: "a stage that evidences itself with a source is walked like any other stage",
+    subject: "services/zz-core/src/tools/initiative-status.ts",
+    find: "      .filter((a) => !sourcesSupport(dir, a.document));",
+    replace: "      .filter((a) => sourcesSupport(dir, a.document));",
+    planted: "an audit stage counts as owed only once it has already been done, so the next " +
+      "move never names it — which is the shape the walk had before it read the manifest's " +
+      "stages at all: the platform answered `write plan.md` the moment the spec was approved, " +
+      "and the close then refused for a round nothing had told the agent to run",
+  },
+  {
+    check: SUITES,
+    target: "opening is explicit and dated by the platform, and freeform gets no next move",
     assertion: "a freeform initiative is given no next move at all",
     subject: "services/zz-core/src/tools/initiative-status.ts",
     find: "        : null,",

@@ -52,6 +52,22 @@ function envelopeOf(file: string): Record<string, string> {
   return parseEnvelope(readFileSync(file, "utf8"));
 }
 
+/** Whether any source in this initiative declares that it supports `docName`.
+ *
+ *  Separate from `sourceReport` below, which answers a different question — which sources
+ *  landed AFTER an approval — and is computed too late in this function to decide a next move.
+ *  Both read the same `supports` field the same way. */
+function sourcesSupport(dir: string, docName: string): boolean {
+  const srcDir = join(dir, "sources");
+  if (!existsSync(srcDir)) return false;
+  for (const f of readdirSync(srcDir)) {
+    if (!f.endsWith(".md")) continue;
+    const supports = parseEnvelope(readFileSync(join(srcDir, f), "utf8")).supports || "";
+    if (supports.split(",").map((x) => x.trim()).includes(docName)) return true;
+  }
+  return false;
+}
+
 /** The initiative's registered sources, and which of them landed after the document they
  *  support was approved.
  *
@@ -361,11 +377,58 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const flowDocs = states.filter((d) => !isHandover(d));
     const pending = flowDocs.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
     const awaiting = flowDocs.find((d) => d.exists && d.gate && d.status !== "approved");
+    // A STAGE THAT PRODUCES A SOURCE IS A STAGE, and this walked only the documents.
+    //
+    // sdlc-flow declares seven stages and four documents. The three that produce no document
+    // are `sdlc-execute` (produces nothing) and the two AUDIT rounds, which evidence
+    // themselves with a SOURCE supporting the document they audited rather than a document of
+    // their own. Walking `states` — which is built from the manifest's `documents` — cannot
+    // see them, so this answered "write plan.md" the moment spec.md was approved and never
+    // once mentioned the spec audit.
+    //
+    // THE CLOSE DOES NOT AGREE, AND THE CLOSE IS THE ONE THAT REFUSES. The reviewed module
+    // governing this flow asks each audit step for `1x audit`, so an agent that followed this
+    // answer faithfully through every document reached `initiative_close` and was refused for
+    // a round nothing had ever told it to run. Two authorities over one flow, and the one the
+    // platform tells an agent to trust — "what comes next is computed, never guessed; ask it
+    // rather than reasoning about the folder" — was the one that did not know.
+    //
+    // Found by driving this flow end to end on this deployment: spec.md approved,
+    // `next_move` answered `write_document plan.md`, and the flow's own manifest has
+    // `sdlc-spec-audit` between them.
+    //
+    // READ FROM THE MANIFEST'S STAGES, in their declared order, so a flow that adds or renames
+    // an audit is followed without an edit here — the same rule `enrolment.ts` follows for the
+    // evidence side, which is what keeps the two answers about one flow from disagreeing again.
+    const audits = (chain.stages ?? [])
+      .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
+      .map((st) => ({ stage: st.name ?? "", document: st.supports }))
+      .filter((a) => Boolean(a.document))
+      // Only once the audited document is actually finished: an audit of a document nobody
+      // has agreed to audits a draft, and the document's own stage is unmet first anyway.
+      .filter((a) => requirementMet(a.document))
+      .filter((a) => !sourcesSupport(dir, a.document));
+    // BEFORE THE NEXT DOCUMENT, NOT AFTER IT. The audit sits between two document stages in
+    // the manifest, and reporting it only once every document existed would be telling the
+    // agent to audit a spec it had already planned and built from.
+    const owedAudit = audits[0];
     if (awaiting) {
       next = {
         action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
         why: `${awaiting.name} is ${awaiting.status ?? "unwritten"}; call document_approve("${name}/${awaiting.name}") ` +
              "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
+      };
+    } else if (owedAudit) {
+      next = {
+        // NOT A TOOL: `add_source` is a member of `next_move.action`'s own vocabulary —
+        // declare_flow, write_document, await_approval, add_source, handover, closed, close —
+        // the same verb_noun shape as `write_document`, which is also not a tool name. The
+        // tool to call is `source_add`, and the `why` beside it says so.
+        action: "add_source", document: owedAudit.document, waiting_on: "agent",
+        why: `${owedAudit.stage} is the next stage this flow declares, and it evidences itself ` +
+             `with a source rather than a document — run the round, then call ` +
+             `source_add(initiative, title, content, supports: ["${owedAudit.document}"]). ` +
+             "The close is refused until it exists",
       };
     } else if (pending) {
       next = { action: "write_document", document: pending.name, waiting_on: "agent",

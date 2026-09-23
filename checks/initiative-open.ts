@@ -252,6 +252,63 @@ is(gov.next_move?.action === "write_document" && gov.next_move?.document === "pl
    `once spec.md is approved the next move is ${JSON.stringify(gov.next_move)}, not plan.md — ` +
    "the flow's declared ORDER is not being walked");
 
+// ── 3c. A STAGE THAT PRODUCES A SOURCE IS A STAGE ────────────────────────────────────────
+//
+// sdlc-flow declares seven stages and four documents. The two audit rounds produce a SOURCE
+// supporting the document they audited rather than a document of their own, so a walk over
+// the manifest's `documents` cannot see them: with spec.md approved, `next_move` answered
+// "write plan.md" and never once named the spec audit.
+//
+// The close did not agree. The reviewed module governing this flow asks each audit step for
+// `1x audit`, so an agent that followed this answer through every document reached
+// `initiative_close` and was refused for a round nothing had told it to run — two authorities
+// over one flow, and the one an agent is told to trust was the one that did not know.
+//
+// Found by driving the flow end to end against the live deployment, which is the only place
+// the disagreement shows: each half is self-consistent.
+const AUDITED = ((): Chain => {
+  const c = chainOf("sdlc-flow", [
+    { name: "spec.md", role: "spec", gate: true, closing: true },
+    { name: "plan.md", role: "plan", gate: true, requires: "spec.md" },
+  ]);
+  return { ...c, stages: [
+    { name: "sdlc-spec", produces: "spec.md" },
+    { name: "sdlc-spec-audit", produces: "source", supports: "spec.md" },
+    { name: "sdlc-plan", produces: "plan.md" },
+  ] };
+})();
+const AUD = "2026-09-14-audited";
+mkdirSync(join(root, AUD, "sources"), { recursive: true });
+writeFileSync(join(root, AUD, "spec.md"),
+  doc({ title: "Spec", status: "approved", approved_by: "ada@zz.test", approved_at: "2026-09-14" },
+      "# Spec"));
+let aud = initiativeState(root, AUD, AUDITED, AUDITED.documents);
+// NOT A TOOL: `add_source` is a member of next_move.action's own vocabulary, beside
+// write_document and await_approval. The tool the move asks for is `source_add`.
+is(aud.next_move?.action === "add_source" && aud.next_move?.document === "spec.md",
+   `with spec.md approved and no audit source, the next move is ${JSON.stringify(aud.next_move)} ` +
+   "— the flow declares sdlc-spec-audit between spec and plan, and a walk over documents alone " +
+   "cannot see a stage that evidences itself with a source");
+
+// AND IT STOPS ASKING once the round is on the record, which is the half a check that only
+// watched the refusal would pass while making the flow unfinishable.
+writeFileSync(join(root, AUD, "sources", "spec-audit.md"),
+  doc({ title: "Spec audit round 1", supports: "spec.md" }, "No blocking findings."));
+aud = initiativeState(root, AUD, AUDITED, AUDITED.documents);
+is(aud.next_move?.action === "write_document" && aud.next_move?.document === "plan.md",
+   `with the audit source recorded the next move is ${JSON.stringify(aud.next_move)} — the ` +
+   "stage is satisfied and the walk must move on to the next document the flow declares");
+
+// A STAGE WHOSE DOCUMENT IS NOT YET FINISHED IS NOT OWED. Auditing a document nobody has
+// agreed to audits a draft, and the document's own stage is unmet first in any case.
+const DRAFTED = "2026-09-14-audited-draft";
+mkdirSync(join(root, DRAFTED, "sources"), { recursive: true });
+writeFileSync(join(root, DRAFTED, "spec.md"), doc({ title: "Spec", status: "draft" }, "# Spec"));
+const drafted = initiativeState(root, DRAFTED, AUDITED, AUDITED.documents);
+is(drafted.next_move?.action === "await_approval" && drafted.next_move?.document === "spec.md",
+   `with spec.md still draft the next move is ${JSON.stringify(drafted.next_move)} — the audit ` +
+   "of an unapproved document must not be demanded ahead of its gate");
+
 // ── 4. The open record: written, invisible as a document, and read by chainFor ───────────
 const GOVERNED_NAME = `${isoToday()}-with-a-flow`;
 const written = rec.recordOpen(root, GOVERNED_NAME, "sdlc-flow", "ada@zz.test");

@@ -131,7 +131,7 @@ check("the read path queries with the configuration the write path stored a lati
   // imports carry the `.js` suffix NodeNext wants, which resolve only there. A probe that
   // cannot run is reported as that, never as a failure of the thing it was probing.
   const probe = `
-    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/knowledge-search.js"))};
+    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/search-predicate.js"))};
     const want = ${JSON.stringify(TEXT_SEARCH_CONFIG.latin)};
     const bad = [];
     const sqlOf = (args) => buildSearchPredicate(args).sql;

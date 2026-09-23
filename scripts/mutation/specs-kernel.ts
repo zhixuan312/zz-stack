@@ -203,7 +203,7 @@ export const KERNEL_SPECS: readonly MutationSpec[] = [
     check: "scripts/gate/checks/search-predicate-parameters.ts",
     target: "every parameter the search predicate binds is one its SQL references",
     assertion: "the numbers the statement references are exactly 1..args.length",
-    subject: "services/zz-core/src/tools/knowledge-search.ts",
+    subject: "services/zz-core/src/tools/search-predicate.ts",
     find: '  if (a.type) cond.push(`type = ${put(a.type)}`);',
     replace: '  if (a.type) { put(a.type); cond.push(`type = ${put(a.type)}`); }',
     planted: "a parameter is bound as a side effect and then never referenced, so the statement " +

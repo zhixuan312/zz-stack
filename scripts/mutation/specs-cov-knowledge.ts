@@ -47,6 +47,17 @@ export const COV_KNOWLEDGE: readonly MutationSpec[] = [
   // ————————————————————————————————— knowledge.ts —————————————————————————————————
   {
     check: "scripts/gate/checks/knowledge.ts",
+    target: "a search counts a superseded result the same way it excludes one",
+    assertion: "the count reads both signals the exclusion reads",
+    subject: "services/zz-core/src/tools/knowledge-search.ts",
+    find: '        return row.status === "superseded" || Boolean(row.superseded_by);',
+    replace: '        return row.status === "superseded";',
+    planted: "the superseded count reads `status` alone, which answers for a node and never " +
+      "for a document — 210 documents on this deployment carry a superseded_by and not one " +
+      "carries status: superseded, so the field reports 0 for every document search",
+  },
+  {
+    check: "scripts/gate/checks/knowledge.ts",
     target: "every flow ends with the platform's handover",
     assertion: "the skill that performs the close names the handover that follows it",
     subject: "catalog/sdlc/sdlc-flow/skills/sdlc-flow/SKILL.md",

@@ -29,7 +29,7 @@ import { check } from "../run.ts";
 
 check("every parameter the search predicate binds is one its SQL references", () => {
   const probe = `
-    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/knowledge-search.js"))};
+    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/search-predicate.js"))};
     const bad = [];
     // One per clause kind the grammar produces, in both scripts, and the combinations that
     // mix them — each one exercised BOTH as the exact attempt and as the broadening retry,

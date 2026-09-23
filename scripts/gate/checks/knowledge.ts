@@ -622,3 +622,38 @@ check("the abandon-contradiction refusal is not disabled by the derived handover
   }
   return null;
 });
+
+check("a search counts a superseded result the same way it excludes one", () => {
+  // ONE QUESTION, TWO SPELLINGS, IN ONE TOOL. `buildSearchPredicate` excludes a superseded row
+  // with `superseded_by is null and status <> 'superseded'` — two signals, because the two
+  // sides of the union say it two ways: a NODE carries `lifecycle: superseded`, mapped to
+  // `status`, and a DOCUMENT keeps `status: approved` and names its successor in
+  // `superseded_by`. The counter read only `status`.
+  //
+  // Measured on this deployment: 210 documents carry a `superseded_by` and NOT ONE carries
+  // `status: superseded`. So `superseded_in_results` reported 0 for every document search ever
+  // run, including the ones that returned those 210 rows — a field whose only job is to tell a
+  // reader that some of what they are looking at has been replaced.
+  const src = readFileSync(join(root, "services/zz-core/src/tools/knowledge-search.ts"), "utf8");
+  const pred = readFileSync(join(root, "services/zz-core/src/tools/search-predicate.ts"), "utf8");
+  if (!/superseded_by is null and status <> 'superseded'/.test(pred)) {
+    return "the predicate no longer excludes superseded rows on both signals, so this check is "
+         + "written about a rule that has moved — rewrite it rather than leave it passing";
+  }
+  const counter = /const superseded = results\.filter\(([^)]*)\)/.exec(src)?.[1] ?? "";
+  // THE RETURN EXPRESSION, NOT THE BLOCK. The first draft of this check tested the whole
+  // `isSuperseded` body for the string `superseded_by` — which the TYPE ANNOTATION carries, so
+  // planting the defect left the check green and it proved nothing. What decides the answer is
+  // what the function returns.
+  const body = /const isSuperseded[\s\S]{0,400}?return ([^;]+);/.exec(src)?.[1] ?? "";
+  if (!counter.includes("isSuperseded") || !body) {
+    return "superseded_in_results is counted inline rather than by a predicate this can read — "
+         + "the count and the exclusion are the same question and must be answered the same way";
+  }
+  if (!/superseded_by/.test(body)) {
+    return "superseded_in_results counts on `status` alone, so it answers for a node and never "
+         + "for a document: a document keeps `status: approved` and names its successor in "
+         + "`superseded_by`, and 210 of them on this deployment do";
+  }
+  return null;
+});

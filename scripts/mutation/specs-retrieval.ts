@@ -110,7 +110,7 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/text-search-config-agreement.ts",
     target: "the read path queries with the configuration the write path stored a latin term through",
-    subject: "services/zz-core/src/tools/knowledge-search.ts",
+    subject: "services/zz-core/src/tools/search-predicate.ts",
     find: "const QUERY_CONFIG = sqlLiteral(TEXT_SEARCH_CONFIG.latin);",
     // THE OTHER HALF OF THE SAME CONSTANT, not a bare literal. Writing `"simple"` here left
     // `TEXT_SEARCH_CONFIG` imported and unused, so the build went red beside the row and a
@@ -163,7 +163,7 @@ export const RETRIEVAL_SPECS: readonly MutationSpec[] = [
   {
     check: "scripts/gate/checks/legacy-han-retrieval.ts",
     target: "the legacy handler builds a predicate that can match a term inside an unspaced Han run",
-    subject: "services/zz-core/src/tools/knowledge-search.ts",
+    subject: "services/zz-core/src/tools/search-predicate.ts",
     // THE PREDICATE IS REMOVED, NOT WEAKENED. A first attempt put `true or` in front of it,
     // which defeats the restriction at runtime and still leaves the words `team_slug` in the
     // statement — and the check tests that the SQL CONTAINS them. It survived, correctly:

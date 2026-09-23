@@ -15,7 +15,7 @@ check("the legacy handler builds a predicate that can match a term inside an uns
   // security-identity — spawns a probe against `dist` for exactly this reason, and a probe
   // that cannot RUN is reported as that, never as a failure of the thing it was probing.
   const probe = `
-    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/knowledge-search.js"))};
+    import { buildSearchPredicate } from ${JSON.stringify(join(root, "services/zz-core/dist/tools/search-predicate.js"))};
     const bad = [];
     const p = buildSearchPredicate({ query: "迁移" });
     if (/websearch_to_tsquery\\('english'/.test(p.sql)) {

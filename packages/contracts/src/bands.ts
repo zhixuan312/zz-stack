@@ -111,3 +111,19 @@ export function headroomState(points: number | null, named: number): string {
   if (named > 0) return HEADROOM.IDENTIFIED;
   return points <= 1 ? HEADROOM.NONE : HEADROOM.UNEXPLAINED;
 }
+
+/**
+ * THE PLATFORM'S MARK SCALE, DECLARED ONCE.
+ *
+ * It was written in two places in two forms and neither read the other: the prompt spelled the
+ * ends as the literals `5 =` and `1 =`, and `judge-score.ts` rescaled a mean with
+ * `(qualMean - 1) / 4`. A ruler on any other scale would have been PROMPTED for one range and
+ * NORMALISED against another, silently, with every number downstream still looking ordinary.
+ *
+ * WHAT THIS DOES NOT FIX, said plainly rather than left for somebody to discover: the ruler's
+ * own columns are called `five_means` and `one_means`, in the type above, in the SQL that reads
+ * them and in the table itself. Those names encode the same two numbers a third time, and
+ * moving the scale means migrating them. This constant makes the two COMPUTED uses agree and
+ * derive from one place; it does not make the scale free to change.
+ */
+export const MARK_SCALE = { min: 1, max: 5 } as const;

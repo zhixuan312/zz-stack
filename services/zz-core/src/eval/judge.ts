@@ -30,6 +30,8 @@
  */
 import type pg from "pg";
 
+import { MARK_SCALE } from "@zz/contracts";
+
 import { configured as typedJudgeConfigured } from "./typesafe.js";
 import { JUDGE_BASE, JUDGE_MODEL, LLM_BASE, LLM_KEY, THINKING, typedJudgeName } from "./judge-model.js";
 import { markTyped } from "./judge-typed.js";
@@ -272,7 +274,8 @@ function systemFor(kind: Subject, noun: string, name: string, version: string,
       : "Judge the document in front of you. Quote it as your evidence, never paraphrase it.",
     "",
     "THE DIMENSIONS, and what each end of them looks like:",
-    ...dims.map((d) => `- ${d.name}\n    5 = ${d.five_means}\n    1 = ${d.one_means}`),
+    ...dims.map((d) =>
+      `- ${d.name}\n    ${MARK_SCALE.max} = ${d.five_means}\n    ${MARK_SCALE.min} = ${d.one_means}`),
     "",
     "RULES.",
     ...RULES,

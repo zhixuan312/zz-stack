@@ -22,7 +22,7 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
 // round and the gateway names it when the console asks — one rule, or the two drift and a
 // reader gets a different word from each.
 export { BANDS, NOT_MEASURABLE, band,
-         HEADROOM, HEADROOM_STATES, headroomState, type HeadroomState } from "./bands.js";
+         HEADROOM, HEADROOM_STATES, headroomState, MARK_SCALE, type HeadroomState } from "./bands.js";
 
 // The tenant-information artifact, revision, event, mutation and search contracts — types AND
 // the zod schemas that actually validate untrusted input against them, through the one door

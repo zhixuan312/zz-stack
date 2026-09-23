@@ -22,8 +22,7 @@
  * and they are written down here rather than buried in a caller, so disagreeing with them is a
  * one-line change and not an argument.
  */
-
-import { HEADROOM, NOT_MEASURABLE, band, headroomState } from "@zz/contracts";
+import { HEADROOM, MARK_SCALE, NOT_MEASURABLE, band, headroomState } from "@zz/contracts";
 
 /** The qualitative half against the quantitative half.
  *
@@ -90,7 +89,12 @@ export function effectiveness(
              "round is noise and no score is computed from them",
     };
   }
-  const qual = qualMean === null ? null : Math.round(((qualMean - 1) / 4) * 1000) / 100;
+  // RESCALED FROM THE DECLARED SCALE, not from two literals. This was `(qualMean - 1) / 4`,
+  // and the prompt that produced `qualMean` spelled its ends as `5 =` and `1 =` — two
+  // spellings of one scale, neither reading the other.
+  const SPAN = MARK_SCALE.max - MARK_SCALE.min;
+  const qual = qualMean === null
+    ? null : Math.round(((qualMean - MARK_SCALE.min) / SPAN) * 1000) / 100;
   const quant = thresholdsTotal ? Math.round((thresholdsMet / thresholdsTotal) * 1000) / 100 : null;
   // EITHER HALF ALONE IS THE WHOLE SCORE. A ruler of purely qualitative dimensions has no
   // thresholds to read, and one of purely quantitative dimensions is marked by no judge. Both
@@ -103,7 +107,7 @@ export function effectiveness(
              basis: "the round produced neither a qualitative mark nor a threshold" };
   }
   const parts = [
-    qual !== null ? `qualitative ${qual} (mean ${qualMean} of 5)` : null,
+    qual !== null ? `qualitative ${qual} (mean ${qualMean} of ${MARK_SCALE.max})` : null,
     quant !== null ? `quantitative ${quant} (${thresholdsMet} of ${thresholdsTotal} thresholds met)` : null,
   ].filter(Boolean);
   return {

@@ -407,6 +407,17 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // ── scripts/gate/checks/data-telemetry.ts ───────────────────────────────────────────────
   {
     check: "scripts/gate/checks/data-telemetry.ts",
+    target: "the answer that names an initiative is actually captured, and an error names nothing",
+    assertion: "an answer carrying an error teaches the trace nothing",
+    subject: "services/gateway/src/call-attribution.ts",
+    find: '      if (answer.error === undefined && typeof answer.initiative === "string" && answer.initiative) {',
+    replace: '      if (typeof answer.initiative === "string" && answer.initiative) {',
+    planted: "an initiative_status on a slug nobody opened echoes that slug back beside its " +
+      "error, and the trace takes it — so the caller's whole conversation is attributed to an " +
+      "initiative that does not exist, which is the state 436 rows on this deployment were in",
+  },
+  {
+    check: "scripts/gate/checks/data-telemetry.ts",
     target: "the telemetry and the control loop name the same stage for the same act",
     assertion: "a source is attributed to the stage that declares it supports that document",
     subject: "services/gateway/src/call-attribution.ts",

@@ -57,7 +57,7 @@ import { lastJson } from "@zz/mcp-client";
 import { resolveToolKey } from "@zz/contracts";
 
 import { logEvent } from "./events.js";
-import { stageOwing } from "./call-attribution.js";
+import { ANSWER_NAMES_INITIATIVE, initiativeFrom, stageOwing } from "./call-attribution.js";
 import { callerKey, currentStep, doorHandshake, doorVersion, flowFor, initiativeSeen,
          stepLoaded } from "./step-trace.js";
 
@@ -362,7 +362,22 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
         return { name: String(a?.name ?? ""), whole: a?.file === undefined || a?.file === "" };
       })
       .filter((l) => l.name);
-    let served = loading.length ? "" : null;
+    // CAPTURE THE ANSWER FOR THE TWO CALLS WHOSE ANSWER NAMES THE INITIATIVE, and not only
+    // when a skill is being loaded.
+    //
+    // This was `loading.length ? "" : null`, so the response body was captured only on a
+    // request that also read a skill. The block below that reads `initiative_open`'s answer —
+    // written precisely because that call names the initiative in its ANSWER rather than its
+    // arguments, and carrying a comment saying so — sits behind `if (served !== null)` and
+    // therefore could never run. The fix was written, committed, and has never once executed.
+    //
+    // Measured on this deployment before the change: 110 `initiative_open` events, 20 carrying
+    // an initiative, 17 of those naming one that exists. And 436 events across the whole store
+    // are filed against an initiative that was never created — because the ARGUMENT scan below
+    // learns from any call that names one, including an `initiative_status` on a slug that
+    // does not exist, which answers `{"error": "no such initiative"}` and is recorded `ok`.
+    let served = (loading.length
+      || wanted.some((c) => ANSWER_NAMES_INITIATIVE.test(String(c.params?.name ?? "")))) ? "" : null;
     let skipping = false;   // inside the tail of an answer already classified from its head
     const take = (chunk: unknown): void => {
       let s: string;
@@ -484,32 +499,10 @@ export function toolCallTelemetry(surface: (req: Request) => string) {
           .map((c) => (c as { text?: string })?.text ?? "").filter(Boolean).join("\n");
         stepLoaded(caller, loading[0].name, text || served, loading[0].whole);
       }
-      // ANY call that names an initiative teaches the trace which one is being worked on.
-      for (const c of wanted) {
-        const named = (c.params?.arguments as Record<string, unknown> | undefined)?.initiative;
-        if (typeof named === "string" && named) { initiativeSeen(caller, named); break; }
-      }
-      // AND SO DOES `initiative_open`, WHICH NAMES IT IN ITS ANSWER RATHER THAN ITS ARGUMENTS.
-      //
-      // It takes a `slug`; the platform composes `<YYYY-MM-DD>-<slug>` from its own clock and
-      // hands the name back — precisely so nobody types a date. The loop above reads
-      // ARGUMENTS only, so the one call that creates an initiative taught the trace nothing:
-      // measured on production, 3 of 38 `initiative_open` events carry an initiative, and the
-      // rest of the conversation was attributed only once some later call happened to pass
-      // the name. Read from the answer, through the same `lastJson` every other response
-      // reader here uses.
-      if (served !== null) {
-        for (const c of wanted) {
-          if (c.params?.name !== "initiative_open") continue;
-          const body = (lastJson(served)?.result?.content ?? [])
-            .map((x) => (x as { text?: string })?.text ?? "").join("");
-          try {
-            const opened = (JSON.parse(body) as { initiative?: unknown }).initiative;
-            if (typeof opened === "string" && opened) initiativeSeen(caller, opened);
-          } catch { /* not the JSON this tool returns; the trace simply learns nothing */ }
-          break;
-        }
-      }
+      // WHAT THIS EXCHANGE TAUGHT US ABOUT WHICH INITIATIVE IS BEING WORKED ON —
+      // `call-attribution.ts`, beside the question of which stage an act completes.
+      const learned = initiativeFrom(wanted, served);
+      if (learned) initiativeSeen(caller, learned);
       const step = currentStep(caller);
       const flow = await flowFor(req.zzIdentity?.activeTeam ?? null, step?.initiative);
 

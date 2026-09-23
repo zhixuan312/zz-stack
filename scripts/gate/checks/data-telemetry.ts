@@ -435,3 +435,43 @@ check("the telemetry and the control loop name the same stage for the same act",
   if (bad.length) return bad.join("; ");
   return null;
 });
+
+check("the answer that names an initiative is actually captured, and an error names nothing", () => {
+  // A FIX THAT COULD NEVER RUN. `initiative_open` takes a `slug` and composes the name from the
+  // platform's clock, so its ARGUMENTS never carry the initiative — which is why a block exists
+  // to read it from the ANSWER, carrying a comment saying exactly that. It sat behind
+  // `if (served !== null)`, and `served` was `loading.length ? "" : null`: the response body was
+  // captured only on a request that also read a skill. `initiative_open` never does. The fix was
+  // written, committed, and executed zero times.
+  //
+  // Measured before this check existed: 110 `initiative_open` events on the deployment, 20
+  // carrying an initiative, 17 of those naming one that exists.
+  //
+  // AND THE ARGUMENT SCAN FILLED THE GAP WITH SOMETHING WORSE. `initiative_status` on a slug
+  // nobody opened answers `{"error": "no such initiative"}` — not an MCP error, so the row is
+  // recorded `ok` — and the scan took the slug from the arguments and kept it for the rest of
+  // the conversation. 436 events across the store name an initiative that was never created.
+  const tel = readFileSync(join(root, "services/gateway/src/tool-telemetry.ts"), "utf8");
+  const attr = readFileSync(join(root, "services/gateway/src/call-attribution.ts"), "utf8");
+  if (/let served = loading\.length \? "" : null;/.test(tel)) {
+    return "the response body is captured only when a skill is loaded, so the block that reads "
+         + "an initiative out of initiative_open's answer cannot run — which is the state it was "
+         + "in for its whole life";
+  }
+  if (!/ANSWER_NAMES_INITIATIVE\.test/.test(tel)) {
+    return "nothing decides whether this request's answer is one that names an initiative, so "
+         + "either the capture is unconditional or it is back to skill loads only";
+  }
+  const from = /export function initiativeFrom[\s\S]{0,2000}?\n}/.exec(attr)?.[0] ?? "";
+  if (!from) return "initiativeFrom is gone — nothing derives which initiative a call is about";
+  if (!/answer\.error === undefined/.test(from)) {
+    return "an answer carrying an error still names an initiative to the trace, and an "
+         + "initiative_status on a slug nobody opened echoes that slug back — which is how 436 "
+         + "events came to be filed against initiatives that were never created";
+  }
+  if (!/if \(ANSWER_NAMES_INITIATIVE\.test\(String\(c\.params\?\.name \?\? ""\)\)\) continue;/.test(from)) {
+    return "the argument scan no longer skips the two calls whose answer is the authority, so a "
+         + "refused status call teaches the trace a name again";
+  }
+  return null;
+});

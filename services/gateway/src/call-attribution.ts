@@ -19,6 +19,7 @@
  * steps — which is the defect this file exists to stop recurring.
  */
 import { catalogManifest } from "@zz/catalog";
+import { lastJson } from "@zz/mcp-client";
 
 /** The arguments as the caller sent them, narrowed to the two fields this reads. Not exported:
  *  every caller hands over whatever the tool was given, and a second name for that shape would
@@ -75,4 +76,55 @@ export function stageOwing(
   }
 
   return undefined;
+}
+
+/** The set of calls whose ANSWER, not whose arguments, says which initiative is meant.
+ *
+ *  `initiative_open` takes a `slug` and composes `<YYYY-MM-DD>-<slug>` from the platform's own
+ *  clock, so its argument is not the name at all. `initiative_status` takes the name but
+ *  answers `{"error": "no such initiative"}` for one nobody opened — which is not an MCP error,
+ *  so the row is recorded `ok`, and reading the argument took a name that does not exist. */
+export const ANSWER_NAMES_INITIATIVE = /^initiative_(open|status)$/;
+
+/** One MCP call as it arrived, narrowed to what this file reads. */
+interface Call { readonly params?: { readonly name?: unknown; readonly arguments?: unknown } }
+
+/**
+ * Which initiative this exchange says is being worked on, or null when it says nothing.
+ *
+ * TWO SOURCES, AND THE ANSWER OUTRANKS THE ARGUMENT. Any call carrying an `initiative`
+ * argument names one — except the two above, where the answer is the authority on whether it
+ * exists at all.
+ *
+ * Measured before this was separated out: 110 `initiative_open` events on this deployment, 20
+ * carrying an initiative and 17 of those naming one that exists; and 436 events across the
+ * whole store filed against an initiative that was never created. The second number is the
+ * argument scan taking the slug from a failed `initiative_status` and keeping it for the rest
+ * of the conversation.
+ *
+ * `served` is the raw streamed answer, or null when the caller did not capture it — in which
+ * case only the argument route can answer, which is the honest degradation.
+ */
+export function initiativeFrom(wanted: readonly Call[], served: string | null): string | null {
+  for (const c of wanted) {
+    if (ANSWER_NAMES_INITIATIVE.test(String(c.params?.name ?? ""))) continue;
+    const named = (c.params?.arguments as Record<string, unknown> | undefined)?.initiative;
+    if (typeof named === "string" && named) return named;
+  }
+  if (served === null) return null;
+  for (const c of wanted) {
+    if (!ANSWER_NAMES_INITIATIVE.test(String(c.params?.name ?? ""))) continue;
+    const body = (lastJson(served)?.result?.content ?? [])
+      .map((x) => (x as { text?: string })?.text ?? "").join("");
+    try {
+      const answer = JSON.parse(body) as { initiative?: unknown; error?: unknown };
+      // AN ANSWER CARRYING AN ERROR NAMES NOTHING, even though it echoes the slug it was asked
+      // about. That echo is what taught the trace an initiative nobody opened.
+      if (answer.error === undefined && typeof answer.initiative === "string" && answer.initiative) {
+        return answer.initiative;
+      }
+    } catch { /* not the JSON this tool returns; this exchange simply teaches nothing */ }
+    return null;
+  }
+  return null;
 }

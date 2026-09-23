@@ -475,3 +475,34 @@ check("the answer that names an initiative is actually captured, and an error na
   }
   return null;
 });
+
+check("a field that has held an empty string is written as absent, not as two spellings of nothing", () => {
+  // `??` COALESCES NULL AND UNDEFINED AND NOT `""`, which is how one column comes to hold two
+  // spellings of the same absence while its index holds one.
+  //
+  // `step` was cleaned at its source on 2026-09-19 — 1,713 rows carried `''` against 943
+  // carrying null, every one unjoinable to `zz.skill`, and the reconcile re-scanned the skill
+  // tables 1,695 times a pass to resolve one of them. The comment recording that sits four
+  // lines above `Trace.initiative`, which had the identical defect and did not get the fix:
+  // a skill loaded before any initiative is known wrote `initiative: ""` into a fresh trace.
+  // Measured 2026-09-23: 381 rows, every one a `skill_read` at the start of a conversation.
+  //
+  // BOTH LINES OF DEFENCE, because either alone has already failed once. The trace says absent
+  // by being undefined; the writer refuses an empty string at the one place every row is
+  // written. A source that regresses is caught by the writer, and a second field that grows
+  // the same habit is caught by neither unless it is added here.
+  const trace = withoutComments(readFileSync(join(root, "services/gateway/src/step-trace.ts"), "utf8"));
+  const ev = withoutComments(readFileSync(join(root, "services/gateway/src/events.ts"), "utf8"));
+  const bad: string[] = [];
+  if (/initiative: prior [^\n]*: "",/.test(trace)) {
+    bad.push("step-trace writes initiative: \"\" into a fresh trace, so a skill_read before any "
+           + "initiative is known lands an empty string in the column");
+  }
+  for (const f of ["initiative", "step"]) {
+    if (!new RegExp(`e\\.${f} \\|\\| null`).test(ev)) {
+      bad.push(`events.ts binds e.${f} with ?? rather than ||, so an empty string reaches the `
+             + `column verbatim — ?? coalesces null and undefined and not ""`);
+    }
+  }
+  return bad.length ? bad.join("; ") : null;
+});

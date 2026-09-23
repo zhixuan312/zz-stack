@@ -407,6 +407,18 @@ export const COV_SECURITY: readonly MutationSpec[] = [
   // ── scripts/gate/checks/data-telemetry.ts ───────────────────────────────────────────────
   {
     check: "scripts/gate/checks/data-telemetry.ts",
+    target: "a field that has held an empty string is written as absent, not as two spellings of nothing",
+    assertion: "the writer refuses an empty initiative, not only a null one",
+    subject: "services/gateway/src/events.ts",
+    find: "       e.initiative || null, e.flow ?? null, e.step || null, e.stepVersion ?? null,",
+    replace: "       e.initiative ?? null, e.flow ?? null, e.step || null, e.stepVersion ?? null,",
+    planted: "the one place every event row is written goes back to `??` on the field that has " +
+      "actually held an empty string — `??` coalesces null and undefined and not \"\", so the " +
+      "column holds two spellings of nothing where its index holds one, which is what made " +
+      "381 skill_read rows unjoinable to zz.initiative",
+  },
+  {
+    check: "scripts/gate/checks/data-telemetry.ts",
     target: "the answer that names an initiative is actually captured, and an error names nothing",
     assertion: "an answer carrying an error teaches the trace nothing",
     subject: "services/gateway/src/call-attribution.ts",

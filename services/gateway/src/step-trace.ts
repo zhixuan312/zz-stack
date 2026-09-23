@@ -75,8 +75,18 @@ interface Trace {
   /** The initiative this caller is working on, carried forward from the last call that named
    * one. It reached 254 of 510 rows on 2026-09-13, because most calls do not take it — and
    * without it a refusal cannot be joined to the document it was made for, which is the entire
-   * left-hand side of the reconciliation between prediction and outcome. */
-  initiative: string;
+   * left-hand side of the reconciliation between prediction and outcome.
+   *
+   * ABSENT, NOT EMPTY — the same fix as `step` above, which this field did not get. A skill
+   * loaded before any initiative is known wrote `initiative: ""` into a fresh trace, and `??`
+   * does not coalesce an empty string, so it reached the column verbatim. Measured on
+   * 2026-09-23: 381 rows carry `''` where `step` carries none at all, every one of them a
+   * `skill_read` at the start of a conversation, and every one unjoinable to `zz.initiative`
+   * exactly as the 1,713 step rows were unjoinable to `zz.skill`.
+   *
+   * The comment above this one describes that failure in full and has sat four lines away
+   * from a second instance of it since the day it was written. */
+  initiative?: string;
   /** Absent where nothing established them. A skill served WHOLE carries its declared version
    *  and the hash of the bytes; a supporting file, or a trace with no step at all, carries
    *  neither. These have always said unknown by being absent, which is why `??` works on them
@@ -168,7 +178,8 @@ export function stepLoaded(caller: string, skill: string, servedBody: string, wh
   traces.set(caller, {
     step: skill,
     // A skill load does not change which initiative is being worked on.
-    initiative: prior && now - prior.at <= FOLLOWS_FOR_MS ? prior.initiative : "",
+    // UNDEFINED, NOT "", when nothing has named one — see `Trace.initiative`.
+    initiative: prior && now - prior.at <= FOLLOWS_FOR_MS ? prior.initiative : undefined,
     // ONLY FROM THE SKILL ITSELF. A supporting file's frontmatter is its own, not the
     // skill's — see the note above for what reading it out of one cost.
     stepVersion: whole ? declaredVersion(servedBody) : undefined,
@@ -198,7 +209,7 @@ export function initiativeSeen(caller: string, initiative: string): void {
 
 /** The step this caller is following, or nothing if none is or the last one has expired. */
 export function currentStep(caller: string):
-  { step?: string; step_version?: string; step_sha?: string; initiative: string; run: string } | undefined {
+  { step?: string; step_version?: string; step_sha?: string; initiative?: string; run: string } | undefined {
   const t = traces.get(caller);
   if (!t) return undefined;
   const now = Date.now();

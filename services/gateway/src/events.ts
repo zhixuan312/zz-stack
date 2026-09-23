@@ -176,6 +176,12 @@ export function logEvent(e: {
   // just renamed. An unknown slug resolves to null rather than raising — telemetry must
   // never be able to fail the operation it is describing, and a slug naming no team is
   // exactly as unattributed as no slug at all, which is the truth about it.
+  // `|| null`, NOT `??`, ON THE TWO FIELDS THAT HAVE HELD AN EMPTY STRING. `??` coalesces only
+  // null and undefined, so a `""` reaches the column verbatim and the table holds two spellings
+  // of nothing where the index holds one. `step` was cleaned at its source on 2026-09-19 and
+  // `initiative` was not; 381 rows carry `''` because of it, every one a `skill_read` at the
+  // start of a conversation. The source is fixed too — this is the second line of defence, at
+  // the one place every row is written.
   void platformDb()
     .query(
       `insert into event (actor, team_slug, team_id, kind, subject, detail,
@@ -185,7 +191,7 @@ export function logEvent(e: {
        values ($1,$2,(select id from zz.team where slug = $2),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
                $13,$14,$15,$16,$17,$18,$19)`,
       [actor, e.teamSlug ?? null, e.kind, e.subject ?? "", JSON.stringify(e.detail ?? {}),
-       e.initiative ?? null, e.flow ?? null, e.step ?? null, e.stepVersion ?? null,
+       e.initiative || null, e.flow ?? null, e.step || null, e.stepVersion ?? null,
        e.ok ?? null, e.refusal ?? null,
        e.ok === false ? refusalOwner(e.refusal ?? "") : null,
        e.plugin ?? null, e.pluginVersion ?? null, e.toolKey ?? null,

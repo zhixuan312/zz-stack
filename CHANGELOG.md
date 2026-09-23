@@ -33,6 +33,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.69.0] — 2026-09-23
+
+### Fixed
+- **A closed initiative was told to write a handover it had already approved.**
+  `initiative_status` answered every closed initiative with one static sentence inviting it to
+  run `zz-handover`, whatever the handover's actual state — in the one field that exists to say
+  what is left. Three states now get three sentences: recorded and by whom, written and waiting
+  on a verdict, or not there and here is how.
+
+### Changed
+- `mutation-coverage.ts` binds each recorded row to its check's sha256 at GATE time rather than
+  trusting the `stale` flag the runner froze into the artifact when it wrote it. The artifact on
+  disk had claimed `stale: false` on all 418 rows while thirteen commits had touched
+  `scripts/gate/checks/`. A check file that changes now turns the gate red until its rows are
+  re-run, which is what the artifact was always supposed to mean.
+- The mutation runner's work directory carries a lock naming the owning pid, refused before the
+  delete rather than discovered after it — two runs shared one directory and each began by
+  removing it.
+
+### Upgrade notes
+- Nothing to do. No migration, no environment key, no tool argument changes.
+- For anyone running the gate from a checkout: editing a check under `scripts/gate/checks/` now
+  requires re-running its mutation rows (`node scripts/mutation-run.ts --only <file>`) before
+  the gate is green again. And nothing may touch the checkout while a mutation run is in
+  flight — the run's pristine snapshot resolves back into it.
+
 ## [0.68.0] — 2026-09-23
 
 ### Fixed

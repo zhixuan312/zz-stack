@@ -79,3 +79,6 @@ check("the deck skill names one destination, and never the platform's document-w
 
 check("the deck chassis carries no slides and the guidebook carries all of them",
       runsShell("deck-chassis-sections.sh"));
+
+check("shipped zz-plugin-eval text describes trace evidence only, not the removed ablation block",
+      runsCheck("eval-drift-free.ts"));

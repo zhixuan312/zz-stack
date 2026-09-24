@@ -224,9 +224,11 @@ export function registerPluginEvalTools(server: McpServer): void {
         "the honest answer rather than a gap: R1-R14 describes a BLOCK SERVER's tool surface, " +
         "and settling it needs that surface read through the gateway. A flow plugin serves no " +
         "surface of its own, so the standard does not apply to it at all. Call it when a " +
-        "third-party plugin has no run history and a starting ruler has to come from " +
-        "somewhere: what it returns is that starting point. It never guesses a clause it " +
-        "cannot settle — that clause comes back not_measured.",
+        "catalog plugin has no run history and a starting ruler has to come from somewhere: " +
+        "what it returns is that starting point. It reads the catalog entry only — a plugin " +
+        "outside the catalog is refused, since nothing here yet reads a third party's own " +
+        "surface. It never guesses a clause it cannot settle — that clause comes back " +
+        "not_measured.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {

@@ -95,14 +95,11 @@ is never yours.
 
 ## Pitfalls
 
-❌ **Stopping because the trace block is thin.** Read the case block. Only both empty is a stop.
+❌ **Stopping because the trace block is thin.** A thin trace block is `not measured`, and that
+is the honest answer — report it and move on, rather than treating it as a reason to stop.
 
 ❌ **Scoring before `rulers.md` is approved.** `ruler_affirm` refuses, and the refusal is the
 gate working.
-
-❌ **Running the case suite because a profile looked stale.** It costs real money on the
-caller's own credential — roughly $0.40 a case. Running it is a deliberate act somebody asks
-for.
 
 ❌ **Reading a delta without its date.** `plugin_profile` returns `last_run` for exactly this
 reason. A three-week-old delta presented as today's is worse than none.

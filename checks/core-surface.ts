@@ -77,6 +77,8 @@ const EXPECTED = [
   "initiative_status", "knowledge_add",
   "knowledge_reconcile", "knowledge_search", "knowledge_supersede",
   "session_whoami", "skill_list", "skill_read", "source_add", "source_list",
+  // The semantic-assessment checkpoints a flow's skills cite are asked here.
+  "assess",
 ];
 
 const TOOLS_DIR = "services/zz-core/src/tools";

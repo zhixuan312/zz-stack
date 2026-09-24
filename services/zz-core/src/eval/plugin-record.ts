@@ -18,7 +18,7 @@ import { z } from "zod";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
-import { ask, configured, NOT_CONFIGURED, type ScoreQuestion } from "./typesafe.js";
+import { ask, configured, NOT_CONFIGURED, type ScoreQuestion } from "../typed-service.js";
 import { effectiveness, headroom, headroomNote } from "./judge-score.js";
 import { factObject, readsRefusal } from "./plugin-facts.js";
 

@@ -15,6 +15,7 @@ import { OUTCOME_STOPPED, parseCaller, parseEnvelope, type FlowDoc } from "@zz/c
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { auditMove } from "../audit-rounds.js";
 import { openRecord } from "../initiative-record.js";
 import { chainFor } from "../chain.js";
 import { safeName, userRoot } from "../paths.js";
@@ -39,22 +40,6 @@ interface DocState {
 function envelopeOf(file: string): Record<string, string> {
   if (!existsSync(file) || !statSync(file).isFile()) return {};
   return parseEnvelope(readFileSync(file, "utf8"));
-}
-
-/** Whether any source in this initiative declares that it supports `docName`.
- *
- *  Separate from `sourceReport` below, which answers which sources landed after an approval
- *  and is computed too late in this function to decide a next move. Both read the same
- *  `supports` field the same way. */
-function sourcesSupport(dir: string, docName: string): boolean {
-  const srcDir = join(dir, "sources");
-  if (!existsSync(srcDir)) return false;
-  for (const f of readdirSync(srcDir)) {
-    if (!f.endsWith(".md")) continue;
-    const supports = parseEnvelope(readFileSync(join(srcDir, f), "utf8")).supports || "";
-    if (supports.split(",").map((x) => x.trim()).includes(docName)) return true;
-  }
-  return false;
 }
 
 /** The initiative's registered sources, and which of them landed after the document they
@@ -85,6 +70,8 @@ function sourceReport(dir: string, statusOf: (docName: string) => string | null)
   const needsRefinement: Array<{ document: string; source: string; title: string }> = [];
   for (const f of sourceFiles) {
     const env = parseEnvelope(readFileSync(join(srcDir, f), "utf8"));
+    // An audit round lands on an approved document by design; the next move routes it.
+    if (env.stage) continue;
     const sourceTime = statSync(join(srcDir, f)).mtimeMs;
     for (const d of (env.supports || "").split(",").map((x) => x.trim()).filter(Boolean)) {
       if (statusOf(d) !== "approved") continue;
@@ -255,25 +242,19 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     const pending = flowDocs.find((d) => !d.exists && (!d.requires || requirementMet(d.requires)));
     const awaiting = flowDocs.find((d) => d.exists && d.gate && d.status !== "approved");
     // A stage that produces a source is a stage, and `states` is built from the manifest's
-    // `documents` alone. sdlc-flow's two audit rounds evidence themselves with a source
-    // supporting the document they audited rather than a document of their own, and the
-    // reviewed module governing that flow asks each audit step for `1x audit` — so the close
-    // refuses an initiative whose audits nothing here ever named.
+    // `documents` alone. sdlc-flow's two audits evidence themselves with rounds — sources naming
+    // their stage and supporting the document they audited — and the reviewed module asks each
+    // audit step for `1x audit`, so the close refuses an initiative whose audits never ran.
+    // How many rounds, and whether the stakeholder is owed a decision, is `auditMove`'s answer.
     //
     // COUPLED: read from the manifest's stages, in their declared order, the same rule
-    // `enrolment.ts` follows for the evidence side. The two answers about one flow have to
-    // agree.
-    const audits = (chain.stages ?? [])
+    // `enrolment.ts` follows for the evidence side. The two answers about one flow have to agree.
+    const owedAudit = (chain.stages ?? [])
       .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
-      .map((st) => ({ stage: st.name ?? "", document: st.supports }))
-      .filter((a) => Boolean(a.document))
-      // Only once the audited document is actually finished: an audit of a document nobody
-      // has agreed to audits a draft, and the document's own stage is unmet first anyway.
-      .filter((a) => requirementMet(a.document))
-      .filter((a) => !sourcesSupport(dir, a.document));
-    // Before the next document, not after it: the audit sits between two document stages in
-    // the manifest.
-    const owedAudit = audits[0];
+      .filter((st) => Boolean(st.supports) && requirementMet(st.supports as string))
+      .map((st) => auditMove(root, name, st.name ?? "", st.supports as string,
+                             Number(envelopeOf(join(dir, st.supports as string)).version) || 1))
+      .find((m): m is NonNullable<typeof m> => m !== null);
     if (awaiting) {
       next = {
         action: "await_approval", document: awaiting.name, waiting_on: "stakeholder",
@@ -281,16 +262,9 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
              "once the stakeholder agrees — nothing downstream may be written until that gate is recorded",
       };
     } else if (owedAudit) {
-      next = {
-        // NOT A TOOL: `add_source` is a member of `next_move.action`'s own vocabulary, not a
-        // tool name — the same verb_noun shape as `write_document`. The tool to call is
-        // `source_add`, and the `why` beside it says so.
-        action: "add_source", document: owedAudit.document, waiting_on: "agent",
-        why: `${owedAudit.stage} is the next stage this flow declares, and it evidences itself ` +
-             `with a source rather than a document — run the round, then call ` +
-             `source_add(initiative, title, content, supports: ["${owedAudit.document}"]). ` +
-             "The close is refused until it exists",
-      };
+      // NOT A TOOL: `add_source` and `decide` are members of `next_move.action`'s own
+      // vocabulary, not tool names. The `why` beside each names the call to make.
+      next = owedAudit;
     } else if (pending) {
       next = { action: "write_document", document: pending.name, waiting_on: "agent",
                why: `${pending.name} is the next document this flow declares` };
@@ -327,6 +301,20 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
            // Undefined rather than absent, so the two returns of this function have one
            // shape and a caller can read the field without knowing which branch answered.
            next_move_absent: undefined as string | undefined };
+}
+
+/** The next move, as one line appended to the result of a tool that just changed an
+ *  initiative — so a caller who never asks `initiative_status` is still told what the flow
+ *  expects next. Empty for a freeform initiative, a closed one, or a name that is not one. */
+export function nextMoveLine(root: string, initiative: string): string {
+  try {
+    if (!initiative || !existsSync(join(root, initiative))) return "";
+    const chain = chainFor(root, `${initiative}/x.md`);
+    const move = initiativeState(root, initiative, chain, chain.documents).next_move;
+    if (!move || move.action === "closed") return "";
+    return `\n\nNext move: ${move.action}${"document" in move && move.document ? ` ${move.document}` : ""}` +
+           ` (waiting on ${move.waiting_on}) — ${move.why}`;
+  } catch { return ""; }
 }
 
 export function registerInitiativeStatusTools(server: McpServer): void {

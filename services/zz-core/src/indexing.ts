@@ -88,11 +88,18 @@ export interface KbRow {
  *
  * COUPLED: `supports` stays comma-joined because that is how its readers split it. */
 export function sourceDocument(
-  opts: { title: string; by: string; day: string; supports: string; content: string },
+  opts: { title: string; by: string; day: string; supports: string; content: string;
+          /** The flow stage this source is the output of — an audit round names its audit stage. */
+          stage?: string;
+          /** For an audit round: the version of the supported document the round read. */
+          audits_version?: string },
 ): string {
+  const env: Record<string, string> = {
+    type: "source", title: opts.title, contributed_by: opts.by, date: opts.day,
+    added_at: new Date().toISOString(), supports: opts.supports };
+  if (opts.stage) env.stage = opts.stage;
+  if (opts.audits_version) env.audits_version = opts.audits_version;
   return renderEnvelope(
-    { type: "source", title: opts.title, contributed_by: opts.by, date: opts.day,
-      added_at: new Date().toISOString(), supports: opts.supports },
-    ["type", "title", "contributed_by", "date", "added_at", "supports"],
+    env, ["type", "title", "contributed_by", "date", "added_at", "supports", "stage", "audits_version"],
   ) + `\n${opts.content}\n`;
 }

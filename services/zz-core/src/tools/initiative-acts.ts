@@ -33,6 +33,7 @@ import { isoToday, normalizeSections } from "../write-guards.js";
 
 import { registerInitiativeCloseTool } from "./initiative-close.js";
 import { registerInitiativeOpenTool } from "./initiative-open.js";
+import { nextMoveLine } from "./initiative-status.js";
 
 export function registerInitiativeActTools(server: McpServer): void {
   // Opening is registered from here, in its own file because a tool whose refusals are the point
@@ -137,9 +138,11 @@ export function registerInitiativeActTools(server: McpServer): void {
         // `_versions/` still carries the previous signer's verdict.
         (already
           ? "No new frozen copy was taken: the document was already approved, so the copy in " +
-            "_versions/ is the one filed at the first approval. Downstream documents may now be " +
-            "written."
-          : "The approved copy is frozen in _versions/. Downstream documents may now be written."),
+            "_versions/ is the one filed at the first approval."
+          : "The approved copy is frozen in _versions/.") +
+        // What the flow expects next, computed the way initiative_status computes it: an approval
+        // is where an owed audit round or a close is most often forgotten.
+        nextMoveLine(root, parts[0]),
       );
     },
   );
@@ -415,7 +418,8 @@ export function registerInitiativeActTools(server: McpServer): void {
           ? "This initiative is closed, so nothing downstream is waiting on this document."
           : gatedHere
           ? "Nothing downstream may be written until this document is approved again."
-          : "This document carries no gate, so nothing downstream is waiting on it."),
+          : "This document carries no gate, so nothing downstream is waiting on it.") +
+        (closedOutcome ? "" : nextMoveLine(root, parts[0])),
       );
     },
   );

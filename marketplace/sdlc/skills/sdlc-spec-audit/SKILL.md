@@ -1,7 +1,7 @@
 ---
 name: sdlc-spec-audit
-version: 2.3
-description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, at most three rounds.
+version: 2.4
+description: Audit spec.md — the eleven prose failure modes plus the spec's own contract: eight components, FR-to-AC traceability, the deliverable contract, frozen values inlined, scope exhaustive. Read-only. Dispatched, one round at a time; how many is routed by evidence.
 when_to_use: "spec.md is written and agreed by the person, and someone is about to plan from it. Runs after sdlc-spec and before sdlc-plan. Dispatched by the main agent, one round at a time."
 ---
 
@@ -30,7 +30,7 @@ or `document_present` output, into what you return. Presenting a document in ful
 to the gate the main agent is asking somebody to sign, and this round is not that.
 
 **Your round is recorded as a SOURCE supporting `spec.md`** — `source_add(..., supports:
-"spec.md")`. It is what a planner has to go on when building from a spec you passed, what tells
+"spec.md", stage: "sdlc-spec-audit")`. It is what a planner has to go on when building from a spec you passed, what tells
 anyone later that this spec was read by somebody who did not write it, and what the platform
 requires the next version of the spec to cite. It is not a document of the flow: an audit
 report is the material that makes a revision necessary. `sdlc-audit-criteria` carries how to
@@ -113,8 +113,8 @@ option B while Alternatives records option A as the decision" is, and it is crit
 document; running it yourself re-reads your own reasoning and finds it sound. The person who owns
 the spec decides what to fix, and you present nothing to them — the main agent decides what
 anybody is shown. The `semantic-assessment` role answers the bounded questions below by question
-ID from the fixed set below. Nothing in this platform registers those IDs yet, so an
-implementation adopts these spellings rather than minting its own; it does not set severity for
+ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it; it does not set severity for
 you.
 
 **Checkpoints:**

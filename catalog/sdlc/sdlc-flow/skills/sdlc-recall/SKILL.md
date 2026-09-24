@@ -1,6 +1,6 @@
 ---
 name: sdlc-recall
-version: 1.9
+version: 1.10
 description: Search the ZZ knowledge base for what earlier work already decided or learned about a question, read the nodes that matter, and report what it means for the decision in front of someone. Read-only. Dispatched by sdlc-explore, one topic per worker.
 when_to_use: "Before designing, attempting or deciding something, to find out what this team already settled — decisions, design rationale, observed behaviour, process learnings, conventions. Dispatched by sdlc-explore as part of its fan-out. Searches the platform's knowledge base, which is shared across the team and across initiatives."
 ---
@@ -209,9 +209,8 @@ abandoned proposal comes back.
 **Work roles:** `knowledge_search` does the retrieval and ranking deterministically and cannot
 synthesise — it has no model behind it. Turning ranked source material into an answer somebody can
 act on is this agent's own work and the whole reason this skill exists. The `semantic-assessment`
-role answers the bounded questions below by question ID from the fixed set below. Nothing in this
-platform registers those IDs yet, so an implementation adopts these spellings rather than minting
-its own; it does not write the briefing.
+role answers the bounded questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it; it does not write the briefing.
 
 **Checkpoints:**
 

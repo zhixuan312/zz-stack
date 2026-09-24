@@ -245,9 +245,11 @@ is(aud.next_move?.action === "add_source" && aud.next_move?.document === "spec.m
    "— the flow declares sdlc-spec-audit between spec and plan, and a walk over documents alone " +
    "cannot see a stage that evidences itself with a source");
 
-// And it stops asking once the round is on the record.
+// And it stops asking once the round is on the record — a source naming its stage and the
+// version it read. How many rounds follow is checks/audit-rounds.ts's subject.
 writeFileSync(join(root, AUD, "sources", "spec-audit.md"),
-  doc({ title: "Spec audit round 1", supports: "spec.md" }, "No blocking findings."));
+  doc({ title: "Spec audit round 1", supports: "spec.md", stage: "sdlc-spec-audit",
+        audits_version: "1", added_at: "2026-09-14T10:00:00.000Z" }, "No blocking findings."));
 aud = initiativeState(root, AUD, AUDITED, AUDITED.documents);
 is(aud.next_move?.action === "write_document" && aud.next_move?.document === "plan.md",
    `with the audit source recorded the next move is ${JSON.stringify(aud.next_move)} — the ` +

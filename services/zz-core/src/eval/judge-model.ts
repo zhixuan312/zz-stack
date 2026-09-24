@@ -9,7 +9,7 @@
  * by, so two rounds marked by different models — or by the same model with reasoning off — are two
  * scales, and the column is what lets a reader see that.
  */
-import { configured as typedJudgeConfigured } from "./typesafe.js";
+import { configured as typedJudgeConfigured } from "../typed-service.js";
 
 /** The reading judge, which is a fallback and not the judge.
  *

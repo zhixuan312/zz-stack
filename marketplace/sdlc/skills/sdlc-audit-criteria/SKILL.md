@@ -1,6 +1,6 @@
 ---
 name: sdlc-audit-criteria
-version: 2.4
+version: 2.5
 description: The eleven prose failure modes every sdlc audit applies, the evidence shapes a finding must take, and the JSON a round returns. Loaded by sdlc-spec-audit and sdlc-plan-audit; never run on its own.
 when_to_use: "You were dispatched as sdlc-spec-audit or sdlc-plan-audit. Load this first, then that skill — it carries what is different about the document you were given."
 ---
@@ -17,8 +17,9 @@ together, so an edit to one would have left two auditors applying different stan
 nobody able to say which was current. Same reason a flow loads `zz-platform` rather than
 restating it.
 
-**You were dispatched for one round on one document.** The caller runs at most three rounds,
-sequentially, and each round reads what the last one produced.
+**You were dispatched for one round on one document.** The caller runs rounds sequentially,
+each reading what the last one produced; how many is the platform's answer from the record, with
+three as a resource limit rather than a pass.
 
 **Read the round you are in.** If the caller told you what the previous round raised and what
 changed, do not re-find it. Confirm what was fixed, say plainly what was not, and look for what the
@@ -72,11 +73,16 @@ source_add(
   initiative: "<initiative>",
   title: "<stage> round N — <what it found, in a few words>",
   content: "<your findings, in full>",
-  supports: "spec.md")            # plan.md for sdlc-plan-audit
+  supports: "spec.md",            # plan.md for sdlc-plan-audit
+  stage: "sdlc-spec-audit")       # sdlc-plan-audit for a plan round
 ```
 
 `supports` is what makes it findable: the platform refuses the next revision of that document
 until this source is cited, so the version that answers your round says so on its own face.
+`stage` is what makes it a ROUND: without it the source is recorded as material, the audit step
+stays unmet, and the next move keeps asking for the round. The platform records which version of
+the document your round read, asks whether it reopens anything the person already agreed, and
+returns that reading in the result — pass the result line back to the caller with your report.
 
 **Do not write a document.** The flow declares four — explore, spec, plan, review — and an
 audit is not one of them. A document beside the source would put one round on the record
@@ -272,8 +278,8 @@ it: no reading of the store answers that, so it is recorded as an unknown rather
 **Work roles:** the eleven passes and the consolidation belong to the auditing agent, run one mode
 at a time rather than as a single sweep, because each mode gets full attention before the next.
 The document's owner decides what is fixed. The `semantic-assessment` role answers the bounded
-questions below by question ID from the fixed set below. Nothing in this platform registers those
-IDs yet, so an implementation adopts these spellings rather than minting its own — but running the
+questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it — but running the
 self-validation rubric is not delegated away: it was a second model's job before and it is yours
 now.
 

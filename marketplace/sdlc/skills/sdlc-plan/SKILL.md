@@ -1,6 +1,6 @@
 ---
 name: sdlc-plan
-version: 1.13
+version: 1.14
 description: Turn an approved spec into a contract-first, human-executable plan at <initiative>/plan.md — build phases, tasks with contracts and technical acceptance criteria traced to the spec's business ACs, and a full-suite gate. Main agent only; never dispatched.
 when_to_use: "The spec is written, agreed and audited, and the work needs an order to be built in. Produces plan.md, which is a gate: nothing executes until a person approves it. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -314,7 +314,7 @@ skill's** — judge it rather than matching phrases, record it under their name 
 turn, and never send a decision back to somebody who already made it. It is written once,
 there, because it holds for every flow.
 
-The next thing that runs is `sdlc-plan-audit` on this document, dispatched, up to three rounds.
+The next thing that runs is `sdlc-plan-audit` on this document, dispatched, one round at a time, as many as the record says are owed.
 It reads what you wrote with the eleven prose failure modes AND the plan's own contract in hand:
 every spec AC traced to a task, the five contract bullets, check paths and argv-safe run commands,
 dependency order, the full-suite gate. Write the plan expecting that.
@@ -385,8 +385,8 @@ and a dispatched plan is a plausible ordering nobody chose; the person approves 
 before anything is built from it. Each technical AC names which role proves it — a deterministic
 command, a delegated analytical review, or a named human whose authority the claim requires. The
 `semantic-assessment` role answers the bounded questions below by question ID from the fixed set
-below. Nothing in this platform registers those IDs yet, so an implementation adopts these
-spellings rather than minting its own, and is never a substitute for the human method: a plausible
+below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it, and is never a substitute for the human method: a plausible
 opinion is not accountability.
 
 **Checkpoints:**

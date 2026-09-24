@@ -22,7 +22,7 @@ import { catalogEntry, catalogManifest, pluginName } from "@zz/catalog";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { digestOf } from "./package/describe.js";
-import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, withoutFrontmatter } from "./package/skills.js";
+import { BASELINE, cardDescription, commandFile, entryCommand, headersHelper, platformPlugins, promoteCommands, routerSkill, shelfFlows, SKILL_REPORT_HOOKS, skillReportScript, withoutFrontmatter } from "./package/skills.js";
 
 /** This platform's release version, read from the gateway's own manifest so there is one number
  * and no second place to forget to update. Through @zz/mcp-http's serviceVersion, which is that
@@ -264,6 +264,18 @@ export function buildClientPackage({ target, base }: PackageInput): ClientPackag
       };
     }),
   ];
+
+  // The baseline carries the hook that reports every shelf skill a session loads, because the
+  // baseline is the one plugin every person has. Added after the shelf is assembled: the script
+  // names the shelf's plugins, so a skill from any other marketplace is never reported.
+  const baseline = plugins.find((pl) => pl.name === BASELINE);
+  if (baseline) {
+    baseline.files.push(
+      { path: "hooks/hooks.json", content: SKILL_REPORT_HOOKS },
+      { path: "scripts/zz-skill-report.mjs", content: skillReportScript(core.url, plugins.map((pl) => pl.name)),
+        mode: 0o755 },
+    );
+  }
 
   // The platform's own version, plus a digest of what this person's shelf contains.
   //

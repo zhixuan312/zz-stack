@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-version: 1.6
+version: 1.7
 description: Review what was built before it ships — sweep the change against ten release-safety failure modes, cite every finding precisely, and separate pre-existing defects from regressions this change introduced. Read-only. Dispatched, because a reviewer who did not write the code is the point.
 when_to_use: "sdlc-execute has finished and the change is about to be shipped, merged or handed over. This is the pre-release gate. Dispatched by the main agent."
 ---
@@ -274,8 +274,8 @@ not a finding however plausible.
 stage leaves the main agent. The maintainer accepts or rejects and will not re-investigate before
 approving, so a miss ships and everything must be cited. You present nothing to the person; the
 main agent decides what anybody is shown. The `semantic-assessment` role answers the bounded
-questions below by question ID from the fixed set below. Nothing in this platform registers those
-IDs yet, so an implementation adopts these spellings rather than minting its own; it does not set
+questions below by question ID from the fixed set below. Each ID is a registered family: ask it with `assess(family, subject, context)` on the core
+door, which records the answer and the model behind it; it does not set
 release severity for you.
 
 **Checkpoints:**

@@ -50,6 +50,7 @@ async function census() {
     // reads 0 whatever the store holds, so the DELETE below deletes nothing and a purge that removed
     // the files leaves their index rows behind.
     one("node", `select count(*) n from zz.knowledge_node where path ilike '${LIKE}'`),
+    one("assessment", `select count(*) n from zz.assessment where initiative like '${LIKE}'`),
     one("REAL initiative", `select count(*) n from zz.initiative where slug not like '${LIKE}'`),
     // Initiative documents only — nodes are their own table. Counting both makes deleting probe
     // nodes look like real documents going missing, and fires the survivor assertion on a purge that
@@ -147,6 +148,9 @@ try {
   const i = await db.query(`delete from zz.initiative where slug like '${LIKE}'`);
   const k = await db.query(`delete from zz.knowledge_node where path ilike '${LIKE}'`);
   console.log(`  knowledge nodes: ${k.rowCount}`);
+  // The chain check asks `assess` and records two audit rounds, and every answer is a row here.
+  const a = await db.query(`delete from zz.assessment where initiative like '${LIKE}'`);
+  console.log(`  assessments: ${a.rowCount}`);
   await db.query("commit");
   console.log(`deleted: ${d.rowCount} doc, ${e.rowCount} event, ${i.rowCount} initiative (+ runs, by cascade)`);
 } catch (err) {

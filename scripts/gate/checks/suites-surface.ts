@@ -97,3 +97,9 @@ check("the qualification ladder is earned bottom-up from evidence counts and a p
 
 check("a run's overall score re-normalises across applicable and present dimensions, a missing required measure voids its dimension, unqualified evidence cannot establish, and a guardrail firing never moves the number",
       runsCheck("eval-score-formula.ts"));
+
+check("the three-way split orders replayable cases by sha256(seed, digest), floors evolve and validation, and is stable for a given seed",
+      runsCheck("eval-replay-split.ts"));
+
+check("each replay role sees exactly its visibility classes, in chronological order, and an unknown role is refused rather than defaulted",
+      runsCheck("eval-replay-visibility.ts"));

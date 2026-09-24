@@ -34,9 +34,12 @@ const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so no evaluator can be qualified");
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-interface ProtocolContext { pluginId: string; policy: QualificationPolicy | null }
+/** Exported for `replay-derive.ts` (Task I-14): `replay_case_set_build` resolves the SAME
+ *  protocol context this tool does before deciding whether `replay.source_kind` needs qualifying
+ *  — one resolver, so the two callers can never read a protocol's policy differently. */
+export interface ProtocolContext { pluginId: string; policy: QualificationPolicy | null }
 
-async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Promise<ProtocolContext | null> {
+export async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Promise<ProtocolContext | null> {
   if (!UUID_RE.test(protocolVersionId)) return null;
   const row = (await p.query<{ plugin_id: string; qualification_policy: unknown }>(`
     select pr.plugin_id::text as plugin_id, pv.qualification_policy as qualification_policy
@@ -48,7 +51,8 @@ async function resolveProtocol(p: pg.Pool, protocolVersionId: string): Promise<P
   return { pluginId: row.plugin_id, policy: parsed.success ? parsed.data : null };
 }
 
-async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise<string | null> {
+/** Exported for the same reason as `resolveProtocol` above. */
+export async function resolveEvaluator(p: pg.Pool, evaluatorVersionId: string): Promise<string | null> {
   if (!UUID_RE.test(evaluatorVersionId)) return null;
   const row = (await p.query<{ stable_key: string }>(`
     select e.stable_key as stable_key
@@ -119,6 +123,55 @@ function respond(counted: LadderEvidence, state: string, reason: string | null, 
   };
 }
 
+/** The one shape both `evaluator_qualify`'s own transaction and a direct caller need to write
+ *  the row through: a plain pool for a standalone caller, a transaction's own client when the
+ *  write has to commit atomically with something else. Mirrors `idempotency.ts`'s own
+ *  `Queryable` — an explicit generic signature, not `Pick<pg.Pool, "query">`, which TypeScript
+ *  infers as a non-callable union over `Pool`'s overloads. */
+interface Writer {
+  query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
+}
+
+/** The qualification run itself (FR-16), factored out of the tool body so `replay-derive.ts`
+ *  (Task I-14, FR-60 rule 1) can run it directly — "`replay_case_set_build` runs
+ *  `evaluator_qualify` for it first when no such qualification exists" is this function, called
+ *  with no `idempotency_key` of its own because it runs at most once per non-replayed
+ *  `replay_case_set_build` call, itself already inside THAT tool's own FR-59 ledger transaction.
+ *  `evaluator_qualify`'s own tool handler below is the other caller, inside its own ledger. */
+export async function performQualification(
+  p: pg.Pool, writer: Writer, protocolVersionId: string, evaluatorVersionId: string,
+  protocol: ProtocolContext, stableKey: string, principal: string,
+): Promise<QualifyResult> {
+  const measure = await resolveMeasure(p, protocolVersionId, evaluatorVersionId);
+  const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
+
+  const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
+  const foreignSnapshot = measure && snapshot ? await latestSnapshot(p, protocol.pluginId, true) : null;
+
+  const counted = await gatherCountedEvidence({
+    evaluatorVersionId, principal, snapshot, foreignSnapshot,
+    vocabulary: measure?.vocabulary ?? null,
+  });
+  const mappings = parseLabelMappings(protocol.policy?.labelMappings ?? []);
+  const labels = measure
+    ? await labelEvidence(p, measure.measureId, evaluatorVersionId, mappingFor(mappings, stableKey))
+    : null;
+
+  const evidence: LadderEvidence = { ...counted, labels };
+  const { state, reason } = qualificationState(evidence, thresholds);
+
+  const row = (await writer.query<{ id: string }>(`
+    insert into zz.eval_evaluator_qualification
+      (evaluator_version_id, protocol_version_id, subject_scope, state, evidence, qualified_at)
+    values ($1::uuid, $2::uuid, $3::jsonb, $4, $5::jsonb, now())
+    returning id::text as id`,
+    [evaluatorVersionId, protocolVersionId, JSON.stringify({ plugin_id: protocol.pluginId }),
+     state, JSON.stringify({ ...evidence, reason })])).rows[0];
+  if (!row) throw new Error("insert into zz.eval_evaluator_qualification produced no row");
+
+  return respond(evidence, state, reason, row.id);
+}
+
 export function registerEvaluatorQualifyTools(server: McpServer): void {
   server.registerTool(
     "evaluator_qualify",
@@ -159,40 +212,15 @@ export function registerEvaluatorQualifyTools(server: McpServer): void {
       const stableKey = await resolveEvaluator(p, evaluator_version_id);
       if (!stableKey) return text(`ERROR: "${evaluator_version_id}" is not a registered evaluator version`);
 
-      const measure = await resolveMeasure(p, protocol_version_id, evaluator_version_id);
-      const { thresholds } = resolveThresholds(protocol.policy?.thresholds);
       const principal = parseCaller(requestHeaders()).email;
 
       const outcome: IdempotencyOutcome<QualifyResult> = await withIdempotency(
         principal, "evaluator_qualify", idempotency_key,
         { protocol_version_id, evaluator_version_id },
         async (client): Promise<MutatorOutcome<QualifyResult>> => {
-          const snapshot = measure ? await latestSnapshot(p, protocol.pluginId, false) : null;
-          const foreignSnapshot = measure && snapshot ? await latestSnapshot(p, protocol.pluginId, true) : null;
-
-          const counted = await gatherCountedEvidence({
-            evaluatorVersionId: evaluator_version_id, principal, snapshot, foreignSnapshot,
-            vocabulary: measure?.vocabulary ?? null,
-          });
-          const mappings = parseLabelMappings(protocol.policy?.labelMappings ?? []);
-          const labels = measure
-            ? await labelEvidence(p, measure.measureId, evaluator_version_id, mappingFor(mappings, stableKey))
-            : null;
-
-          const evidence: LadderEvidence = { ...counted, labels };
-          const { state, reason } = qualificationState(evidence, thresholds);
-
-          const row = (await client.query<{ id: string }>(`
-            insert into zz.eval_evaluator_qualification
-              (evaluator_version_id, protocol_version_id, subject_scope, state, evidence, qualified_at)
-            values ($1::uuid, $2::uuid, $3::jsonb, $4, $5::jsonb, now())
-            returning id::text as id`,
-            [evaluator_version_id, protocol_version_id, JSON.stringify({ plugin_id: protocol.pluginId }),
-             state, JSON.stringify({ ...evidence, reason })])).rows[0];
-          if (!row) throw new Error("insert into zz.eval_evaluator_qualification produced no row");
-
-          const result = respond(evidence, state, reason, row.id);
-          return { result, result_table: "zz.eval_evaluator_qualification", result_id: row.id };
+          const result = await performQualification(
+            p, client, protocol_version_id, evaluator_version_id, protocol, stableKey, principal);
+          return { result, result_table: "zz.eval_evaluator_qualification", result_id: result.qualification_id };
         },
       );
 

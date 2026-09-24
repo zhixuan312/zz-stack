@@ -117,4 +117,13 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("evaluation_score", {
       eval_run_id: randomUUID(), idempotency_key: randomUUID(),
     }), /no platform database|unknown eval_run_id/);
+  // Task I-14: a random subject_version_id decides nothing and matches no subject — refused
+  // before source_scope is ever resolved, the same way every other probe here is safe against
+  // any live state. source_scope still has to be well-formed for the schema to accept the call
+  // at all, so it names a real (but nonexistent) initiative rather than an empty scope.
+  eitherOr("replay_case_set_build refuses a subject_version_id nothing minted",
+    await callEval("replay_case_set_build", {
+      subject_version_id: randomUUID(), protocol_version_id: randomUUID(),
+      source_scope: { initiatives: ["chain-check-probe"] }, idempotency_key: randomUUID(),
+    }), /no platform database|unknown subject_version_id/);
 }

@@ -26,6 +26,7 @@ import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
 import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
+import { registerReplayCaseTools } from "./eval/replay-cases.js";
 import { registerSubjectTools } from "./eval/subject.js";
 
 /** What this door says about itself at `initialize`, before any tool is called.
@@ -65,7 +66,8 @@ const EVAL_INSTRUCTIONS =
   "policy, before its answers may back a score\n" +
   "  evaluation_*  bind a protocol version and an observation snapshot into one run, assess " +
   "it measure by measure, and score it — the protocol-driven scoring round, distinct from " +
-  "round_* above\n\n" +
+  "round_* above\n" +
+  "  replay_*  derive and split replay cases from closed work\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +
@@ -97,5 +99,6 @@ export function buildEvalServer(): McpServer {
   registerFailureDiscoverTools(server);
   registerEvaluatorQualifyTools(server);
   registerEvaluationTools(server);
+  registerReplayCaseTools(server);
   return server;
 }

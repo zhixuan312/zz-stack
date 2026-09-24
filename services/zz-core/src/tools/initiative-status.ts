@@ -249,12 +249,11 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
     //
     // COUPLED: read from the manifest's stages, in their declared order, the same rule
     // `enrolment.ts` follows for the evidence side. The two answers about one flow have to agree.
-    const track = openRecord(root, name)?.track ?? "full";
     const owedAudit = (chain.stages ?? [])
       .filter((st): st is Extract<typeof st, { produces: "source" }> => st.produces === "source")
       .filter((st) => Boolean(st.supports) && requirementMet(st.supports as string))
       .map((st) => auditMove(root, name, st.name ?? "", st.supports as string,
-                             Number(envelopeOf(join(dir, st.supports as string)).version) || 1, track))
+                             Number(envelopeOf(join(dir, st.supports as string)).version) || 1))
       .find((m): m is NonNullable<typeof m> => m !== null);
     if (awaiting) {
       next = {
@@ -295,7 +294,6 @@ export function initiativeState(root: string, name: string, chain: Chain, docs: 
            // The chain already knows which flow governs this initiative — it was resolved
            // to build `docs`. The envelope fallback answers only when it does not.
            flow: chain.name ?? (envelopeOf(join(dir, docs[0]?.name ?? "")).flow || null),
-           track: openRecord(root, name)?.track ?? null,
            documents: states, outcome, closed_by: closedBy, sources: sourceFiles.length,
            // reported, never enforced: material that landed after an approval may warrant
            // a revision — the team decides, and document_revise is how they do it

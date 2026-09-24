@@ -60,15 +60,9 @@ export function registerInitiativeOpenTool(server: McpServer): void {
         flow: z.string().optional().describe(
           "The flow whose gates and document order govern this initiative, e.g. `sdlc-flow`. " +
           "Omit for freeform work; that is supported, not degraded."),
-        track: z.enum(["full", "light"]).optional().describe(
-          "How much review the flow runs, decided here with the stakeholder and fixed afterwards. " +
-          "`full` (the default): audit rounds follow the evidence, up to three. `light`: ONE " +
-          "bounded change a reviewer can verify from the diff — no new tool, table, migration or " +
-          "contract — gets one audit round per document, and a revision after it is not audited " +
-          "again. Every document and every gate is the same on both. Ignored without a flow."),
       },
     },
-    async ({ slug, flow, track }) => {
+    async ({ slug, flow }) => {
       const bad = slugRefusal(slug);
       if (bad) return text(bad);
       // Shaped, not refused: the platform composes this name and the caller is told to use
@@ -103,7 +97,7 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       }
 
       const name = initiativeNameFor(slug);
-      const record = recordOpen(root, name, flow ?? null, who, track ?? "full");
+      const record = recordOpen(root, name, flow ?? null, who);
       // Into the initiative's own log, which is why this runs after recordOpen: the folder has
       // to exist for logActivity to place the line there rather than in the team-wide
       // `_activity.jsonl`, which is where `relPath: null` puts it.
@@ -148,7 +142,6 @@ export function registerInitiativeOpenTool(server: McpServer): void {
       return text(JSON.stringify({
         initiative: name,
         flow: record.flow,
-        track: record.track ?? null,
         next_move: state.next_move,
         next_move_absent: state.next_move_absent,
         // Which module governs this, and whether a run is open. Reported rather than implied,

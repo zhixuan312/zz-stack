@@ -15,8 +15,6 @@
  *   - the latest round reopens an agreement  -> the stakeholder decides, before anything proceeds
  *   - the budget is spent and the latest revision is unaudited -> the stakeholder decides
  *   - the latest round read the current version and reopened nothing -> the audit is settled
- *   - on the light track, the first round settles it unless it reopened an agreement: a revision
- *     after it is not audited again, which is exactly what the light track trades away
  * A stakeholder's decision is recorded as material supporting the document after the round,
  * which is what settles the two waiting states.
  */
@@ -115,7 +113,7 @@ interface AuditMove { action: string; document: string; waiting_on: string; why:
  * approval, so this is asked only of an approved one.
  */
 export function auditMove(root: string, initiative: string, stage: string, document: string,
-                          version: number, track: "full" | "light" = "full"): AuditMove | null {
+                          version: number): AuditMove | null {
   const dir = join(root, initiative);
   const rounds = roundsOf(dir, stage, document);
   const call = `source_add(initiative: "${initiative}", title, content, supports: ["${document}"], stage: "${stage}")`;
@@ -140,9 +138,6 @@ export function auditMove(root: string, initiative: string, stage: string, docum
                   `document_revise ${document} citing sources/${last.file}; if they keep it, record ` +
                   `their decision with source_add(supports: ["${document}"]) and the audit continues.` };
   }
-  // The light track stops here: its one round ran, and what the round did not reopen is settled
-  // whatever revision followed it.
-  if (track === "light") return null;
   if (last.version < version) {
     if (n < ROUND_BUDGET) {
       // NOT A TOOL: `add_source` is next_move's own vocabulary; the call is source_add, named in `why`.

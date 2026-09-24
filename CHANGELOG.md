@@ -33,6 +33,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.75.0] — 2026-09-24
+
+### Removed
+- **The light track.** Running sdlc-flow is itself the decision that the work gets the whole
+  method, so there is no lighter version of it: `initiative_open` no longer takes `track`, and
+  every sdlc initiative's audits follow the evidence as 0.73.0 describes. Work too small for
+  that is freeform work, not a lighter sdlc. `sdlc-flow` 2.9, `zz-platform` 3.48.
+
+### Upgrade notes
+- **Breaking:** `track` is no longer an argument of `initiative_open`. No initiative was opened
+  at all while 0.74.0 was live, so none carries a track.
+
 ## [0.74.0] — 2026-09-24
 
 ### Added

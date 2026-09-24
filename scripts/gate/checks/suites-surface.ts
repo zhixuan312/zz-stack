@@ -82,3 +82,6 @@ check("the deck chassis carries no slides and the guidebook carries all of them"
 
 check("shipped zz-plugin-eval text describes trace evidence only, not the removed ablation block",
       runsCheck("eval-drift-free.ts"));
+
+check("an evaluation protocol accepts every FR-6 field and refuses unbalanced weights, an unknown enum and an unexplained non-applicable dimension",
+      runsCheck("eval-protocol-schema.ts"));

@@ -18,6 +18,19 @@ export { TOOL_ALIAS, MANAGE_ALIAS, EVAL_ALIAS, SKILL_ALIAS,
 export { BANDS, NOT_MEASURABLE, band,
          HEADROOM, HEADROOM_STATES, headroomState, MARK_SCALE, type HeadroomState } from "./bands.js";
 
+// The Evaluation Protocol contract (FR-6, spec v8): the durable measurement object a plugin
+// version is scored against. PROTOCOL_ENUMS and EVAL_STATE_ENUMS are the one source every
+// evaluation writer, and the gate's "every state the schema allows can actually be reached"
+// check, draw their vocabulary from.
+export {
+  PROTOCOL_ENUMS, EVAL_STATE_ENUMS,
+  EvaluationProtocol, Dimension, Measure,
+  ReplayDependencyPolicy, ThreeWaySplitPolicy,
+  QualificationPolicy, EstablishmentPolicy, UncertaintyPolicy,
+  SearchPolicy, CandidateSelectionPolicy,
+  ProofPolicy, ReleasePolicy, Guardrail, FailureMode,
+} from "./eval-protocol.js";
+
 // Types and the zod schemas that validate untrusted input against them. `semanticFields` and
 // `mutationErrorCodes` are declared once in tenant-information.ts; nothing downstream restates
 // SemanticPayload's field set or the error-code list.

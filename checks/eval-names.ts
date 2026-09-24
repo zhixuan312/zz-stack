@@ -5,8 +5,12 @@ import { join } from "node:path";
 import { EVAL_ALIAS } from "../packages/contracts/dist/index.js";
 const fail = [];
 
+// `subject.ts` holds `plugin_locate` — moved out of `plugin-eval.ts` when it became a mutator
+// (FR-1/FR-59) and had to go through `registerSubjectTools`, its own registration module.
+const REGISTRATION_MODULES = ["subject", "plugin-eval", "plugin-judge", "plugin-record"];
+
 const registered = new Set<string>();
-for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
+for (const f of REGISTRATION_MODULES) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
@@ -48,7 +52,7 @@ for (const got of registered) {
 // most likely to have gone wrong. So the span is wide, and the number of descriptions read is
 // compared with the number of registrations found.
 const described = new Set();
-for (const f of ["plugin-eval", "plugin-judge", "plugin-record"]) {
+for (const f of REGISTRATION_MODULES) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"[\s\S]{0,80}?description:\s*([\s\S]{0,4000}?)inputSchema/g)) {
     const [, tool, desc] = m;

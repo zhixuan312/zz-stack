@@ -64,8 +64,11 @@ function skillsDirOf(plugin: string): string {
  * Reading `manifest.servers` alone reports a flow as reaching nothing.
  *
  * COUPLED: `tools` is folded in beside `servers` because client-package.ts concatenates both
- * into what a person installs. */
-function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined):
+ * into what a person installs.
+ *
+ * Exported for subject.ts, which folds these declarations into a subject version's
+ * `component_manifest` under `kind: "server"` — the same list, read for a different reason. */
+export function serversOf(entry: ReturnType<typeof catalogEntries>[number] | undefined):
   { name: string; path: string; baseline?: true }[] {
   const all = (entry?.manifest.servers ?? []).map((sv) => ({ name: sv.name, path: sv.path }));
   // Marked, so a reader can tell what this plugin asked for from what every plugin gets.
@@ -108,58 +111,6 @@ export function toolsNamedBy(plugin: string): string[] {
 }
 
 export function registerPluginEvalTools(server: McpServer): void {
-  server.registerTool(
-    "plugin_locate",
-    {
-      description:
-        "IDENTIFY the plugin an evaluation is about: its released version, that version's own " +
-        "content digest, the skill versions it shipped with, the MCP servers it declares and " +
-        "the tools its skills name. Facts only. Call this first — every later tool takes the " +
-        "plugin and version this returns, so that an evaluation cannot drift onto a different " +
-        "version of its own subject halfway through. Call it when an evaluation begins, and " +
-        "before any other tool on this door.",
-      inputSchema: { plugin: z.string() },
-    },
-    async ({ plugin }) => {
-      const pool = db();
-      if (!pool) return noDb();
-      const { rows } = await pool.query<{ version: string; digest: string; origin: string }>(`
-        select pv.version, pv.digest, p.origin
-          from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
-         where p.name = $1
-         order by pv.version desc limit 1`, [plugin]);
-      const row = rows[0];
-      if (!row) {
-        return text(
-          `ERROR: no released version of "${plugin}" is recorded. A plugin version is written ` +
-          "at release, so either the name is wrong or this plugin has not been released since " +
-          "versions began being recorded. `catalog_list` shows what exists.");
-      }
-      const skills = (await pool.query<{ name: string; version: string }>(`
-        select s.name, sv.version
-          from zz.plugin_version pv
-          join zz.plugin p on p.id = pv.plugin_id
-          join zz.plugin_version_skill pvs on pvs.plugin_version_id = pv.id
-          join zz.skill_version sv on sv.id = pvs.skill_version_id
-          join zz.skill s on s.id = sv.skill_id
-         where p.name = $1 and pv.version = $2
-         order by s.name`, [plugin, row.version])).rows;
-      const entry = entryOf(plugin);
-      return json({
-        plugin, version: row.version, digest: row.digest,
-        origin: row.origin,
-        // What an evaluation may do with its findings follows from whose the plugin is. Ours:
-        // the findings feed a change somebody makes. A third party's: assess and stop, because
-        // a proposed change against a plugin we do not own is a finding pretending to be an
-        // instruction.
-        mode: row.origin === "third_party" ? "assess only" : "assess, then change",
-        skills,
-        servers: serversOf(entry),
-        tools_named: toolsNamedBy(plugin),
-      });
-    },
-  );
-
   server.registerTool(
     "plugin_profile",
     {

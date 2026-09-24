@@ -21,6 +21,7 @@ import { recordingDoor } from "./door.js";
 import { registerPluginEvalTools } from "./eval/plugin-eval.js";
 import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
+import { registerSubjectTools } from "./eval/subject.js";
 
 /** What this door says about itself at `initialize`, before any tool is called.
  *
@@ -74,6 +75,7 @@ export function buildEvalServer(): McpServer {
   // and so is the left half of every `tool_key` recorded for a call through here. It goes into
   // zz.plugin_tool.door, so the recorded surface can be read against the recorded calls.
   "eval");
+  registerSubjectTools(server);
   registerPluginEvalTools(server);
   registerPluginJudgeTools(server);
   registerPluginRecordTools(server);

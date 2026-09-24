@@ -85,3 +85,6 @@ check("shipped zz-plugin-eval text describes trace evidence only, not the remove
 
 check("an evaluation protocol accepts every FR-6 field and refuses unbalanced weights, an unknown enum and an unexplained non-applicable dimension",
       runsCheck("eval-protocol-schema.ts"));
+
+check("a request's digest ignores key order and the idempotency key, and a stored ledger row decides proceed, replay or conflict",
+      runsCheck("eval-idempotency.ts"));

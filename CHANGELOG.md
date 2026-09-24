@@ -33,7 +33,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
-## [0.72.0] — 2026-09-24
+## [0.72.1] — 2026-09-24
+
+**0.72.0 was deployed and rolled back, and is not a release.** Its verification refused it
+because production's migration ledger still lists the 73 files squashed into `001_init.sql`.
+The ledger rows stay — a rollback to a release that still carries those files must find them
+applied — and `001_init.sql` now declares what it absorbed, which the doctor counts as covered.
+What 0.72.0 left behind: migration `075` applied (one column comment), harmless to 0.71.0, and
+images tagged `0.72.0` / console `0.18.0` in the registry, never tagged in git.
 
 ### Fixed
 - **Model-facing text that told agents things that are not so.** `zz-platform` said a person's
@@ -71,7 +78,7 @@ than how much code moved.
 - Comments across the repository state current behaviour; history lives in git and lessons
   in the knowledge store.
 
-### zz-stack-dashboard 0.18.0
+### zz-stack-dashboard 0.18.1
 - **Settings loses three things that never worked.** The password forms posted to routes the
   gateway does not have, so every submit failed — sign-in is a passkey. The client picker
   showed the Claude Code setup under "Codex" and "Hermes", because the gateway renders only
@@ -79,7 +86,7 @@ than how much code moved.
 - Unused dependencies removed; the design-system document states current rules.
 
 ### Upgrade notes
-- `075` applies on the gateway's next start. It changes one column comment and nothing else.
+- Nothing to do on the host: `075` is already applied from the 0.72.0 attempt.
 - Installed clients re-pull to get the skill changes: `claude plugin marketplace update
   zz-stack`, then `claude plugin update` for each installed plugin.
 

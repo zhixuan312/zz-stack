@@ -7,7 +7,9 @@ const fail = [];
 
 // `subject.ts` holds `plugin_locate` — moved out of `plugin-eval.ts` when it became a mutator
 // (FR-1/FR-59) and had to go through `registerSubjectTools`, its own registration module.
-const REGISTRATION_MODULES = ["subject", "plugin-eval", "plugin-judge", "plugin-record"];
+// `observe.ts` holds `plugin_profile` for the same reason (Task I-7): it too became a mutator,
+// writing `zz.eval_observation_snapshot` through the FR-59 ledger, and moved out on its own.
+const REGISTRATION_MODULES = ["subject", "observe", "plugin-eval", "plugin-judge", "plugin-record"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {

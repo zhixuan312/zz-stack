@@ -26,7 +26,7 @@ import { Dim, MarkItem, Marking, Subject, markAll } from "./judge.js";
 import { effectiveness, headroom } from "./judge-score.js";
 import { traceOf } from "./judge-trace.js";
 import { logActivity } from "../persist.js";
-import { pluginTraces } from "./plugin-profile.js";
+import { UNBOUNDED_WINDOW, pluginTraces } from "./plugin-profile.js";
 import { userRoot } from "../paths.js";
 import { db, teamFor } from "../platform-db.js";
 
@@ -76,8 +76,11 @@ export function registerPluginJudgeTools(server: McpServer): void {
       if (!p) return noDb();
       const entry = entryOf(plugin);
       const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
+      // ruler_read reads the plugin's whole recorded history, not one bounded evidence window —
+      // that window is plugin_profile's own (observe.ts, Task I-7), named here rather than
+      // defaulted inside pluginTraces.
       const [traces, docs, runs] = await Promise.all([
-        pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin)),
+        pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin), UNBOUNDED_WINDOW),
         usageDocs(p, plugin, version, servesOwnDoor(plugin), entry?.flow ?? ""),
         usageRuns(p, plugin, version),
       ]);

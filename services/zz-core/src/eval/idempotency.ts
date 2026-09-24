@@ -21,8 +21,12 @@ import { Refusal } from "../refusal.js";
  *  it ahead of this function's sort. Mirrors tenant-info/policies.ts's `canonicalJson` — kept as
  *  its own copy rather than a shared import, because the two are canonicalizing different shapes
  *  (an arbitrary tool-argument object here, a fixed semantic payload there) and a shared helper
- *  would have to serve both without either owning it. */
-function canonicalJson(value: unknown): string {
+ *  would have to serve both without either owning it.
+ *
+ *  Exported for observe.ts (Task I-7): `evidence_digest` is sha256 over this same canonical form
+ *  of the computed facts, so two callers who agree on the facts agree on the digest whatever
+ *  order their own code happened to build the object in. */
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
     return JSON.stringify(value);
   }

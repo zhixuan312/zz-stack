@@ -42,9 +42,14 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("plugin_conform reads this plugin's own catalog entry",
     await callEval("plugin_conform", { plugin: PLUGIN, version: "0" }),
     /is not in the catalog/);
+  // Task I-7: plugin_profile now takes a subject_version_id (from plugin_locate) and an
+  // evidence_window, not a bare plugin/version — a random uuid is safe against any live state,
+  // the same way finding_decide's probe below is: it decides nothing and matches no subject.
   eitherOr("plugin_profile answers or refuses by a named cause",
-    await callEval("plugin_profile", { plugin: PLUGIN, version: "0" }),
-    /no platform database/);
+    await callEval("plugin_profile", {
+      subject_version_id: randomUUID(), evidence_window: { last_runs: 5 },
+      idempotency_key: randomUUID(),
+    }), /no platform database|unknown subject_version_id/);
   eitherOr("ruler_read answers or refuses by a named cause",
     await callEval("ruler_read", { plugin: PLUGIN, version: "0" }),
     /no platform database/);

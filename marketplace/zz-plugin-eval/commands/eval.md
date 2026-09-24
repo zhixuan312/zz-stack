@@ -101,8 +101,9 @@ is the honest answer — report it and move on, rather than treating it as a rea
 ❌ **Scoring before `rulers.md` is approved.** `ruler_affirm` refuses, and the refusal is the
 gate working.
 
-❌ **Reading a delta without its date.** `plugin_profile` returns `last_run` for exactly this
-reason. A three-week-old delta presented as today's is worse than none.
+❌ **Reading a number without its window.** `plugin_profile` returns the resolved `window` it
+computed every fact over, and `stage_paths` carries each step's own timestamps — a three-week-old
+figure presented as today's is worse than none.
 
 ❌ **Comparing two plugins.** Every ruler is that plugin's own, so two scores are two things
 measured with two rulers. There is no leaderboard here and there is not meant to be.

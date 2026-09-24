@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.2
+version: 1.3
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -100,8 +100,9 @@ is the honest answer — report it and move on, rather than treating it as a rea
 ❌ **Scoring before `rulers.md` is approved.** `ruler_affirm` refuses, and the refusal is the
 gate working.
 
-❌ **Reading a delta without its date.** `plugin_profile` returns `last_run` for exactly this
-reason. A three-week-old delta presented as today's is worse than none.
+❌ **Reading a number without its window.** `plugin_profile` returns the resolved `window` it
+computed every fact over, and `stage_paths` carries each step's own timestamps — a three-week-old
+figure presented as today's is worse than none.
 
 ❌ **Comparing two plugins.** Every ruler is that plugin's own, so two scores are two things
 measured with two rulers. There is no leaderboard here and there is not meant to be.

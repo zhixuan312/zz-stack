@@ -20,7 +20,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
-import { pluginTraces } from "./plugin-profile.js";
 import { db } from "../platform-db.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
@@ -110,62 +109,13 @@ export function toolsNamedBy(plugin: string): string[] {
   return [...named].sort();
 }
 
+// `plugin_profile` moved to observe.ts (Task I-7): it now writes an immutable
+// `zz.eval_observation_snapshot` and takes a `subject_version_id` and an `evidence_window`
+// rather than the bare `plugin`/`version` every other tool here still takes, which made it a
+// mutator sharing nothing else about this file's read-only shape. `entryOf`, `serversOf`,
+// `servesOwnDoor` and `toolsNamedBy` stay here and observe.ts imports them, the same way
+// subject.ts already does.
 export function registerPluginEvalTools(server: McpServer): void {
-  server.registerTool(
-    "plugin_profile",
-    {
-      description:
-        "What this plugin version DID, as computed facts with no model anywhere in the " +
-        "derivation: TRACES from the event log (runs, stage paths, returns to an earlier " +
-        "stage, per-tool calls and refusals, tools its skills name that were never called), " +
-        "with their own sufficiency verdict. Every figure carries the " +
-        "coverage it was derived from. Returns are COUNTED AND NOT CLASSIFIED — whether a " +
-        "return is healthy re-grounding or thrash is the ruler's judgement, not this tool's. " +
-        "Call it when a ruler is being written, and again when its figures are read.",
-      inputSchema: { plugin: z.string(), version: z.string() },
-    },
-    async ({ plugin, version }) => {
-      const pool = db();
-      if (!pool) return noDb();
-      const entry = entryOf(plugin);
-      const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-      const traces = await pluginTraces(pool, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
-      return json({
-        plugin, version,
-        traces,
-        // DELIBERATE: the run history is the only evidence. It is what the platform's own
-        // doors recorded — which tools were called, on whose door, how often, what they
-        // refused and whose refusal it was — rather than an agent's vocabulary, and it needs
-        // no second runner, no credential and no suite kept in step with the plugin.
-        sufficient_for_judging: traces.sufficient,
-        // And what to do about it, in the same shape `initiative_status` answers with.
-        //
-        // DELIBERATE: never null, even when the evidence is sufficient. A caller follows
-        // `next_action` from plugin_locate to here; a null ends the chain and the caller goes
-        // on from memory of the skill instead.
-        next_action: traces.sufficient ? {
-          action: "read_the_contract_then_define",
-          why: "the evidence is enough to judge against, so this stage's remaining question is " +
-               "the one plugin_conform answers: does the package hold to the building-block " +
-               "contract it is shipped under. It reads the catalog entry and calls no model.",
-          run: `plugin_conform(plugin: "${plugin}", version: "${version}")`,
-          then: `ruler_read(plugin: "${plugin}", version: "${version}") — everything the ruler ` +
-                "is written FROM, which is the define stage's input",
-        } : {
-          action: "wait_for_use",
-          why: traces.reason
-            ? `no usable run history: ${traces.reason}`
-            : "this version's run history does not carry enough to judge against",
-          // No command to offer: this evidence is a by-product of the plugin being used, and
-          // nothing run on demand produces it.
-          then: "let the plugin be used, then profile it again. A ruler whose subject is the " +
-                "document or the initiative may already have subjects even when the trace " +
-                "history is thin — ruler_read says what is there.",
-        },
-      });
-    },
-  );
-
   server.registerTool(
     "plugin_conform",
     {

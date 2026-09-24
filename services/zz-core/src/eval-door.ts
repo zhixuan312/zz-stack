@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { recordingDoor } from "./door.js";
+import { registerObserveTools } from "./eval/observe.js";
 import { registerPluginEvalTools } from "./eval/plugin-eval.js";
 import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
@@ -76,6 +77,7 @@ export function buildEvalServer(): McpServer {
   // zz.plugin_tool.door, so the recorded surface can be read against the recorded calls.
   "eval");
   registerSubjectTools(server);
+  registerObserveTools(server);
   registerPluginEvalTools(server);
   registerPluginJudgeTools(server);
   registerPluginRecordTools(server);

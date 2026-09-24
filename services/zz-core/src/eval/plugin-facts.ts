@@ -20,7 +20,7 @@ import { ARTIFACTS_DIR } from "@zz/indexing";
 import type pg from "pg";
 
 import { entryOf, servesOwnDoor, toolsNamedBy } from "./plugin-eval.js";
-import { pluginTraces } from "./plugin-profile.js";
+import { UNBOUNDED_WINDOW, pluginTraces } from "./plugin-profile.js";
 import { sanitize } from "../paths.js";
 
 /** The document body, out of the artifact store. Resolved here and not passed in, which is what
@@ -40,7 +40,11 @@ export const bodyOf = (team: string, initiative: string, path: string): string |
 export async function factObject(p: pg.Pool, plugin: string, version: string): Promise<Record<string, unknown>> {
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages, servesOwnDoor(plugin));
+  // round_judge and ruler_record judge a plugin's whole recorded history, not one bounded
+  // evidence window — Task I-7's window is `plugin_profile`'s own (observe.ts), named
+  // explicitly here rather than defaulted inside pluginTraces.
+  const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages,
+    servesOwnDoor(plugin), UNBOUNDED_WINDOW);
   const { stage_paths, ...figures } = traces;
   const named = toolsNamedBy(plugin);
   return {

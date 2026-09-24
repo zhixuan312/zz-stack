@@ -120,6 +120,25 @@ This is not one of the five stages above and this flow does not call it yet: Tas
 teaches an agent to read the proposer bundle and propose a candidate from it. Named here so both
 tools read as this door's own rather than undocumented ones.
 
+## Not yet a stage: `replay_score` / `candidate_validate`
+
+`/eval/mcp` also carries the rest of IMPROVE's validation loop. `replay_score(replay_run_id,
+idempotency_key)` is what gives one finished `zz.replay_run` an overall number — the same
+`scoreRun` `evaluation_score` calls, run over that case's own evaluator-visible transcript
+instead of an eval_run's evidence snapshot — and is what the launcher's own verifier step calls
+once a candidate or baseline replay session finishes. `candidate_validate(candidate_id,
+idempotency_key)` builds a `recorded` candidate's own worktree, applies its patchset and runs
+this repository's build and gate against it before anything else touches it (a failure marks the
+candidate `invalid` and refuses with the failing command's own output tail); once it is `valid`,
+each call reads every validation-split case's own completed, scored `zz.replay_run` rows, pairs
+candidate against baseline by case, and either answers `runs_required` — which `(case, side)`
+pairs still need a `replay_start`/launcher run — or, once every case has enough of them, calls
+the pure `pairedDecision` bootstrap over their deltas and stores the verdict. Neither tool
+launches a replay itself: `replay_start` and the launcher (`packages/tools/src/replay/launch.ts`)
+are what run one, driven by whoever is executing the candidate's own search. This is not one of
+the five stages above and this flow does not call it yet: Task I-28 is what teaches an agent to
+drive this loop. Named here so both tools read as this door's own rather than undocumented ones.
+
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

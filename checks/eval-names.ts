@@ -25,9 +25,13 @@ const fail = [];
 // `replay-runs.ts` (Task I-16) holds `replay_start`/`replay_close` for the same reason once
 // more — mutators writing `zz.replay_run` through the same ledger — with `replay_read` beside
 // them because the three share one lifecycle and one file.
-// `candidates.ts` (Task I-18) holds `improvement_start`/`candidate_record` for the same reason
-// again: two mutators writing `zz.improvement_run`/`zz.candidate` through the same ledger.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "plugin-eval", "plugin-judge", "plugin-record", "candidates"];
+// `candidates.ts` (Task I-18/I-19) holds `improvement_start`/`candidate_record`/`candidate_validate`
+// for the same reason again: mutators writing `zz.improvement_run`/`zz.candidate`/
+// `zz.candidate_evaluation` through the same ledger.
+// `replay-score.ts` (Task I-19) holds `replay_score` for the same reason once more: a mutator
+// writing `zz.eval_assessment`/`zz.replay_run` through the same ledger — a replay run's own
+// scoring path, distinct from `replay-runs.ts`'s lifecycle tools beside it.
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "evaluate", "replay-cases", "replay-runs", "replay-score", "plugin-eval", "plugin-judge", "plugin-record", "candidates"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
@@ -61,8 +65,8 @@ const EXPECTED = new Set([
   "failure_discover",
   "evaluator_qualify",
   "evaluation_start", "evaluation_assess", "evaluation_score",
-  "replay_case_set_build", "replay_start", "replay_read", "replay_close",
-  "improvement_start", "candidate_record",
+  "replay_case_set_build", "replay_start", "replay_read", "replay_close", "replay_score",
+  "improvement_start", "candidate_record", "candidate_validate",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

@@ -157,4 +157,14 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       patchset: { diff: "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n" },
       idempotency_key: randomUUID(),
     }), /no platform database|no improvement_run/);
+  // Task I-19: a random replay_run_id decides nothing and matches no run — refused before any
+  // measure is ever assessed, the same way every other probe here is safe against any live state.
+  eitherOr("replay_score refuses a replay_run_id nothing minted",
+    await callEval("replay_score", { replay_run_id: randomUUID(), idempotency_key: randomUUID() }),
+    /no platform database|unknown replay_run_id/);
+  // A random candidate_id decides nothing and matches no candidate — refused before this
+  // deployment's own checkout is ever touched, so this probe never spends a build or a gate run.
+  eitherOr("candidate_validate refuses a candidate_id nothing minted",
+    await callEval("candidate_validate", { candidate_id: randomUUID(), idempotency_key: randomUUID() }),
+    /no platform database|no candidate/);
 }

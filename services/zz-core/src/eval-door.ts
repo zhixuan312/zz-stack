@@ -28,6 +28,7 @@ import { registerPluginRecordTools } from "./eval/plugin-record.js";
 import { registerProtocolTools } from "./eval/protocol.js";
 import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
 import { registerReplayCaseTools } from "./eval/replay-cases.js";
+import { registerReplayScoreTools } from "./eval/replay-score.js";
 import { registerReplayRunTools } from "./eval/replay-runs.js";
 import { registerSubjectTools } from "./eval/subject.js";
 
@@ -102,6 +103,7 @@ export function buildEvalServer(): McpServer {
   registerEvaluationTools(server);
   registerReplayCaseTools(server);
   registerReplayRunTools(server);
+  registerReplayScoreTools(server);
   registerCandidateTools(server);
   return server;
 }

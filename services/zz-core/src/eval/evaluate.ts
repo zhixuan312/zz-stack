@@ -83,7 +83,12 @@ async function loadRunContext(p: pg.Pool, evalRunId: string): Promise<RunContext
   return row ?? null;
 }
 
-async function loadDimensions(p: pg.Pool, protocolVersionId: string): Promise<DimensionRow[]> {
+// Exported (this one and `latestQualification`/`loadProtocolPolicy`/`qualificationMet` below):
+// Task I-19's `replay-score.ts` scores a replay_run under the SAME protocol dimensions/measures
+// a real eval_run scores under — a second query building the same DimensionRow[] shape would
+// drift the day one of these queries changes and the other does not, so replay-score.ts imports
+// these rather than re-deriving them.
+export async function loadDimensions(p: pg.Pool, protocolVersionId: string): Promise<DimensionRow[]> {
   const dims = (await p.query<Omit<DimensionRow, "measures">>(`
     select id::text as id, key, canonical_kind, weight::float8 as weight, required, applicable,
            not_applicable_reason
@@ -104,7 +109,7 @@ async function loadSnapshotFacts(p: pg.Pool, observationSnapshotId: string): Pro
   return row ?? { usable_run_count: 0, total_run_count: 0, coverage: null };
 }
 
-async function latestQualification(
+export async function latestQualification(
   p: pg.Pool, evaluatorVersionId: string, protocolVersionId: string,
 ): Promise<{ id: string; state: string } | null> {
   const row = (await p.query<{ id: string; state: string }>(`
@@ -116,7 +121,7 @@ async function latestQualification(
 
 interface ProtocolPolicy { qualification: QualificationPolicy | null; bootstrap: boolean; uncertainty: Record<string, unknown> }
 
-async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promise<ProtocolPolicy> {
+export async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promise<ProtocolPolicy> {
   const row = (await p.query<{ qualification_policy: unknown; scoring_policy: unknown }>(`
     select qualification_policy, scoring_policy from zz.eval_protocol_version where id = $1::uuid`,
     [protocolVersionId])).rows[0];
@@ -137,7 +142,7 @@ async function loadProtocolPolicy(p: pg.Pool, protocolVersionId: string): Promis
  *  `qualification_met` as false regardless of what any individual qualification row says — a
  *  bootstrap protocol's run can be `provisional` at best until a later, non-bootstrap protocol
  *  revision clears it (score.ts's own status rule then does the rest). */
-async function qualificationMet(
+export async function qualificationMet(
   p: pg.Pool, dims: DimensionRow[], protocolVersionId: string, policy: ProtocolPolicy,
 ): Promise<boolean> {
   if (policy.bootstrap) return false;

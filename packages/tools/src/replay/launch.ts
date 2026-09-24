@@ -112,24 +112,22 @@ async function readRole(
   return { read, events };
 }
 
-/** The verifier step the contract names — `evaluation_assess` against the produced artifacts.
- *  Best effort, never blocking: nothing upstream of this task (no `evaluation_start` bound to a
- *  replay run) yet mints an `eval_run_id` a replay run could hand this call, so today it is
- *  expected to come back refused. That refusal is recorded in the log verbatim — never turned
- *  into a fabricated score — and the run still closes on whether the sessions themselves ran. */
-async function attemptVerifier(
-  mcp: Mcp, read: ReplayReadResult, replayRunId: string,
-): Promise<string> {
-  const subjectRef = read.subject_version_id ?? read.candidate_id;
-  if (!subjectRef) return "verifier: no subject_version_id or candidate_id on this run — skipped";
+/** The verifier step the contract names. Task I-17's own worker report left this calling
+ *  `evaluation_assess` against `replayRunId` as if it were an `eval_run_id` — nothing mints an
+ *  `eval_run` for a replay run, so that call could only ever come back refused (`notes.md`'s
+ *  "OPEN (I-17 -> I-18/I-19)" line). Task I-19's `replay_score` (`replay-score.ts`) is the real
+ *  scoring path: it reads the run's own protocol/subject off `zz.replay_run` directly, needs no
+ *  `eval_run_id`, and is what this now calls. Still best effort, never blocking: a refusal is
+ *  recorded in the log verbatim — never turned into a fabricated score — and the run still
+ *  closes on whether the sessions themselves ran. */
+async function attemptVerifier(mcp: Mcp, replayRunId: string): Promise<string> {
   try {
-    const said = await mcp.call("evaluation_assess", {
-      eval_run_id: replayRunId, subject_refs: [subjectRef],
-      idempotency_key: idempotencyKey(replayRunId, "verify"),
+    const said = await mcp.call("replay_score", {
+      replay_run_id: replayRunId, idempotency_key: idempotencyKey(replayRunId, "verify"),
     });
-    return `verifier (evaluation_assess): ${said}`;
+    return `verifier (replay_score): ${said}`;
   } catch (err) {
-    return `verifier (evaluation_assess): call failed — ${(err as Error).message}`;
+    return `verifier (replay_score): call failed — ${(err as Error).message}`;
   }
 }
 
@@ -241,7 +239,7 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       }, worktree.path, logPath);
     }
 
-    const verifierNote = await attemptVerifier(ownMcp, actorRead, start.replay_run_id);
+    const verifierNote = await attemptVerifier(ownMcp, start.replay_run_id);
     appendFileSync(logPath, `# ${verifierNote}\n`, "utf8");
 
     await closeRun(ownMcp, start.replay_run_id, "completed", "candidate and simulated-person sessions finished");

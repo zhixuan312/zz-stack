@@ -12,6 +12,12 @@
  * half: `improvement_start`'s own response carries it, because the run that consumes the
  * evidence and the run that opens it are the same call — a later task (I-28) is what tells an
  * agent HOW to read it, not what assembles it.
+ *
+ * `candidate_validate` (Task I-19, AC-40.1, AC-41.1) is this file's third tool: it builds a
+ * candidate's own worktree and runs the repository gate against it, plans which validation
+ * replay runs are still missing, and stores the paired bootstrap verdict once enough of them
+ * exist — `candidate-validate.ts` carries every one of those decisions; this file only wires the
+ * tool's own registration to it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -19,6 +25,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
+import { validateCandidate } from "./candidate-validate.js";
 import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
   type ComplexityInput, type ManifestComponent, type PatchFile, type PatchStats, type TouchedComponent,
@@ -186,8 +193,9 @@ export function registerCandidateTools(server: McpServer): void {
       const p = db();
       if (!p) return noDb();
 
-      const run = (await p.query<{ id: string }>(
-        "select id::text as id from zz.improvement_run where id = $1::uuid", [improvement_run_id])).rows[0];
+      const run = (await p.query<{ id: string; eval_run_id: string }>(
+        "select id::text as id, eval_run_id::text as eval_run_id from zz.improvement_run where id = $1::uuid",
+        [improvement_run_id])).rows[0];
       if (!run) return text(`ERROR: no improvement_run ${improvement_run_id}`);
 
       if (!UUID_RE.test(base_subject_version_id)) return text("ERROR: unknown base_subject_version_id");
@@ -195,6 +203,26 @@ export function registerCandidateTools(server: McpServer): void {
         "select id::text as id, plugin_id::text as plugin_id, component_manifest " +
         "from zz.eval_subject_version where id = $1::uuid", [base_subject_version_id])).rows[0];
       if (!subject) return text(`ERROR: no eval_subject_version ${base_subject_version_id}`);
+
+      // FR-36's own ledger integrity, never checked before this task: a candidate that builds on
+      // a DIFFERENT plugin than the one its own improvement_run's eval_run scored would inherit
+      // that plugin's release_owners and component_manifest while claiming to descend from a run
+      // that never evaluated it — the same "identity must not drift" rule evaluation_start's own
+      // observation-snapshot check already applies one join over.
+      const runPlugin = (await p.query<{ plugin_id: string; plugin_name: string }>(`
+        select sv.plugin_id::text as plugin_id, pl.name as plugin_name
+          from zz.eval_run er
+          join zz.eval_subject_version sv on sv.id = er.subject_version_id
+          join zz.plugin pl on pl.id = sv.plugin_id
+         where er.id = $1::uuid`, [run.eval_run_id])).rows[0];
+      if (runPlugin && runPlugin.plugin_id !== subject.plugin_id) {
+        const subjectPlugin = (await p.query<{ name: string }>(
+          "select name from zz.plugin where id = $1::uuid", [subject.plugin_id])).rows[0];
+        return text(
+          `ERROR: base_subject_version_id ${base_subject_version_id} belongs to plugin ` +
+          `${subjectPlugin?.name ?? subject.plugin_id}, not improvement_run ${improvement_run_id}'s ` +
+          `own eval_run plugin ${runPlugin.plugin_name}`);
+      }
 
       let generation = 0;
       if (parents.length) {
@@ -301,8 +329,59 @@ export function registerCandidateTools(server: McpServer): void {
         complexity_delta: result.complexity_delta, touched_components: result.touched_components,
         touched_owners: result.touched_owners, status: "recorded",
         next: "No candidate executes before this row exists — it now does. candidate_validate " +
-              "(a later task) is what runs it.",
+              "is what runs it.",
       });
+    },
+  );
+
+  // -----------------------------------------------------------------------------------------
+  // candidate_validate
+
+  server.registerTool(
+    "candidate_validate",
+    {
+      description:
+        "WHEN a recorded or already-valid candidate is ready to be checked against its own base " +
+        "(Task I-19, AC-40.1/AC-41.1): on a first call (status: recorded) builds the candidate's " +
+        "own worktree from this checkout, applies its patchset and runs the repository build and " +
+        "gate against it in isolation before anything else touches it. On a build or gate " +
+        "failure the candidate's status becomes invalid and this call REFUSES with the failing " +
+        "command's own output tail — never replayed, never a partial score. On success (or on an " +
+        "already-valid candidate) it reads every validation-split replay case in the plugin's own " +
+        "bound case set, pairs completed, scored zz.replay_run rows by case for the candidate " +
+        "against its own base_subject_version_id, and, once every case has at least the " +
+        "protocol's own minRepeats completed and scored runs on BOTH sides, calls the pure " +
+        "pairedDecision (stats.ts) over each case's (candidate mean − baseline mean) delta. " +
+        "RETURNS, when every case has enough repeats and the interval clears mme or the " +
+        "protocol's own liveness bound (wallClockHours since improvement_start) has passed: " +
+        "{ candidate_evaluation_id, verdict, interval: [lower, upper], mean_delta, guardrails, " +
+        "resource_usage }, and stores the same on zz.candidate_evaluation (split: validation). " +
+        "Otherwise RETURNS { candidate_evaluation_id: null, verdict: null, runs_required: " +
+        "[{case_id, side, count}] } — the exact (case, side) pairs still short of minRepeats, or, " +
+        "once every case clears it but the bootstrap interval still straddles mme, one more " +
+        "repeat per case per side — never a run this tool launches itself: replay_start " +
+        "(case_id-steerable) and the launcher run the replay, this tool only plans and reads " +
+        "back. Never reads a proof or evolve case. REFUSES a candidate_id nothing minted; a " +
+        "status outside (recorded, valid); a deployment with no git checkout to build from; an " +
+        "improvement_run whose own eval_run bound no case_set_version_id; and a case set with no " +
+        "replayable validation-split case. A mutator once it has a verdict to store: writes " +
+        "through the FR-59 idempotency ledger — a build/gate failure and an interim " +
+        "runs_required response are not.",
+      inputSchema: { candidate_id: z.string(), idempotency_key: z.string().min(1) },
+    },
+    async ({ candidate_id, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+      const principal = parseCaller(requestHeaders()).email;
+
+      const outcome = await validateCandidate(p, candidate_id, idempotency_key, principal);
+      if ("error" in outcome) return text(outcome.error);
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "candidate_validate", candidate_id,
+        verdict: outcome.verdict, runs_required: outcome.runs_required?.length ?? 0,
+      });
+      return json(outcome);
     },
   );
 }

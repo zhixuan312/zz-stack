@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.55
+version: 3.57
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -537,7 +537,7 @@ reading later can see one caused the other.
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | checkpoints | `/core/mcp` | `assess` — one semantic-assessment family asked about one subject, recorded with its provenance |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `replay_case_set_build` `replay_start` `replay_read` `replay_close` `improvement_start` `candidate_record` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` `evaluation_start` `evaluation_assess` `evaluation_score` `replay_case_set_build` `replay_start` `replay_read` `replay_close` `replay_score` `improvement_start` `candidate_record` `candidate_validate` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 
@@ -566,7 +566,7 @@ writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Thirteen of them write. Six of those — `protocol_record`, `protocol_affirm`, `evaluator_qualify`,
+Fifteen of them write. Six of those — `protocol_record`, `protocol_affirm`, `evaluator_qualify`,
 `finding_record`, `finding_decide` and `failure_discover` — record a fact or a decision and
 never a score. `evaluator_qualify` runs a protocol's own qualification policy over one
 evaluator version and records which of `unqualified` / `mechanically_qualified` /
@@ -593,7 +593,15 @@ IMPROVE's own ledger: `improvement_start` opens a durable optimization run again
 `eval_run`'s plugin-owned findings, and `candidate_record` persists one proposed patch — its
 baseline, parentage, hypothesis, patch digest, complexity and touched owners — before anything
 about it executes. Neither scores anything either; they record what a later candidate search
-is about to try.
+is about to try. `replay_score` and `candidate_validate` round the ledger out: `replay_score`
+is what gives one `zz.replay_run` an overall number (the same `scoreRun` `evaluation_score`
+calls, applied to a replay case's own transcript instead of an eval_run's evidence snapshot),
+and `candidate_validate` builds a candidate in isolation, runs the repository gate against it,
+and once enough paired baseline/candidate replay runs exist, calls the pure `pairedDecision`
+bootstrap over their per-case deltas and stores the verdict. Both write; neither is scored by a
+model itself — a replay case's `bounded_semantic`/`generative_critic` measures are, the same as
+`evaluation_assess`'s, and the paired decision is arithmetic over what those measures already
+produced.
 
 **The judge is not the agent.** `round_judge` takes identifiers and nothing else: it cannot be
 handed a ruler, an artifact or a model. The ruler comes from the registry, the artifacts from

@@ -118,3 +118,6 @@ check("complexityDelta is lines added minus lines removed plus 20 per added comp
 
 check("the unified-diff parser counts added/removed lines and whole-file adds/deletes, touched files map onto the base subject's own component manifest, and a trivial proposer bundle is never reported as non_trivial",
       runsCheck("eval-candidates-pure.ts"));
+
+check("pairedDecision returns a seeded, reproducible percentile-bootstrap interval of the mean per-case delta, improving above mme, not improving below it and unresolved in between",
+      runsCheck("eval-paired-stats.ts"));

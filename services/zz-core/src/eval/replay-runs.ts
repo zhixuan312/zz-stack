@@ -214,17 +214,26 @@ async function pluginProtocol(p: Db, pluginId: string): Promise<PluginProtocol |
 /** One available case: `replayable`, in the requested split, with no run against it still
  *  `registered`/`running`. Deterministic order (`c.id`) rather than random, so two callers
  *  racing for the same split do not draw the same case twice by accident — the second one's
- *  `not exists` simply excludes what the first has already claimed. */
-async function selectCase(client: Db, caseSetId: string, split: string): Promise<{ id: string } | null> {
+ *  `not exists` simply excludes what the first has already claimed.
+ *
+ *  `caseId`, when given, narrows the same predicate to that one case instead of drawing the
+ *  lowest-id one — a completed run leaves its case's `status` and every other run's exclusion
+ *  untouched, so with no way to name a case a driver repeating `replay_start` against the same
+ *  case_set_id/split can never advance past the first case once one run against it has finished
+ *  (nothing here marks "already covered"). `candidate_validate`'s own orchestration (Task I-19)
+ *  is what needs this: it plans one run per (case, repeat) and hands each plan its own case_id,
+ *  never trusting the draw to spread itself across a validation split on its own. */
+async function selectCase(client: Db, caseSetId: string, split: string, caseId?: string): Promise<{ id: string } | null> {
   const row = (await client.query<{ id: string }>(`
     select c.id::text as id
       from zz.replay_case c
      where c.case_set_id = $1::uuid and c.split = $2 and c.status = 'replayable'
+       and ($3::uuid is null or c.id = $3::uuid)
        and not exists (
          select 1 from zz.replay_run r where r.case_id = c.id and r.status in ('registered', 'running')
        )
      order by c.id
-     limit 1`, [caseSetId, split])).rows[0];
+     limit 1`, [caseSetId, split, caseId ?? null])).rows[0];
   return row ?? null;
 }
 
@@ -281,7 +290,10 @@ export function registerReplayRunTools(server: McpServer): void {
         "WHEN a candidate or subject is ready to execute one replay case in isolation: first " +
         "closes the CALLER'S OWN expired replay runs (AC-29.1 — an unreachable sandbox is torn " +
         "down before a new one opens), selects one available replayable case from " +
-        "case_set_id's split, provisions a reserved replay- team and PAT for it " +
+        "case_set_id's split — case_id, when given, narrows that draw to exactly that case " +
+        "(Task I-19's own need: a driver planning several runs per case names each one rather " +
+        "than trusting the default lowest-id draw, which never advances past one case once a " +
+        "run against it has completed) — provisions a reserved replay- team and PAT for it " +
         "(provisionReplayTeam, Task I-15), and registers a zz.replay_run. RETURNS " +
         "{ replay_run_id, team_slug, worktree_ref, digest, token, token_already_issued, " +
         "dependency_modes: [{surface, mode}] } — token is the new PAT's plaintext on a fresh " +
@@ -294,9 +306,10 @@ export function registerReplayRunTools(server: McpServer): void {
         "request can ever be admitted; a search context naming split: proof (ERROR: proof is " +
         "sealed); neither or both of subject_version_id/candidate_id; an unknown case_set_id; " +
         "a plugin with no recorded protocol version; a split with no available replayable " +
-        "case; and a deployment with no platform database. A mutator: writes through the " +
-        "FR-59 idempotency ledger, and records one admin audit event in zz.event for the team " +
-        "it provisions and the PAT it issues.",
+        "case, or, with case_id given, that exact case not being an available replayable one " +
+        "in the requested split; an unknown candidate_id; and a deployment with no platform " +
+        "database. A mutator: writes through the FR-59 idempotency ledger, and records one " +
+        "admin audit event in zz.event for the team it provisions and the PAT it issues.",
       inputSchema: {
         case_set_id: z.string(),
         subject_version_id: z.string().optional()
@@ -304,6 +317,9 @@ export function registerReplayRunTools(server: McpServer): void {
         candidate_id: z.string().optional()
           .describe("Exactly one of subject_version_id/candidate_id — a candidate replay."),
         split: z.enum(REPLAY_CASE_SPLITS),
+        case_id: z.string().optional()
+          .describe("Steer the draw to this exact case (must be an available replayable case " +
+                    "in case_set_id's own split) instead of the default lowest-id draw."),
         repeats: z.number().int().positive()
           .describe("How many times the caller intends to replay the selected case for this " +
                     "run's own statistics — folded into this run's environment digest, so a " +
@@ -314,7 +330,7 @@ export function registerReplayRunTools(server: McpServer): void {
         idempotency_key: z.string().min(1),
       },
     },
-    async ({ case_set_id, subject_version_id, candidate_id, split, repeats, context, verifier_token, idempotency_key }) => {
+    async ({ case_set_id, subject_version_id, candidate_id, split, case_id, repeats, context, verifier_token, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
@@ -325,6 +341,18 @@ export function registerReplayRunTools(server: McpServer): void {
         return text(
           "ERROR: replay_start takes exactly one of subject_version_id or candidate_id, never both or neither");
       }
+      // Without this, an unknown candidate_id reached zz.replay_run's own FK constraint and came
+      // back as a raw postgres error rather than a house-style refusal — the same shape every
+      // other "nothing minted" check in this file already answers with.
+      if (candidate_id) {
+        if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+        const cand = (await p.query<{ id: string }>(
+          "select id::text as id from zz.candidate where id = $1::uuid", [candidate_id])).rows[0];
+        if (!cand) return text(`ERROR: unknown candidate_id ${candidate_id}`);
+      }
+      // Same shape, same reason: a malformed case_id would otherwise reach selectCase's own
+      // `$3::uuid` cast and come back as a raw postgres error.
+      if (case_id && !UUID_RE.test(case_id)) return text(`ERROR: unknown case ${case_id}`);
 
       const pluginId = await caseSetPlugin(p, case_set_id);
       if (!pluginId) return text("ERROR: unknown case set");
@@ -341,11 +369,14 @@ export function registerReplayRunTools(server: McpServer): void {
 
       const outcome: IdempotencyOutcome<StartResult> = await withIdempotency(
         principal, "replay_start", idempotency_key,
-        { case_set_id, subject_version_id: subject_version_id ?? null, candidate_id: candidate_id ?? null, split, repeats, context },
+        { case_set_id, subject_version_id: subject_version_id ?? null, candidate_id: candidate_id ?? null,
+          split, case_id: case_id ?? null, repeats, context },
         async (client): Promise<MutatorOutcome<StartResult>> => {
-          const chosen = await selectCase(client, case_set_id, split);
+          const chosen = await selectCase(client, case_set_id, split, case_id);
           if (!chosen) {
-            throw new Refusal(`ERROR: no available replayable case in split "${split}" for case set ${case_set_id}`);
+            throw new Refusal(case_id
+              ? `ERROR: case ${case_id} is not an available replayable case in split "${split}" for case set ${case_set_id}`
+              : `ERROR: no available replayable case in split "${split}" for case set ${case_set_id}`);
           }
 
           const runId = randomUUID();
@@ -522,10 +553,19 @@ export function registerReplayRunTools(server: McpServer): void {
       const outcome: IdempotencyOutcome<CloseResult> = await withIdempotency(
         principal, "replay_close", idempotency_key, { replay_run_id, status, result: result ?? null },
         async (client): Promise<MutatorOutcome<CloseResult>> => {
+          // `coalesce(..., <column>)` rather than overwriting with null: `replay_score` (I-19)
+          // stores this run's per-case overall on `score` before the launcher's own `closeRun`
+          // calls `replay_close` with no `result` at all (its verifier step is best-effort and
+          // never has one to pass) — a bare overwrite here would null out the very score
+          // candidate_validate reads back, on every real run, the moment the run closes.
           const row = (await client.query<{ team_slug: string; pat_id: string }>(
             `update zz.replay_run
-                set status = $2, score = $3::jsonb, guardrails = $4::jsonb, model_usage = $5::jsonb,
-                    cost = $6, duration_ms = $7
+                set status = $2,
+                    score = coalesce($3::jsonb, score),
+                    guardrails = coalesce($4::jsonb, guardrails),
+                    model_usage = coalesce($5::jsonb, model_usage),
+                    cost = coalesce($6::numeric, cost),
+                    duration_ms = coalesce($7::bigint, duration_ms)
               where id = $1::uuid
              returning team_slug, pat_id::text as pat_id`,
             [replay_run_id, status,

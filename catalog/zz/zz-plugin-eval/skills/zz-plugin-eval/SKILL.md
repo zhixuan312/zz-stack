@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.6
+version: 1.7
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -118,6 +118,25 @@ touched owners, and refusing a hypothesis that repeats one already rejected for 
 This is not one of the five stages above and this flow does not call it yet: Task I-28 is what
 teaches an agent to read the proposer bundle and propose a candidate from it. Named here so both
 tools read as this door's own rather than undocumented ones.
+
+## Not yet a stage: `replay_score` / `candidate_validate`
+
+`/eval/mcp` also carries the rest of IMPROVE's validation loop. `replay_score(replay_run_id,
+idempotency_key)` is what gives one finished `zz.replay_run` an overall number — the same
+`scoreRun` `evaluation_score` calls, run over that case's own evaluator-visible transcript
+instead of an eval_run's evidence snapshot — and is what the launcher's own verifier step calls
+once a candidate or baseline replay session finishes. `candidate_validate(candidate_id,
+idempotency_key)` builds a `recorded` candidate's own worktree, applies its patchset and runs
+this repository's build and gate against it before anything else touches it (a failure marks the
+candidate `invalid` and refuses with the failing command's own output tail); once it is `valid`,
+each call reads every validation-split case's own completed, scored `zz.replay_run` rows, pairs
+candidate against baseline by case, and either answers `runs_required` — which `(case, side)`
+pairs still need a `replay_start`/launcher run — or, once every case has enough of them, calls
+the pure `pairedDecision` bootstrap over their deltas and stores the verdict. Neither tool
+launches a replay itself: `replay_start` and the launcher (`packages/tools/src/replay/launch.ts`)
+are what run one, driven by whoever is executing the candidate's own search. This is not one of
+the five stages above and this flow does not call it yet: Task I-28 is what teaches an agent to
+drive this loop. Named here so both tools read as this door's own rather than undocumented ones.
 
 ## Facts come from tools; meaning comes from you
 

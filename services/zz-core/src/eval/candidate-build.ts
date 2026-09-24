@@ -29,7 +29,10 @@
  * "no platform database" elsewhere in this service.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync, symlinkSync, unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -77,6 +80,28 @@ function refFor(candidateId: string): string {
   return `refs/candidate-validate/${candidateId}`;
 }
 
+/** Fix 6, mirrored from `packages/tools/src/replay/git.ts`'s own `ensureDashboardSibling` (see
+ *  that file's note): `candidate_validate` runs the repository gate inside this candidate's own
+ *  worktree, and the gate's "every route this gateway serves has a caller" check resolves the
+ *  console's sibling checkout relative to wherever it is running from — a fresh worktree with no
+ *  sibling of its own fails that check for a reason that has nothing to do with the candidate's
+ *  patch. Every worktree this file creates shares the same parent
+ *  (`tmpdir()/zz-candidate-validate`), so one symlink there makes `../zz-stack-dashboard`
+ *  resolve from every candidate's worktree under it. */
+function ensureDashboardSibling(repoRoot: string, parentDir: string): void {
+  const real = resolve(repoRoot, "..", "zz-stack-dashboard");
+  if (!existsSync(real)) return;
+  const link = join(parentDir, "zz-stack-dashboard");
+  try {
+    const stat = lstatSync(link);
+    if (stat.isSymbolicLink() && readlinkSync(link) === real) return;
+    unlinkSync(link);
+  } catch {
+    // ENOENT: nothing there yet — fall through to create it.
+  }
+  symlinkSync(real, link);
+}
+
 function clearStaleWorktree(repoRoot: string, candidateId: string): void {
   const path = worktreePathFor(candidateId);
   gitQuiet(repoRoot, ["worktree", "remove", "--force", path]);
@@ -94,7 +119,9 @@ export function createCandidateWorktree(repoRoot: string, candidateId: string, r
   const worktreeRef = refFor(candidateId);
   git(repoRoot, ["update-ref", worktreeRef, commit]);
   const path = worktreePathFor(candidateId);
-  mkdirSync(join(tmpdir(), "zz-candidate-validate"), { recursive: true });
+  const parent = join(tmpdir(), "zz-candidate-validate");
+  mkdirSync(parent, { recursive: true });
+  ensureDashboardSibling(repoRoot, parent);
   try {
     git(repoRoot, ["worktree", "add", "--quiet", "--detach", path, worktreeRef]);
   } catch (err) {

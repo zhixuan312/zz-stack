@@ -30,10 +30,11 @@
  * below are local mirrors of that door's JSON, the same way `ops/call.ts` never imports a
  * service's types — `packages/tools` only ever crosses that boundary over MCP, on the wire.
  */
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 
 import { Mcp } from "@zz/mcp-client";
 
@@ -92,10 +93,77 @@ export interface LaunchOpts {
 
 export interface LaunchResult { readonly status: "completed" | "failed"; readonly logPath: string }
 
+/** `replay_close`'s own `result.produced` shape (migration 080), mirrored here — never imported
+ *  from `services/zz-core/dist`, per the module note above: `packages/tools` crosses that
+ *  boundary only over MCP, on the wire. Not exported: nothing outside this file needs the shape
+ *  by name, only the value `collectProduced` below builds in it. */
+interface ProducedArtifact { readonly path: string; readonly sha256: string; readonly bytes: number; readonly head: string }
+interface ProducedRecord { readonly transcript: string; readonly artifacts: readonly ProducedArtifact[] }
+
 const DEFAULT_MODEL = "sonnet";
 const DEFAULT_MAX_TURNS = 8;
 const DEFAULT_CLIENT = "zz-replay-launcher";
 const DISALLOWED_PERSON_TOOLS = ["Skill", "Task", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch"];
+
+// FIX (Task I-17/I-19 dispatch): the candidate's own worktree is what replay_score must read to
+// score the replay it actually ran, never the original recorded case again. Bounded so a large
+// diff or a chatty final turn cannot blow past what a model-backed measure's own request budget
+// can carry: `ARTIFACT_HEAD_CHARS` per file, `MAX_ARTIFACTS` files, `git status --porcelain`
+// (never a directory walk) as the source of "what this session produced" — the worktree already
+// carries the base subject's own tracked files, and a candidate replay's applied patch, so a walk
+// would report everything the base subject shipped as something this session wrote.
+const ARTIFACT_HEAD_CHARS = 2000;
+const MAX_ARTIFACTS = 20;
+const REDACTED = "[REDACTED]";
+
+/** Every occurrence of every secret this run held, replaced — never partial, never case-folded:
+ *  a token is exact bytes or it is not the token. Applied to both the transcript and every
+ *  artifact head before `produced` ever leaves this process. Exported for
+ *  `checks/replay-launch-pure.ts` — the one pure slice of this file's own fix, provable with no
+ *  process, no worktree and no database. */
+export function redact(s: string, secrets: readonly string[]): string {
+  let out = s;
+  for (const secret of secrets) {
+    if (secret) out = out.split(secret).join(REDACTED);
+  }
+  return out;
+}
+
+/** What the session left behind in its own worktree, bounded and redacted — `replay_close`'s own
+ *  `result.produced`, and the only thing `replay_score` (Task I-19's own fix) has to judge. Never
+ *  throws: a worktree `git status` cannot read (already torn down, an unexpected git failure) is
+ *  not a reason to fail the whole launch — the transcript alone is still worth storing. */
+function collectProduced(worktreePath: string, transcript: string, secrets: readonly string[]): ProducedRecord {
+  let statusOut = "";
+  try {
+    statusOut = execFileSync("git", ["status", "--porcelain"], {
+      cwd: worktreePath, encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch { /* nothing to report — the transcript below still gets stored */ }
+
+  const paths = statusOut.split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    // The status code is always the first two characters ("??", " M", "A ", …); the path is
+    // everything after the first space, quoted by git when it holds a space of its own.
+    .map((l) => l.slice(l.indexOf(" ") + 1).trim().replace(/^"(.*)"$/, "$1"))
+    .filter((p) => p && !/^(node_modules|dist)\//.test(p) && !/\/(node_modules|dist)\//.test(p) && !p.startsWith(".git/"))
+    .slice(0, MAX_ARTIFACTS);
+
+  const artifacts: ProducedArtifact[] = paths.map((rel) => {
+    try {
+      const buf = readFileSync(join(worktreePath, rel));
+      return {
+        path: rel, sha256: createHash("sha256").update(buf).digest("hex"), bytes: buf.length,
+        head: redact(buf.toString("utf8").slice(0, ARTIFACT_HEAD_CHARS), secrets),
+      };
+    } catch {
+      return { path: rel, sha256: "", bytes: 0, head: "(could not be read — removed, or not a regular file)" };
+    }
+  });
+
+  return { transcript: redact(transcript, secrets), artifacts };
+}
 
 function runtimeEnv(): RuntimeEnv {
   if (process.platform === "win32") return { platform: process.platform, shellPath: process.env.ComSpec ?? null };
@@ -118,8 +186,9 @@ async function readRole(
  *  "OPEN (I-17 -> I-18/I-19)" line). Task I-19's `replay_score` (`replay-score.ts`) is the real
  *  scoring path: it reads the run's own protocol/subject off `zz.replay_run` directly, needs no
  *  `eval_run_id`, and is what this now calls. Still best effort, never blocking: a refusal is
- *  recorded in the log verbatim — never turned into a fabricated score — and the run still
- *  closes on whether the sessions themselves ran. */
+ *  recorded in the log verbatim — never turned into a fabricated score. Called AFTER `closeRun`
+ *  (see the caller below) — `replay_score` reads `zz.replay_run.produced`, which only exists
+ *  once `closeRun` has written it, so scoring before closing would find nothing to score. */
 async function attemptVerifier(mcp: Mcp, replayRunId: string): Promise<string> {
   try {
     const said = await mcp.call("replay_score", {
@@ -133,10 +202,12 @@ async function attemptVerifier(mcp: Mcp, replayRunId: string): Promise<string> {
 
 async function closeRun(
   mcp: Mcp, replayRunId: string, status: "completed" | "failed", reason: string,
+  produced?: ProducedRecord,
 ): Promise<void> {
   const said = await mcp.call("replay_close", {
     replay_run_id: replayRunId, status,
     idempotency_key: idempotencyKey(replayRunId, "replay_close"),
+    ...(produced ? { result: { produced } } : {}),
   });
   if (/^ERROR[: ]/.test(said)) {
     // replay_close itself refused. Nothing left to retry from inside this call — the caller's
@@ -239,10 +310,20 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
       }, worktree.path, logPath);
     }
 
+    // FIX: produced is collected and persisted through replay_close BEFORE the verifier is ever
+    // attempted — replay_score (the verifier) reads zz.replay_run.produced, and a run scored
+    // before that column is written would find nothing there and refuse (replay-score.ts's own
+    // fix). The team's PAT is still valid for this call (closeRun uses ownMcp, an unbound
+    // credential, not the team-scoped one anyway), and replay_score itself needs no live team —
+    // it reads the row straight off the database — so closing first costs nothing and buys the
+    // ordering the contract now requires.
+    const produced = collectProduced(worktree.path, candidate.lastText, [start.token, opts.ownPat ?? platformToken()]);
+    await closeRun(
+      ownMcp, start.replay_run_id, "completed", "candidate and simulated-person sessions finished", produced);
+
     const verifierNote = await attemptVerifier(ownMcp, start.replay_run_id);
     appendFileSync(logPath, `# ${verifierNote}\n`, "utf8");
 
-    await closeRun(ownMcp, start.replay_run_id, "completed", "candidate and simulated-person sessions finished");
     return { status: "completed", logPath };
   } catch (err) {
     const reason = (err as Error).message;

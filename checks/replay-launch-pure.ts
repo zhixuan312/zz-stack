@@ -16,7 +16,7 @@ const plan = await import(
   pathToFileURL(join(process.cwd(), "packages/tools/dist/replay/plan.js")).href);
 const { roleReadGuard } = await import(
   pathToFileURL(join(process.cwd(), "services/zz-core/dist/eval/replay-runs.js")).href);
-const { launchReplay } = await import(
+const { launchReplay, redact } = await import(
   pathToFileURL(join(process.cwd(), "packages/tools/dist/replay/launch.js")).href);
 
 const {
@@ -131,5 +131,16 @@ const okShape: LaunchResult = { status: "failed", logPath: "/tmp/x.jsonl" };
 assert.ok(okShape.status === "completed" || okShape.status === "failed");
 const doorSpec: McpServerSpec = { type: "http", url: "http://x/core/mcp", headers: {} };
 assert.equal(doorSpec.type, "http");
+
+// ---- redact (fix dispatch, I-17/I-19: a replay's score must measure the replay, and what it
+// produced must never carry the run's own credentials off this process). Every occurrence
+// replaced, never partial, no false positives on unrelated text.
+assert.equal(redact("token is tok-secret-1 twice: tok-secret-1", ["tok-secret-1"]),
+  "token is [REDACTED] twice: [REDACTED]", "every occurrence of a secret is replaced");
+assert.equal(redact("nothing to hide here", ["tok-secret-1"]), "nothing to hide here",
+  "text carrying no secret is returned unchanged");
+assert.equal(redact("tok-1 and tok-2 both present", ["tok-1", "tok-2"]),
+  "[REDACTED] and [REDACTED] both present", "every secret in the list is redacted independently");
+assert.equal(redact("some text", [""]), "some text", "an empty secret is never matched against");
 
 console.log("ok replay-launch-pure");

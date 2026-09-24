@@ -121,3 +121,9 @@ check("the unified-diff parser counts added/removed lines and whole-file adds/de
 
 check("pairedDecision returns a seeded, reproducible percentile-bootstrap interval of the mean per-case delta, improving above mme, not improving below it and unresolved in between",
       runsCheck("eval-paired-stats.ts"));
+
+check("replay_start and replay_read refuse an unknown subject_version_id by name, the same as an unknown candidate_id, before either ever reaches zz.replay_run's own FK constraint",
+      runsCheck("eval-replay-runs-guards.ts"));
+
+check("producedSubjectText renders two different produced records into two different subject texts, and scoreReplay refuses an unknown replay_run_id or one with no produced output by name",
+      runsCheck("eval-replay-score-produced.ts"));

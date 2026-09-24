@@ -28,6 +28,7 @@ import {
   applyCandidatePatch, buildAndGate, createCandidateWorktree, discoverRepoRoot,
   linkWorkspaceDependencies, removeCandidateWorktree, type BuildOutcome, type Worktree,
 } from "./candidate-build.js";
+import { loadDimensions } from "./evaluate.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { pairedDecision, type PairedDecisionResult } from "./stats.js";
 
@@ -92,6 +93,50 @@ async function loadValidationContext(p: pg.Pool, candidate: CandidateRow): Promi
         confidence: parsed.data.confidence, wallClockHours: parsed.data.wallClockHours }
     : DEFAULT_POLICY;
   return { ok: true, caseSetId: snapshot.case_set_version_id, policy, improvementRunCreatedAt: new Date(run.created_at) };
+}
+
+/** Fix 2: `replay_score` correctly scores every measure of a protocol that declares none capable
+ *  of judging a replay — `deterministic`/`outcome` always exclude for a replay case (no
+ *  observation snapshot exists for one), and `human` always excludes (no ingestion pipeline). If
+ *  a protocol's own dimensions carry no `bounded_semantic`/`generative_critic` measure either,
+ *  EVERY replay of it scores `overall: null` forever, on both sides, and `planValidation`'s own
+ *  `score is not null` filter (`baselineRuns`/`candidateRuns`) never counts a single run as
+ *  "completed, scored" — `runs_required` asks for the same repeats indefinitely, with nothing in
+ *  the response saying why. This is the named reason instead: refused once, before a single
+ *  replay is ever planned, rather than an unbounded loop that looks like "not enough evidence
+ *  yet" and never becomes anything else. Reads the plugin's newest protocol version, the same one
+ *  `replay_start`'s own `pluginProtocol` (`replay-runs.ts`) binds a fresh run to. */
+async function protocolHasModelBackedMeasure(
+  p: pg.Pool, baseSubjectVersionId: string,
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly error: string }> {
+  const subject = (await p.query<{ plugin_id: string }>(
+    "select plugin_id::text as plugin_id from zz.eval_subject_version where id = $1::uuid",
+    [baseSubjectVersionId])).rows[0];
+  if (!subject) return { ok: false, error: `ERROR: base_subject_version_id ${baseSubjectVersionId} no longer resolves to a plugin` };
+
+  const protocolRow = (await p.query<{ id: string }>(`
+    select epv.id::text as id
+      from zz.eval_protocol_version epv
+      join zz.eval_protocol ep on ep.id = epv.protocol_id
+     where ep.plugin_id = $1::uuid
+     order by epv.version desc limit 1`, [subject.plugin_id])).rows[0];
+  if (!protocolRow) return { ok: false, error: "ERROR: this plugin has no recorded protocol version yet" };
+
+  const dims = await loadDimensions(p, protocolRow.id);
+  const modelBacked = dims.some((d) => d.applicable && d.measures.some((m) =>
+    m.evaluator_type === "bounded_semantic" || m.evaluator_type === "generative_critic"));
+  if (!modelBacked) {
+    return {
+      ok: false,
+      error: "ERROR: this plugin's own protocol version declares no bounded_semantic or " +
+        "generative_critic measure, so every replay of it scores overall: null (deterministic/" +
+        "outcome measures carry no observation snapshot to read for a replay case, and human " +
+        "measures have no ingestion pipeline) — candidate_validate could never resolve a verdict " +
+        "from evidence like that. Add a model-backed measure to the protocol before validating a " +
+        "candidate against it.",
+    };
+  }
+  return { ok: true };
 }
 
 interface StoredEvaluation {
@@ -287,15 +332,22 @@ function summariseDimensions(baseline: readonly SideRun[], candidateSide: readon
  *  returns it to the MCP client as-is, never through `withIdempotency` (the contract's own
  *  "never replayed"): a build/gate failure is reported fresh on every call, not cached as a
  *  ledger replay, and a candidate marked `invalid` here is refused by the status gate above
- *  before this function is ever reached again. */
-async function buildCandidateInIsolation(p: pg.Pool, candidate: CandidateRow): Promise<{ error: string } | null> {
+ *  before this function is ever reached again. `retryable` (fix 5) tells the caller whether the
+ *  candidate itself was judged (`invalid` — a real build/gate failure, correctly recorded) or
+ *  whether nothing was judged at all (a timeout — not this candidate's fault, so the caller
+ *  restores it to `recorded` rather than leaving it stuck `validating` or wrongly `invalid`). */
+async function buildCandidateInIsolation(
+  p: pg.Pool, candidate: CandidateRow,
+): Promise<{ error: string; retryable: boolean } | null> {
   const repoRoot = discoverRepoRoot();
   if (!repoRoot) {
-    return { error: "ERROR: this deployment has no git checkout to build a candidate's own worktree from" };
+    return { error: "ERROR: this deployment has no git checkout to build a candidate's own worktree from", retryable: true };
   }
   const patchRow = (await p.query<{ diff: string | null }>(
     "select patchset->>'diff' as diff from zz.candidate where id = $1::uuid", [candidate.id])).rows[0];
-  if (!patchRow?.diff) return { error: `ERROR: candidate ${candidate.id} carries no patchset.diff to build` };
+  if (!patchRow?.diff) {
+    return { error: `ERROR: candidate ${candidate.id} carries no patchset.diff to build`, retryable: true };
+  }
 
   let worktree: Worktree | undefined;
   try {
@@ -309,17 +361,49 @@ async function buildCandidateInIsolation(p: pg.Pool, candidate: CandidateRow): P
     }
     if (attempt.stage === "timeout") {
       // Not the candidate's fault — refuse rather than mark it invalid on an environment that
-      // never finished judging it.
-      return { error: `ERROR: ${attempt.command} did not finish in time building candidate ${candidate.id} — try again` };
+      // never finished judging it. retryable: true, so the caller's own CAS lock (fix 5) hands
+      // the candidate back to 'recorded' rather than stranding it 'validating'.
+      return {
+        error: `ERROR: ${attempt.command} did not finish in time building candidate ${candidate.id} — try again`,
+        retryable: true,
+      };
     }
     await p.query("update zz.candidate set status = 'invalid' where id = $1::uuid", [candidate.id]);
     return {
       error: `ERROR: candidate ${candidate.id} failed its own ${attempt.stage}, which invalidates it. ` +
         `Failing command tail follows:\n${attempt.output}`,
+      retryable: false,
     };
   } finally {
     if (worktree) removeCandidateWorktree(repoRoot, worktree);
   }
+}
+
+/** Fix 5: `candidate_validate` never wrote `'validating'` (a legal status per migration 077's own
+ *  check constraint, but nothing before this fix ever set it), so two concurrent calls against
+ *  the same `recorded` candidate both read `status = 'recorded'`, both called
+ *  `buildCandidateInIsolation`, and both raced `createCandidateWorktree`'s own deterministic
+ *  (`candidateId`-keyed) path — the second `git worktree add` colliding with, or silently
+ *  clobbering, the first's in-flight build.
+ *
+ *  A single `WITH ... FOR UPDATE` statement — one round trip, one implicit transaction, no
+ *  explicit `BEGIN` spanning the (potentially ten-plus-minute) build — is the compare-and-set:
+ *  it locks the row, reads its CURRENT status, and only WRITES `'validating'` when that status
+ *  is still `recorded` or `valid`. A concurrent second caller's own attempt at the same statement
+ *  blocks on the row lock until the first commits, then finds zero matching rows (the first
+ *  caller already moved it to `'validating'`) and updates nothing — `null` here, a named refusal
+ *  in the caller, never a silent block for the whole build's duration. */
+async function acquireValidatingLock(p: pg.Pool, candidateId: string): Promise<"recorded" | "valid" | null> {
+  const row = (await p.query<{ prior_status: string }>(`
+    with prior as (
+      select status from zz.candidate where id = $1::uuid and status in ('recorded', 'valid') for update
+    )
+    update zz.candidate c set status = 'validating'
+      from prior
+     where c.id = $1::uuid
+    returning prior.status as prior_status`, [candidateId])).rows[0];
+  if (!row) return null;
+  return row.prior_status as "recorded" | "valid";
 }
 
 // -------------------------------------------------------------------------------------------
@@ -356,89 +440,124 @@ export async function validateCandidate(
     };
   }
 
-  if (candidate.status === "recorded") {
-    const built = await buildCandidateInIsolation(p, candidate);
-    if (built) return built;
-  }
-
-  // A candidate stays `valid` after its verdict is stored (a `not_improved` candidate is not
-  // rejected — see the module note), so this tool stays callable on it indefinitely. Without
-  // this, a second call — with its own fresh idempotency_key, which the ledger above never
-  // replays against — would recompute and INSERT a second `split: 'validation'` row for the
-  // same candidate, and a later eligibility check reading "the" validation evaluation would find
-  // several. One candidate, one stored validation verdict; every call past the first reads it
-  // back rather than re-deciding it.
-  const stored = await existingValidationEvaluation(p, candidateId);
-  if (stored) {
+  // Fix 5: locks the row for the rest of this call (build, plan, statistics, store) against a
+  // second concurrent candidate_validate on the SAME candidate — see acquireValidatingLock's own
+  // note for why this is one statement rather than a held transaction.
+  const priorStatus = await acquireValidatingLock(p, candidateId);
+  if (!priorStatus) {
+    const now = await loadCandidate(p, candidateId);
     return {
-      candidate_evaluation_id: stored.id, verdict: stored.aggregate_score.verdict,
-      interval: [stored.aggregate_score.lower, stored.aggregate_score.upper],
-      mean_delta: stored.aggregate_score.mean_delta,
-      guardrails: stored.guardrails, resource_usage: stored.resource_usage, status: "valid",
+      error: `ERROR: candidate ${candidateId} is not available for candidate_validate right now ` +
+        `(status: ${now?.status ?? "unknown"}) — another candidate_validate call is already in ` +
+        "progress against it",
     };
   }
+  // What status this call leaves the candidate in when it returns, written in the `finally`
+  // below — defaults to what it was before this call locked it (the safe fallback on a thrown
+  // exception this function did not anticipate), and is narrowed as the call actually progresses.
+  let finalStatus: string = priorStatus;
+  try {
+    if (priorStatus === "recorded") {
+      const built = await buildCandidateInIsolation(p, candidate);
+      if (built) {
+        finalStatus = built.retryable ? "recorded" : "invalid";
+        return { error: built.error };
+      }
+    }
+    // The build (if it ran) already wrote 'valid' itself; this call's own restore in `finally`
+    // only re-affirms it (a no-op update, since the row is 'validating' until then either way).
+    finalStatus = "valid";
 
-  const ctx = await loadValidationContext(p, candidate);
-  if (!ctx.ok) return { error: ctx.error };
+    // A candidate stays `valid` after its verdict is stored (a `not_improved` candidate is not
+    // rejected — see the module note), so this tool stays callable on it indefinitely. Without
+    // this, a second call — with its own fresh idempotency_key, which the ledger above never
+    // replays against — would recompute and INSERT a second `split: 'validation'` row for the
+    // same candidate, and a later eligibility check reading "the" validation evaluation would find
+    // several. One candidate, one stored validation verdict; every call past the first reads it
+    // back rather than re-deciding it.
+    const stored = await existingValidationEvaluation(p, candidateId);
+    if (stored) {
+      return {
+        candidate_evaluation_id: stored.id, verdict: stored.aggregate_score.verdict,
+        interval: [stored.aggregate_score.lower, stored.aggregate_score.upper],
+        mean_delta: stored.aggregate_score.mean_delta,
+        guardrails: stored.guardrails, resource_usage: stored.resource_usage, status: "valid",
+      };
+    }
 
-  const plan = await planValidation(p, candidate, ctx.caseSetId, ctx.policy.minRepeats);
-  if (plan.kind === "empty") {
-    return { error: `ERROR: case set ${ctx.caseSetId} has no replayable validation-split case` };
-  }
-  if (plan.kind === "pending") {
-    return {
-      candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
-      guardrails: null, resource_usage: null, runs_required: plan.runs_required, status: "valid",
+    const ctx = await loadValidationContext(p, candidate);
+    if (!ctx.ok) return { error: ctx.error };
+
+    const modelBacked = await protocolHasModelBackedMeasure(p, candidate.base_subject_version_id);
+    if (!modelBacked.ok) return { error: modelBacked.error };
+
+    const plan = await planValidation(p, candidate, ctx.caseSetId, ctx.policy.minRepeats);
+    if (plan.kind === "empty") {
+      return { error: `ERROR: case set ${ctx.caseSetId} has no replayable validation-split case` };
+    }
+    if (plan.kind === "pending") {
+      return {
+        candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
+        guardrails: null, resource_usage: null, runs_required: plan.runs_required, status: "valid",
+      };
+    }
+
+    const deltas = plan.perCase.map((c) => c.delta);
+    const decision = pairedDecision(deltas, ctx.policy.mme, {
+      resamples: RESAMPLES, seed: candidateId, confidence: ctx.policy.confidence,
+    });
+
+    const boundReached = Date.now() - ctx.improvementRunCreatedAt.getTime() >= ctx.policy.wallClockHours * 3_600_000;
+    if (decision.verdict === "unresolved" && !boundReached) {
+      return {
+        candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
+        guardrails: null, resource_usage: null,
+        runs_required: escalateOneRepeat(plan.perCase.map((c) => c.case_id), candidate),
+        status: "valid",
+      };
+    }
+
+    // Resolved, or `unresolved` at the liveness bound — the contract's own "unresolved" outcome is
+    // still stored as this candidate's final validation split, rather than looping forever on a
+    // candidate whose effect this evidence can never pin down further.
+    const guardrails = summariseGuardrails(plan.candidateSide);
+    const resource_usage = summariseResourceUsage(plan.baseline, plan.candidateSide, candidate.complexity_delta);
+    const dimension_scores = summariseDimensions(plan.baseline, plan.candidateSide);
+    const statistics = {
+      per_case: plan.perCase, paired_decision: decision,
+      policy: ctx.policy, resamples: RESAMPLES, seed: candidateId, liveness_bound_reached: boundReached,
     };
-  }
 
-  const deltas = plan.perCase.map((c) => c.delta);
-  const decision = pairedDecision(deltas, ctx.policy.mme, {
-    resamples: RESAMPLES, seed: candidateId, confidence: ctx.policy.confidence,
-  });
+    const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
+      principal, "candidate_validate", idempotencyKey, { candidate_id: candidateId },
+      async (client): Promise<MutatorOutcome<{ id: string }>> => {
+        const row = (await client.query<{ id: string }>(`
+          insert into zz.candidate_evaluation
+            (candidate_id, split, aggregate_score, dimension_scores, guardrails, statistics, resource_usage, created_at)
+          values ($1::uuid, 'validation', $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, now())
+          returning id::text as id`,
+          [candidateId,
+           JSON.stringify({ mean_delta: decision.mean, lower: decision.lower, upper: decision.upper, verdict: decision.verdict }),
+           JSON.stringify(dimension_scores), JSON.stringify(guardrails), JSON.stringify(statistics),
+           JSON.stringify(resource_usage)])).rows[0];
+        if (!row) throw new Error("insert into zz.candidate_evaluation produced no row");
+        return { result: { id: row.id }, result_table: "zz.candidate_evaluation", result_id: row.id };
+      },
+    );
+    const candidateEvaluationId = outcome.replayed ? outcome.result_id : outcome.result.id;
 
-  const boundReached = Date.now() - ctx.improvementRunCreatedAt.getTime() >= ctx.policy.wallClockHours * 3_600_000;
-  if (decision.verdict === "unresolved" && !boundReached) {
     return {
-      candidate_evaluation_id: null, verdict: null, interval: null, mean_delta: null,
-      guardrails: null, resource_usage: null,
-      runs_required: escalateOneRepeat(plan.perCase.map((c) => c.case_id), candidate),
-      status: "valid",
+      candidate_evaluation_id: candidateEvaluationId, verdict: decision.verdict,
+      interval: [decision.lower, decision.upper], mean_delta: decision.mean,
+      guardrails, resource_usage, status: "valid",
     };
+  } finally {
+    // Restores whatever this call decided the candidate's resting status should be — a no-op
+    // when buildCandidateInIsolation already wrote it directly (the `where status = 'validating'`
+    // guard means this UPDATE touches zero rows in that case), and the one thing standing between
+    // a thrown exception (a DB error mid-plan, say) and a candidate stuck 'validating' forever.
+    await p.query(
+      "update zz.candidate set status = $2 where id = $1::uuid and status = 'validating'",
+      [candidateId, finalStatus]);
   }
-
-  // Resolved, or `unresolved` at the liveness bound — the contract's own "unresolved" outcome is
-  // still stored as this candidate's final validation split, rather than looping forever on a
-  // candidate whose effect this evidence can never pin down further.
-  const guardrails = summariseGuardrails(plan.candidateSide);
-  const resource_usage = summariseResourceUsage(plan.baseline, plan.candidateSide, candidate.complexity_delta);
-  const dimension_scores = summariseDimensions(plan.baseline, plan.candidateSide);
-  const statistics = {
-    per_case: plan.perCase, paired_decision: decision,
-    policy: ctx.policy, resamples: RESAMPLES, seed: candidateId, liveness_bound_reached: boundReached,
-  };
-
-  const outcome: IdempotencyOutcome<{ id: string }> = await withIdempotency(
-    principal, "candidate_validate", idempotencyKey, { candidate_id: candidateId },
-    async (client): Promise<MutatorOutcome<{ id: string }>> => {
-      const row = (await client.query<{ id: string }>(`
-        insert into zz.candidate_evaluation
-          (candidate_id, split, aggregate_score, dimension_scores, guardrails, statistics, resource_usage, created_at)
-        values ($1::uuid, 'validation', $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, now())
-        returning id::text as id`,
-        [candidateId,
-         JSON.stringify({ mean_delta: decision.mean, lower: decision.lower, upper: decision.upper, verdict: decision.verdict }),
-         JSON.stringify(dimension_scores), JSON.stringify(guardrails), JSON.stringify(statistics),
-         JSON.stringify(resource_usage)])).rows[0];
-      if (!row) throw new Error("insert into zz.candidate_evaluation produced no row");
-      return { result: { id: row.id }, result_table: "zz.candidate_evaluation", result_id: row.id };
-    },
-  );
-  const candidateEvaluationId = outcome.replayed ? outcome.result_id : outcome.result.id;
-
-  return {
-    candidate_evaluation_id: candidateEvaluationId, verdict: decision.verdict,
-    interval: [decision.lower, decision.upper], mean_delta: decision.mean,
-    guardrails, resource_usage, status: "valid",
-  };
 }

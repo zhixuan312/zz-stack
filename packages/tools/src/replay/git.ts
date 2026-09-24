@@ -9,9 +9,11 @@
  * team slug or a path can never be reinterpreted as a second argument.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   gitApplyArgv, gitRevParseArgv, gitUpdateRefArgv, gitUpdateRefDeleteArgv, gitWorktreeAddArgv,
@@ -47,6 +49,35 @@ function worktreePathFor(teamSlug: string): string {
   return join(tmpdir(), "zz-replay", worktreeDirName(teamSlug));
 }
 
+/** Fix 6: the gate's "every route this gateway serves has a caller" check (and the hygiene
+ *  check beside it) resolves the console's sibling checkout as `join(<repo root the gate is
+ *  running from>, "..", "zz-stack-dashboard")` — and `root` there is wherever `scripts/gate/
+ *  read.ts` itself sits, which inside a worktree is the worktree's own top, not the real
+ *  checkout's. A worktree created at a fresh `mkdtempSync` path every time has no sibling at
+ *  all, so the gate run this launcher's own replay session may end up running (through the
+ *  candidate's own build+gate, or a subject's) fails that check for a reason that has nothing to
+ *  do with the patch under test.
+ *
+ *  Every worktree this file creates lives under the SAME parent (`tmpdir()/zz-replay`), so one
+ *  symlink there — `tmpdir()/zz-replay/zz-stack-dashboard`, pointing at the real sibling beside
+ *  `repoRoot` — makes `../zz-stack-dashboard` resolve correctly from every worktree under it,
+ *  present or future. Created once, idempotently, and only when the real dashboard checkout
+ *  exists beside `repoRoot`; a deployment with no sibling console checkout is left exactly as
+ *  the gate already reports it (a named, non-fatal-here condition), never faked into existing. */
+function ensureDashboardSibling(repoRoot: string, parentDir: string): void {
+  const real = resolve(repoRoot, "..", "zz-stack-dashboard");
+  if (!existsSync(real)) return;
+  const link = join(parentDir, "zz-stack-dashboard");
+  try {
+    const stat = lstatSync(link);
+    if (stat.isSymbolicLink() && readlinkSync(link) === real) return;
+    unlinkSync(link); // stale — a previous run's dashboard moved or this is some other file
+  } catch {
+    // ENOENT: nothing there yet, which is the ordinary case — fall through to create it.
+  }
+  symlinkSync(real, link);
+}
+
 /** Removes whatever a crashed earlier launch for this same team slug left behind — the ref, the
  *  worktree directory registration, and the directory itself — so a retry never collides with
  *  its own predecessor. Called before anything else touches this run's worktree. */
@@ -69,7 +100,9 @@ export function createWorktree(repoRoot: string, teamSlug: string, ref = "HEAD")
   const path = worktreePathFor(teamSlug);
   // Only the parent: `git worktree add` refuses a target directory that already exists, and
   // creates it itself.
-  mkdirSync(join(tmpdir(), "zz-replay"), { recursive: true });
+  const parent = join(tmpdir(), "zz-replay");
+  mkdirSync(parent, { recursive: true });
+  ensureDashboardSibling(repoRoot, parent);
   try {
     git(repoRoot, gitWorktreeAddArgv(path, replayRef));
   } catch (err) {

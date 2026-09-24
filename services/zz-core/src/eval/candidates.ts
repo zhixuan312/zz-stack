@@ -171,10 +171,13 @@ export function registerCandidateTools(server: McpServer): void {
         "touched_components, touched_owners, status: 'recorded' }. REFUSES an " +
         "improvement_run_id nothing minted; a base_subject_version_id nothing minted; a " +
         "parents entry naming no candidate; and a hypothesis whose normalised-text digest " +
-        "matches a candidate already " + REJECTED_CANDIDATE_STATUSES.join("/") + " for the same " +
-        "base subject's plugin — \"ERROR: hypothesis already rejected as candidate <id>\" " +
-        "(FR-38's own repeat-rejection regularization). A mutator: writes through the FR-59 " +
-        "idempotency ledger.",
+        "matches a candidate already " + REJECTED_CANDIDATE_STATUSES.join("/") + ", OR whose " +
+        "latest split: 'validation' zz.candidate_evaluation verdict is not_improved, for the " +
+        "same base subject's plugin — \"ERROR: hypothesis already rejected as candidate <id>\" " +
+        "or \"ERROR: hypothesis already tried as candidate <id>, whose validation verdict was " +
+        "not_improved\" (FR-38's own repeat-rejection regularization, closed all the way — a " +
+        "not_improved candidate stays status: valid and was previously invisible to this check). " +
+        "A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         improvement_run_id: z.string(),
         base_subject_version_id: z.string(),
@@ -254,16 +257,34 @@ export function registerCandidateTools(server: McpServer): void {
       // Digests compared in JS, not SQL, because normaliseHypothesis is this file's own rule and
       // a database index would need to duplicate it to filter server-side — fine at this scale
       // (one plugin's own rejected candidates, not the whole ledger).
+      //
+      // FIX (dispatch, closing FR-38's own gap): a candidate whose validation verdict came back
+      // `not_improved` never moves off `status = 'valid'` — see candidate-validate.ts's own
+      // module note, "a candidate stays valid after its verdict is stored" — so the ORIGINAL
+      // query here, filtered to REJECTED_CANDIDATE_STATUSES alone, never saw it and the same
+      // hypothesis could be proposed forever. The `exists` clause below reads
+      // zz.candidate_evaluation directly for a `split: 'validation'` row whose verdict is
+      // `not_improved`, whatever the candidate's own status column says — a second, independent
+      // way into the SAME repeat-rejection set the status filter already builds, not a
+      // replacement for it.
       const wantDigest = hypothesisDigest(hypothesis);
-      const priorRejections = (await p.query<{ id: string; hypothesis: string }>(`
-        select c.id::text as id, c.hypothesis
+      const priorRejections = (await p.query<{ id: string; hypothesis: string; status: string }>(`
+        select c.id::text as id, c.hypothesis, c.status
           from zz.candidate c
           join zz.eval_subject_version sv on sv.id = c.base_subject_version_id
-         where sv.plugin_id = $1::uuid and c.status = any($2::text[])`,
+         where sv.plugin_id = $1::uuid
+           and (c.status = any($2::text[]) or exists (
+             select 1 from zz.candidate_evaluation ce
+              where ce.candidate_id = c.id and ce.split = 'validation'
+                and ce.aggregate_score->>'verdict' = 'not_improved'
+           ))`,
         [subject.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows;
       const repeat = priorRejections.find((r) => hypothesisDigest(r.hypothesis) === wantDigest);
       if (repeat) {
-        return text(`ERROR: hypothesis already rejected as candidate ${repeat.id}`);
+        const rejectedByStatus = (REJECTED_CANDIDATE_STATUSES as readonly string[]).includes(repeat.status);
+        return text(rejectedByStatus
+          ? `ERROR: hypothesis already rejected as candidate ${repeat.id}`
+          : `ERROR: hypothesis already tried as candidate ${repeat.id}, whose validation verdict was not_improved`);
       }
 
       const caller = parseCaller(requestHeaders());

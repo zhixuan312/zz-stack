@@ -174,6 +174,32 @@ async function pluginSlug(p: Db, pluginId: string): Promise<string | null> {
   return row?.name ?? null;
 }
 
+/** Fix 4: `subject_version_id` got the same "nothing minted" treatment `candidate_id` already
+ *  had — without it, an unknown `subject_version_id` reached `zz.replay_run`'s own FK constraint
+ *  (`subject_version_id uuid null references zz.eval_subject_version(id)`) and came back as a
+ *  raw postgres error rather than a house-style refusal. Exported and pure over its inputs (no
+ *  `requestHeaders()`) so a check can call it directly against a live pool without a request
+ *  context. Returns the refusal text, or null when the id is fine to proceed with (including
+ *  `undefined`, since `replay_start`'s own exactly-one-of check runs before this and already
+ *  rejects neither/both). */
+export async function resolveSubjectOrCandidate(
+  p: Db, subjectVersionId: string | undefined, candidateId: string | undefined,
+): Promise<string | null> {
+  if (candidateId) {
+    if (!UUID_RE.test(candidateId)) return `ERROR: unknown candidate_id ${candidateId}`;
+    const cand = (await p.query<{ id: string }>(
+      "select id::text as id from zz.candidate where id = $1::uuid", [candidateId])).rows[0];
+    if (!cand) return `ERROR: unknown candidate_id ${candidateId}`;
+  }
+  if (subjectVersionId) {
+    if (!UUID_RE.test(subjectVersionId)) return `ERROR: unknown subject_version_id ${subjectVersionId}`;
+    const sv = (await p.query<{ id: string }>(
+      "select id::text as id from zz.eval_subject_version where id = $1::uuid", [subjectVersionId])).rows[0];
+    if (!sv) return `ERROR: unknown subject_version_id ${subjectVersionId}`;
+  }
+  return null;
+}
+
 interface DependencyMode { surface: string; mode: string }
 interface PluginProtocol { protocolVersionId: string; dependencies: DependencyMode[] }
 
@@ -341,15 +367,11 @@ export function registerReplayRunTools(server: McpServer): void {
         return text(
           "ERROR: replay_start takes exactly one of subject_version_id or candidate_id, never both or neither");
       }
-      // Without this, an unknown candidate_id reached zz.replay_run's own FK constraint and came
-      // back as a raw postgres error rather than a house-style refusal — the same shape every
-      // other "nothing minted" check in this file already answers with.
-      if (candidate_id) {
-        if (!UUID_RE.test(candidate_id)) return text(`ERROR: unknown candidate_id ${candidate_id}`);
-        const cand = (await p.query<{ id: string }>(
-          "select id::text as id from zz.candidate where id = $1::uuid", [candidate_id])).rows[0];
-        if (!cand) return text(`ERROR: unknown candidate_id ${candidate_id}`);
-      }
+      // Without this, an unknown candidate_id or subject_version_id reached zz.replay_run's own
+      // FK constraints and came back as a raw postgres error rather than a house-style refusal —
+      // the same shape every other "nothing minted" check in this file already answers with.
+      const subjectErr = await resolveSubjectOrCandidate(p, subject_version_id, candidate_id);
+      if (subjectErr) return text(subjectErr);
       // Same shape, same reason: a malformed case_id would otherwise reach selectCase's own
       // `$3::uuid` cast and come back as a raw postgres error.
       if (case_id && !UUID_RE.test(case_id)) return text(`ERROR: unknown case ${case_id}`);
@@ -524,13 +546,17 @@ export function registerReplayRunTools(server: McpServer): void {
       description:
         "WHEN a candidate or subject execution has finished, failed or been cancelled: records " +
         "the terminal status and, when given, the run's score/guardrails/model_usage/cost/" +
-        "duration_ms (protocol/environment identity was already stored by replay_start), then " +
-        "tears down its reserved team and PAT (teardownReplayTeam, Task I-15). RETURNS " +
-        "{ archived, revoked } — both false on a run whose team is already torn down, so a " +
-        "second close is a safe no-op rather than an error. REFUSES an unknown replay_run_id " +
-        "and a deployment with no platform database. A mutator: writes through the FR-59 " +
-        "idempotency ledger, and records one admin audit event in zz.event for the team it " +
-        "archives and the PAT it revokes.",
+        "duration_ms/produced (protocol/environment identity was already stored by " +
+        "replay_start), then tears down its reserved team and PAT (teardownReplayTeam, Task " +
+        "I-15). produced (Task I-19's own fix — a replay's score must measure the replay) is " +
+        "the launcher's bounded, redacted record of what the session actually produced: " +
+        "{ transcript, artifacts: [{ path, sha256, bytes, head }] } — what replay_score reads " +
+        "to build the text a model-backed measure is asked to judge, in place of a templated " +
+        "sentence naming an id. RETURNS { archived, revoked } — both false on a run whose team " +
+        "is already torn down, so a second close is a safe no-op rather than an error. REFUSES " +
+        "an unknown replay_run_id and a deployment with no platform database. A mutator: writes " +
+        "through the FR-59 idempotency ledger, and records one admin audit event in zz.event " +
+        "for the team it archives and the PAT it revokes.",
       inputSchema: {
         replay_run_id: z.string(),
         status: z.enum(CLOSE_STATUSES),
@@ -540,6 +566,12 @@ export function registerReplayRunTools(server: McpServer): void {
           model_usage: z.record(z.string(), z.unknown()).optional(),
           cost: z.number().optional(),
           duration_ms: z.number().optional(),
+          produced: z.object({
+            transcript: z.string(),
+            artifacts: z.array(z.object({
+              path: z.string(), sha256: z.string(), bytes: z.number(), head: z.string(),
+            })),
+          }).optional(),
         }).optional(),
         idempotency_key: z.string().min(1),
       },
@@ -554,10 +586,12 @@ export function registerReplayRunTools(server: McpServer): void {
         principal, "replay_close", idempotency_key, { replay_run_id, status, result: result ?? null },
         async (client): Promise<MutatorOutcome<CloseResult>> => {
           // `coalesce(..., <column>)` rather than overwriting with null: `replay_score` (I-19)
-          // stores this run's per-case overall on `score` before the launcher's own `closeRun`
-          // calls `replay_close` with no `result` at all (its verifier step is best-effort and
-          // never has one to pass) — a bare overwrite here would null out the very score
-          // candidate_validate reads back, on every real run, the moment the run closes.
+          // stores this run's per-case overall on `score` AFTER this same close call has already
+          // stored `produced` — the launcher closes the run with its own produced output first,
+          // then attempts the verifier (replay_score) against the now-closed run, never the
+          // other way around. A bare overwrite here would null out the very score
+          // candidate_validate reads back, on every real run, the moment a later call closes it
+          // again (a second close is a safe no-op, per this tool's own contract).
           const row = (await client.query<{ team_slug: string; pat_id: string }>(
             `update zz.replay_run
                 set status = $2,
@@ -565,14 +599,16 @@ export function registerReplayRunTools(server: McpServer): void {
                     guardrails = coalesce($4::jsonb, guardrails),
                     model_usage = coalesce($5::jsonb, model_usage),
                     cost = coalesce($6::numeric, cost),
-                    duration_ms = coalesce($7::bigint, duration_ms)
+                    duration_ms = coalesce($7::bigint, duration_ms),
+                    produced = coalesce($8::jsonb, produced)
               where id = $1::uuid
              returning team_slug, pat_id::text as pat_id`,
             [replay_run_id, status,
              result?.score ? JSON.stringify(result.score) : null,
              result?.guardrails ? JSON.stringify(result.guardrails) : null,
              result?.model_usage ? JSON.stringify(result.model_usage) : null,
-             result?.cost ?? null, result?.duration_ms ?? null],
+             result?.cost ?? null, result?.duration_ms ?? null,
+             result?.produced ? JSON.stringify(result.produced) : null],
           )).rows[0];
           if (!row) throw new Refusal(`ERROR: unknown replay_run_id ${replay_run_id}`);
 

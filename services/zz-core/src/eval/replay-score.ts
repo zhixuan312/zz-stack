@@ -14,9 +14,23 @@
  *     file) already answers `null`/excluded for on a zero denominator. This is not a special case
  *     bolted on here; it is `answerMeasure`'s own existing "no comparable fact" path, reached
  *     honestly because a replay case truly carries none of OBSERVE's counted facts.
- *   - `bounded_semantic`/`generative_critic` measures ask the measure's own bound evaluator, the
- *     same as for an eval_run — the one live signal a replay case DOES carry.
+ *   - `bounded_semantic`/`generative_critic` measures ask the measure's own bound evaluator — but,
+ *     as of this fix, against what the replay ACTUALLY PRODUCED, never a templated sentence
+ *     naming an id. See the fix note below.
  *   - `human` measures are excluded, same as everywhere else.
+ *
+ * FIX (initiative 2026-09-24-plugin-eval-next-version, dispatch on I-17/I-19): a replay's score
+ * never measured the replay. `launch.ts` ran a candidate session end to end and threw away what
+ * it produced; this file asked every model-backed measure to judge
+ * `Measure "<key>" against subject_ref "<id>"` — a sentence with no content in it at all, so two
+ * sessions that produced entirely different output scored identically (both excluded, or both the
+ * same evaluator answer on the same empty prompt). `replay_close`'s own `result.produced`
+ * (migration 080's `zz.replay_run.produced`) is now the launcher's bounded, redacted record of
+ * what the session actually wrote — its final transcript and the artifacts it left in its
+ * worktree — and `producedSubjectText` below is what turns that into the text a model-backed
+ * measure is asked to judge, with the case's own `evaluation_oracle` events passed alongside it
+ * as `context` (the "judged against" half the contract names). A run with no `produced` on it yet
+ * REFUSES rather than scoring an empty subject as if it meant something.
  *
  * One call does what `evaluation_assess` + `evaluation_score` do in two: a replay run has exactly
  * one subject and is scored once, so there is no second `subject_ref` to accumulate assessments
@@ -36,6 +50,7 @@ import { z } from "zod";
 import { answerMeasure, reduceMeasureAnswers, type MeasureAnswer, type SnapshotFacts } from "./evaluate-measures.js";
 import { latestQualification, loadDimensions, loadProtocolPolicy, qualificationMet } from "./evaluate.js";
 import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
+import { visibleEvents } from "./replay-cases.js";
 import { scoreRun } from "./score.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
@@ -51,27 +66,170 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // written here.
 const NO_SNAPSHOT: SnapshotFacts = { usable_run_count: 0, total_run_count: 0, coverage: null };
 
+/** `zz.replay_run.produced` (migration 080), exactly as `replay_close`'s own `result.produced`
+ *  schema and the launcher that fills it (`packages/tools/src/replay/launch.ts`) agree on it. */
+export interface ProducedRecord {
+  readonly transcript: string;
+  readonly artifacts: readonly { readonly path: string; readonly sha256: string; readonly bytes: number; readonly head: string }[];
+}
+
 interface RunRow {
-  id: string; status: string; protocol_version_id: string; protocol_version: number;
-  subject_version_id: string | null; candidate_id: string | null;
+  id: string; status: string; case_id: string; protocol_version_id: string; protocol_version: number;
+  subject_version_id: string | null; candidate_id: string | null; produced: ProducedRecord | null;
 }
 
 async function loadRun(p: pg.Pool, replayRunId: string): Promise<RunRow | null> {
   if (!UUID_RE.test(replayRunId)) return null;
   const row = (await p.query<RunRow>(`
-    select r.id::text as id, r.status, r.protocol_version_id::text as protocol_version_id,
-           pv.version as protocol_version,
-           r.subject_version_id::text as subject_version_id, r.candidate_id::text as candidate_id
+    select r.id::text as id, r.status, r.case_id::text as case_id,
+           r.protocol_version_id::text as protocol_version_id, pv.version as protocol_version,
+           r.subject_version_id::text as subject_version_id, r.candidate_id::text as candidate_id,
+           r.produced
       from zz.replay_run r
       join zz.eval_protocol_version pv on pv.id = r.protocol_version_id
      where r.id = $1::uuid`, [replayRunId])).rows[0];
   return row ?? null;
 }
 
+/** What a model-backed measure is actually asked to judge — pure over `produced`, so a check can
+ *  assert two different produced records render two different subject texts without a database
+ *  or a model in front of it. Never truncated further here: `launch.ts` is what bounds `head` and
+ *  the artifact count before this ever sees them. */
+export function producedSubjectText(produced: ProducedRecord): string {
+  const artifactBlock = produced.artifacts.length
+    ? produced.artifacts
+        .map((a) => `- ${a.path} (${a.bytes} bytes, sha256 ${a.sha256}):\n${a.head}`)
+        .join("\n\n")
+    : "(the session wrote no files to its worktree)";
+  return `TRANSCRIPT (the session's own final reply):\n${produced.transcript}\n\n` +
+    `ARTIFACTS (files it wrote in its worktree):\n${artifactBlock}`;
+}
+
+interface OracleEvent { readonly seq: number; readonly actor: string; readonly visibility: string; readonly kind: string; readonly payload: unknown }
+
+/** The case's own `evaluation_oracle` events — what a model-backed measure judges `produced`
+ *  against — read through `visibleEvents`'s `evaluator` role (the same gate the launcher's own
+ *  verifier-role read goes through) and narrowed further to `evaluation_oracle` alone: `actor`/
+ *  `user_oracle` events describe the conversation that produced the output, not what "correct"
+ *  looks like, and folding them into `context` would blur the two. `undefined` when a case
+ *  carries none, so `askEvaluator` is asked with no CONTEXT section rather than an empty one. */
+function oracleContext(events: readonly OracleEvent[]): string | undefined {
+  const oracle = events.filter((e) => e.visibility === "evaluation_oracle");
+  if (!oracle.length) return undefined;
+  return oracle.map((e) => `[seq ${e.seq}] ${e.actor} — ${e.kind}: ${JSON.stringify(e.payload)}`).join("\n");
+}
+
 interface ReplayScoreResult {
   replay_run_id: string; assessment_count: number; overall: number | null;
   status: "established" | "provisional" | "not_established";
   guardrail_status: "pass" | "fail" | "not_established";
+}
+
+/** The tool's own orchestrator, extracted so a check can call it directly against a live pool —
+ *  `requestHeaders()` (an HTTP request context) stays in the tool wrapper below; everything this
+ *  function needs travels as an argument. */
+export async function scoreReplay(
+  p: pg.Pool, replayRunId: string, idempotencyKey: string, principal: string,
+): Promise<ReplayScoreResult | { error: string }> {
+  const run = await loadRun(p, replayRunId);
+  if (!run) return { error: `ERROR: unknown replay_run_id ${replayRunId}` };
+  const subjectRef = run.subject_version_id ?? run.candidate_id;
+  if (!subjectRef) {
+    return { error: `ERROR: replay_run ${replayRunId} names neither a subject_version_id nor a candidate_id` };
+  }
+  // FIX: scoring nothing is not a score. A run whose session never ran, or whose launcher never
+  // reached replay_close's own result.produced, has no content a model-backed measure could ever
+  // judge — refusing here, by name, is what stops that from silently landing as "every measure
+  // excluded, overall: null" indistinguishable from a real, judged run that happened to score
+  // nothing (fix 2, candidate-validate.ts, is what gives THAT case its own named reason too).
+  if (!run.produced) {
+    return {
+      error: `ERROR: replay_run ${replayRunId} carries no produced output to score — call ` +
+        "replay_close with result.produced (the launcher's own transcript/artifacts record) first",
+    };
+  }
+  const subjectText = producedSubjectText(run.produced);
+
+  const rawEvents = (await p.query<OracleEvent>(
+    `select seq, actor, visibility, kind, payload from zz.replay_event where case_id = $1::uuid order by seq`,
+    [run.case_id])).rows;
+  const context = oracleContext(visibleEvents(rawEvents, "evaluator"));
+
+  const dims = await loadDimensions(p, run.protocol_version_id);
+  const measures = dims.flatMap((d) => d.measures);
+  const policy = await loadProtocolPolicy(p, run.protocol_version_id);
+
+  const outcome: IdempotencyOutcome<ReplayScoreResult> = await withIdempotency(
+    principal, "replay_score", idempotencyKey, { replay_run_id: replayRunId },
+    async (client): Promise<MutatorOutcome<ReplayScoreResult>> => {
+      const answers: MeasureAnswer[] = [];
+      for (const measure of measures) {
+        const answer = await answerMeasure({
+          measure, snapshot: NO_SNAPSHOT, subjectRef, principal, subjectText, context,
+          // `p`, never `client`: a qualification lookup reads committed state, the same pool
+          // `latestQualification` already takes everywhere else it is called from.
+          qualificationOf: (evId) => latestQualification(p, evId, run.protocol_version_id),
+        });
+        answers.push(answer);
+        await client.query(`
+          insert into zz.eval_assessment
+            (replay_run_id, measure_id, evaluator_version_id, assessment_id, qualification_id,
+             subject_ref, evidence_ref, answer, policy_version, created_at)
+          values ($1::uuid, $2::uuid, $3::uuid, $4, $5::uuid, $6, $7, $8::jsonb, $9, now())`,
+          [replayRunId, measure.id, answer.evaluator_version_id, answer.assessment_id,
+           answer.qualification_id, subjectRef, `replay_run:${replayRunId}`,
+           JSON.stringify(answer), String(run.protocol_version)]);
+      }
+
+      const byMeasure = new Map(measures.map((m, i) => [m.id, [answers[i]]]));
+      const scoreInputDimensions = dims.map((d) => ({
+        key: d.key, canonical_kind: d.canonical_kind, weight: d.weight, required: d.required,
+        applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
+        measures: d.measures.map((m) => ({
+          weight: m.weight, required: m.required,
+          value: reduceMeasureAnswers(byMeasure.get(m.id) ?? []),
+        })),
+      }));
+      const guardrails = measures
+        .map((m, i) => ({ m, a: answers[i] }))
+        .filter(({ m }) => Boolean((m.definition as { guardrail?: unknown }).guardrail))
+        .map(({ a }): "pass" | "fail" | "not_established" =>
+          a.excluded || a.value === null ? "not_established" : a.value >= 0.5 ? "pass" : "fail");
+
+      // No `zz.eval_observation_snapshot`/minCoverage concept applies to a single replay
+      // case (DELIBERATE — one case is one case, not a coverage window to floor), so
+      // `coverage_met` is trivially true; `qualification_met` still reads the SAME
+      // evaluator-qualification policy an eval_run reads, because an unqualified evaluator's
+      // answer is exactly as uninformative here as it is there.
+      const qualification_met = await qualificationMet(p, dims, run.protocol_version_id, policy);
+      const scored = scoreRun({
+        dimensions: scoreInputDimensions, coverage_met: true, qualification_met, guardrails,
+      });
+
+      await client.query(
+        "update zz.replay_run set score = $2::jsonb, guardrails = $3::jsonb where id = $1::uuid",
+        [replayRunId, JSON.stringify(scored), JSON.stringify(guardrails)]);
+
+      const result: ReplayScoreResult = {
+        replay_run_id: replayRunId, assessment_count: answers.length, overall: scored.overall,
+        status: scored.status, guardrail_status: scored.guardrail_status,
+      };
+      return { result, result_table: "zz.replay_run", result_id: replayRunId };
+    },
+  );
+
+  if (!outcome.replayed) return outcome.result;
+
+  const row = (await p.query<{ score: { overall: number | null; status: ReplayScoreResult["status"]; guardrail_status: ReplayScoreResult["guardrail_status"] } | null }>(
+    "select score from zz.replay_run where id = $1::uuid", [outcome.result_id])).rows[0];
+  const n = (await p.query<{ n: string }>(
+    "select count(*)::text as n from zz.eval_assessment where replay_run_id = $1::uuid", [outcome.result_id]
+  )).rows[0];
+  return {
+    replay_run_id: outcome.result_id, assessment_count: Number(n?.n ?? 0),
+    overall: row?.score?.overall ?? null, status: row?.score?.status ?? "not_established",
+    guardrail_status: row?.score?.guardrail_status ?? "not_established",
+  };
 }
 
 export function registerReplayScoreTools(server: McpServer): void {
@@ -81,113 +239,32 @@ export function registerReplayScoreTools(server: McpServer): void {
       description:
         "WHEN a replay run's case has finished and its result needs an overall number the same " +
         "way EVALUATE scores an eval_run: runs every measure of every dimension in the run's own " +
-        "protocol version against its one subject (subject_version_id or candidate_id, whichever " +
-        "the run names), writes one zz.eval_assessment row per measure with replay_run_id set " +
-        "(never eval_run_id), reduces them with the same scoreRun this platform scores an " +
-        "eval_run with, and stores the result on zz.replay_run.score/guardrails. RETURNS " +
-        "{ replay_run_id, assessment_count, overall, status, guardrail_status }. A deterministic/" +
-        "outcome measure always excludes here — a replay case carries no observation snapshot for " +
-        "it to read a fact off. REFUSES an unknown replay_run_id and a deployment with no " +
-        "platform database. A mutator: writes through the FR-59 idempotency ledger, so a retried " +
-        "call with the same idempotency_key replays the same score rather than re-asking every " +
-        "model-backed measure a second time.",
+        "protocol version against what the run's own launcher recorded it produced " +
+        "(zz.replay_run.produced — replay_close's own result.produced), judged against the " +
+        "case's evaluation_oracle events as context, writes one zz.eval_assessment row per " +
+        "measure with replay_run_id set (never eval_run_id), reduces them with the same " +
+        "scoreRun this platform scores an eval_run with, and stores the result on " +
+        "zz.replay_run.score/guardrails. RETURNS { replay_run_id, assessment_count, overall, " +
+        "status, guardrail_status }. A deterministic/outcome measure always excludes here — a " +
+        "replay case carries no observation snapshot for it to read a fact off. REFUSES an " +
+        "unknown replay_run_id; a run with no produced output yet (call replay_close with " +
+        "result.produced first); and a deployment with no platform database. A mutator: writes " +
+        "through the FR-59 idempotency ledger, so a retried call with the same idempotency_key " +
+        "replays the same score rather than re-asking every model-backed measure a second time.",
       inputSchema: { replay_run_id: z.string(), idempotency_key: z.string().min(1) },
     },
     async ({ replay_run_id, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
 
-      const run = await loadRun(p, replay_run_id);
-      if (!run) return text(`ERROR: unknown replay_run_id ${replay_run_id}`);
-      const subjectRef = run.subject_version_id ?? run.candidate_id;
-      if (!subjectRef) {
-        return text(`ERROR: replay_run ${replay_run_id} names neither a subject_version_id nor a candidate_id`);
-      }
-
-      const dims = await loadDimensions(p, run.protocol_version_id);
-      const measures = dims.flatMap((d) => d.measures);
-      const policy = await loadProtocolPolicy(p, run.protocol_version_id);
       const principal = parseCaller(requestHeaders()).email;
-
-      const outcome: IdempotencyOutcome<ReplayScoreResult> = await withIdempotency(
-        principal, "replay_score", idempotency_key, { replay_run_id },
-        async (client): Promise<MutatorOutcome<ReplayScoreResult>> => {
-          const answers: MeasureAnswer[] = [];
-          for (const measure of measures) {
-            const answer = await answerMeasure({
-              measure, snapshot: NO_SNAPSHOT, subjectRef, principal,
-              // `p`, never `client`: a qualification lookup reads committed state, the same pool
-              // `latestQualification` already takes everywhere else it is called from.
-              qualificationOf: (evId) => latestQualification(p, evId, run.protocol_version_id),
-            });
-            answers.push(answer);
-            await client.query(`
-              insert into zz.eval_assessment
-                (replay_run_id, measure_id, evaluator_version_id, assessment_id, qualification_id,
-                 subject_ref, evidence_ref, answer, policy_version, created_at)
-              values ($1::uuid, $2::uuid, $3::uuid, $4, $5::uuid, $6, $7, $8::jsonb, $9, now())`,
-              [replay_run_id, measure.id, answer.evaluator_version_id, answer.assessment_id,
-               answer.qualification_id, subjectRef, `replay_run:${replay_run_id}`,
-               JSON.stringify(answer), String(run.protocol_version)]);
-          }
-
-          const byMeasure = new Map(measures.map((m, i) => [m.id, [answers[i]]]));
-          const scoreInputDimensions = dims.map((d) => ({
-            key: d.key, canonical_kind: d.canonical_kind, weight: d.weight, required: d.required,
-            applicable: d.applicable, not_applicable_reason: d.not_applicable_reason,
-            measures: d.measures.map((m) => ({
-              weight: m.weight, required: m.required,
-              value: reduceMeasureAnswers(byMeasure.get(m.id) ?? []),
-            })),
-          }));
-          const guardrails = measures
-            .map((m, i) => ({ m, a: answers[i] }))
-            .filter(({ m }) => Boolean((m.definition as { guardrail?: unknown }).guardrail))
-            .map(({ a }): "pass" | "fail" | "not_established" =>
-              a.excluded || a.value === null ? "not_established" : a.value >= 0.5 ? "pass" : "fail");
-
-          // No `zz.eval_observation_snapshot`/minCoverage concept applies to a single replay
-          // case (DELIBERATE — one case is one case, not a coverage window to floor), so
-          // `coverage_met` is trivially true; `qualification_met` still reads the SAME
-          // evaluator-qualification policy an eval_run reads, because an unqualified evaluator's
-          // answer is exactly as uninformative here as it is there.
-          const qualification_met = await qualificationMet(p, dims, run.protocol_version_id, policy);
-          const scored = scoreRun({
-            dimensions: scoreInputDimensions, coverage_met: true, qualification_met, guardrails,
-          });
-
-          await client.query(
-            "update zz.replay_run set score = $2::jsonb, guardrails = $3::jsonb where id = $1::uuid",
-            [replay_run_id, JSON.stringify(scored), JSON.stringify(guardrails)]);
-
-          const result: ReplayScoreResult = {
-            replay_run_id, assessment_count: answers.length, overall: scored.overall,
-            status: scored.status, guardrail_status: scored.guardrail_status,
-          };
-          return { result, result_table: "zz.replay_run", result_id: replay_run_id };
-        },
-      );
-
-      let result: ReplayScoreResult;
-      if (outcome.replayed) {
-        const row = (await p.query<{ score: { overall: number | null; status: ReplayScoreResult["status"]; guardrail_status: ReplayScoreResult["guardrail_status"] } | null }>(
-          "select score from zz.replay_run where id = $1::uuid", [outcome.result_id])).rows[0];
-        const n = (await p.query<{ n: string }>(
-          "select count(*)::text as n from zz.eval_assessment where replay_run_id = $1::uuid", [outcome.result_id]
-        )).rows[0];
-        result = {
-          replay_run_id: outcome.result_id, assessment_count: Number(n?.n ?? 0),
-          overall: row?.score?.overall ?? null, status: row?.score?.status ?? "not_established",
-          guardrail_status: row?.score?.guardrail_status ?? "not_established",
-        };
-      } else {
-        result = outcome.result;
-      }
+      const outcome = await scoreReplay(p, replay_run_id, idempotency_key, principal);
+      if ("error" in outcome) return text(outcome.error);
 
       logActivity(await userRoot(), null, {
-        user: principal, action: "replay_score", replay_run_id, overall: result.overall, replayed: outcome.replayed,
+        user: principal, action: "replay_score", replay_run_id, overall: outcome.overall, replayed: false,
       });
-      return json(result);
+      return json(outcome);
     },
   );
 }

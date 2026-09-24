@@ -161,8 +161,21 @@ async function modelBackedAnswer(
 export async function answerMeasure(opts: {
   measure: MeasureRow; snapshot: SnapshotFacts; subjectRef: string; principal: string;
   qualificationOf: (evaluatorVersionId: string) => Promise<{ id: string; state: string } | null>;
+  /** What a model-backed measure is actually asked to judge. Callers that have real content for
+   *  this subject_ref — replay-score.ts's own produced transcript/artifacts, for one — pass it
+   *  here; omitted, this falls back to the same templated sentence naming subjectRef this
+   *  function has always asked with (evaluation_assess's own eval_run path: a NAMED fact off an
+   *  observation snapshot is what deterministic/outcome measures read, and no richer subject
+   *  text exists yet for its model-backed measures either — a pre-existing gap this task does
+   *  not fix, only extends the seam past). */
+  subjectText?: string;
+  /** What the subject is judged against, e.g. a case's own evaluation_oracle events — passed to
+   *  `askEvaluator` as `context`, never folded into `subjectText` itself, so the SUBJECT/CONTEXT
+   *  split `semantic.ts`'s own state string keeps is still visible to whatever reads the raw
+   *  assessment back later. */
+  context?: string;
 }): Promise<MeasureAnswer> {
-  const { measure, snapshot, subjectRef, principal, qualificationOf } = opts;
+  const { measure, snapshot, subjectRef, principal, qualificationOf, subjectText, context } = opts;
   if (measure.evaluator_type === "deterministic" || measure.evaluator_type === "outcome") {
     return deterministicAnswer(measure, snapshot);
   }
@@ -173,8 +186,8 @@ export async function answerMeasure(opts: {
       detail: {},
     };
   }
-  const subjectText = `Measure "${measure.key}" against subject_ref "${subjectRef}".`;
-  return modelBackedAnswer(measure, subjectText, undefined, principal, qualificationOf);
+  const text = subjectText ?? `Measure "${measure.key}" against subject_ref "${subjectRef}".`;
+  return modelBackedAnswer(measure, text, context, principal, qualificationOf);
 }
 
 /** `evaluation_score`'s reduction of every stored `zz.eval_assessment.answer` for one measure,

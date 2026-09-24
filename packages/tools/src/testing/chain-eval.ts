@@ -74,17 +74,22 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("round_score refuses an eval_id nothing minted",
     await callEval("round_score", { eval_id: randomUUID() }),
     /no platform database|no plugin evaluation|TYPESAFE_API_KEY/);
-  eitherOr("finding_record refuses an eval_id nothing minted",
+  // Task I-13: finding_record now binds to an eval_run_id (migration 078), not the legacy round's
+  // eval_id — a random uuid is safe against any live state, the same way every other probe here is.
+  eitherOr("finding_record refuses an eval_run_id nothing minted",
     await callEval("finding_record", {
-      eval_id: randomUUID(), findings: [{ pattern: "chain-check probe", scope: "specific" }],
-    }), /no platform database|no evaluation/);
+      eval_run_id: randomUUID(),
+      finding: { kind: "unknown", pattern: "chain-check probe", owner_kind: "unknown", evidence_refs: [] },
+      idempotency_key: randomUUID(),
+    }), /no platform database|no eval_run/);
   // A random UUID decides nothing, which makes this probe safe against a live deployment:
   // finding_decide is the one tool on this door that closes a row somebody else recorded, and the id
   // below matches none.
   eitherOr("finding_decide refuses an id nothing minted",
     await callEval("finding_decide", {
       decisions: [{ finding_id: randomUUID(), decision: "rejected", note: "chain-check probe" }],
-    }), /no platform database|names no finding/);
+      idempotency_key: randomUUID(),
+    }), /no platform database|names no finding|none of the/);
   // Task I-9: a random observation_snapshot_id decides nothing and matches no snapshot — safe
   // against any live state, the same way plugin_profile's probe above is.
   eitherOr("failure_discover refuses an observation_snapshot_id nothing minted",
@@ -97,5 +102,19 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("evaluator_qualify", {
       protocol_version_id: randomUUID(), evaluator_version_id: randomUUID(), idempotency_key: randomUUID(),
     }), /no platform database|unknown protocol_version_id/);
-
+  // Task I-13: three random uuids decide nothing on any live state, the same way the probes
+  // above are safe.
+  eitherOr("evaluation_start refuses an observation_snapshot_id nothing minted",
+    await callEval("evaluation_start", {
+      subject_version_id: randomUUID(), protocol_version_id: randomUUID(),
+      observation_snapshot_id: randomUUID(), idempotency_key: randomUUID(),
+    }), /no platform database|unknown observation_snapshot_id|unknown subject_version_id/);
+  eitherOr("evaluation_assess refuses an eval_run_id nothing minted",
+    await callEval("evaluation_assess", {
+      eval_run_id: randomUUID(), subject_refs: ["chain-check-probe"], idempotency_key: randomUUID(),
+    }), /no platform database|unknown eval_run_id/);
+  eitherOr("evaluation_score refuses an eval_run_id nothing minted",
+    await callEval("evaluation_score", {
+      eval_run_id: randomUUID(), idempotency_key: randomUUID(),
+    }), /no platform database|unknown eval_run_id/);
 }

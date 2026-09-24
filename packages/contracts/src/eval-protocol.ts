@@ -52,6 +52,10 @@ const OWNER_KINDS = [
   "plugin", "dependency", "platform", "environment", "user_input", "unknown",
 ] as const;
 
+/** zz.eval_finding.kind (078) — Task I-13's EVALUATE-produced finding, distinct from the
+ *  rubric-era finding's own `scope` (generic/specific), which keeps its separate vocabulary. */
+const FINDING_KINDS = ["strength", "defect", "unknown"] as const;
+
 const FAILURE_CANDIDATE_STATUSES = ["candidate", "accepted", "rejected", "merged"] as const;
 const REPLAY_CASE_STATUSES = ["replayable", "not_replayable"] as const;
 const REPLAY_CASE_SPLITS = ["evolve", "validation", "proof"] as const;
@@ -115,6 +119,7 @@ export const EVAL_STATE_ENUMS = {
   releaseAttemptStatus: RELEASE_ATTEMPT_STATUSES,
   ownerKind: OWNER_KINDS,
   answerKind: ANSWER_KINDS,
+  findingKind: FINDING_KINDS,
 } as const;
 
 /** A free-form object whose shape spec v8 does not fix beyond "an object" — used wherever a

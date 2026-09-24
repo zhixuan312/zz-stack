@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.5
+version: 1.6
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -87,6 +87,22 @@ it. A candidate it writes is a proposal, `status = 'candidate'`, until `zz-plugi
 it, `mergedCandidateIds` folds others into the same entry — which is a decision `zz-plugin-define`
 makes, not this stage. Named here so `failure_discover` reads as this door's own tool rather
 than an undocumented one, not as an instruction for THIS skill to call it.
+
+## Not yet a stage: `evaluation_start` / `evaluation_assess` / `evaluation_score`
+
+`/eval/mcp` also carries EVALUATE's own protocol-driven run — `evaluation_start(subject_version_id,
+protocol_version_id, observation_snapshot_id, idempotency_key)` binds one `zz.eval_protocol_version`
+to one plugin's own observation snapshot into an immutable `zz.eval_run`; `evaluation_assess(eval_run_id,
+subject_refs, idempotency_key)` runs every measure the protocol's dimensions name against the
+`subject_ref`s given it; `evaluation_score(eval_run_id, idempotency_key)` reduces what was
+assessed into one deterministic score, its status, its guardrails and a bootstrap interval —
+`scoreRun` itself calls no model. This is not one of the five stages above and this flow does not
+call it yet: it replaces `round_judge`/`round_scores`/`round_score` for a plugin whose protocol is
+a `zz.eval_protocol_version` (from `protocol_record`) rather than a legacy ruler, and Task I-28
+wires it into this flow's own stages. Named here so the three tools read as this door's own
+rather than undocumented ones. `finding_record(eval_run_id, finding, idempotency_key)` records
+what an `eval_run` concluded the same way — a strength, a defect or an unknown, each naming
+`owner_kind` — and `finding_decide` closes it, same as for a legacy round's finding.
 
 ## Facts come from tools; meaning comes from you
 

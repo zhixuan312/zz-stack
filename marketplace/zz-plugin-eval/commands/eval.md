@@ -89,6 +89,22 @@ it, `mergedCandidateIds` folds others into the same entry — which is a decisio
 makes, not this stage. Named here so `failure_discover` reads as this door's own tool rather
 than an undocumented one, not as an instruction for THIS skill to call it.
 
+## Not yet a stage: `evaluation_start` / `evaluation_assess` / `evaluation_score`
+
+`/eval/mcp` also carries EVALUATE's own protocol-driven run — `evaluation_start(subject_version_id,
+protocol_version_id, observation_snapshot_id, idempotency_key)` binds one `zz.eval_protocol_version`
+to one plugin's own observation snapshot into an immutable `zz.eval_run`; `evaluation_assess(eval_run_id,
+subject_refs, idempotency_key)` runs every measure the protocol's dimensions name against the
+`subject_ref`s given it; `evaluation_score(eval_run_id, idempotency_key)` reduces what was
+assessed into one deterministic score, its status, its guardrails and a bootstrap interval —
+`scoreRun` itself calls no model. This is not one of the five stages above and this flow does not
+call it yet: it replaces `round_judge`/`round_scores`/`round_score` for a plugin whose protocol is
+a `zz.eval_protocol_version` (from `protocol_record`) rather than a legacy ruler, and Task I-28
+wires it into this flow's own stages. Named here so the three tools read as this door's own
+rather than undocumented ones. `finding_record(eval_run_id, finding, idempotency_key)` records
+what an `eval_run` concluded the same way — a strength, a defect or an unknown, each naming
+`owner_kind` — and `finding_decide` closes it, same as for a legacy round's finding.
+
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

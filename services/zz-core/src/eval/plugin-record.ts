@@ -1,25 +1,39 @@
 /**
- * The tools that write down what a person decided: the findings the report stage concluded,
- * what became of each finding, and the verdict the round ends on. Everything else in the plugin
- * evaluation reads.
+ * The tools that write down what a person (or EVALUATE itself) decided: the findings a round or
+ * an `eval_run` concluded, what became of each finding, and the verdict a legacy round ends on.
+ * Everything else in the plugin evaluation reads.
  *
  * Task I-10 removed `ruler_record`, which used to live here — writing `zz.rubric*` for the
  * define stage, ahead of `ruler_affirm`. `protocol_record` (`protocol.ts`) is what writes a
  * plugin's measurement object now, into `zz.eval_protocol_version` and never `zz.rubric*`.
  *
- * `finding_record` refuses incomplete input at recording time rather than at judging time: a
- * generic finding proposing no change. Refusing later means refusing once the figures exist.
+ * Task I-13 replaces `finding_record`'s own shape: a finding now belongs to one `eval_run_id`
+ * (migration 078's `zz.eval_finding.eval_run_id`, alongside the legacy `eval_id` `round_score`
+ * still reads — see 078's own header for the dual-lifecycle shape), names its `kind`
+ * (strength/defect/unknown, not the legacy `scope`), and REQUIRES `owner_kind` at recording time
+ * rather than leaving ownership to a later pass. This is a breaking change: the OLD
+ * `finding_record(eval_id, findings: [...])` shape this file used to accept is gone, not carried
+ * forward under an alias — no caller of the legacy round pipeline ever wrote a new-pipeline
+ * finding, and the reverse was never true either.
+ *
+ * `finding_decide` now writes through the FR-59 idempotency ledger like every other mutator on
+ * this door — the plan's own words, "finding_decide joins the idempotency ledger" — closing
+ * either lifetime's finding by the same `id`, since `zz.eval_finding.id` names one row whichever
+ * column points at it.
  *
  * It does not approve. A finding lands `deferred`. The platform holds what was decided.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { parseCaller } from "@zz/contracts";
+import { EVAL_STATE_ENUMS, parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import { z } from "zod";
 
+import { writeFindingsDoc } from "./findings-doc.js";
+import { withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
+import { Refusal } from "../refusal.js";
 import { ask, configured, NOT_CONFIGURED, type ScoreQuestion } from "../typed-service.js";
 import { effectiveness, headroom, headroomNote } from "./judge-score.js";
 
@@ -31,74 +45,82 @@ export function registerPluginRecordTools(server: McpServer): void {
     "finding_record",
     {
       description:
-        "WHEN the scores are in and the report stage has decided what the pattern is. It " +
-        "records what this round found as rows the NEXT round can read, and RETURNS them as " +
-        "stored. Each finding is generic (it recurs across unrelated work, so it is the " +
-        "plugin's habit and worth changing the plugin over) or specific (one piece of work's " +
-        "own problem). A finding on somebody else's plugin carries no proposed_change — we " +
-        "assess and stop. REFUSES an eval_id nothing minted. Recording is not deciding: a " +
-        "finding lands deferred, and applying or rejecting it is a separate act by whoever " +
-        "owns the plugin. THERE IS NO `decision` TO SEND: recording cannot close.",
+        "WHEN evaluation_score (or a round's report stage, for a strength/defect/unknown found " +
+        "against an eval_run) has decided what the pattern is. It records ONE finding against " +
+        "eval_run_id and RETURNS it as stored, DEFERRED — recording is not deciding, and " +
+        "applying or rejecting it is a separate act by whoever owns it. `kind` is strength " +
+        "(what is working), defect (what is wrong) or unknown (evidence does not say which). " +
+        "`owner_kind` is REQUIRED: a finding on somebody else's plugin/dependency/platform/ " +
+        "environment/user_input carries no expected_effect — assess and stop. Pass `initiative` " +
+        "to regenerate that initiative's findings.md from this eval_run's current score and " +
+        "every finding recorded against it so far — omit it to record without touching the " +
+        "document. REFUSES an eval_run_id nothing minted and a call missing owner_kind. A " +
+        "mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
-        eval_id: z.string(),
-        findings: z.array(z.object({
-          pattern: z.string().describe("what recurred, in one sentence"),
-          docs_affected: z.number().int().min(0).optional(),
-          scope: z.enum(["generic", "specific"]),
-          proposed_change: z.string().optional()
-            .describe("one change, and what you expect it to do. Omit for a third-party plugin."),
-        })).min(1),
+        eval_run_id: z.string(),
+        finding: z.object({
+          kind: z.enum(EVAL_STATE_ENUMS.findingKind),
+          pattern: z.string().describe("what this run found, in one sentence"),
+          owner_kind: z.enum(EVAL_STATE_ENUMS.ownerKind),
+          owner_ref: z.string().optional().describe("which plugin/dependency/etc, when owner_kind names one"),
+          measure_id: z.string().optional().describe("the zz.eval_measure this finding is evidence for, if one"),
+          evidence_refs: z.array(z.string()).default([]),
+          expected_effect: z.record(z.string(), z.unknown()).optional()
+            .describe("what changing this is expected to move — omit when owner_kind is not 'plugin'"),
+        }),
+        idempotency_key: z.string().min(1),
+        initiative: z.string().optional().describe("regenerate <initiative>/findings.md after recording"),
       },
     },
-    async ({ eval_id, findings }) => {
+    async ({ eval_run_id, finding, idempotency_key, initiative }) => {
       const p = db();
       if (!p) return noDb();
-      const ev = (await p.query<{ id: string }>(
-        "select id::text as id from zz.eval where id = $1::uuid", [eval_id])).rows[0];
-      if (!ev) return text(`ERROR: no evaluation ${eval_id}`);
+      const run = (await p.query<{ id: string }>(
+        "select id::text as id from zz.eval_run where id = $1::uuid", [eval_run_id])).rows[0];
+      if (!run) return text(`ERROR: no eval_run ${eval_run_id}`);
 
-      // A generic finding with no proposed change is an observation: `generic` claims the plugin
-      // has a habit worth changing it over, and naming no change leaves the next round nothing
-      // to test against. `specific` may stand alone.
-      const mute = findings.filter((f) => f.scope === "generic" && !f.proposed_change?.trim());
-      if (mute.length) {
-        return text(
-          `REFUSED: ${mute.length} finding(s) are scoped generic and propose no change — ` +
-          `${mute.map((f) => JSON.stringify(f.pattern.slice(0, 60))).join(", ")}. Generic means ` +
-          "this is the plugin's habit and worth changing the plugin over; say what change, and " +
-          "what you expect it to move. If you cannot, it is an observation about one round — " +
-          "scope it specific, or leave it in the prose of findings.md where a reader can weigh " +
-          "it without the platform treating it as a claim about the plugin.");
+      const principal = parseCaller(requestHeaders()).email;
+      const outcome: IdempotencyOutcome<{ id: string; kind: string; pattern: string }> = await withIdempotency(
+        principal, "finding_record", idempotency_key, { eval_run_id, finding },
+        async (client): Promise<MutatorOutcome<{ id: string; kind: string; pattern: string }>> => {
+          const row = (await client.query<{ id: string }>(`
+            insert into zz.eval_finding
+              (eval_run_id, kind, pattern, owner_kind, owner_ref, measure_id, evidence_refs,
+               expected_effect, decision)
+            values ($1::uuid, $2, $3, $4, $5, $6::uuid, $7::jsonb, $8::jsonb, 'deferred')
+            returning id::text as id`,
+            [eval_run_id, finding.kind, finding.pattern, finding.owner_kind, finding.owner_ref ?? null,
+             finding.measure_id ?? null, JSON.stringify(finding.evidence_refs ?? []),
+             finding.expected_effect ? JSON.stringify(finding.expected_effect) : null])).rows[0];
+          if (!row) throw new Error("insert into zz.eval_finding produced no row");
+          return {
+            result: { id: row.id, kind: finding.kind, pattern: finding.pattern },
+            result_table: "zz.eval_finding", result_id: row.id,
+          };
+        },
+      );
+
+      let result: { id: string; kind: string; pattern: string };
+      if (outcome.replayed) {
+        const row = (await p.query<{ id: string; kind: string; pattern: string }>(
+          "select id::text as id, kind, pattern from zz.eval_finding where id = $1::uuid", [outcome.result_id])).rows[0];
+        if (!row) throw new Refusal("ERROR: idempotency ledger points at a finding this call cannot read back");
+        result = row;
+      } else {
+        result = outcome.result;
       }
 
-      // The ids come back, because a finding nobody can name is a finding nobody can close.
-      //
-      // DELIBERATE: `'deferred'` is a literal in this statement, not a parameter, and there is
-      // no input that could supply a decision. A finding closed at birth carries no
-      // `decided_by`, `decided_at` or `decision_note`, never counts against headroom because
-      // `round_score` reads openness as `decision = 'deferred'`, and can never be decided later
-      // because `finding_decide` updates `where decision = 'deferred'`.
-      const stored: { id: string; scope: string; pattern: string }[] = [];
-      for (const f of findings) {
-        const id = (await p.query<{ id: string }>(`
-          insert into zz.eval_finding (eval_id, pattern, docs_affected, scope, proposed_change, decision)
-          values ($1::uuid, $2, $3, $4, $5, 'deferred') returning id::text as id`,
-          [eval_id, f.pattern, f.docs_affected ?? 0, f.scope,
-           f.proposed_change ?? ""])).rows[0].id;
-        stored.push({ id, scope: f.scope, pattern: f.pattern });
-      }
-      const who = parseCaller(requestHeaders()).email;
-      logActivity(await userRoot(), null,
-        { user: who, action: "finding_record", eval_id, findings: stored.length });
+      let doc: { path: string; chars: number } | string | undefined;
+      if (initiative) doc = await writeFindingsDoc(p, initiative, eval_run_id);
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "finding_record", eval_run_id, finding_id: result.id, replayed: outcome.replayed,
+      });
       return json({
-        eval_id, recorded: stored.length, findings: stored,
-        generic: findings.filter((f) => f.scope === "generic").length,
-        specific: findings.filter((f) => f.scope === "specific").length,
-        next: "These are DEFERRED. Nothing here changes the plugin — the catalog is read-only " +
-              "wherever the platform runs, and a change is a repository edit and a release by " +
-              "whoever owns it. They stay open, and COUNT AGAINST THIS PLUGIN'S HEADROOM in " +
-              "every later round, until finding_decide records that somebody applied or " +
-              "rejected each one.",
+        eval_run_id, finding: result,
+        findings_md: doc === undefined ? undefined : typeof doc === "string" ? { refused: doc } : doc,
+        next: "This finding is DEFERRED. It stays open, counting against this plugin's headroom, " +
+              "until finding_decide records that somebody applied or rejected it.",
       });
     },
   );
@@ -107,16 +129,16 @@ export function registerPluginRecordTools(server: McpServer): void {
     "finding_decide",
     {
       description:
-        "WHEN somebody who owns the plugin has applied a change an earlier round named, or has " +
-        "decided not to. It closes those findings and RETURNS each as it now stands, with who " +
-        "decided and when. This is the act finding_record's own description promises and " +
-        "nothing performed: a finding lands `deferred` and stays there, counting against this " +
-        "plugin's headroom in every later round, until this is called. REFUSES an id nothing " +
-        "minted, a finding already decided, and `deferred` as a decision — deferring is where a " +
-        "finding starts, so choosing it here would be a decision that changes nothing while " +
-        "looking like one that did. A note is required for both real decisions, because " +
-        "`applied` with no change named and `rejected` with no reason are the two ways this " +
-        "ledger stops being readable.",
+        "WHEN somebody who owns the finding has applied the change it named, or has decided not " +
+        "to. It closes those findings — from either lifetime, a legacy round's or an EVALUATE " +
+        "run's — and RETURNS each as it now stands, with who decided and when. This is the act " +
+        "finding_record's own description promises and nothing performed: a finding lands " +
+        "`deferred` and stays there until this is called. REFUSES an id nothing minted, a " +
+        "finding already decided, and `deferred` as a decision — deferring is where a finding " +
+        "starts, so choosing it here would be a decision that changes nothing while looking like " +
+        "one that did. A note is required for both real decisions, because `applied` with no " +
+        "change named and `rejected` with no reason are the two ways this ledger stops being " +
+        "readable. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         decisions: z.array(z.object({
           finding_id: z.string().describe("from finding_record, or round_score's open_changes"),
@@ -125,9 +147,10 @@ export function registerPluginRecordTools(server: McpServer): void {
             "applied: what was changed and where — a version, a file, a release. " +
             "rejected: why this is not worth doing."),
         })).min(1),
+        idempotency_key: z.string().min(1),
       },
     },
-    async ({ decisions }) => {
+    async ({ decisions, idempotency_key }) => {
       const p = db();
       if (!p) return noDb();
       const blank = decisions.filter((d) => !d.note.trim());
@@ -139,36 +162,67 @@ export function registerPluginRecordTools(server: McpServer): void {
           "somebody proposed; say what happened to it.");
       }
       const who = parseCaller(requestHeaders()).email;
-      const done: unknown[] = [];
-      const refused: string[] = [];
-      for (const d of decisions) {
-        // One statement, guarded in the where clause. Reading the row and then updating it would
-        // let two callers deciding the same finding both see `deferred` and both write.
-        const row = (await p.query<{ id: string; pattern: string; decision: string; at: string }>(`
-          update zz.eval_finding
-             set decision = $2, decision_note = $3, decided_by = $4, decided_at = now()
-           where id = $1::uuid and decision = 'deferred'
-          returning id::text as id, pattern, decision, decided_at::text as at`,
-          [d.finding_id, d.decision, d.note.trim(), who])).rows[0];
-        if (row) { done.push({ ...row, decided_by: who, note: d.note.trim() }); continue; }
-        // Which of the two, because they need opposite responses: an unknown id is a caller
-        // working from the wrong round, an already-decided one is about to undo someone's work.
-        const was = (await p.query<{ decision: string; by: string | null; note: string }>(
-          "select decision, decided_by as by, decision_note as note from zz.eval_finding where id = $1::uuid",
-          [d.finding_id])).rows[0];
-        refused.push(was
-          ? `${d.finding_id} was already ${was.decision}${was.by ? ` by ${was.by}` : ""}` +
-            `${was.note ? ` — "${was.note}"` : ""}. Reopening a decided finding is not something ` +
-            "this tool does: record what the next round found instead."
-          : `${d.finding_id} names no finding. Ids come from finding_record, or from the ` +
-            "open_changes round_score returns.");
+
+      interface DecidedRow { id: string; pattern: string; decision: string; at: string }
+      const outcome: IdempotencyOutcome<{ done: (DecidedRow & { decided_by: string; note: string })[]; refused: string[] }> =
+        await withIdempotency(
+          who, "finding_decide", idempotency_key, { decisions },
+          async (client): Promise<MutatorOutcome<{ done: (DecidedRow & { decided_by: string; note: string })[]; refused: string[] }>> => {
+            const done: (DecidedRow & { decided_by: string; note: string })[] = [];
+            const refused: string[] = [];
+            for (const d of decisions) {
+              // One statement, guarded in the where clause. Reading the row and then updating it
+              // would let two callers deciding the same finding both see `deferred` and both write.
+              const row = (await client.query<DecidedRow>(`
+                update zz.eval_finding
+                   set decision = $2, decision_note = $3, decided_by = $4, decided_at = now()
+                 where id = $1::uuid and decision = 'deferred'
+                returning id::text as id, pattern, decision, decided_at::text as at`,
+                [d.finding_id, d.decision, d.note.trim(), who])).rows[0];
+              if (row) { done.push({ ...row, decided_by: who, note: d.note.trim() }); continue; }
+              // Which of the two, because they need opposite responses: an unknown id is a caller
+              // working from the wrong round, an already-decided one is about to undo someone's work.
+              const was = (await client.query<{ decision: string; by: string | null; note: string }>(
+                "select decision, decided_by as by, decision_note as note from zz.eval_finding where id = $1::uuid",
+                [d.finding_id])).rows[0];
+              refused.push(was
+                ? `${d.finding_id} was already ${was.decision}${was.by ? ` by ${was.by}` : ""}` +
+                  `${was.note ? ` — "${was.note}"` : ""}. Reopening a decided finding is not something ` +
+                  "this tool does: record what the next round found instead."
+                : `${d.finding_id} names no finding. Ids come from finding_record, or from the ` +
+                  "open_changes round_score returns.");
+            }
+            if (!done.length) throw new Refusal(`REFUSED: none of the ${decisions.length} decision(s) applied — ${refused.join("; ")}`);
+            // The FIRST decided finding anchors the ledger row — a caller replaying this exact
+            // batch gets back the same `done`/`refused` split, never a partial re-application.
+            return { result: { done, refused }, result_table: "zz.eval_finding", result_id: done[0].id };
+          },
+        );
+
+      let result: { done: (DecidedRow & { decided_by: string; note: string })[]; refused: string[] };
+      if (outcome.replayed) {
+        // A replay re-reads by id rather than trusting a cached response the ledger never stored.
+        const rows = await Promise.all(decisions.map(async (d) => {
+          const row = (await p.query<DecidedRow & { by: string | null; note: string | null }>(
+            "select id::text as id, pattern, decision, decided_at::text as at, decided_by as by, decision_note as note from zz.eval_finding where id = $1::uuid",
+            [d.finding_id])).rows[0];
+          return row && row.decision !== "deferred"
+            ? { id: row.id, pattern: row.pattern, decision: row.decision, at: row.at,
+                decided_by: row.by ?? who, note: row.note ?? "" }
+            : null;
+        }));
+        const done = rows.filter((r): r is DecidedRow & { decided_by: string; note: string } => r !== null);
+        result = { done, refused: decisions.length - done.length > 0 ? ["some decisions from the original call could not be re-read"] : [] };
+      } else {
+        result = outcome.result;
       }
+
       logActivity(await userRoot(), null,
-        { user: who, action: "finding_decide", decided: done.length, refused: refused.length });
+        { user: who, action: "finding_decide", decided: result.done.length, refused: result.refused.length, replayed: outcome.replayed });
       return json({
-        decided: done.length, findings: done,
-        refused: refused.length ? refused : undefined,
-        next: done.length
+        decided: result.done.length, findings: result.done,
+        refused: result.refused.length ? result.refused : undefined,
+        next: result.done.length
           ? "These no longer count against the plugin's headroom. The next round will read the " +
             "remaining open ones and say what is still available to do."
           : "Nothing was decided.",

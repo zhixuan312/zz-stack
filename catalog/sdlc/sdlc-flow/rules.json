@@ -457,6 +457,18 @@
       "behavioural_test": "scripts/gate/checks/marketplace.ts — the committed hook matches the Skill tool, names every shelf plugin, and prints nothing for a foreign skill or with no token",
       "test_drives": "marketplace/zz-core/scripts/zz-skill-report.mjs",
       "report": "npm run gate"
+    },
+    {
+      "rule_id": "flow.track_declared_at_open",
+      "skill": "sdlc-flow",
+      "locator": "**Decide the track when you open it, with the person, because it cannot change afterwards.**",
+      "claim": "The light track trades away the second and third audit round and nothing else, and it is on the record",
+      "enforcement_class": "flow_controller",
+      "schema": null,
+      "handler": "services/zz-core/src/tools/initiative-open.ts records `track` in the open record (services/zz-core/src/initiative-record.ts::recordOpen); services/zz-core/src/audit-rounds.ts::auditMove settles a light initiative's audit after one round unless it reopened an agreement",
+      "behavioural_test": "checks/audit-rounds.ts §5b — a light initiative still owes its one round, a revision after it owes no second, a reopened agreement still goes to the stakeholder, and a freeform initiative carries no track",
+      "test_drives": "services/zz-core/dist/audit-rounds.js",
+      "report": "node checks/audit-rounds.ts"
     }
   ]
 }

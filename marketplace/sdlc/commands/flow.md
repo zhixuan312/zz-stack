@@ -2,7 +2,7 @@
 name: "flow"
 description: "Run the SDLC Agent flow for your team."
 when_to_use: "The person typed /sdlc:flow. This is a command, not an auto-matched skill."
-version: "0.73.0"
+version: "0.74.0"
 disable-model-invocation: true
 ---
 
@@ -23,6 +23,20 @@ on it. The stage a person asks for and the stage the initiative is ready for are
 questions, and the document store is the one that knows the answer.
 
 If there is no initiative yet, create it. That is the first act of the flow, not a stage.
+
+**Decide the track when you open it, with the person, because it cannot change afterwards.**
+`initiative_open(slug, flow: "sdlc-flow", track)`:
+
+| Track | For | What differs |
+|---|---|---|
+| `full` (default) | anything that adds a tool, a table, a migration, a contract, or behaviour another plugin relies on — or that takes more than one conversation to decide | audit rounds follow the evidence, up to three per document |
+| `light` | ONE bounded change a reviewer can verify by reading the diff | one audit round per document; a revision after it is not audited again |
+
+Every stage still runs on the light track — explore still recalls before it writes, every
+document is written and every gate is recorded. The light track trades away the second and third
+audit round and nothing else, and it is on the record, so a skipped round is a declared choice
+rather than a silent one. Propose the track in one line when you open; if the person does not
+answer, open `full`.
 
 ## The sequence
 

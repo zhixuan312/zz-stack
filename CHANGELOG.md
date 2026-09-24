@@ -33,6 +33,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.74.0] — 2026-09-24
+
+### Added
+- **A light track for small initiatives.** `initiative_open(slug, flow, track: "light")` declares
+  one bounded change a reviewer can verify from the diff. Its audited documents owe one round
+  each, and a revision after that round is not audited again; a round that reopens an agreement
+  still goes to the stakeholder. Every document and gate is the same as on `full`, the default.
+  Small initiatives used to skip rounds silently; now the choice is on the record.
+  `sdlc-flow` 2.8 and `zz-platform` 3.47 say when each track fits.
+
 ## [0.73.0] — 2026-09-24
 
 **sdlc now runs the way it is written.** Measured over every sdlc initiative on the platform,

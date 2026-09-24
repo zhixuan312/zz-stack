@@ -33,6 +33,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [semver](https://semver.org/spec/v2.0.0.html), judged against **what a consumer sees** rather
 than how much code moved.
 
+## [0.72.0] — 2026-09-24
+
+### Fixed
+- **Model-facing text that told agents things that are not so.** `zz-platform` said a person's
+  words in the console "land as a source"; they go into a discussion thread no agent tool
+  reads, and become a source only when somebody revises from the console. It also sent people
+  to a "ZZ Access agent" and placed installs on the access door; neither exists. The `/eval`
+  door, `plugin_profile`'s description and zz-plugin-eval's manifest still promised an
+  ablation / CASES block the tools stopped returning. The door index at `/` named
+  `/manage/mcp` "access (behind the ZZ Access agent)" and said `/eval/mcp` was for "teams that
+  installed" the flow; nothing tracks installs.
+- **chain-check's bug walk and `knowledge_reindex` probe measured nothing.** They asked
+  `/manage` for tools registered on `/core`, so both printed `skip` on every release. They
+  now call `/core`, so a release run by a superadmin files, resolves and deletes one probe bug
+  row and calls `knowledge_reindex` with a slug no team carries.
+- **The gate could fix its own lock failures.** `lock-current` regenerated `skills.lock.json`
+  and `plugins.lock.json` in place, so a red run left the corrected lock behind and the next
+  run passed. It now restores both files whatever the outcome.
+
+### Changed
+- **Migrations are one file.** The 74 files that built the schema are squashed into
+  `001_init.sql`; every existing deployment already records `001_init.sql` and skips it, and
+  a fresh database gets the whole schema in one transaction. `075` rewrites the comment on
+  `zz.event.flow` to say what the column holds: the flow of the call's initiative.
+- **Skills lost their history sentences** ("this used to…", dated incidents) — what an agent
+  reads is now the rule and its reason. Versions: `zz-platform` 3.45, `zz-handover` 2.10,
+  `zz-deck` 2.3, `sdlc-flow` 2.6, `sdlc-method` 1.13, `sdlc-plan` 1.13, `zz-access` 2.6,
+  `zz-admin` 2.8, `zz-plugin-eval` 1.1, `zz-plugin-report` 1.4.
+- **Removed, because nothing used them:** `zz-tool set-credential`, `probe-block` and
+  `conformance`; the `/p/<block>/mcp` doors and the `PLATFORMS` setting; `npm run
+  check:markdown` and the gateway's `marked` and `@zz/indexing` dependencies; `pg` from
+  `@zz/tools` and `zod` from `@zz/indexing`. Console `/plugins` rows no longer carry `title`,
+  `kind` or `origin`.
+- **The gate has 416 checks.** Checks for features that no longer exist were deleted, and
+  checks that read a comment instead of the code now read the code.
+- Comments across the repository state current behaviour; history lives in git and lessons
+  in the knowledge store.
+
+### zz-stack-dashboard 0.18.0
+- **Settings loses three things that never worked.** The password forms posted to routes the
+  gateway does not have, so every submit failed — sign-in is a passkey. The client picker
+  showed the Claude Code setup under "Codex" and "Hermes", because the gateway renders only
+  that one. The Tokens table's Scope column was always blank.
+- Unused dependencies removed; the design-system document states current rules.
+
+### Upgrade notes
+- `075` applies on the gateway's next start. It changes one column comment and nothing else.
+- Installed clients re-pull to get the skill changes: `claude plugin marketplace update
+  zz-stack`, then `claude plugin update` for each installed plugin.
+
 ## [0.71.0]
 
 ### An initiative does not survive a team switch, and 443 rows that said otherwise are corrected

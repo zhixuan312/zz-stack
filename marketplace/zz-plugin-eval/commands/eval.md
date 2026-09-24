@@ -139,6 +139,25 @@ are what run one, driven by whoever is executing the candidate's own search. Thi
 the five stages above and this flow does not call it yet: Task I-28 is what teaches an agent to
 drive this loop. Named here so both tools read as this door's own rather than undocumented ones.
 
+## Not yet a stage: `candidate_search`
+
+`/eval/mcp` also carries `candidate_search(improvement_run_id, idempotency_key)` — the tool that
+advances one generation of the search from what the ledger already holds, never by launching a
+replay itself. It screens every still-`recorded` candidate through the registered
+`search.leakage` evaluator BEFORE `candidate_validate` ever builds one (a leaked or repeated
+hypothesis becomes `rejected_precheck` with the critic's own reason); composes at most one new
+child candidate per call from two `valid` candidates whose patches touch disjoint files, recorded
+with its own digest exactly the way `candidate_record` records a proposed one; reduces every
+candidate with a stored validation evaluation to the Pareto frontier over (per-case pass vector,
+cost); and, once the protocol's own liveness bound (`maxGenerations`/`wallClockHours`) is
+reached, selects exactly one final candidate by the protocol's deterministic selection policy —
+or, when nothing guardrail-passing cleared the equivalence band, closes `zz.improvement_run`
+`not_established`. Its response's own `next` field says what the IMPROVE agent does next: propose
+more candidates (directed at `explore_components` when the current generation has stalled),
+validate the ones just proposed, or stop. This is not one of the five stages above and this flow
+does not call it yet: Task I-28 is what teaches an agent to drive this loop. Named here so this
+tool reads as this door's own rather than an undocumented one.
+
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

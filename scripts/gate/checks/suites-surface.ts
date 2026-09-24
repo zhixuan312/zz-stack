@@ -127,3 +127,6 @@ check("replay_start and replay_read refuse an unknown subject_version_id by name
 
 check("producedSubjectText renders two different produced records into two different subject texts, and scoreReplay refuses an unknown replay_run_id or one with no produced output by name",
       runsCheck("eval-replay-score-produced.ts"));
+
+check("paretoFrontier keeps exactly the non-dominated candidates on (pass vector, cost) and selectFinal breaks ties by lower complexity, lower latency, lower cost, then ascending id, excluding a guardrail failure outright",
+      runsCheck("eval-selection.ts"));

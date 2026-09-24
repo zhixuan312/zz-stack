@@ -18,6 +18,14 @@
  * replay runs are still missing, and stores the paired bootstrap verdict once enough of them
  * exist — `candidate-validate.ts` carries every one of those decisions; this file only wires the
  * tool's own registration to it.
+ *
+ * `candidate_search` (Task I-20, FR-38 to FR-42, FR-44, AC-38.1, AC-39.1, AC-42.1, AC-44.1) is
+ * this file's fourth tool, the same split again: leakage screening, disjoint-file composition,
+ * the Pareto frontier and the deterministic final selection all live in `candidate-search.ts`
+ * (over the pure `paretoFrontier`/`selectFinal` in `selection.ts`) — this file only wires the
+ * tool's own registration to `runCandidateSearch`. Like `candidate_validate`, it never blocks on
+ * a long replay inside this call: it advances the search state it can already see from stored
+ * `zz.candidate`/`zz.candidate_evaluation` rows and reports what the IMPROVE agent does next.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -25,6 +33,7 @@ import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
 import { z } from "zod";
 
+import { runCandidateSearch } from "./candidate-search.js";
 import { validateCandidate } from "./candidate-validate.js";
 import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
@@ -401,6 +410,58 @@ export function registerCandidateTools(server: McpServer): void {
       logActivity(await userRoot(), null, {
         user: principal, action: "candidate_validate", candidate_id,
         verdict: outcome.verdict, runs_required: outcome.runs_required?.length ?? 0,
+      });
+      return json(outcome);
+    },
+  );
+
+  // -----------------------------------------------------------------------------------------
+  // candidate_search
+
+  server.registerTool(
+    "candidate_search",
+    {
+      description:
+        "WHEN an improvement_run's own recorded candidates are ready to be advanced one step " +
+        "(Task I-20, FR-38 to FR-42, FR-44): screens every still-recorded candidate through the " +
+        "registered search.leakage evaluator (a candidate whose patch reads as hard-coded " +
+        "against evidence it should not have, or as a rejected hypothesis restated, becomes " +
+        "rejected_precheck with the critic's reason) BEFORE candidate_validate ever builds one; " +
+        "composes at most one new child candidate per call from two valid candidates whose " +
+        "patches touch disjoint files, recorded with its own digest and parent_ids exactly the " +
+        "way candidate_record records a proposed one; reduces every candidate with a stored " +
+        "validation evaluation to the Pareto frontier over (per-case pass vector, cost); and, " +
+        "once the protocol's own liveness bound (maxGenerations/wallClockHours) is reached, " +
+        "selects exactly one final candidate FROM THAT FRONTIER by the protocol's deterministic " +
+        "selection policy — a validated candidate the frontier reduction already excluded is " +
+        "never selected merely for having a good enough score on its own — " +
+        "candidate.status and improvement_run.status both become 'selected', or, when no " +
+        "guardrail-passing candidate cleared the equivalence band, improvement_run.status " +
+        "becomes 'closed' with selected_id: null. Never runs a replay or a proof itself: like " +
+        "candidate_validate, it plans and reduces from stored rows alone and reports what the " +
+        "IMPROVE agent does next in `next` — propose more candidates for this generation " +
+        "(directed at explore_components when the current generation has stalled), validate " +
+        "the ones just proposed, or stop. RETURNS { generation, frontier_ids, rejected: " +
+        "[{id, reason}], selected_id, status, explore_components, edit_budget, proposer_bundle, " +
+        "next }. REFUSES an improvement_run_id nothing minted, and one whose own eval_run names " +
+        "no subject_version_id it can still resolve. A mutator once it has mutated candidate or " +
+        "improvement_run state: writes through the FR-59 idempotency ledger; a call against an " +
+        "improvement_run already at a terminal status (selected/proofing/proof_failed/" +
+        "ready_for_approval/released/closed/cancelled) is read-only and writes no ledger row.",
+      inputSchema: { improvement_run_id: z.string(), idempotency_key: z.string().min(1) },
+    },
+    async ({ improvement_run_id, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+      const principal = parseCaller(requestHeaders()).email;
+
+      const outcome = await runCandidateSearch(p, improvement_run_id, idempotency_key, principal);
+      if ("error" in outcome) return text(outcome.error);
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "candidate_search", improvement_run_id,
+        generation: outcome.generation, status: outcome.status, selected_id: outcome.selected_id,
+        rejected_count: outcome.rejected.length,
       });
       return json(outcome);
     },

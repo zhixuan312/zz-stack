@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.7
+version: 1.8
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -137,6 +137,25 @@ launches a replay itself: `replay_start` and the launcher (`packages/tools/src/r
 are what run one, driven by whoever is executing the candidate's own search. This is not one of
 the five stages above and this flow does not call it yet: Task I-28 is what teaches an agent to
 drive this loop. Named here so both tools read as this door's own rather than undocumented ones.
+
+## Not yet a stage: `candidate_search`
+
+`/eval/mcp` also carries `candidate_search(improvement_run_id, idempotency_key)` — the tool that
+advances one generation of the search from what the ledger already holds, never by launching a
+replay itself. It screens every still-`recorded` candidate through the registered
+`search.leakage` evaluator BEFORE `candidate_validate` ever builds one (a leaked or repeated
+hypothesis becomes `rejected_precheck` with the critic's own reason); composes at most one new
+child candidate per call from two `valid` candidates whose patches touch disjoint files, recorded
+with its own digest exactly the way `candidate_record` records a proposed one; reduces every
+candidate with a stored validation evaluation to the Pareto frontier over (per-case pass vector,
+cost); and, once the protocol's own liveness bound (`maxGenerations`/`wallClockHours`) is
+reached, selects exactly one final candidate by the protocol's deterministic selection policy —
+or, when nothing guardrail-passing cleared the equivalence band, closes `zz.improvement_run`
+`not_established`. Its response's own `next` field says what the IMPROVE agent does next: propose
+more candidates (directed at `explore_components` when the current generation has stalled),
+validate the ones just proposed, or stop. This is not one of the five stages above and this flow
+does not call it yet: Task I-28 is what teaches an agent to drive this loop. Named here so this
+tool reads as this door's own rather than an undocumented one.
 
 ## Facts come from tools; meaning comes from you
 

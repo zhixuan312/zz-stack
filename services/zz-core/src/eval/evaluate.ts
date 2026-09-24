@@ -39,9 +39,10 @@ import {
 import { bootstrapInterval, resolveUncertainty } from "./evaluate-interval.js";
 import { canonicalJson, withIdempotency, type IdempotencyOutcome, type MutatorOutcome } from "./idempotency.js";
 import { scoreRun } from "./score.js";
+import { resolveSubjectRef } from "./subject-ref.js";
 import { logActivity } from "../persist.js";
 import { userRoot } from "../paths.js";
-import { db } from "../platform-db.js";
+import { db, teamFor } from "../platform-db.js";
 import { Refusal } from "../refusal.js";
 import type { DimensionScoreRow, MeasureScoreRow } from "./findings-doc.js";
 
@@ -283,14 +284,19 @@ export function registerEvaluationTools(server: McpServer): void {
     "evaluation_assess",
     {
       description:
-        "WHEN eval_run_id is pending or running: runs every measure of every dimension in that " +
-        "run's protocol version against every subject_ref named, and writes one zz.eval_assessment " +
-        "row per (measure, subject_ref) — deterministic/outcome read a named fact off the run's " +
-        "bound observation snapshot, bounded_semantic/generative_critic ask the measure's bound " +
-        "evaluator (recording an assessment_id), human is recorded as excluded. RETURNS " +
+        "WHEN eval_run_id is pending or running: resolves every subject_ref to its real content — " +
+        "an <initiative>/<doc>.md ref is read off the caller's own team's artifact store, a bare " +
+        "run_id ref is rendered from its own zz.event rows (subject-ref.ts) — then runs every " +
+        "measure of every dimension in that run's protocol version against that resolved text, " +
+        "and writes one zz.eval_assessment row per (measure, subject_ref) — deterministic/outcome " +
+        "read a named fact off the run's bound observation snapshot instead (never the resolved " +
+        "text), bounded_semantic/generative_critic ask the measure's bound evaluator about the " +
+        "resolved text (recording an assessment_id), human is recorded as excluded. RETURNS " +
         "{ eval_run_id, assessment_count, measures_assessed }. REFUSES an eval_run_id nothing " +
-        "minted, an eval_run already completed/failed/cancelled, and an empty subject_refs list. " +
-        "A mutator: writes through the FR-59 idempotency ledger.",
+        "minted, an eval_run already completed/failed/cancelled, an empty subject_refs list, and " +
+        "BY NAME any subject_ref that resolves to neither a real document nor a real run — a " +
+        "model asked to judge nothing is never silently handed a templated sentence naming the " +
+        "ref instead. A mutator: writes through the FR-59 idempotency ledger.",
       inputSchema: {
         eval_run_id: z.string(), subject_refs: z.array(z.string()).min(1),
         idempotency_key: z.string().min(1),
@@ -310,6 +316,18 @@ export function registerEvaluationTools(server: McpServer): void {
       const snapshot = await loadSnapshotFacts(p, run.observation_snapshot_id);
       const principal = parseCaller(requestHeaders()).email;
 
+      // Resolved BEFORE withIdempotency, the same order resolveSnapshot/resolveEvaluatorVersion
+      // already establish elsewhere in this door: a subject_ref that resolves to nothing refuses
+      // the whole call and writes no ledger row, rather than being discovered mid-transaction
+      // after some measures already ran against a real ref.
+      const team = await teamFor(principal);
+      const resolvedRefs = new Map<string, string>();
+      for (const subjectRef of subject_refs) {
+        const resolved = await resolveSubjectRef(p, team, subjectRef);
+        if ("error" in resolved) return text(resolved.error);
+        resolvedRefs.set(subjectRef, resolved.text);
+      }
+
       const outcome: IdempotencyOutcome<{ assessment_count: number; measures_assessed: number }> =
         await withIdempotency(
           principal, "evaluation_assess", idempotency_key, { eval_run_id, subject_refs },
@@ -319,9 +337,10 @@ export function registerEvaluationTools(server: McpServer): void {
             }
             let written = 0;
             for (const subjectRef of subject_refs) {
+              const subjectText = resolvedRefs.get(subjectRef);
               for (const measure of measures) {
                 const answer: MeasureAnswer = await answerMeasure({
-                  measure, snapshot, subjectRef, principal,
+                  measure, snapshot, subjectRef, principal, subjectText,
                   qualificationOf: (evId) => latestQualification(p, evId, run.protocol_version_id),
                 });
                 await client.query(`

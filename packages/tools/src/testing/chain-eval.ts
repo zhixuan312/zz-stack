@@ -142,4 +142,19 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("replay_close", {
       replay_run_id: randomUUID(), status: "cancelled", idempotency_key: randomUUID(),
     }), /no platform database|unknown replay_run_id/);
+  // Task I-18: a random eval_run_id decides nothing and matches no run — refused before any
+  // finding is ever read, the same way every other probe here is safe against any live state.
+  eitherOr("improvement_start refuses an eval_run_id nothing minted",
+    await callEval("improvement_start", {
+      eval_run_id: randomUUID(), finding_ids: [randomUUID()], idempotency_key: randomUUID(),
+    }), /no platform database|no eval_run/);
+  // A random improvement_run_id decides nothing and matches no run — refused before
+  // base_subject_version_id is ever resolved.
+  eitherOr("candidate_record refuses an improvement_run_id nothing minted",
+    await callEval("candidate_record", {
+      improvement_run_id: randomUUID(), base_subject_version_id: randomUUID(), parents: [],
+      hypothesis: "chain-check probe hypothesis", expected_effect: {},
+      patchset: { diff: "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n" },
+      idempotency_key: randomUUID(),
+    }), /no platform database|no improvement_run/);
 }

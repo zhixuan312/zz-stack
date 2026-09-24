@@ -18,6 +18,14 @@
  *     itself repeats the same check client-side (`assertRoleEvents`, `plan.ts`) as defense in
  *     depth: a payload is never trusted just because the server was supposed to have filtered it.
  *
+ * Task I-18 lifted this file's own candidate-replay refusal, now that `candidate_record` gives a
+ * `candidate_id` run a row to read: `replay-runs.ts` resolves `subject_plugin` for a candidate
+ * the same way it always did for a `subject_version_id` (through the recorded candidate's own
+ * `base_subject_version_id`) and hands back `candidate_patchset` alongside it. This file applies
+ * that patch into the pinned worktree with `applyPatch` (`git.ts`) — `git apply` of a temp file
+ * holding the diff text, argv only — before `installPlugin` ever reads from the worktree, so the
+ * plugin a candidate session runs is the patched one, not the base subject's own bytes.
+ *
  * DELIBERATE: no import from `services/zz-core/dist`. `ReplayStartResult`/`ReplayReadResult`
  * below are local mirrors of that door's JSON, the same way `ops/call.ts` never imports a
  * service's types — `packages/tools` only ever crosses that boundary over MCP, on the wire.
@@ -30,7 +38,7 @@ import { randomUUID } from "node:crypto";
 import { Mcp } from "@zz/mcp-client";
 
 import { die, optional, parseArgs, platformToken, required } from "../lib/cli.js";
-import { createWorktree, listWorktrees, removeWorktree, type Worktree } from "./git.js";
+import { applyPatch, createWorktree, listWorktrees, removeWorktree, type Worktree } from "./git.js";
 import {
   assertRoleEvents, candidateMcpConfig, candidatePrompt, idempotencyKey, NO_MCP_CONFIG,
   refuseBeforeIO, simulatedPersonPersona, stillAsking, type RuntimeEnv,
@@ -58,6 +66,11 @@ interface ReplayReadResult {
   case_id: string; split: string | null; team_slug: string;
   subject_version_id: string | null; candidate_id: string | null;
   subject_plugin: string | null; subject_source_locator: unknown;
+  /** I-18: the recorded candidate's own patchset, present only for a `candidate_id` run —
+   *  `replay-runs.ts` resolves `subject_plugin` for a candidate the same way it always did for
+   *  a `subject_version_id` (through the base subject `candidate_record` bound at recording
+   *  time), and hands this back alongside it so the launcher never re-derives it. */
+  candidate_patchset?: { diff: string; files?: string[] } | null;
   events?: ReplayEvent[];
 }
 
@@ -182,10 +195,25 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     const plugin = actorRead.subject_plugin;
     if (!plugin) {
       const why = actorRead.candidate_id
-        ? "this run replays a candidate_id, and candidate_record (Task I-18) does not exist " +
-          "yet — there is no patch to resolve a plugin from"
+        ? "this run replays candidate_id " + actorRead.candidate_id + ", whose own " +
+          "base_subject_version_id names a plugin never located"
         : "subject_version_id names a plugin never located — call plugin_locate first";
       throw new Error(`launchReplay: cannot resolve which plugin to install — ${why}`);
+    }
+
+    // I-18: no candidate executes before its own row exists (FR-36), and that row is what this
+    // reads — a candidate replay installs the BASE subject's plugin (just resolved above) and
+    // then applies the recorded patch on top of it, in the worktree, before anything reads from
+    // that worktree. A subject_version_id run (no candidate_id) skips this entirely: there is no
+    // patch, and the pinned worktree's own commit is already what gets installed.
+    if (actorRead.candidate_id) {
+      const diff = actorRead.candidate_patchset?.diff;
+      if (!diff) {
+        throw new Error(
+          `launchReplay: candidate ${actorRead.candidate_id} carries no patchset.diff to apply`);
+      }
+      applyPatch(worktree.path, diff);
+      appendFileSync(logPath, `# applied candidate ${actorRead.candidate_id}'s patch into ${worktree.path}\n`, "utf8");
     }
 
     installPlugin(claudeBin, candidateConfigDir, worktree.path, plugin);

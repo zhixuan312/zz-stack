@@ -104,6 +104,21 @@ rather than undocumented ones. `finding_record(eval_run_id, finding, idempotency
 what an `eval_run` concluded the same way — a strength, a defect or an unknown, each naming
 `owner_kind` — and `finding_decide` closes it, same as for a legacy round's finding.
 
+## Not yet a stage: `improvement_start` / `candidate_record`
+
+`/eval/mcp` also carries IMPROVE's own ledger — `improvement_start(eval_run_id, finding_ids,
+idempotency_key)` opens one durable `zz.improvement_run` against an `eval_run`'s plugin-owned
+findings (a dependency/platform/environment/user_input/unknown finding refuses it, FR-34) and
+returns a `search_policy` snapshot alongside the proposer's own evidence bundle — failing traces,
+evaluator critiques, refusal text, corrections, errors, cost/latency and prior rejected
+hypotheses. `candidate_record(improvement_run_id, base_subject_version_id, parents, hypothesis,
+expected_effect, patchset, idempotency_key)` persists one proposed patch — before anything about
+it executes (FR-36) — computing its `patch_digest`, `complexity_delta`, touched components and
+touched owners, and refusing a hypothesis that repeats one already rejected for the same plugin.
+This is not one of the five stages above and this flow does not call it yet: Task I-28 is what
+teaches an agent to read the proposer bundle and propose a candidate from it. Named here so both
+tools read as this door's own rather than undocumented ones.
+
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

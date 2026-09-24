@@ -246,12 +246,15 @@ async function closeRun(
   return { archived, revoked };
 }
 
-/** AC-29.1's first clause: before registering anything new, close every one of THIS principal's
- *  own runs whose PAT has already expired — an unreachable sandbox left `registered`/`running`
- *  forever otherwise, squatting on the reserved `replay-` namespace. Scoped to `principal`
- *  alone, never every caller's expired runs: one caller's replay_start is not the moment to
- *  sweep the whole platform. */
-async function sweepExpired(p: Db, principal: string): Promise<void> {
+/** AC-29.1's first clause and FR-31's own words — "Any `replay_start` or `improvement_start`
+ *  call first closes the caller's own runs whose liveness bound has passed" — before
+ *  registering anything new, close every one of THIS principal's own runs whose PAT has already
+ *  expired: an unreachable sandbox left `registered`/`running` forever otherwise, squatting on
+ *  the reserved `replay-` namespace. Scoped to `principal` alone, never every caller's expired
+ *  runs: one caller's `replay_start`/`improvement_start` is not the moment to sweep the whole
+ *  platform. Exported for `candidates.ts`'s `improvement_start` — the second of the two callers
+ *  FR-31 names, never a second implementation of the same sweep. */
+export async function sweepExpired(p: Db, principal: string): Promise<void> {
   const { rows } = await p.query<{ id: string; team_slug: string; pat_id: string }>(`
     select id::text as id, team_slug, pat_id::text as pat_id
       from zz.replay_run
@@ -403,9 +406,13 @@ export function registerReplayRunTools(server: McpServer): void {
         "sandbox handle: reads one zz.replay_run row, joined to its case's split. RETURNS " +
         "{ replay_run_id, status, case_id, split, subject_version_id, candidate_id, " +
         "protocol_version_id, environment_digest, sandbox_ref, team_slug, score, guardrails, " +
-        "model_usage, cost, duration_ms, created_at, subject_plugin, subject_source_locator } — " +
-        "the result fields answer null until status reaches a terminal value; the subject_* " +
-        "fields are null for a candidate_id run or a plugin never located. Pass `role` " +
+        "model_usage, cost, duration_ms, created_at, subject_plugin, subject_source_locator, " +
+        "candidate_patchset } — the result fields answer null until status reaches a " +
+        "terminal value; subject_plugin/subject_source_locator resolve for EITHER a " +
+        "subject_version_id run or a candidate_id run (Task I-18: through the recorded " +
+        "candidate's own base_subject_version_id), null only when that subject was never " +
+        "located; candidate_patchset (the recorded diff a candidate replay must apply " +
+        "before its session starts) is null for a subject_version_id run. Pass `role` " +
         "(actor | simulated_person | evaluator, the same three replay-cases.ts's visibleEvents " +
         "recognises) to also get `events`: the case's own events, filtered to that role and " +
         "ordered by seq — the one path the launcher (Task I-17) or any other reader uses to see " +
@@ -441,16 +448,25 @@ export function registerReplayRunTools(server: McpServer): void {
         score: unknown; guardrails: unknown; model_usage: unknown; cost: string | null;
         duration_ms: string | null; created_at: string;
         subject_plugin: string | null; subject_source_locator: unknown;
+        candidate_patchset: { diff: string; files?: string[] } | null;
       }>(`
         select r.id::text as id, r.status, r.case_id::text as case_id, c.split,
                r.subject_version_id::text as subject_version_id, r.candidate_id::text as candidate_id,
                r.protocol_version_id::text as protocol_version_id, r.environment_digest, r.sandbox_ref,
                r.team_slug, r.score, r.guardrails, r.model_usage, r.cost, r.duration_ms, r.created_at,
-               pl.name as subject_plugin, sv.source_locator as subject_source_locator
+               -- I-18: a candidate_id run has no subject_version_id of its own — its plugin comes
+               -- from the recorded candidate's own base_subject_version_id instead, through the
+               -- SAME zz.eval_subject_version/zz.plugin join, never a second derivation.
+               coalesce(pl.name, cand_pl.name) as subject_plugin,
+               coalesce(sv.source_locator, cand_sv.source_locator) as subject_source_locator,
+               cand.patchset as candidate_patchset
           from zz.replay_run r
           join zz.replay_case c on c.id = r.case_id
           left join zz.eval_subject_version sv on sv.id = r.subject_version_id
           left join zz.plugin pl on pl.id = sv.plugin_id
+          left join zz.candidate cand on cand.id = r.candidate_id
+          left join zz.eval_subject_version cand_sv on cand_sv.id = cand.base_subject_version_id
+          left join zz.plugin cand_pl on cand_pl.id = cand_sv.plugin_id
          where r.id = $1::uuid`, [replay_run_id])).rows[0];
       if (!row) return text(`ERROR: unknown replay_run_id ${replay_run_id}`);
 

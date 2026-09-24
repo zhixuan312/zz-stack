@@ -9,12 +9,12 @@
  * team slug or a path can never be reinterpreted as a second argument.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  gitRevParseArgv, gitUpdateRefArgv, gitUpdateRefDeleteArgv, gitWorktreeAddArgv,
+  gitApplyArgv, gitRevParseArgv, gitUpdateRefArgv, gitUpdateRefDeleteArgv, gitWorktreeAddArgv,
   gitWorktreeListArgv, gitWorktreeRemoveArgv, replayRefFor, worktreeDirName,
 } from "./plan.js";
 
@@ -86,6 +86,32 @@ export function removeWorktree(repoRoot: string, worktree: Worktree): void {
   gitQuiet(repoRoot, gitWorktreeRemoveArgv(worktree.path));
   if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true });
   gitQuiet(repoRoot, gitUpdateRefDeleteArgv(worktree.ref));
+}
+
+/** I-18: applies a recorded candidate's own unified diff into an already-created worktree,
+ *  before `installPlugin` reads anything out of it — the launcher's own lift of the
+ *  candidate-replay refusal: "a recorded candidate's patch must be applied into the replay
+ *  worktree before the session starts." The diff text never reaches `execFileSync`'s argv as a
+ *  string; it is written to a private temporary file first and only that file's PATH is passed,
+ *  so nothing in the diff's own content can be misread as a second argument. The temporary
+ *  directory is removed whether `git apply` succeeds or throws — a failed apply must not leave
+ *  a stray patch file behind for the next run's `mkdtempSync` to trip over.
+ *
+ *  `patch_digest` (`complexity.ts`'s `patchDigest`) is sha256 of `candidate_record`'s own
+ *  `patchset.diff` exactly as recorded — this function never touches that string, so any
+ *  trailing-newline normalisation happens only in the COPY written to `patchPath`, never in what
+ *  was digested or stored. `git apply` reads the diff text file-format-strict and refuses a
+ *  patch whose last hunk line has no trailing newline as "corrupt" (a bare `.join("\n")` never
+ *  produces one), so one is added to the written copy when missing. */
+export function applyPatch(worktreePath: string, diff: string): void {
+  const dir = mkdtempSync(join(tmpdir(), "zz-replay-patch-"));
+  const patchPath = join(dir, "candidate.patch");
+  writeFileSync(patchPath, diff.endsWith("\n") ? diff : `${diff}\n`, "utf8");
+  try {
+    git(worktreePath, gitApplyArgv(patchPath));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** Every worktree `repoRoot` currently has registered, one path per line — the live

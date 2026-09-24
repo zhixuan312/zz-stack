@@ -112,3 +112,9 @@ check("every dependency mode resolves to exactly one action with no fabricated o
 
 check("the launcher builds every git/claude argv with no shell, a run-bound credential is refused any events role but actor, and a launch outside a shell-capable runtime refuses before touching a process",
       runsCheck("replay-launch-pure.ts"));
+
+check("complexityDelta is lines added minus lines removed plus 20 per added component minus 20 per removed one",
+      runsCheck("eval-complexity.ts"));
+
+check("the unified-diff parser counts added/removed lines and whole-file adds/deletes, touched files map onto the base subject's own component manifest, and a trivial proposer bundle is never reported as non_trivial",
+      runsCheck("eval-candidates-pure.ts"));

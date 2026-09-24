@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { recordingDoor } from "./door.js";
+import { registerCandidateTools } from "./eval/candidates.js";
 import { registerEvaluationTools } from "./eval/evaluate.js";
 import { registerFailureDiscoverTools } from "./eval/discover.js";
 import { registerObserveTools } from "./eval/observe.js";
@@ -39,15 +40,14 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves seven nouns — plugin, protocol, round,
- * finding, failure, evaluator and evaluation.
+ * a registration under a new prefix. This door serves nine nouns — plugin, protocol, round,
+ * finding, failure, evaluator, evaluation, improvement and candidate.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =
   "zz-plugin-eval is this platform's instrument for judging a plugin by what its real runs " +
-  "did. It measures, and it never changes what " +
-  "it measures — from this platform's own record of what its doors did, and from no second " +
-  "runner. This is the /eval/mcp door and it serves that one job.\n\n" +
+  "did. It measures, and never changes what it measures — from this platform's own record " +
+  "of what its doors did, never a second runner. This is the /eval/mcp door.\n\n" +
   'START HERE: skill_read("zz-plugin-eval") on the /core/mcp door — it carries the order these ' +
   "tools go in and what the evidence is worth. A protocol is agreed BEFORE any scoring, " +
   "in a gated protocol.md; a score produced before that gate is evidence of nothing.\n\n" +
@@ -56,19 +56,19 @@ const EVAL_INSTRUCTIONS =
   "read it against the conformance standard\n" +
   "  protocol_*  read whether this plugin's protocol is still compatible, record a new " +
   "version, and bind a person's approval of it\n" +
-  "  round_*    score one version against the legacy ruler still in force, read one round's " +
-  "marks back, " +
-  "and conclude it: two axes, and no recommendation\n" +
+  "  round_*    score one version against the legacy ruler, read its marks back, and " +
+  "conclude it: two axes, no recommendation\n" +
   "  finding_*  record what a round or an EVALUATE run concluded, and close each one when " +
   "somebody applies or rejects it\n" +
-  "  failure_*  mine an observation snapshot's own real evidence for candidate failure " +
-  "modes, before any protocol exists\n" +
+  "  failure_*  mine an observation snapshot for candidate failure modes, before any " +
+  "protocol exists\n" +
   "  evaluator_*  qualify one evaluator version against a protocol's own qualification " +
-  "policy, before its answers may back a score\n" +
+  "policy, before its answers count\n" +
   "  evaluation_*  bind a protocol version and an observation snapshot into one run, assess " +
-  "it measure by measure, and score it — the protocol-driven scoring round, distinct from " +
-  "round_* above\n" +
-  "  replay_*  derive replay cases and start, read, close a run\n\n" +
+  "and score it — distinct from round_* above\n" +
+  "  replay_*  derive replay cases and start, read, close a run\n" +
+  "  improvement_*  open an optimization run against plugin-owned findings\n" +
+  "  candidate_*  persist a proposed patch before it executes\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +
@@ -102,5 +102,6 @@ export function buildEvalServer(): McpServer {
   registerEvaluationTools(server);
   registerReplayCaseTools(server);
   registerReplayRunTools(server);
+  registerCandidateTools(server);
   return server;
 }

@@ -1,7 +1,7 @@
 {
   "name": "zz-plugin-eval",
   "description": "Measure a whole plugin by what its real runs did. One protocol you agree, evidence and never a change.",
-  "version": "0.75.2+78a79ca3",
+  "version": "0.75.2+1b4938b8",
   "author": {
     "name": "ZZ Stack",
     "url": "https://github.com/zhixuan312/zz-stack"

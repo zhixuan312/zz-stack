@@ -112,6 +112,15 @@ export const gitWorktreeRemoveArgv = (worktreePath: string): string[] =>
   ["worktree", "remove", "--force", worktreePath];
 export const gitWorktreeListArgv = (): string[] => ["worktree", "list", "--porcelain"];
 
+/** I-18: a recorded candidate's own patch, applied into the pinned worktree before anything
+ *  installs from it — `patchPath` is a file this same run wrote its diff text to (see
+ *  `git.ts`'s `applyPatch`), never the diff text itself on the command line, so an unusual
+ *  character in a patch line is never handed to a shell to reinterpret. `--whitespace=nowarn`
+ *  because a candidate's own diff may carry trailing-whitespace edits the plugin under test
+ *  made on purpose; this launcher installs and runs the patched plugin, it does not lint it. */
+export const gitApplyArgv = (patchPath: string): string[] =>
+  ["apply", "--whitespace=nowarn", patchPath];
+
 // -------------------------------------------------------------------------------------------
 // claude plugin argv — install at an exact digest: a LOCAL marketplace source pointed at the
 // pinned worktree, never the live checkout and never the published GitHub shelf, so what gets

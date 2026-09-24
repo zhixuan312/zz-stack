@@ -1,26 +1,31 @@
 ---
 name: zz-plugin-judge
-version: 0.4
-description: Stage 4 of plugin evaluation. Confirm the ruler was approved, then score the plugin's usage artifacts against it with a pinned model outside this conversation. Writes scores; decides nothing.
-when_to_use: "The fourth stage of zz-plugin-eval, once rulers.md is approved. Never before — the affirm call refuses, and that refusal is the gate working."
+version: 0.5
+description: Stage 4 of plugin evaluation. Score the plugin's usage artifacts against the ruler already in force with a pinned model outside this conversation. Writes scores; decides nothing.
+when_to_use: "The fourth stage of zz-plugin-eval, once a ruler is already recorded against this version. round_judge itself refuses when none is — that refusal is the gate working."
 ---
 
 # zz-plugin-judge
 
 ```
-ruler_affirm(plugin, version)                          is there an approved ruler?
 round_judge(plugin, version, rubric_id, initiative, take: 1-4)  score, ONE per call
 round_judge(..., eval_id, take: 1-4)                   again, until `remaining` is 0
 round_judge(..., control: true)                        and once blind — see below
 ```
 
+**THIS STAGE MARKS AGAINST A LEGACY RULER (`zz.rubric`), NOT A PROTOCOL.** `round_judge` and
+`round_scores` were left unchanged when Task I-10 moved the define stage onto
+`protocol_read`/`protocol_record`/`protocol_affirm` — every ruler any version already declares
+(`rubric_id`, read straight off the version) stays exactly as scorable as it was. There is no
+tool that records a new one any more; `rubric_id` is either already set or it is not.
+
 **PASS THE INITIATIVE ON THE FIRST CALL.** `initiative` is the evaluation initiative you are
-working inside — the one whose `rulers.md` was approved and whose `findings.md` you will write.
-It is recorded on the round, which is what lets a score be read back to the report that explains
-it, and a report back to the rows behind it. Nothing infers it: joining a score to its report by
-plugin name and a date is right until two rounds of one plugin land close together, and that
-class of guess is what journal 0116 was minted for. Continuation calls carry `eval_id` and do not
-repeat it; the control inherits it from the round it controls.
+working inside — the one whose `findings.md` you will write. It is recorded on the round, which
+is what lets a score be read back to the report that explains it, and a report back to the rows
+behind it. Nothing infers it: joining a score to its report by plugin name and a date is right
+until two rounds of one plugin land close together, and that class of guess is what journal 0116
+was minted for. Continuation calls carry `eval_id` and do not repeat it; the control inherits it
+from the round it controls.
 
 **`round_judge` MARKS ONE SUBJECT PER CALL.** It returns an `eval_id` and a `remaining`
 count; call it again with that `eval_id` until `remaining` is 0. `take` (1–4) says how many
@@ -62,15 +67,15 @@ The control is unchanged from how this platform has always run it. Do not redefi
 different control starts a series that cannot be compared with the previous one, and the point
 of a series is comparison.
 
-## If affirm refuses
+## If round_judge refuses
 
-It refuses for exactly two reasons, and both are the design working:
-
-- **No approved ruler.** `rulers.md` is a draft, or nobody has approved it. Go back to
-  `zz-plugin-define` and get agreement. Do not score against a draft.
-- **A quantitative dimension has no threshold.** Someone wrote a dimension that says a tool
-  computes a number and never said what number is good enough. That is not a scoring problem to
-  work around; it is an unfinished ruler.
+- **No ruler declares this version.** `zz.plugin_version.rubric_id` was never set for it. There
+  is no way to set one going forward (Task I-10) — score a plugin that never had a ruler through
+  the protocol lifecycle instead (`protocol_read`/`protocol_record`/`protocol_affirm`), which is
+  what defines "good" for a version from here on.
+- **The sheet moved under an affirmed ruler.** A quantitative dimension's `reads` no longer
+  resolves against `plugin_profile`'s current sheet — a figure stopped being computed, or a door
+  that used to write documents no longer does. `round_judge` names exactly which figure moved.
 
 ## Pitfalls
 

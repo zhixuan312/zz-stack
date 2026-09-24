@@ -51,7 +51,8 @@ export interface Dim {
   /** The figure the line is drawn over, as dotted paths into the facts sheet — empty on a
    *  qualitative dimension. The threshold pass answers not met for a missing figure, so an
    *  unresolvable path is indistinguishable afterwards from a line the plugin really missed.
-   *  Resolved at ruler_record, and again before any round is marked.
+   *  Resolved once, when the removed ruler_record (Task I-10) wrote a legacy rubric, and again
+   *  before any round is marked.
    *  COUPLED: the paths resolve against plugin-facts.ts. */
   reads: string[] | null;
 }
@@ -429,8 +430,9 @@ export async function markAll(
   const dimOf = matcher(qual);
   // The top of the scale is the ruler's own, never a literal. A dimension that names its rungs
   // declares how many it has and `markTyped` rebases them to 1..N, so a fixed ceiling of 5 stores a
-  // mark that ruler never defined. `ruler_record`'s schema caps `levels` at five, which bounds
-  // this above but not below. The two-ends form names no rungs and its scale is 1-5, so it keeps 5.
+  // mark that ruler never defined. The removed `ruler_record`'s schema (Task I-10) capped
+  // `levels` at five, which bounds this above but not below — every legacy row still honours
+  // that cap. The two-ends form names no rungs and its scale is 1-5, so it keeps 5.
   const ceilingOf = new Map(qual.map((d) => [d.dim_id, d.levels?.length ?? 5]));
   const marked: { subject: string; mean: number; truncated: number }[] = [];
   const skipped: string[] = [], unmatched: string[] = [];

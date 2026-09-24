@@ -15,8 +15,9 @@ size("TOOL_ALIAS", TOOL_ALIAS, 17);
 // gateway refuses.
 size("MANAGE_ALIAS", MANAGE_ALIAS, 16);
 // Includes `round_recommend` -> `round_score`, so a caller working from the old name still
-// reaches the tool that replaced it.
-size("EVAL_ALIAS", EVAL_ALIAS, 7);
+// reaches the tool that replaced it. Task I-10 deleted the three ruler_* entries rather than
+// repointing them at protocol_* — see EVAL_ALIAS's own comment for why — dropping this from 7.
+size("EVAL_ALIAS", EVAL_ALIAS, 4);
 size("SKILL_ALIAS", SKILL_ALIAS, 2);
 
 const resolves: [Record<string, string>, string, string][] = [
@@ -27,7 +28,6 @@ const resolves: [Record<string, string>, string, string][] = [
   [TOOL_ALIAS, "reindex_knowledge", "knowledge_reindex"],
   [MANAGE_ALIAS, "add_person", "person_add"],
   [MANAGE_ALIAS, "my_client_setup", "client_setup"],
-  [EVAL_ALIAS, "plugin_ruler", "ruler_read"],
   [EVAL_ALIAS, "plugin_judge", "round_judge"],
   [SKILL_ALIAS, "zz-backbone", "zz-platform"],
   [SKILL_ALIAS, "zz-knowledge", "zz-handover"],
@@ -39,6 +39,11 @@ for (const [map, from, to] of resolves) {
 // A deleted tool must not resolve: aliasing it would merge two distinct series.
 for (const gone of ["issue_my_access_token", "my_access_tokens", "revoke_my_access_token"]) {
   if (MANAGE_ALIAS[gone]) fail.push(`${gone} was deleted and must have no alias`);
+}
+// Task I-10: the ruler_* tools and the pre-rename names that once resolved to them are all
+// deleted, not renamed onto protocol_*. Neither half of that old rename may resolve.
+for (const gone of ["plugin_ruler", "plugin_ruler_record", "plugin_affirm"]) {
+  if (EVAL_ALIAS[gone]) fail.push(`${gone} was deleted and must have no alias`);
 }
 // An unchanged tool must not resolve either.
 for (const same of ["initiative_status", "knowledge_add", "knowledge_supersede"]) {

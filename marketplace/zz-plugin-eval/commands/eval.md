@@ -74,7 +74,7 @@ After report, the close is an act rather than a stage — one `initiative_close(
 then reports `action: handover`, which `zz-handover` writes cold, afterwards. The close ends
 the evaluation; the handover ends the cycle.
 
-**Two gates**: `rulers.md` after define, `findings.md` after report. Nothing is scored before a
+**Two gates**: `protocol.md` after define, `findings.md` after report. Nothing is scored before a
 person has agreed what good means, and nothing is closed before a person has read what was
 found.
 
@@ -83,10 +83,11 @@ found.
 `/eval/mcp` also carries `failure_discover(observation_snapshot_id)` — DISCOVER, mining one
 `plugin_profile` snapshot's own real refusals and stage returns for candidate failure modes,
 before any protocol exists. It is not one of the five stages above and this flow does not call
-it: a candidate it writes is a proposal, `status = 'candidate'`, and only a protocol (a later
-capability this platform does not yet expose through this flow) may accept or merge one. Named
-here so it reads as this door's tool rather than an undocumented one — not as an instruction to
-call it.
+it. A candidate it writes is a proposal, `status = 'candidate'`, until `zz-plugin-define`'s
+`protocol_record` folds one in — naming it in a `failureTaxonomy` entry's `candidateId` accepts
+it, `mergedCandidateIds` folds others into the same entry — which is a decision `zz-plugin-define`
+makes, not this stage. Named here so `failure_discover` reads as this door's own tool rather
+than an undocumented one, not as an instruction for THIS skill to call it.
 
 ## Facts come from tools; meaning comes from you
 
@@ -108,8 +109,8 @@ is never yours.
 ❌ **Stopping because the trace block is thin.** A thin trace block is `not measured`, and that
 is the honest answer — report it and move on, rather than treating it as a reason to stop.
 
-❌ **Scoring before `rulers.md` is approved.** `ruler_affirm` refuses, and the refusal is the
-gate working.
+❌ **Scoring before `protocol.md` is approved.** `protocol_affirm` refuses without an approved
+document quoting the exact version's `content_digest`, and the refusal is the gate working.
 
 ❌ **Reading a number without its window.** `plugin_profile` returns the resolved `window` it
 computed every fact over, and `stage_paths` carries each step's own timestamps — a three-week-old

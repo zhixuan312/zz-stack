@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-profile
-version: 0.9
+version: 0.10
 description: Stage 2 of plugin evaluation. Compute the pre-protocol observation snapshot — production facts from this subject's real runs, in one resolved window — with its sufficiency verdict and the coverage it was derived from. No model touches any of it.
 when_to_use: "The second stage of zz-plugin-eval, after locate has settled the plugin and version. Also the stage that decides whether there is enough to judge."
 ---
@@ -36,8 +36,8 @@ against the same window rather than sliding forward as new runs land.
 reported, and the snapshot is still written. **A plugin nobody has used is a correct and
 complete outcome**, not a failure. Say so plainly rather than treating it as an error, or the
 next agent starts inventing data to get past it. A ruler whose subject is the document or the
-initiative may have subjects even when the trace history is thin; `ruler_read` says what is
-there.
+initiative may have subjects even when the trace history is thin; `protocol_read` says whether
+this plugin already has a compatible protocol before the define stage writes a new one.
 
 ## What the response actually says
 

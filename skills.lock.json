@@ -72,24 +72,24 @@
     "sha": "a5d73e2d40eb"
   },
   "zz-plugin-define": {
-    "version": "1.3",
-    "sha": "f80733547fcd"
+    "version": "2.0",
+    "sha": "91f8ee0274f3"
   },
   "zz-plugin-eval": {
-    "version": "1.4",
-    "sha": "3f67be04d99e"
+    "version": "1.5",
+    "sha": "0f8a7d21fd15"
   },
   "zz-plugin-judge": {
-    "version": "0.4",
-    "sha": "a4d402d2773c"
+    "version": "0.5",
+    "sha": "10ea1a861ce5"
   },
   "zz-plugin-locate": {
     "version": "0.1",
     "sha": "641a2d2e8a99"
   },
   "zz-plugin-profile": {
-    "version": "0.9",
-    "sha": "52af2c26155d"
+    "version": "0.10",
+    "sha": "d6091dbeb92e"
   },
   "zz-plugin-report": {
     "version": "1.4",
@@ -112,8 +112,8 @@
     "sha": "20fda0ac1218"
   },
   "zz-platform": {
-    "version": "3.50",
-    "sha": "4b080c06757f"
+    "version": "3.51",
+    "sha": "ee775e4937ae"
   },
   "zz-tldr": {
     "version": "1.2",

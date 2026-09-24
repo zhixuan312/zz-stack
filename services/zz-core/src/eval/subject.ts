@@ -474,7 +474,8 @@ export function registerSubjectTools(server: McpServer): void {
             on conflict (plugin_id, declared_version, content_digest)
               -- A no-op write of the row onto itself: the conflict key already fixes every other
               -- column's value, so this exists only so the RETURNING clause below gives back the
-              -- existing id rather than nothing, the same trick ruler_record uses on zz.rubric.
+              -- existing id rather than nothing, the same trick protocol-record.ts's upsert of
+              -- zz.eval_protocol uses (Task I-10), and the removed ruler_record used to on zz.rubric.
               do update set component_manifest = excluded.component_manifest
             returning id::text as id`,
             [resolved.pluginId, resolved.declaredVersion, resolved.contentDigest,

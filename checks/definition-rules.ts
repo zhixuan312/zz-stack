@@ -164,7 +164,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   // Evaluation — the only subject in which a model's judgement becomes a score.
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
   plugin_register: "evaluation",
-  ruler_read: "evaluation", ruler_record: "evaluation", ruler_affirm: "evaluation",
+  protocol_read: "evaluation", protocol_record: "evaluation", protocol_affirm: "evaluation",
   round_judge: "evaluation", round_scores: "evaluation", round_score: "evaluation",
   finding_record: "evaluation", finding_decide: "evaluation", failure_discover: "evaluation",
 };

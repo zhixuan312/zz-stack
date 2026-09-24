@@ -12,14 +12,17 @@ const fail = [];
 // `discover.ts` holds `failure_discover` (Task I-9) — a mutator writing
 // `zz.eval_failure_mode_candidate` through the FR-59 ledger, the same reason `subject.ts` and
 // `observe.ts` above are their own registration modules rather than living inside plugin-eval.ts.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "plugin-eval", "plugin-judge", "plugin-record"];
+// `protocol.ts` (Task I-10) holds `protocol_read`/`protocol_record`/`protocol_affirm` for the
+// same reason: each is a mutator (or, for `protocol_read`, reads live state no other module
+// computes) writing `zz.eval_protocol_version` through the same ledger.
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "plugin-eval", "plugin-judge", "plugin-record"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
   const src = readFileSync(`services/zz-core/src/eval/${f}.ts`, "utf8");
   for (const m of src.matchAll(/registerTool\(\s*\n?\s*"([a-z0-9_]+)"/g)) registered.add(m[1]);
 }
-for (const want of ["ruler_read", "ruler_record", "ruler_affirm", "round_judge",
+for (const want of ["protocol_read", "protocol_record", "protocol_affirm", "round_judge",
                     "round_scores", "finding_record"]) {
   if (!registered.has(want)) fail.push(`${want} is not registered`);
 }
@@ -30,12 +33,17 @@ for (const keep of ["plugin_locate", "plugin_profile", "plugin_conform"]) {
 for (const old of Object.keys(EVAL_ALIAS)) {
   if (registered.has(old)) fail.push(`${old} is still registered`);
 }
+// Task I-10: removed completely, not renamed — see EVAL_ALIAS's own comment for why these three
+// take no alias entry either.
+for (const gone of ["ruler_read", "ruler_record", "ruler_affirm"]) {
+  if (registered.has(gone)) fail.push(`${gone} is still registered — Task I-10 removed it`);
+}
 // The set, not the size. A count fails identically whether a tool was lost or one was added, and
 // says neither. A missing name is a tool that vanished; an unexpected one is a tool nobody wrote
 // into the door's own description.
 const EXPECTED = new Set([
   "plugin_locate", "plugin_profile", "plugin_conform", "plugin_register",
-  "ruler_read", "ruler_record", "ruler_affirm",
+  "protocol_read", "protocol_record", "protocol_affirm",
   "round_judge", "round_scores", "round_score",
   "finding_record", "finding_decide",
   "failure_discover",
@@ -82,6 +90,11 @@ for (const s of readdirSync(skillsDir)) {
   const body = readFileSync(join(skillsDir, s, "SKILL.md"), "utf8");
   for (const old of Object.keys(EVAL_ALIAS)) {
     if (new RegExp(`(^|[^a-z_])${old}([^a-z_]|$)`).test(body)) fail.push(`${s} still names ${old}`);
+  }
+  // Task I-10: removed completely rather than renamed, so no alias entry carries these — checked
+  // by name here instead.
+  for (const gone of ["ruler_read", "ruler_record", "ruler_affirm"]) {
+    if (new RegExp(`(^|[^a-z_])${gone}([^a-z_]|$)`).test(body)) fail.push(`${s} still names ${gone}`);
   }
 }
 

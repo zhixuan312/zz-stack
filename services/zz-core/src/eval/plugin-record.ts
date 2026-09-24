@@ -1,14 +1,16 @@
 /**
- * The tools that write down what a person decided: the ruler the define stage derived, the
- * findings the report stage concluded, what became of each finding, and the verdict the round
- * ends on. Everything else in the plugin evaluation reads.
+ * The tools that write down what a person decided: the findings the report stage concluded,
+ * what became of each finding, and the verdict the round ends on. Everything else in the plugin
+ * evaluation reads.
  *
- * Both a ruler and a finding refuse incomplete input at recording time rather than at judging
- * time: a quantitative dimension with no threshold, a threshold with no stated reason, or a
+ * Task I-10 removed `ruler_record`, which used to live here — writing `zz.rubric*` for the
+ * define stage, ahead of `ruler_affirm`. `protocol_record` (`protocol.ts`) is what writes a
+ * plugin's measurement object now, into `zz.eval_protocol_version` and never `zz.rubric*`.
+ *
+ * `finding_record` refuses incomplete input at recording time rather than at judging time: a
  * generic finding proposing no change. Refusing later means refusing once the figures exist.
  *
- * Neither tool approves. A ruler is recorded, then put to a person, then affirmed; a finding
- * lands `deferred`. The platform holds what was decided.
+ * It does not approve. A finding lands `deferred`. The platform holds what was decided.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -20,170 +22,11 @@ import { userRoot } from "../paths.js";
 import { db } from "../platform-db.js";
 import { ask, configured, NOT_CONFIGURED, type ScoreQuestion } from "../typed-service.js";
 import { effectiveness, headroom, headroomNote } from "./judge-score.js";
-import { factObject, readsRefusal } from "./plugin-facts.js";
 
 const json = (v: unknown) => text(JSON.stringify(v, null, 2));
 const noDb = () => text("ERROR: this deployment has no platform database, so nothing can be recorded");
 
 export function registerPluginRecordTools(server: McpServer): void {
-  server.registerTool(
-    "ruler_record",
-    {
-      description:
-        "WHEN rulers.md says what good means for this plugin, and BEFORE the stakeholder " +
-        "approves — approving is `ruler_affirm`'s job and it is a separate act. It writes the " +
-        "ruler the define stage derived into the registry so the judge can be run against it, " +
-        "and RETURNS the dimensions as they now stand. Each dimension is qualitative (a reader " +
-        "scores 1-5 between two written ends) or quantitative (a tool computes a fact and this " +
-        "carries the line drawn over it, with the reason it was drawn there). REFUSES a " +
-        "quantitative dimension with no threshold, with no threshold_reason, or whose `reads` " +
-        "name a figure that is not on this plugin's facts sheet — a line that cannot reach " +
-        "its figure is scored FAILED rather than unanswered, which costs the plugin twice " +
-        "and is indistinguishable afterwards from a real miss. Re-recording replaces the " +
-        "dimensions of the ruler at the same rubric version.",
-      inputSchema: {
-        plugin: z.string(),
-        version: z.string(),
-        rubric_version: z.string().describe("this ruler's own version, e.g. \"1\""),
-        subject: z.enum(["auto", "document", "trace", "initiative"])
-          .describe("what the qualitative dimensions are applied to"),
-        dimensions: z.array(z.object({
-          name: z.string(),
-          kind: z.enum(["qualitative", "quantitative"]),
-          /** 2-5 ordered level descriptions, low end first.
-           *
-           *  COUPLED: five is the ceiling because `effectiveness` in judge-score.ts rescales a
-           *  mark with `(mean - 1) / 4` and stores the result out of ten. Raising it means
-           *  changing the divisor too. */
-          levels: z.array(z.string()).min(2).max(5).optional(),
-          /** The two-ends form. Kept for the rulers written before levels existed; a new
-           *  qualitative dimension must send `levels`. */
-          five_means: z.string().optional(),
-          one_means: z.string().optional(),
-          threshold: z.string().optional(),
-          threshold_reason: z.string().optional(),
-          /** Which figure the line is drawn over, as dotted paths into the facts sheet
-           *  plugin_profile produces (`record.revised_with_evidence_pct`, `refusals.total`).
-           *  Required on a quantitative dimension and resolved against this plugin's own sheet. */
-          reads: z.array(z.string()).optional(),
-        })).min(1),
-      },
-    },
-    async ({ plugin, version, rubric_version, subject, dimensions }) => {
-      const p = db();
-      if (!p) return noDb();
-
-      // Validated here and not at judging time: by then the figures exist, and a threshold
-      // written after them cannot be told from one written before.
-      const bad: string[] = [];
-      for (const d of dimensions) {
-        if (d.kind === "quantitative") {
-          if (!d.threshold?.trim()) {
-            bad.push(`${d.name}: quantitative and carries no threshold — a tool computes the ` +
-                     "figure, and this is where the line over it is drawn");
-          }
-          if (!d.threshold_reason?.trim()) {
-            bad.push(`${d.name}: quantitative and carries no threshold_reason — a line with no ` +
-                     "stated reason is a number somebody can move later to make a result come " +
-                     "out differently, and nobody would be able to tell");
-          }
-        } else if (!d.levels?.length) {
-          // Every level is named. Two ends and a 1-5 scale leave three rungs to the marker's
-          // taste, so two rounds mark the same artifact differently for no recorded reason.
-          bad.push(`${d.name}: qualitative and carries no levels — give 2-5 ordered level ` +
-                   "descriptions, low end first. Two ends and a 1-5 scale leave the rungs " +
-                   "between them to whoever is marking, and that is where two rounds stop " +
-                   "being comparable");
-        } else if (d.levels.some((l) => !l.trim())) {
-          bad.push(`${d.name}: a level is blank — every level a marker may award has to say ` +
-                   "what it means");
-        }
-      }
-      if (bad.length) return text(`REFUSED: ${bad.join("; ")}`);
-
-      // The line has to be able to reach its figure, checked against this plugin's real sheet
-      // while the ruler is still a draft. Judging time cannot refuse at all: `applyThresholds`
-      // answers not met when the facts lack the figure a line needs, so an unanswerable line
-      // comes back failed and writes a 1 into eval_score indistinguishable from a real miss.
-      if (dimensions.some((d) => d.kind === "quantitative")) {
-        const refusal = readsRefusal(dimensions, await factObject(p, plugin, version));
-        if (refusal) return text(refusal);
-      }
-
-      const pv = (await p.query<{ id: string; plugin_id: string }>(`
-        select pv.id::text as id, p.id::text as plugin_id
-          from zz.plugin p join zz.plugin_version pv on pv.plugin_id = p.id
-         where p.name = $1 and pv.version = $2`, [plugin, version])).rows[0];
-      if (!pv) return text(`ERROR: no released version ${version} of "${plugin}" is recorded`);
-
-      const rubricId = (await p.query<{ id: string }>(`
-        insert into zz.rubric (plugin_id, version, subject) values ($1::uuid, $2, $3)
-        on conflict (plugin_id, version) do update set subject = excluded.subject
-        returning id::text as id`, [pv.plugin_id, rubric_version, subject])).rows[0].id;
-
-      // Replaced, not merged, and matched by name, because zz.eval_score carries a foreign key
-      // to rubric_dimension.id. A dimension still in the ruler is updated in place and keeps its
-      // id, so a score taken against "document depth" stays attached to that row rather than to
-      // a replacement that happens to read the same. A dimension the new draft drops is deleted,
-      // unless something has already been scored against it — then the caller is told to move to
-      // a new rubric version rather than have history rewritten underneath them.
-      const existing = (await p.query<{ id: string; name: string; scored: string }>(`
-        select d.id::text as id, d.name,
-               (select count(*)::text from zz.eval_score s where s.dimension_id = d.id) as scored
-          from zz.rubric_dimension d where d.rubric_id = $1::uuid`, [rubricId])).rows;
-      const keep = new Set(dimensions.map((d) => d.name));
-      const orphaned = existing.filter((e) => !keep.has(e.name) && Number(e.scored) > 0);
-      if (orphaned.length) {
-        return text(
-          `REFUSED: ${orphaned.map((o) => `"${o.name}"`).join(", ")} ` +
-          `${orphaned.length === 1 ? "has" : "have"} already been scored under rubric ` +
-          `version ${rubric_version}, so dropping ${orphaned.length === 1 ? "it" : "them"} ` +
-          "would leave marks pointing at a line nobody holds. Record this as a NEW " +
-          "rubric_version instead — the old scale keeps its scores and the new one starts " +
-          "clean, which is what makes two rounds comparable or honestly incomparable.");
-      }
-      const byName = new Map(existing.map((e) => [e.name, e.id]));
-      for (const e of existing) if (!keep.has(e.name)) {
-        await p.query("delete from zz.rubric_dimension where id = $1::uuid", [e.id]);
-      }
-      for (const [i, d] of dimensions.entries()) {
-        const id = byName.get(d.name);
-        if (id) {
-          await p.query(`
-            update zz.rubric_dimension
-               set five_means = $2, one_means = $3, ordinal = $4, kind = $5,
-                   threshold = $6, threshold_reason = $7, levels = $8::text[],
-                   reads = $9::text[]
-             where id = $1::uuid`,
-            [id, d.five_means ?? "", d.one_means ?? "", i,
-             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null,
-             d.reads ?? []]);
-        } else {
-          await p.query(`
-            insert into zz.rubric_dimension
-              (rubric_id, name, five_means, one_means, ordinal, kind, threshold, threshold_reason,
-               levels, reads)
-            values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10::text[])`,
-            [rubricId, d.name, d.five_means ?? "", d.one_means ?? "", i,
-             d.kind, d.threshold ?? "", d.threshold_reason ?? "", d.levels ?? null,
-             d.reads ?? []]);
-        }
-      }
-
-      const who = parseCaller(requestHeaders()).email;
-      logActivity(await userRoot(), null,
-        { user: who, action: "ruler_record", plugin, version,
-          rubric: rubric_version, dimensions: dimensions.length });
-      return json({
-        plugin, version, rubric_id: rubricId, rubric_version, subject,
-        qualitative: dimensions.filter((d) => d.kind === "qualitative").length,
-        quantitative: dimensions.filter((d) => d.kind === "quantitative").length,
-        next: "Put rulers.md to the stakeholder. Nothing is scored until ruler_affirm records " +
-              "that they agreed to it.",
-      });
-    },
-  );
-
   server.registerTool(
     "finding_record",
     {

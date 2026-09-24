@@ -2,8 +2,9 @@
  * The facts a threshold is drawn over, and whether the line can reach them.
  *
  * This file produces no judgement: it assembles figures a tool computed and answers one
- * mechanical question about a ruler — does the figure this line needs exist on the sheet. Both
- * `ruler_record`, which writes a ruler, and `round_judge`, which marks against one, reach it.
+ * mechanical question about a ruler — does the figure this line needs exist on the sheet.
+ * `round_judge`, which marks against a legacy `zz.rubric`, reaches it; the removed `ruler_record`
+ * (Task I-10) used to, ahead of writing a ruler, and no writer reaches it any more.
  *
  * `applyThresholds` answers NOT MET when the facts lack the figure a line needs, so an
  * unmeasurable line is indistinguishable from a failed one afterwards: `zz.eval_score` holds 1
@@ -40,8 +41,8 @@ export const bodyOf = (team: string, initiative: string, path: string): string |
 export async function factObject(p: pg.Pool, plugin: string, version: string): Promise<Record<string, unknown>> {
   const entry = entryOf(plugin);
   const stages: string[] = (entry?.manifest.stages ?? []).map((s) => s.name);
-  // round_judge and ruler_record judge a plugin's whole recorded history, not one bounded
-  // evidence window — Task I-7's window is `plugin_profile`'s own (observe.ts), named
+  // round_judge judges a plugin's whole recorded history, not one bounded evidence window —
+  // Task I-7's window is `plugin_profile`'s own (observe.ts), named
   // explicitly here rather than defaulted inside pluginTraces.
   const traces = await pluginTraces(p, plugin, version, toolsNamedBy(plugin), stages,
     servesOwnDoor(plugin), UNBOUNDED_WINDOW);

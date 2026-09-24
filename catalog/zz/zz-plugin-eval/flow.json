@@ -2,8 +2,8 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "zz-plugin-eval",
   "agentName": "ZZ Plugin Evaluation",
-  "description": "Measure a whole plugin by what its real runs did. One ruler you agree, evidence and never a change.",
-  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a ruler somebody agreed before the scoring started. It measures and never changes what it measures.",
+  "description": "Measure a whole plugin by what its real runs did. One protocol you agree, evidence and never a change.",
+  "purpose": "To answer whether a plugin is worth having, from evidence the platform already holds — what its real runs did — against a protocol somebody agreed before the scoring started. It measures and never changes what it measures.",
   "entry": "zz-plugin-eval",
   "commands": {
     "eval": "zz-plugin-eval"
@@ -25,7 +25,7 @@
     },
     {
       "name": "zz-plugin-define",
-      "produces": "rulers.md"
+      "produces": "protocol.md"
     },
     {
       "name": "zz-plugin-judge",
@@ -38,7 +38,7 @@
   ],
   "documents": [
     {
-      "name": "rulers.md",
+      "name": "protocol.md",
       "role": "agreement",
       "gate": true,
       "sections": [
@@ -51,7 +51,7 @@
     {
       "name": "findings.md",
       "role": "verification",
-      "requires": "rulers.md",
+      "requires": "protocol.md",
       "closing": true,
       "requiredForClose": true,
       "sections": [

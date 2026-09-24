@@ -199,11 +199,11 @@ export const COV_SUITES_1: readonly MutationSpec[] = [
       "and the graders and the chain check follow",
     assertion: "the release chain check calls names the door actually registers",
     subject: "packages/tools/src/testing/chain-eval.ts",
-    find: `await callEval("ruler_read", { plugin: PLUGIN, version: "0" }),`,
-    replace: `await callEval("plugin_ruler", { plugin: PLUGIN, version: "0" }),`,
-    planted: "the release chain check calls the pre-rename `plugin_ruler`, which no door " +
-      "registers — the call 404s against a live deployment hours after the gate said the " +
-      "change was fine, and the renamed tool is exercised by nothing",
+    find: `await callEval("protocol_read", { subject_version_id: randomUUID() }),`,
+    replace: `await callEval("ruler_read", { subject_version_id: randomUUID() }),`,
+    planted: "the release chain check calls `ruler_read`, which Task I-10 removed from the " +
+      "door — the call 404s against a live deployment hours after the gate said the change " +
+      "was fine, and `protocol_read` is exercised by nothing",
   },
   {
     check: SUITES_SURFACE,

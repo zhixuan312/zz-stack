@@ -23,6 +23,7 @@ import { registerObserveTools } from "./eval/observe.js";
 import { registerPluginEvalTools } from "./eval/plugin-eval.js";
 import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
+import { registerProtocolTools } from "./eval/protocol.js";
 import { registerSubjectTools } from "./eval/subject.js";
 
 /** What this door says about itself at `initialize`, before any tool is called.
@@ -34,7 +35,7 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves five nouns — plugin, ruler, round,
+ * a registration under a new prefix. This door serves five nouns — plugin, protocol, round,
  * finding and failure.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
@@ -44,14 +45,15 @@ const EVAL_INSTRUCTIONS =
   "it measures — from this platform's own record of what its doors did, and from no second " +
   "runner. This is the /eval/mcp door and it serves that one job.\n\n" +
   'START HERE: skill_read("zz-plugin-eval") on the /core/mcp door — it carries the order these ' +
-  "tools go in and what the evidence is worth. The ruler is agreed BEFORE any scoring, " +
-  "in a gated rulers.md; a score produced before that gate is evidence of nothing.\n\n" +
+  "tools go in and what the evidence is worth. A protocol is agreed BEFORE any scoring, " +
+  "in a gated protocol.md; a score produced before that gate is evidence of nothing.\n\n" +
   "The nouns, one line each:\n" +
   "  plugin_*   identify the plugin an evaluation is about, profile what its runs did, and " +
   "read it against the conformance standard\n" +
-  "  ruler_*    the three-step gate, in this order: read what a ruler is written from, record " +
-  "the ruler, record the stakeholder's approval of it\n" +
-  "  round_*    score one version against the ruler in force, read one round's marks back, " +
+  "  protocol_*  read whether this plugin's protocol is still compatible, record a new " +
+  "version, and bind a person's approval of it\n" +
+  "  round_*    score one version against the legacy ruler still in force, read one round's " +
+  "marks back, " +
   "and conclude it: two axes, and no recommendation\n" +
   "  finding_*  record what a round concluded, and close each one when somebody applies " +
   "or rejects it\n" +
@@ -84,6 +86,7 @@ export function buildEvalServer(): McpServer {
   registerPluginEvalTools(server);
   registerPluginJudgeTools(server);
   registerPluginRecordTools(server);
+  registerProtocolTools(server);
   registerFailureDiscoverTools(server);
   return server;
 }

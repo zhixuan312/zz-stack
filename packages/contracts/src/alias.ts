@@ -59,11 +59,15 @@ export const MANAGE_ALIAS: Record<string, string> = Object.freeze({
   list_catalog: "catalog_list",
 });
 /** `/eval`'s renames. `plugin_locate`, `plugin_profile` and `plugin_conform` keep their names,
- * `plugin` already being the noun, so they take no entry. */
+ * `plugin` already being the noun, so they take no entry.
+ *
+ * `plugin_ruler`, `plugin_ruler_record` and `plugin_affirm` are gone from here, not repointed at
+ * `protocol_read`/`protocol_record`/`protocol_affirm`: Task I-10 removed the `ruler_*` tools they
+ * once resolved to, and `protocol_*` is a different measurement object with a different shape —
+ * a genuinely new series, not the old one under a new name. The platform's own precedent for
+ * exactly this (MANAGE_ALIAS's deleted `issue_my_access_token` and friends) is "deleted rather
+ * than renamed, so they take no entry: aliasing them would merge two series." */
 export const EVAL_ALIAS: Record<string, string> = Object.freeze({
-  plugin_ruler: "ruler_read",
-  plugin_ruler_record: "ruler_record",
-  plugin_affirm: "ruler_affirm",
   plugin_judge: "round_judge",
   plugin_scores: "round_scores",
   plugin_finding_record: "finding_record",

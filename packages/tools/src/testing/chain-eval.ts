@@ -50,23 +50,23 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
       subject_version_id: randomUUID(), evidence_window: { last_runs: 5 },
       idempotency_key: randomUUID(),
     }), /no platform database|unknown subject_version_id/);
-  eitherOr("ruler_read answers or refuses by a named cause",
-    await callEval("ruler_read", { plugin: PLUGIN, version: "0" }),
-    /no platform database/);
-  eitherOr("ruler_affirm refuses a version this deployment never released",
-    await callEval("ruler_affirm", { plugin: PLUGIN, version: "0" }),
-    /no platform database|no released version/);
+  eitherOr("protocol_read answers or refuses by a named cause",
+    await callEval("protocol_read", { subject_version_id: randomUUID() }),
+    /no platform database|unknown subject_version_id/);
+  eitherOr("protocol_affirm refuses a protocol_version_id nothing minted",
+    await callEval("protocol_affirm", {
+      protocol_version_id: randomUUID(), initiative: "chain-check-probe", idempotency_key: randomUUID(),
+    }), /no platform database|unknown protocol_version_id/);
   eitherOr("round_judge refuses a version that declares no ruler",
     await callEval("round_judge", { plugin: PLUGIN, version: "0", rubric_id: "0" }),
     /no platform database|declares no ruler/);
   eitherOr("round_scores refuses an eval_id nothing minted",
     await callEval("round_scores", { eval_id: randomUUID() }),
     /no platform database|is not an evaluation/);
-  eitherOr("ruler_record refuses a quantitative dimension with no threshold",
-    await callEval("ruler_record", {
-      plugin: PLUGIN, version: "0", rubric_version: "0", subject: "auto",
-      dimensions: [{ name: "chain-check probe", kind: "quantitative" }],
-    }), /no platform database|carries no threshold/);
+  eitherOr("protocol_record refuses a body EvaluationProtocol does not validate",
+    await callEval("protocol_record", {
+      subject_version_id: randomUUID(), protocol_body: {}, idempotency_key: randomUUID(),
+    }), /no platform database|unknown subject_version_id|"code"/);
   // round_score computes both axes from the round's own figures and asks the typed service one thing
   // only — how strong the evidence is. On a throwaway stack there is no round to score, and there
   // may be no key either; both are named refusals, and either proves the door serves the tool and

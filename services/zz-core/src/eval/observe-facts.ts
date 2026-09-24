@@ -3,8 +3,8 @@
  * counts: outcomes, document approvals, latency, request/response bytes, refusal text/owner
  * detail, and tokens/cost. Kept out of observe.ts to stay under this repository's 700-line
  * ceiling, and out of plugin-profile.ts because these queries have no reader outside OBSERVE —
- * `ruler_read` and `round_judge` (plugin-facts.ts, plugin-judge.ts) read `pluginTraces` alone and
- * have no evidence-window concept to hand these queries.
+ * `round_judge` (plugin-facts.ts, plugin-judge.ts) reads `pluginTraces` alone and has no
+ * evidence-window concept to hand these queries.
  *
  * DELIBERATE: every exported function returns `ObservedFact` values — `{numerator, denominator,
  * value, coverage}` for a non-empty population, `{value: null, reason}` for an empty one — and

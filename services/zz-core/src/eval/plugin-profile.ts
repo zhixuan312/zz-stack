@@ -25,9 +25,10 @@ export interface EvidenceWindow { readonly from: string; readonly to: string }
 
 /** Every run this platform has ever recorded — Postgres's own unbounded timestamptz literals, so
  *  `between $3 and $4` needs no second, window-less branch. `plugin_profile` (observe.ts) always
- *  resolves a real range; this is for the two callers outside OBSERVE that judge a plugin's whole
- *  history rather than one bounded evidence window (`ruler_read`'s reach figures, `round_judge`'s
- *  quantitative dimensions) — named explicitly at their call site, never defaulted here. */
+ *  resolves a real range; this is for the one caller outside OBSERVE that judges a plugin's whole
+ *  history rather than one bounded evidence window — `round_judge`'s quantitative dimensions,
+ *  through `plugin-facts.ts`'s `factObject` — named explicitly at that call site, never
+ *  defaulted here. */
 export const UNBOUNDED_WINDOW: EvidenceWindow = { from: "-infinity", to: "infinity" };
 
 interface PluginTraces {

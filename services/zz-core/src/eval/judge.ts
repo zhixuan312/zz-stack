@@ -80,9 +80,14 @@ const count = (v: unknown): number | null =>
  * resumes, so a failed subject is retried by the next call with its own fresh budget.
  *
  * The timeout is explicit because fetch has none.
- */
+ *
+ * `purpose` names what `zz.model_call.purpose` records for this call — the round (judge.ts,
+ * judge-thresholds.ts) always passes `"plugin-judge"`; `discover.ts`'s generative-critic step
+ * (Task I-9), the other caller of this, the shared reading-judge endpoint outside the typed
+ * service, passes its own so the two callers' rows stay distinguishable by purpose rather than
+ * indistinguishable under one borrowed label. */
 export async function ask(p: pg.Pool, plugin: string | null,
-                   system: string, user: string): Promise<Record<string, unknown> | null> {
+                   system: string, user: string, purpose: string): Promise<Record<string, unknown> | null> {
   if (!LLM_BASE || !LLM_KEY) throw new Error("no LLM endpoint configured for the judge");
   let body: string;
 
@@ -101,7 +106,7 @@ export async function ask(p: pg.Pool, plugin: string | null,
       insert into zz.model_call
         (plugin, purpose, model, input_tokens, output_tokens, cache_read_tokens, duration_ms, ok)
       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [plugin, "plugin-judge", JUDGE_MODEL,
+      [plugin, purpose, JUDGE_MODEL,
        count(u?.prompt_tokens), count(u?.completion_tokens),
        count(u?.prompt_tokens_details?.cached_tokens),
        Date.now() - started, ok]);
@@ -498,7 +503,7 @@ export async function markAll(
       if (typed) {
         marks = await markTyped(qual, text);
       } else {
-        const got = await ask(p, plugin, system, text);
+        const got = await ask(p, plugin, system, text, "plugin-judge");
         marks = (got?.marks as Mark[] | undefined) ?? [];
       }
     } catch (err) {

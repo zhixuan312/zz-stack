@@ -85,5 +85,11 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("finding_decide", {
       decisions: [{ finding_id: randomUUID(), decision: "rejected", note: "chain-check probe" }],
     }), /no platform database|names no finding/);
+  // Task I-9: a random observation_snapshot_id decides nothing and matches no snapshot — safe
+  // against any live state, the same way plugin_profile's probe above is.
+  eitherOr("failure_discover refuses an observation_snapshot_id nothing minted",
+    await callEval("failure_discover", {
+      observation_snapshot_id: randomUUID(), idempotency_key: randomUUID(),
+    }), /no platform database|unknown observation_snapshot_id/);
 
 }

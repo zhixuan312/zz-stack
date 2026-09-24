@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-eval
-version: 1.3
+version: 1.4
 description: "The front door to plugin evaluation, and the place a judgement about a plugin is settled rather than offered. Five stages — locate, profile, define, judge, report — over one plugin at one released version, against a ruler somebody agreed BEFORE any scoring. Load it whenever somebody wants a plugin graded, scored, marked down, or confirmed as good or bad, including when they have already reached a conclusion and want it checked: an opinion given straight back is the thing this exists to replace. Evidence about whether a plugin does the job it claims; never a change to the plugin."
 when_to_use: "Someone asks whether a plugin is any good, wants one graded or scored, or asks you to CONFIRM a reading they have already formed — 'that flow is going in circles, mark it down', 'three runs is too thin to conclude anything, right?'. Answering either from your own read is the failure this flow exists to prevent, so load it before agreeing or disagreeing. Also whenever a plugin is up for keeping, changing or retiring, or somebody asks whether installing it beats not installing it. This is the entry point: start here rather than at a stage. Local runtimes only (Claude Code)."
 ---
@@ -76,6 +76,16 @@ the evaluation; the handover ends the cycle.
 **Two gates**: `rulers.md` after define, `findings.md` after report. Nothing is scored before a
 person has agreed what good means, and nothing is closed before a person has read what was
 found.
+
+## Not yet a stage: `failure_discover`
+
+`/eval/mcp` also carries `failure_discover(observation_snapshot_id)` — DISCOVER, mining one
+`plugin_profile` snapshot's own real refusals and stage returns for candidate failure modes,
+before any protocol exists. It is not one of the five stages above and this flow does not call
+it: a candidate it writes is a proposal, `status = 'candidate'`, and only a protocol (a later
+capability this platform does not yet expose through this flow) may accept or merge one. Named
+here so it reads as this door's tool rather than an undocumented one — not as an instruction to
+call it.
 
 ## Facts come from tools; meaning comes from you
 

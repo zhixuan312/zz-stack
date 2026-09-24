@@ -9,7 +9,10 @@ const fail = [];
 // (FR-1/FR-59) and had to go through `registerSubjectTools`, its own registration module.
 // `observe.ts` holds `plugin_profile` for the same reason (Task I-7): it too became a mutator,
 // writing `zz.eval_observation_snapshot` through the FR-59 ledger, and moved out on its own.
-const REGISTRATION_MODULES = ["subject", "observe", "plugin-eval", "plugin-judge", "plugin-record"];
+// `discover.ts` holds `failure_discover` (Task I-9) — a mutator writing
+// `zz.eval_failure_mode_candidate` through the FR-59 ledger, the same reason `subject.ts` and
+// `observe.ts` above are their own registration modules rather than living inside plugin-eval.ts.
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "plugin-eval", "plugin-judge", "plugin-record"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
@@ -35,6 +38,7 @@ const EXPECTED = new Set([
   "ruler_read", "ruler_record", "ruler_affirm",
   "round_judge", "round_scores", "round_score",
   "finding_record", "finding_decide",
+  "failure_discover",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

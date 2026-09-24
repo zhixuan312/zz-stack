@@ -99,7 +99,7 @@ export async function applyThresholds(p: pg.Pool, plugin: string | null, dims: D
     "",
     'Answer as JSON only: {"met": [{"dimension": string, "meets": boolean, "fact": string}]}',
   ].join("\n");
-  const got = await ask(p, plugin, system, facts);
+  const got = await ask(p, plugin, system, facts, "plugin-judge");
   const said = (got?.met as { dimension?: unknown; meets?: unknown; fact?: unknown }[] | undefined) ?? [];
   const dimOf = matcher(dims);
   const answered = new Map<string, { meets: boolean; fact: string }>();

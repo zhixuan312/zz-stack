@@ -78,6 +78,16 @@ the evaluation; the handover ends the cycle.
 person has agreed what good means, and nothing is closed before a person has read what was
 found.
 
+## Not yet a stage: `failure_discover`
+
+`/eval/mcp` also carries `failure_discover(observation_snapshot_id)` — DISCOVER, mining one
+`plugin_profile` snapshot's own real refusals and stage returns for candidate failure modes,
+before any protocol exists. It is not one of the five stages above and this flow does not call
+it: a candidate it writes is a proposal, `status = 'candidate'`, and only a protocol (a later
+capability this platform does not yet expose through this flow) may accept or merge one. Named
+here so it reads as this door's tool rather than an undocumented one — not as an instruction to
+call it.
+
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

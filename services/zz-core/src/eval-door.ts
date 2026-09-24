@@ -18,6 +18,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { serviceVersion } from "@zz/mcp-http";
 
 import { recordingDoor } from "./door.js";
+import { registerFailureDiscoverTools } from "./eval/discover.js";
 import { registerObserveTools } from "./eval/observe.js";
 import { registerPluginEvalTools } from "./eval/plugin-eval.js";
 import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
@@ -33,8 +34,8 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves four nouns — plugin, ruler, round and
- * finding.
+ * a registration under a new prefix. This door serves five nouns — plugin, ruler, round,
+ * finding and failure.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =
@@ -53,7 +54,9 @@ const EVAL_INSTRUCTIONS =
   "  round_*    score one version against the ruler in force, read one round's marks back, " +
   "and conclude it: two axes, and no recommendation\n" +
   "  finding_*  record what a round concluded, and close each one when somebody applies " +
-  "or rejects it\n\n" +
+  "or rejects it\n" +
+  "  failure_*  mine an observation snapshot's own real evidence for candidate failure " +
+  "modes, before any protocol exists\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +
@@ -81,5 +84,6 @@ export function buildEvalServer(): McpServer {
   registerPluginEvalTools(server);
   registerPluginJudgeTools(server);
   registerPluginRecordTools(server);
+  registerFailureDiscoverTools(server);
   return server;
 }

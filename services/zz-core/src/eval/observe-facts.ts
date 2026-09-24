@@ -90,6 +90,17 @@ export async function latencyAndByteFacts(
   };
 }
 
+/** Lower-cased, with a UUID or a digit run folded to `#` — the one normalisation both this
+ *  module's `refusalDetail` and `discover.ts`'s deterministic grouping (Task I-9) apply to
+ *  `zz.event.refusal`, so two rows that differ only by which run's UUID or which retry count
+ *  they happened to carry still fold into one text. Exported so DISCOVER's own query, which
+ *  additionally needs the failing tool and the event id neither `refusalDetail` nor its shape
+ *  carries, computes the identical string rather than a second, drifting copy of this regex. */
+export const NORMALIZED_REFUSAL_SQL = `lower(regexp_replace(
+             regexp_replace(coalesce(e.refusal, ''),
+               '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '#', 'gi'),
+             '[0-9]+', '#', 'g'))`;
+
 /** The top refusal texts, normalised (lower-cased; UUIDs and digit runs folded to `#`) and
  *  grouped with their `refusal_owner` — the detail the AC's "refusals with normalised text and
  *  dependency owner" asks for. Aggregate rates (refusal rate, dependency-failure rate) are built
@@ -99,10 +110,7 @@ export async function refusalDetail(
   pool: pg.Pool, plugin: string, version: string, servesOwnDoor: boolean, window: EvidenceWindow,
 ): Promise<{ text: string; owner: string; count: number }[]> {
   const rows = (await pool.query<{ normalized: string; owner: string; n: string }>(`
-    select lower(regexp_replace(
-             regexp_replace(coalesce(e.refusal, ''),
-               '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '#', 'gi'),
-             '[0-9]+', '#', 'g')) as normalized,
+    select ${NORMALIZED_REFUSAL_SQL} as normalized,
            coalesce(e.refusal_owner, 'unattributed') as owner,
            count(*)::text as n
       ${toolCallEvents(servesOwnDoor)}

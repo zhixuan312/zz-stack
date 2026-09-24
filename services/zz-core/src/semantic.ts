@@ -265,7 +265,12 @@ async function resolveEvaluatorVersion(evaluatorVersionId: string): Promise<Eval
   return row;
 }
 
-/** What `recordEvaluatorAssessment` hands back: exactly the plan header's response shape. */
+/** What `recordEvaluatorAssessment` hands back: exactly the plan header's response shape, plus
+ *  `reason` (Task I-9) — the same "why there is no reading" text `Assessment.reason` already
+ *  carries for a family question, previously computed here and dropped on the way out. A caller
+ *  that must persist an `unavailable` classification with its own cause (`discover.ts`'s "a
+ *  model outage stores owner_kind='unknown' with a reason, never dropped") cannot write a reason
+ *  it was never handed. */
 export interface EvaluatorAssessmentResult {
   assessment_id: number;
   answer_kind: "noul" | "choice" | "score";
@@ -274,6 +279,7 @@ export interface EvaluatorAssessmentResult {
   reading: Assessment["reading"] | null;
   resolved_model: string | null;
   identity_assurance: string | null;
+  reason: string | null;
 }
 
 /** Ask one registered evaluator question about one subject, and record it.
@@ -356,7 +362,7 @@ export async function recordEvaluatorAssessment(opts: {
 
   return {
     assessment_id, answer_kind: evaluator.answer_schema.type, probability, distribution, reading,
-    resolved_model, identity_assurance,
+    resolved_model, identity_assurance, reason,
   };
 }
 

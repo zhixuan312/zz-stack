@@ -91,5 +91,11 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
     await callEval("failure_discover", {
       observation_snapshot_id: randomUUID(), idempotency_key: randomUUID(),
     }), /no platform database|unknown observation_snapshot_id/);
+  // Task I-11: a random protocol_version_id decides nothing and matches no protocol — safe
+  // against any live state, the same way protocol_affirm's probe above is.
+  eitherOr("evaluator_qualify refuses a protocol_version_id nothing minted",
+    await callEval("evaluator_qualify", {
+      protocol_version_id: randomUUID(), evaluator_version_id: randomUUID(), idempotency_key: randomUUID(),
+    }), /no platform database|unknown protocol_version_id/);
 
 }

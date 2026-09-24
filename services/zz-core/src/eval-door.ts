@@ -24,6 +24,7 @@ import { registerPluginEvalTools } from "./eval/plugin-eval.js";
 import { registerPluginJudgeTools } from "./eval/plugin-judge.js";
 import { registerPluginRecordTools } from "./eval/plugin-record.js";
 import { registerProtocolTools } from "./eval/protocol.js";
+import { registerEvaluatorQualifyTools } from "./eval/qualify.js";
 import { registerSubjectTools } from "./eval/subject.js";
 
 /** What this door says about itself at `initialize`, before any tool is called.
@@ -35,8 +36,8 @@ import { registerSubjectTools } from "./eval/subject.js";
  *
  * COUPLED: checks/orientation.ts derives the noun set from the live `tools/list` and compares it
  * with this text in both directions, so the paragraph below has to change in the same commit as
- * a registration under a new prefix. This door serves five nouns — plugin, protocol, round,
- * finding and failure.
+ * a registration under a new prefix. This door serves six nouns — plugin, protocol, round,
+ * finding, failure and evaluator.
  *
  * It names the other door on purpose: everyone holding this one also holds `/core/mcp`. */
 const EVAL_INSTRUCTIONS =
@@ -58,7 +59,9 @@ const EVAL_INSTRUCTIONS =
   "  finding_*  record what a round concluded, and close each one when somebody applies " +
   "or rejects it\n" +
   "  failure_*  mine an observation snapshot's own real evidence for candidate failure " +
-  "modes, before any protocol exists\n\n" +
+  "modes, before any protocol exists\n" +
+  "  evaluator_*  qualify one evaluator version against a protocol's own qualification " +
+  "policy, before its answers may back a score\n\n" +
   "Everything else is on /core/mcp and not here: documents and their gates, your team's " +
   "knowledge store, skills, sources, and who you are — session_whoami there answers today's " +
   "date and which team you are acting for.\n\n" +
@@ -88,5 +91,6 @@ export function buildEvalServer(): McpServer {
   registerPluginRecordTools(server);
   registerProtocolTools(server);
   registerFailureDiscoverTools(server);
+  registerEvaluatorQualifyTools(server);
   return server;
 }

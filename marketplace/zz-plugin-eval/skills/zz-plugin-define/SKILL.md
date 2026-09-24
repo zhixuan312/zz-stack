@@ -1,6 +1,6 @@
 ---
 name: zz-plugin-define
-version: 2.0
+version: 2.1
 description: Stage 3 of plugin evaluation, and the one gate that matters most. Derive what good means for THIS plugin from its own profile, write it into protocol.md, and get a person to agree it before anything is scored.
 when_to_use: "The third stage of zz-plugin-eval, after profile. Produces protocol.md, which is gated — protocol_affirm refuses to bind it until somebody approves it."
 ---
@@ -17,8 +17,8 @@ Then, unless `protocol_read` said `reuse`, you write `protocol.md` and call
 
 `protocol_read` decides nothing for you: `create` means this plugin has no protocol yet;
 `reuse` means the newest version is still compatible and there is nothing to write; `revise`
-names which trigger fired (`purpose_changed`, `new_recurring_failure`, `evaluator_drift`,
-`new_evidence_surface`) and expects a new version, never an edit to the old one.
+names which trigger fired (`purpose_changed, new_recurring_failure, evaluator_drift,
+new_evidence_surface`) and expects a new version, never an edit to the old one.
 
 ## Every plugin gets its own protocol
 
@@ -186,6 +186,29 @@ protocol_affirm(protocol_version_id, initiative, idempotency_key)
 `initiative` is required because a bare `protocol_version_id` names no path on its own —
 `protocol.md` lives at `<initiative>/protocol.md` in your team's store, and this is the
 initiative you wrote it into.
+
+## Qualifying the evaluators, before anything is scored
+
+Every `bounded_semantic`/`generative_critic` measure's `evaluator` is only as good as its own
+qualification. Once `protocol_affirm` has bound the approval, qualify each one:
+
+```
+evaluator_qualify(protocol_version_id, evaluator_version_id, idempotency_key)
+```
+
+`evaluator_version_id` is the one `registerEvaluator` (inside `protocol_record`) minted for that
+measure's own `evaluator.stable_key` — read it back off `zz.eval_evaluator_version` if you did
+not keep it from recording. RETURNS `{ qualification_id, state, evidence }` — `state` is one of
+`unqualified`, `mechanically_qualified`, `operationally_qualified` or `human_calibrated`. A new
+evaluator version always starts `unqualified`; `unqualified` with `evidence.reason ===
+"no_anchors"` means this measure's own `definition.qualification` names no `{ positive, zero }`
+vocabulary yet, or the plugin has no OBSERVE snapshot to derive an anchor from — not a call
+failure, and not this tool's fault to fix.
+
+`replay_case_set_build` (a later stage) requires `qualification.boundedSemanticMinimum` to be
+met before it will admit a measure's evaluator into a case set — qualify every `bounded_semantic`/
+`generative_critic` evaluator this protocol version names before handing it off, not only the
+ones you expect to be asked about.
 
 ## Pitfalls
 

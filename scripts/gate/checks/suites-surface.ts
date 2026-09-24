@@ -91,3 +91,6 @@ check("a request's digest ignores key order and the idempotency key, and a store
 
 check("the evaluator registry's question digest matches the plan header's formula, and every entry point refuses before touching a database it does not have",
       runsCheck("eval-evaluators.ts"));
+
+check("the qualification ladder is earned bottom-up from evidence counts and a protocol's own thresholds, zero anchors always refuses, and a 0-total category never counts as cleared",
+      runsCheck("eval-qualification-ladder.ts"));

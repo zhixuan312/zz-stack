@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.51
+version: 3.52
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -537,7 +537,7 @@ reading later can see one caused the other.
   | bugs | `/core/mcp` | `bug_report` `bug_list` `bug_resolve` `bug_delete` |
   | status | `/core/mcp` | `initiative_status` `knowledge_reconcile` `session_whoami` |
   | checkpoints | `/core/mcp` | `assess` — one semantic-assessment family asked about one subject, recorded with its provenance |
-  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` |
+  | plugin evaluation | `/eval/mcp` | `plugin_locate` `plugin_register` `plugin_profile` `plugin_conform` `protocol_read` `protocol_record` `protocol_affirm` `evaluator_qualify` `round_judge` `round_scores` `round_score` `finding_record` `finding_decide` `failure_discover` |
   | your own access | `/manage/mcp` | `whoami` `team_mine` `team_switch` `client_setup` `pat_issue` `pat_list` `pat_revoke` `catalog_list` `team_list` |
   | administration | `/manage/mcp` | `person_add` `person_list` `person_deactivate` `enrolment_issue` `team_create` `team_archive` `member_add` `member_remove` — only if your role carries them |
 
@@ -566,13 +566,17 @@ writes a file indexes it in the same call.
 
 The evaluation tools belong to the evaluation plugin. They exist because an agent here has MCP
 tools and no shell: a stage that says "run this program" is a stage the agent cannot perform.
-Six of them write. Five of those — `protocol_record`, `protocol_affirm`, `finding_record`,
-`finding_decide` and `failure_discover` — record a fact or a decision and never a score.
-`failure_discover` mines one observation snapshot's own real evidence for candidate failure
-modes, before any protocol exists — it classifies who is at fault, never how good the plugin
-is. The sixth, `round_judge`, is the one tool on that door that DOES score: it marks one
-subject per call against the (legacy) ruler in force and stores every mark. Running it again to
-"check" appends to a stored series rather than re-reading one.
+Seven of them write. Six of those — `protocol_record`, `protocol_affirm`, `evaluator_qualify`,
+`finding_record`, `finding_decide` and `failure_discover` — record a fact or a decision and
+never a score. `evaluator_qualify` runs a protocol's own qualification policy over one
+evaluator version and records which of `unqualified` / `mechanically_qualified` /
+`operationally_qualified` / `human_calibrated` it earned, with the evidence behind it — a fact
+about whether an evaluator's answers can be trusted, never a mark against the plugin under
+evaluation. `failure_discover` mines one observation snapshot's own real evidence for candidate
+failure modes, before any protocol exists — it classifies who is at fault, never how good the
+plugin is. The seventh, `round_judge`, is the one tool on that door that DOES score: it marks
+one subject per call against the (legacy) ruler in force and stores every mark. Running it
+again to "check" appends to a stored series rather than re-reading one.
 
 **The judge is not the agent.** `round_judge` takes identifiers and nothing else: it cannot be
 handed a ruler, an artifact or a model. The ruler comes from the registry, the artifacts from

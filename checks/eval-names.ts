@@ -15,7 +15,9 @@ const fail = [];
 // `protocol.ts` (Task I-10) holds `protocol_read`/`protocol_record`/`protocol_affirm` for the
 // same reason: each is a mutator (or, for `protocol_read`, reads live state no other module
 // computes) writing `zz.eval_protocol_version` through the same ledger.
-const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "plugin-eval", "plugin-judge", "plugin-record"];
+// `qualify.ts` (Task I-11) holds `evaluator_qualify` for the same reason again: a mutator writing
+// `zz.eval_evaluator_qualification` through the same ledger.
+const REGISTRATION_MODULES = ["subject", "observe", "discover", "protocol", "qualify", "plugin-eval", "plugin-judge", "plugin-record"];
 
 const registered = new Set<string>();
 for (const f of REGISTRATION_MODULES) {
@@ -47,6 +49,7 @@ const EXPECTED = new Set([
   "round_judge", "round_scores", "round_score",
   "finding_record", "finding_decide",
   "failure_discover",
+  "evaluator_qualify",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

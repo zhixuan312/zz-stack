@@ -31,6 +31,14 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("plugin_locate answers or refuses by a named cause",
     await callEval("plugin_locate", { plugin: PLUGIN }),
     /no platform database|no released version/);
+  // Deterministic and safe against any live state: PLUGIN is this run's own flow, which the
+  // catalog carries, so plugin_register refuses it before it ever reaches the database — the
+  // same refusal a real caller gets for trying to register a plugin the catalog already owns.
+  eitherOr("plugin_register refuses a name the catalog already owns",
+    await callEval("plugin_register", {
+      name: PLUGIN, version: "0", source_kind: "local_dir", source_locator: "/nonexistent",
+      idempotency_key: randomUUID(),
+    }), /is a catalog plugin/);
   eitherOr("plugin_conform reads this plugin's own catalog entry",
     await callEval("plugin_conform", { plugin: PLUGIN, version: "0" }),
     /is not in the catalog/);

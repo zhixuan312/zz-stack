@@ -29,7 +29,7 @@ for (const old of Object.keys(EVAL_ALIAS)) {
 // says neither. A missing name is a tool that vanished; an unexpected one is a tool nobody wrote
 // into the door's own description.
 const EXPECTED = new Set([
-  "plugin_locate", "plugin_profile", "plugin_conform",
+  "plugin_locate", "plugin_profile", "plugin_conform", "plugin_register",
   "ruler_read", "ruler_record", "ruler_affirm",
   "round_judge", "round_scores", "round_score",
   "finding_record", "finding_decide",

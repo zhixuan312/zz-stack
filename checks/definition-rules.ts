@@ -163,6 +163,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   pat_issue: "access", pat_list: "access", pat_revoke: "access", whoami: "access",
   // Evaluation — the only subject in which a model's judgement becomes a score.
   plugin_locate: "evaluation", plugin_profile: "evaluation", plugin_conform: "evaluation",
+  plugin_register: "evaluation",
   ruler_read: "evaluation", ruler_record: "evaluation", ruler_affirm: "evaluation",
   round_judge: "evaluation", round_scores: "evaluation", round_score: "evaluation",
   finding_record: "evaluation", finding_decide: "evaluation",

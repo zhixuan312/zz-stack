@@ -1,21 +1,30 @@
 /**
  * Subject identity (FR-1): the one immutable `subject_version` every later stage binds to.
  *
- * `plugin_locate` is IDENTIFY. It resolves a catalog plugin's released version, computes its
- * whole-plugin content digest from the sorted digests of its own components (skills, declared
- * servers, the flow manifest itself — never the environment it happens to run in), and upserts
- * the immutable row `zz.eval_subject_version` is keyed on: `(plugin_id, declared_version,
- * content_digest)`. Calling it twice for a release whose content has not moved returns the same
- * `subject_version_id` — idempotent by construction, through the unique constraint, and again
- * through the FR-59 ledger this module is the first caller of.
+ * `plugin_locate` is IDENTIFY for a catalog plugin. It resolves a catalog plugin's released
+ * version, computes its whole-plugin content digest from the sorted digests of its own
+ * components (skills, declared servers, the flow manifest itself — never the environment it
+ * happens to run in), and upserts the immutable row `zz.eval_subject_version` is keyed on:
+ * `(plugin_id, declared_version, content_digest)`. Calling it twice for a release whose content
+ * has not moved returns the same `subject_version_id` — idempotent by construction, through the
+ * unique constraint, and again through the FR-59 ledger this module is the first caller of.
  *
- * DELIBERATE: this is a mutator, unlike everything in plugin-eval.ts. It is the one place a new
- * subject version comes from, so the identity every later stage joins against exists before
+ * `plugin_register` is IDENTIFY for everything else (FR-2): a plugin the catalog has never
+ * released, captured once from its own source directory rather than recomputed on every call —
+ * there is no release to anchor a recompute to, so the row `plugin_register` writes is what
+ * `plugin_locate` reads back for it afterwards, unchanged, rather than a second derivation that
+ * could disagree with the first.
+ *
+ * DELIBERATE: both are mutators, unlike everything in plugin-eval.ts. They are the only places a
+ * new subject version comes from, so the identity every later stage joins against exists before
  * anything asks for it a second time.
  */
 import { createHash } from "node:crypto";
+import { basename, dirname, join } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { manifestAt } from "@zz/catalog";
 import { parseCaller } from "@zz/contracts";
 import { requestHeaders, text } from "@zz/mcp-http";
 import type pg from "pg";
@@ -65,6 +74,34 @@ async function resolveSubject(pool: pg.Pool, plugin: string, version: string | u
      where p.name = $1 and ($2::text is null or pv.version = $2)
      order by pv.version desc limit 1`, [plugin, version ?? null])).rows[0];
   if (!head) return null;
+
+  // A third party has no release to recompute against — plugin_register captured its
+  // component set once, from the source directory it was given, and that capture is this
+  // subject's whole identity. Recomputing here the way the catalog path does below would read
+  // zz.plugin_version_skill (empty: a third party's skills never go through register-skills)
+  // and the catalog manifest (absent by definition), landing on a digest that can never agree
+  // with the one plugin_register wrote — the same plugin/version would then answer with two
+  // different subject_version_id values depending on which tool minted the row first.
+  if (head.origin === "third_party") {
+    const captured = (await pool.query<{
+      component_manifest: Component[]; content_digest: string;
+      source_locator: Record<string, unknown>; release_identity: Record<string, unknown>;
+    }>(`
+      select component_manifest, content_digest, source_locator, release_identity
+        from zz.eval_subject_version
+       where plugin_id = $1::uuid and declared_version = $2
+       order by captured_at desc limit 1`, [head.plugin_id, head.declared_version])).rows[0];
+    // Registered but never captured should not happen — plugin_register writes zz.plugin_version
+    // and zz.eval_subject_version in the same transaction — but a partial state is reported as
+    // "never released" rather than crashing on a read that found nothing to return.
+    if (!captured) return null;
+    return {
+      pluginId: head.plugin_id, origin: head.origin, declaredVersion: head.declared_version,
+      releasedDigest: head.digest, components: captured.component_manifest,
+      contentDigest: captured.content_digest, sourceLocator: captured.source_locator,
+      releaseIdentity: captured.release_identity,
+    };
+  }
 
   const skills = (await pool.query<{ name: string; version: string; content_hash: string }>(`
     select s.name, sv.version, sv.content_hash
@@ -172,6 +209,47 @@ async function subjectResponse(
   };
 }
 
+/** `plugin_register`'s `source_kind: "local_dir"` reader: every SKILL.md under the directory
+ *  (or its own `skills/` subdirectory, the catalog's own convention, when it has one), plus
+ *  whatever `flow.json` beside it declares — read straight off disk, never through the catalog
+ *  or zz.skill_version, neither of which a third party ever has a row in.
+ *
+ *  Returns null for a directory with nothing to capture — no SKILL.md and no flow.json — which
+ *  `plugin_register` turns into the contract's "source could not be read" refusal rather than
+ *  minting a subject with an empty component set. */
+function resolveLocalDir(path: string): { components: Component[] } | null {
+  if (!existsSync(path) || !statSync(path).isDirectory()) return null;
+  const skillsDir = existsSync(join(path, "skills")) ? join(path, "skills") : path;
+  const components: Component[] = [];
+  const walk = (d: string): void => {
+    for (const f of readdirSync(d, { withFileTypes: true })) {
+      const abs = join(d, f.name);
+      if (f.isDirectory()) { walk(abs); continue; }
+      if (f.name !== "SKILL.md") continue;
+      // The digest is the file's own bytes, not a database row: a third party carries no
+      // zz.skill_version, so there is no content_hash column to defer to the way the catalog
+      // path does above.
+      components.push({ kind: "skill", name: basename(dirname(abs)), digest: sha256(readFileSync(abs, "utf8")) });
+    }
+  };
+  if (existsSync(skillsDir)) walk(skillsDir);
+
+  const flowFile = join(path, "flow.json");
+  if (existsSync(flowFile)) {
+    const got = manifestAt(flowFile);
+    if (got.manifest) {
+      for (const sv of got.manifest.servers ?? []) {
+        components.push({ kind: "server", name: sv.name, digest: sha256(`${sv.name}:${sv.path}`) });
+      }
+      components.push({
+        kind: "flow", name: got.manifest.name ?? basename(path),
+        digest: sha256(JSON.stringify(got.manifest)),
+      });
+    }
+  }
+  return components.length ? { components } : null;
+}
+
 export function registerSubjectTools(server: McpServer): void {
   server.registerTool(
     "plugin_locate",
@@ -229,6 +307,107 @@ export function registerSubjectTools(server: McpServer): void {
 
       logActivity(await userRoot(), null,
         { user: principal, action: "plugin_locate", plugin, version: resolved.declaredVersion,
+          subject_version_id: subjectVersionId, replayed: outcome.replayed });
+
+      return json(await subjectResponse(pool, subjectVersionId));
+    },
+  );
+
+  server.registerTool(
+    "plugin_register",
+    {
+      description:
+        "WHEN a plugin needs to be evaluated and the catalog has never released it: IDENTIFY " +
+        "it from its own source instead. It reads source_locator — for source_kind local_dir, " +
+        "the directory's own SKILL.md files, declared servers and flow manifest — and RETURNS " +
+        "the same subject_version_id shape plugin_locate comes back with, so plugin_locate, " +
+        "plugin_profile and plugin_conform all then work for this plugin with no catalog entry. " +
+        "The row it captures is that subject's whole identity: unlike plugin_locate, a later " +
+        "call for the same plugin/version reads this capture back rather than recomputing it, " +
+        "because a third party has no release moment to recompute against. A mutator, through " +
+        "the same FR-59 idempotency ledger plugin_locate uses. REFUSES a name the catalog " +
+        "already owns — that plugin is registered by release, never by this tool — REFUSES a " +
+        "payload naming origin, owner_team, evolvable or release_owners, since the platform " +
+        "derives every authority field itself and never takes one as input, and REFUSES a " +
+        "source_locator it cannot read.",
+      inputSchema: {
+        name: z.string(),
+        version: z.string(),
+        source_kind: z.enum(["local_dir", "git", "package"]),
+        source_locator: z.string(),
+        idempotency_key: z.string().min(1),
+        // Not accepted — named here only so a caller that supplies one is not silently
+        // stripped before the handler below can refuse it. See the contract's "authority
+        // field" refusal.
+        origin: z.unknown().optional(),
+        owner_team: z.unknown().optional(),
+        evolvable: z.unknown().optional(),
+        release_owners: z.unknown().optional(),
+      },
+    },
+    async ({ name, version, source_kind, source_locator, idempotency_key,
+             origin, owner_team, evolvable, release_owners }) => {
+      if (origin !== undefined || owner_team !== undefined || evolvable !== undefined
+          || release_owners !== undefined) {
+        return text("ERROR: origin/owner/evolvable/release_owners are derived by the platform, not supplied");
+      }
+      if (entryOf(name)) {
+        return text(`ERROR: ${name} is a catalog plugin; it is registered by release`);
+      }
+
+      const pool = db();
+      if (!pool) return noDb();
+
+      // A name this platform once released and the catalog no longer carries is still the
+      // catalog's to speak for — never flipped to third_party by a call that merely found the
+      // entry gone, which `entryOf` above cannot see for a removed flow.
+      const existing = (await pool.query<{ origin: string }>(
+        `select origin from zz.plugin where name = $1`, [name])).rows[0];
+      if (existing?.origin === "platform") {
+        return text(`ERROR: ${name} is a catalog plugin; it is registered by release`);
+      }
+
+      const resolved = source_kind === "local_dir" ? resolveLocalDir(source_locator) : null;
+      if (!resolved) {
+        const reason = source_kind === "local_dir"
+          ? "no SKILL.md and no flow.json were found under this path"
+          : `source_kind "${source_kind}" is not yet resolvable`;
+        return text(`ERROR: source ${source_locator} could not be read: ${reason}`);
+      }
+      const contentDigest = combinedDigest(resolved.components);
+
+      const principal = parseCaller(requestHeaders()).email;
+      const outcome: IdempotencyOutcome<string> = await withIdempotency(
+        principal, "plugin_register", idempotency_key,
+        { name, version, source_kind, source_locator },
+        async (client): Promise<MutatorOutcome<string>> => {
+          const pluginRow = (await client.query<{ id: string }>(`
+            insert into zz.plugin (name, origin) values ($1, 'third_party')
+            on conflict (name) do update set origin = excluded.origin
+            returning id::text as id`, [name])).rows[0];
+          await client.query(`
+            insert into zz.plugin_version (plugin_id, version, digest)
+            values ($1::uuid, $2, $3)
+            on conflict (plugin_id, version) do update set digest = excluded.digest`,
+            [pluginRow.id, version, contentDigest]);
+          const row = (await client.query<{ id: string }>(`
+            insert into zz.eval_subject_version
+              (plugin_id, declared_version, content_digest, component_manifest, source_locator,
+               release_identity, captured_at)
+            values ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, now())
+            on conflict (plugin_id, declared_version, content_digest)
+              do update set component_manifest = excluded.component_manifest
+            returning id::text as id`,
+            [pluginRow.id, version, contentDigest, JSON.stringify(resolved.components),
+             JSON.stringify({ kind: source_kind, locator: source_locator }),
+             JSON.stringify({ origin: "third_party" })])).rows[0];
+          return { result: row.id, result_table: "zz.eval_subject_version", result_id: row.id };
+        },
+      );
+      const subjectVersionId = outcome.replayed ? outcome.result_id : outcome.result;
+
+      logActivity(await userRoot(), null,
+        { user: principal, action: "plugin_register", plugin: name, version,
           subject_version_id: subjectVersionId, replayed: outcome.replayed });
 
       return json(await subjectResponse(pool, subjectVersionId));

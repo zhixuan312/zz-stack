@@ -176,17 +176,33 @@ export function registerPluginEvalTools(server: McpServer): void {
         "and settling it needs that surface read through the gateway. A flow plugin serves no " +
         "surface of its own, so the standard does not apply to it at all. Call it when a " +
         "catalog plugin has no run history and a starting ruler has to come from somewhere: " +
-        "what it returns is that starting point. It reads the catalog entry only — a plugin " +
-        "outside the catalog is refused, since nothing here yet reads a third party's own " +
-        "surface. It never guesses a clause it cannot settle — that clause comes back " +
+        "what it returns is that starting point. It reads the catalog entry when there is one; " +
+        "a plugin plugin_register captured instead is not refused for lacking one — it has no " +
+        "manifest to read a surface from, so every clause below comes back not_measured rather " +
+        "than a guess. It REFUSES only a plugin that is neither in the catalog nor registered " +
+        "at all. It never guesses a clause it cannot settle — that clause comes back " +
         "not_measured.",
       inputSchema: { plugin: z.string(), version: z.string() },
     },
     async ({ plugin, version }) => {
       const entry = entryOf(plugin);
-      if (!entry) return text(`ERROR: "${plugin}" is not in the catalog`);
-      const named = toolsNamedBy(plugin);
-      const servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
+      let named: string[] = [];
+      let servesOwnSurface = false;
+      // A plugin plugin_register captured has no catalog entry by definition — that is the
+      // whole point of the tool — so the gate here is "does this platform know it at all",
+      // never "is it in the catalog". Only the latter half changes what NO_SURFACE says below.
+      let registeredWithNoManifest = false;
+      if (entry) {
+        named = toolsNamedBy(plugin);
+        servesOwnSurface = (entry.manifest.servers ?? []).length > 0;
+      } else {
+        const pool = db();
+        if (!pool) return noDb();
+        const row = (await pool.query<{ origin: string }>(
+          `select origin from zz.plugin where name = $1`, [plugin])).rows[0];
+        if (!row) return text(`ERROR: "${plugin}" is not in the catalog and has not been registered`);
+        registeredWithNoManifest = true;
+      }
 
       // DELIBERATE: every clause but R5 reports `not_measured` rather than a stand-in.
       // Settling R2-R6 and R8-R11 needs a server's live tool surface read through the gateway,
@@ -195,9 +211,12 @@ export function registerPluginEvalTools(server: McpServer): void {
       // passes the standard never granted, under the standard's own clause numbers.
       const notMeasured = (why: string) => ({ holds: "not_measured" as const, evidence: why });
       const BEHAVIOURAL = "the contract names this clause as behavioural and not mechanically measured";
-      const NO_SURFACE =
-        "R1-R14 describes a block server's tool surface; this plugin serves none of its own, so " +
-        "the clause does not apply to it";
+      const NO_SURFACE = registeredWithNoManifest
+        ? "this plugin was registered directly rather than through the catalog, so it carries " +
+          "no manifest to read a tool surface from — not_measured rather than a guess at " +
+          "whether it serves one of its own"
+        : "R1-R14 describes a block server's tool surface; this plugin serves none of its own, so " +
+          "the clause does not apply to it";
       const NO_BATTERY =
         "settling this needs the block's live tool surface read through the gateway. That " +
         "battery went with zz-block-eval and is not reimplemented here — not_measured rather " +
@@ -225,6 +244,8 @@ export function registerPluginEvalTools(server: McpServer): void {
         settled,
         note: settled
           ? `${settled} of 14 settled mechanically; the rest need a surface this plugin does not serve or a battery that is not here.`
+          : registeredWithNoManifest
+          ? "Nothing was settled mechanically. This plugin was registered directly rather than through the catalog, so it carries no manifest R1-R14's surface clauses could be read against — that is a gap in what this call can see, not a verdict on the plugin."
           : "Nothing was settled mechanically. R1-R14 is a block-server standard and this plugin serves no surface of its own — that is an answer about the standard's scope, not a gap in the plugin.",
       });
     },

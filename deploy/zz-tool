@@ -55,7 +55,8 @@ shift
 # COUPLED: every name here is read by a tool this repository has, and the gate holds that.
 pass=()
 for v in ZZ_PAT ZZ_TOKEN ZZ_TOKEN_FILE ZZ_URL ZZ_GATEWAY CHAIN_FLOW \
-         PLATFORM_BASE_MODEL LLM_BASE_URL LLM_API_KEY JUDGE_MODEL TEAM_DB_URL; do
+         PLATFORM_BASE_MODEL LLM_BASE_URL LLM_API_KEY JUDGE_MODEL TEAM_DB_URL \
+         ZZ_CATALOG_OWNER_TEAM; do
   [ -n "${!v:-}" ] && pass+=(-e "$v")
 done
 

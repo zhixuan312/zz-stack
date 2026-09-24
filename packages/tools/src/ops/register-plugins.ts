@@ -2,7 +2,11 @@
  * Mirror plugins.lock.json into the registry, so a plugin version is a row somebody can join
  * against.
  *
- *   zz-tool register-plugins --psql '<command>' [--dry-run]
+ *   ZZ_CATALOG_OWNER_TEAM=<team> zz-tool register-plugins --psql '<command>' [--dry-run]
+ *
+ * ZZ_CATALOG_OWNER_TEAM names the one team every catalog plugin's ownership (FR-2, FR-47)
+ * resolves to — required, and refused unset rather than defaulted, because a silent guess here
+ * would hand release authority to a team nobody chose.
  *
  * A plugin's version is the platform's release version and its content moves whenever anybody edits
  * a skill inside it. Release is the one moment those two are fixed together — the gate has just
@@ -27,7 +31,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { optional, parseArgs } from "../lib/cli.js";
+import { envRequired, optional, parseArgs } from "../lib/cli.js";
 import { DEFAULT_PSQL, psqlText } from "../lib/psql.js";
 
 interface LockEntry {
@@ -48,6 +52,13 @@ function main(argv: string[]): number {
   const args = parseArgs(argv, ["dry-run"]);
   const psql = args.flags.get("psql") || DEFAULT_PSQL;
   const root = optional(args, "root", "the repository root") ?? process.cwd();
+  // Every catalog plugin's release-authority ownership (FR-2, FR-47): one team, named once,
+  // that owns everything this repository's own catalog ships. Required rather than defaulted —
+  // a silent guess here would hand release authority to a team nobody chose. Read before the
+  // lock file so a missing variable fails fast, dry run included: dry run proves the release is
+  // ready to run, and a run that will refuse for want of this variable is not ready.
+  const ownerTeam = envRequired("ZZ_CATALOG_OWNER_TEAM",
+    "the team that owns every catalog plugin — register-plugins refuses to run without it");
 
   const lockPath = join(root, "plugins.lock.json");
   if (!existsSync(lockPath)) {
@@ -67,9 +78,17 @@ function main(argv: string[]): number {
   for (const name of names) {
     const p = lock[name];
     if (args.flags.has("dry-run")) continue;
+    // owner_team/evolvable/release_owners (077, FR-2, FR-47): every catalog plugin is the same
+    // team's to release, evolvable by construction, and its own release_owners list is just that
+    // one team — a plugin registered any other way (plugin_register, for a third party) never
+    // reaches this insert, so writing them here unconditionally is exactly the catalog-registration
+    // path staying the only writer of this row shape, the way it already is the only writer of
+    // origin = 'platform'.
     psqlText(psql, `
-      insert into zz.plugin (name, origin) values (${lit(name)}, ${lit(ORIGIN)})
-      on conflict (name) do update set origin = excluded.origin`);
+      insert into zz.plugin (name, origin, owner_team, evolvable, release_owners)
+      values (${lit(name)}, ${lit(ORIGIN)}, ${lit(ownerTeam)}, true, ${lit(JSON.stringify([ownerTeam]))}::jsonb)
+      on conflict (name) do update set origin = excluded.origin, owner_team = excluded.owner_team,
+                                       evolvable = excluded.evolvable, release_owners = excluded.release_owners`);
     psqlText(psql, `
       insert into zz.plugin_version (plugin_id, version, digest)
       select id, ${lit(p.version)}, ${lit(p.digest)}

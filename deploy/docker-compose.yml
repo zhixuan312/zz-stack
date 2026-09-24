@@ -59,6 +59,13 @@ services:
       - TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
       - TYPESAFE_MODEL=${TYPESAFE_MODEL:-jev-latest}
       - TYPESAFE_BASE_URL=${TYPESAFE_BASE_URL:-}
+      # The team that owns every catalog plugin (FR-2, FR-47). Not read by this service at
+      # request time — zz.plugin.owner_team, written once by register-plugins, is what
+      # plugin_locate answers from — but register-plugins runs inside this same image, through
+      # `./deploy/zz-tool register-plugins`, and this is how that run reaches it. Empty by
+      # default: only register-plugins refuses on an unset value, so an install that never
+      # registers a plugin is unaffected.
+      - ZZ_CATALOG_OWNER_TEAM=${ZZ_CATALOG_OWNER_TEAM:-}
     volumes:
       # /catalog and /skills ship inside the image — see the root Dockerfile.
       # docker-compose.build.yml mounts the working tree back over them for development.

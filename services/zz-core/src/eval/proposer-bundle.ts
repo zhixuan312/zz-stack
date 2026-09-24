@@ -20,9 +20,9 @@ import type pg from "pg";
 /** A candidate counts as a prior REJECTION for the repeat-hypothesis check and for this bundle
  *  when its status is one of these — the same set `candidates.ts`'s own duplicate-hypothesis
  *  refusal reads. `invalid`/`proof_failed` are later stages' own verdicts (candidate_validate/
- *  candidate_prove, not built yet); `rejected_precheck` is the status this same repeat check
- *  itself implies for a hypothesis that never got past it. All three read as "this idea did not
- *  work," which is exactly what FR-38's regularized search needs to avoid proposing again. */
+ *  candidate_prove); `rejected_precheck` is the status this same repeat check itself implies for
+ *  a hypothesis that never got past it. All three read as "this idea did not work," which is
+ *  exactly what FR-38's regularized search needs to avoid proposing again. */
 export const REJECTED_CANDIDATE_STATUSES = ["rejected_precheck", "invalid", "proof_failed"] as const;
 
 // -------------------------------------------------------------------------------------------
@@ -184,10 +184,18 @@ export async function loadProposerBundle(p: pg.Pool, improvementRunId: string): 
         [pluginRow.plugin_id, [...REJECTED_CANDIDATE_STATUSES]])).rows
     : [];
 
+  // FR-28/FR-30: this bundle is what a search/proposer session reads (improvement_start's own
+  // response, and candidate_search's own re-read of it once a run is terminal) — a search
+  // context never sees a split: proof row, whether that row is a case, a result reference or,
+  // as here, a cost/latency figure derived from one. Joined to zz.replay_case for the same
+  // reason replay-runs.ts's own sealedRows filters by split rather than by table: the boundary
+  // is the row's own case, not which column happens to be read off it.
   const costLatency = (await p.query<{ subject_ref: string; cost: string | null; duration_ms: string | null }>(`
-    select coalesce(subject_version_id::text, candidate_id::text) as subject_ref, cost, duration_ms
-      from zz.replay_run
-     where protocol_version_id = $1::uuid and (cost is not null or duration_ms is not null)`,
+    select coalesce(rr.subject_version_id::text, rr.candidate_id::text) as subject_ref, rr.cost, rr.duration_ms
+      from zz.replay_run rr
+      join zz.replay_case rc on rc.id = rr.case_id
+     where rr.protocol_version_id = $1::uuid and (rr.cost is not null or rr.duration_ms is not null)
+       and rc.split is distinct from 'proof'`,
     [runRow?.protocol_version_id ?? null])).rows
     .map((r): RawCostLatency => ({
       subject_ref: r.subject_ref, cost: r.cost === null ? null : Number(r.cost),

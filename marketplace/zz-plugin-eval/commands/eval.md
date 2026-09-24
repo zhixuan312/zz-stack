@@ -158,6 +158,24 @@ validate the ones just proposed, or stop. This is not one of the five stages abo
 does not call it yet: Task I-28 is what teaches an agent to drive this loop. Named here so this
 tool reads as this door's own rather than an undocumented one.
 
+## Not yet a stage: `candidate_prove`
+
+`/eval/mcp` also carries `candidate_search`'s own selected candidate's sealed proof —
+`candidate_prove(candidate_id, idempotency_key)`. Only the candidate `candidate_search` left
+`selected` may open it, and only once (FR-28): a first call mints a `verifier_token` with no
+proposer/search capability, moves the candidate to `proving`, and answers `runs_required` — the
+IMPROVE agent drives `replay_start(context: "verifier", verifier_token, split: "proof")` plus the
+launcher (`packages/tools/src/replay/launch.ts --verifier-token`) against each pair, the same way
+it drives validation, but against sealed proof cases search never saw. A later call against the
+same `proving` candidate reads back whatever proof-split runs are now `completed` and scored;
+once every case has enough of them it re-screens the candidate for leakage, calls the same
+`pairedDecision` bootstrap, and answers `proof_status: proof_passed | proof_failed |
+not_established` plus `release_eligible` — never a per-case result. Every terminal answer spends
+the allocation: a second `candidate_prove` call against that candidate refuses outright, whatever
+it answered. This is not one of the five stages above and this flow does not call it yet: Task
+I-28 is what teaches an agent to drive this loop. Named here so this tool reads as this door's own
+rather than an undocumented one.
+
 ## Facts come from tools; meaning comes from you
 
 Every number these tools return is a count, a set, an ordering or a difference. Not one of them

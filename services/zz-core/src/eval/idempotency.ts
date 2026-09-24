@@ -52,10 +52,15 @@ export function requestDigest(args: Record<string, unknown>): string {
  *  where to find it. Replaying a mutator means telling it which row its own first write already
  *  produced, not re-serving a cached response body this table never holds.
  *
- *  Not exported: it is this file's own row shape, inlined into `lookupRow`'s and
- *  `idempotencyDecision`'s signatures below rather than published — a caller of `withIdempotency`
- *  never sees a ledger row, only the `MutatorOutcome`/`IdempotencyOutcome` it hands back. */
-interface IdempotencyRow {
+ *  Exported, with `lookupRow` below, for `candidate-prove.ts` (Task I-21) alone: every OTHER
+ *  caller of `withIdempotency` never sees a ledger row, only the `MutatorOutcome`/
+ *  `IdempotencyOutcome` it hands back — `candidate_prove` is the one tool whose SAME logical
+ *  request (`{candidate_id}`, no `phase` distinguishing which write it was) can arrive again
+ *  after its candidate has already moved past the status that request's own branch requires, so
+ *  it is also the one caller that must read the ledger back on its own, outside
+ *  `withIdempotency`'s own proceed/replay/conflict decision, to tell "this exact call already
+ *  happened" apart from "a fresh call arrived at a state its own key never wrote." */
+export interface IdempotencyRow {
   readonly request_digest: string;
   readonly result_table: string;
   readonly result_id: string;
@@ -106,7 +111,7 @@ interface Queryable {
   query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
 }
 
-async function lookupRow(
+export async function lookupRow(
   runner: Queryable,
   principal: string,
   tool: string,

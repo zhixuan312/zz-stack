@@ -22,10 +22,10 @@
  *     read one at a time as read many at a time).
  *
  * verifier_token (the plan's own Errors clause): a `context: "verifier"` call must present one,
- * checked against `zz.replay_verifier_token` (migration 079) — real validation, not a stub, and
- * it stays refused on its own: nothing before Task I-21's `candidate_prove` ever inserts a row
- * there, so the lookup can never match and every verifier request is refused until that task
- * exists, exactly as the plan requires.
+ * checked against `zz.replay_verifier_token` (migration 079) — real validation, not a stub.
+ * `candidate_prove` (Task I-21, `candidate-prove.ts`) is the only writer of that table: it mints
+ * one token per proof allocation it opens, so a verifier request only ever succeeds for a run the
+ * IMPROVE agent is driving against an actual, still-open proof.
  *
  * Every admin write here — the team `provisionReplayTeam` creates and the PAT it issues, the team
  * `teardownReplayTeam` archives and the PAT it revokes — is recorded in `zz.event` through
@@ -72,8 +72,8 @@ const REPLAY_RUN_TTL_MS = 60 * 60 * 1000;
 const PROOF_SEALED = "ERROR: proof is sealed";
 const VERIFIER_REFUSED =
   "ERROR: verifier_token invalid, expired or revoked. A verifier context requires a token " +
-  "minted by candidate_prove (Task I-21), which does not exist yet — no proof request can be " +
-  "admitted until it does.";
+  "minted by candidate_prove for this proof allocation — open one there before driving a " +
+  "verifier-context replay against it.";
 
 const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[0] : v) ?? "";
 
@@ -140,8 +140,7 @@ export function roleReadGuard(patTeam: string | null, teamSlug: string, role: st
 }
 
 // -------------------------------------------------------------------------------------------
-// verifier_token — real validation against a table only candidate_prove (Task I-21) will ever
-// write a row into.
+// verifier_token — real validation against a table only candidate_prove writes a row into.
 
 async function verifyVerifierToken(p: Db, token: string | undefined): Promise<boolean> {
   if (!token) return false;
@@ -328,8 +327,8 @@ export function registerReplayRunTools(server: McpServer): void {
         "plugin's protocol's own declared surface -> replay mode mapping (sandbox | recorded | " +
         "simulated | live_read_only | non_replayable), what dependencyAction resolves each " +
         "request against once the run is underway. REFUSES a verifier context with no valid " +
-        "verifier_token — candidate_prove (Task I-21) does not exist yet, so no verifier " +
-        "request can ever be admitted; a search context naming split: proof (ERROR: proof is " +
+        "verifier_token — one minted by candidate_prove for the proof allocation this run is " +
+        "part of; a search context naming split: proof (ERROR: proof is " +
         "sealed); neither or both of subject_version_id/candidate_id; an unknown case_set_id; " +
         "a plugin with no recorded protocol version; a split with no available replayable " +
         "case, or, with case_id given, that exact case not being an available replayable one " +
@@ -352,7 +351,7 @@ export function registerReplayRunTools(server: McpServer): void {
                     "different repeat count is a different run identity even for the same case."),
         context: z.enum(CONTEXTS).default("search"),
         verifier_token: z.string().optional()
-          .describe("Required when context is verifier — minted only by candidate_prove (Task I-21)."),
+          .describe("Required when context is verifier — minted by candidate_prove for the proof allocation this run is part of."),
         idempotency_key: z.string().min(1),
       },
     },
@@ -471,8 +470,8 @@ export function registerReplayRunTools(server: McpServer): void {
         "ordered by seq — the one path the launcher (Task I-17) or any other reader uses to see " +
         "a case's timeline, so the FR-25/26 boundary is enforced here rather than re-decided by " +
         "every caller. Read-only; never writes. REFUSES an unknown replay_run_id; a verifier " +
-        "context with no valid verifier_token — candidate_prove (Task I-21) does not exist yet, " +
-        "so no verifier request can ever be admitted; ERROR: proof is sealed — a search context " +
+        "context with no valid verifier_token — one minted by candidate_prove for the proof " +
+        "allocation this run is part of; ERROR: proof is sealed — a search context " +
         "reading a run whose case is split: proof, which this tool never exposes to a search " +
         "caller; and a credential bound to this run's own reserved team asking for any role " +
         "other than actor — that credential is the one the candidate session holds, and it may " +
@@ -481,7 +480,7 @@ export function registerReplayRunTools(server: McpServer): void {
         replay_run_id: z.string(),
         context: z.enum(CONTEXTS).default("search"),
         verifier_token: z.string().optional()
-          .describe("Required when context is verifier — minted only by candidate_prove (Task I-21)."),
+          .describe("Required when context is verifier — minted by candidate_prove for the proof allocation this run is part of."),
         role: z.enum(READ_ROLES).optional()
           .describe("Adds `events`, filtered to this role — actor | simulated_person | evaluator."),
       },

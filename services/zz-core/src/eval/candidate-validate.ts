@@ -20,6 +20,14 @@
  * `split = 'validation'` only, everywhere a case is read: `proof` and `evolve` cases are never
  * named in a query this file writes, which is what "never reads proof cases" (the contract's own
  * invariant) means in practice — not a runtime check, a query that cannot reach them.
+ *
+ * Reused by `candidate-prove.ts` (Task I-21): `mean`, `groupByCase`, `SideRun`, `baselineRuns`,
+ * `candidateRuns`, `RunsRequiredEntry`, `PerCaseDelta`, `escalateOneRepeat`,
+ * `summariseGuardrails`, `summariseResourceUsage`, `summariseDimensions` and
+ * `protocolHasModelBackedMeasure` are exported below for exactly that — a proof run is scored by
+ * the SAME machinery a validation run is, over whichever case ids the caller already resolved to
+ * `split: 'proof'` rather than `split: 'validation'`. None of these functions hard-code a split
+ * literal themselves; the split is decided once, by whichever caller fetches the case ids.
  */
 import { SearchPolicy } from "@zz/contracts";
 import type pg from "pg";
@@ -106,7 +114,7 @@ async function loadValidationContext(p: pg.Pool, candidate: CandidateRow): Promi
  *  replay is ever planned, rather than an unbounded loop that looks like "not enough evidence
  *  yet" and never becomes anything else. Reads the plugin's newest protocol version, the same one
  *  `replay_start`'s own `pluginProtocol` (`replay-runs.ts`) binds a fresh run to. */
-async function protocolHasModelBackedMeasure(
+export async function protocolHasModelBackedMeasure(
   p: pg.Pool, baseSubjectVersionId: string,
 ): Promise<{ readonly ok: true } | { readonly ok: false; readonly error: string }> {
   const subject = (await p.query<{ plugin_id: string }>(
@@ -162,7 +170,7 @@ async function existingValidationEvaluation(p: pg.Pool, candidateId: string): Pr
 // -------------------------------------------------------------------------------------------
 // Pairing: which validation cases exist, which replay_run rows already answer them.
 
-interface SideRun {
+export interface SideRun {
   readonly case_id: string;
   readonly overall: number;
   readonly score: { dimensions?: { key: string; score: number | null }[] } | null;
@@ -182,7 +190,7 @@ async function validationCaseIds(p: pg.Pool, caseSetId: string): Promise<string[
  *  "carries a score" test `candidates.ts`'s own contract line reads as "paired per-case scores"
  *  — a run `replay_score` has not yet reached, or one still `registered`/`running`/`failed`, is
  *  simply not counted, never treated as a zero. */
-async function baselineRuns(p: pg.Pool, caseIds: readonly string[], baseSubjectVersionId: string): Promise<SideRun[]> {
+export async function baselineRuns(p: pg.Pool, caseIds: readonly string[], baseSubjectVersionId: string): Promise<SideRun[]> {
   if (!caseIds.length) return [];
   return (await p.query<SideRun>(`
     select case_id::text as case_id, (score->>'overall')::float8 as overall, score, guardrails, cost::float8 as cost, duration_ms::float8 as duration_ms
@@ -192,7 +200,7 @@ async function baselineRuns(p: pg.Pool, caseIds: readonly string[], baseSubjectV
      order by created_at`, [caseIds, baseSubjectVersionId])).rows;
 }
 
-async function candidateRuns(p: pg.Pool, caseIds: readonly string[], candidateId: string): Promise<SideRun[]> {
+export async function candidateRuns(p: pg.Pool, caseIds: readonly string[], candidateId: string): Promise<SideRun[]> {
   if (!caseIds.length) return [];
   return (await p.query<SideRun>(`
     select case_id::text as case_id, (score->>'overall')::float8 as overall, score, guardrails, cost::float8 as cost, duration_ms::float8 as duration_ms
@@ -202,9 +210,9 @@ async function candidateRuns(p: pg.Pool, caseIds: readonly string[], candidateId
      order by created_at`, [caseIds, candidateId])).rows;
 }
 
-function mean(xs: readonly number[]): number { return xs.reduce((a, b) => a + b, 0) / xs.length; }
+export function mean(xs: readonly number[]): number { return xs.reduce((a, b) => a + b, 0) / xs.length; }
 
-function groupByCase(xs: readonly SideRun[]): Map<string, SideRun[]> {
+export function groupByCase(xs: readonly SideRun[]): Map<string, SideRun[]> {
   const m = new Map<string, SideRun[]>();
   for (const x of xs) {
     const arr = m.get(x.case_id);
@@ -213,7 +221,7 @@ function groupByCase(xs: readonly SideRun[]): Map<string, SideRun[]> {
   return m;
 }
 
-interface RunsRequiredEntry {
+export interface RunsRequiredEntry {
   readonly case_id: string;
   readonly side: "baseline" | "candidate";
   readonly subject_version_id: string | null;
@@ -221,7 +229,7 @@ interface RunsRequiredEntry {
   readonly count: number;
 }
 
-interface PerCaseDelta {
+export interface PerCaseDelta {
   readonly case_id: string; readonly baseline_mean: number; readonly baseline_n: number;
   readonly candidate_mean: number; readonly candidate_n: number; readonly delta: number;
 }
@@ -269,7 +277,7 @@ async function planValidation(p: pg.Pool, candidate: CandidateRow, caseSetId: st
 /** `unresolved` under the liveness bound asks for exactly one more repeat per case per side —
  *  the contract's own "adds repeats while the result is unresolved," applied uniformly rather
  *  than guessing which case is the noisy one. */
-function escalateOneRepeat(caseIds: readonly string[], candidate: CandidateRow): RunsRequiredEntry[] {
+export function escalateOneRepeat(caseIds: readonly string[], candidate: CandidateRow): RunsRequiredEntry[] {
   const out: RunsRequiredEntry[] = [];
   for (const caseId of caseIds) {
     out.push({ case_id: caseId, side: "baseline", subject_version_id: candidate.base_subject_version_id, candidate_id: null, count: 1 });
@@ -282,13 +290,13 @@ function escalateOneRepeat(caseIds: readonly string[], candidate: CandidateRow):
 // Guardrails / resource usage / dimension scores — reported, never gated on (the contract's own
 // "cost/latency/complexity as reported objectives, not caps").
 
-function summariseGuardrails(runs: readonly SideRun[]): { status: "pass" | "fail" | "not_established"; by_run: { case_id: string; guardrails: readonly string[] | null }[] } {
+export function summariseGuardrails(runs: readonly SideRun[]): { status: "pass" | "fail" | "not_established"; by_run: { case_id: string; guardrails: readonly string[] | null }[] } {
   const flat = runs.flatMap((r) => r.guardrails ?? []);
   const status = flat.includes("fail") ? "fail" : flat.includes("not_established") ? "not_established" : "pass";
   return { status, by_run: runs.map((r) => ({ case_id: r.case_id, guardrails: r.guardrails })) };
 }
 
-function summariseResourceUsage(baseline: readonly SideRun[], candidateSide: readonly SideRun[], complexityDelta: number): unknown {
+export function summariseResourceUsage(baseline: readonly SideRun[], candidateSide: readonly SideRun[], complexityDelta: number): unknown {
   const avg = (xs: readonly (number | null)[]): number | null => {
     const vs = xs.filter((v): v is number => v !== null);
     return vs.length ? mean(vs) : null;
@@ -300,7 +308,7 @@ function summariseResourceUsage(baseline: readonly SideRun[], candidateSide: rea
   };
 }
 
-function summariseDimensions(baseline: readonly SideRun[], candidateSide: readonly SideRun[]): unknown {
+export function summariseDimensions(baseline: readonly SideRun[], candidateSide: readonly SideRun[]): unknown {
   const valuesByKey = (runs: readonly SideRun[]): Map<string, number[]> => {
     const m = new Map<string, number[]>();
     for (const r of runs) {

@@ -173,7 +173,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   replay_start: "evaluation", replay_read: "evaluation", replay_close: "evaluation",
   replay_score: "evaluation",
   improvement_start: "evaluation", candidate_record: "evaluation", candidate_validate: "evaluation",
-  candidate_search: "evaluation",
+  candidate_search: "evaluation", candidate_prove: "evaluation",
 };
 {
   const serves = new Map<string, string>();   // tool -> the door that registers it

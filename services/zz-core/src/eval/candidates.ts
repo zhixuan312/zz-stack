@@ -26,6 +26,13 @@
  * tool's own registration to `runCandidateSearch`. Like `candidate_validate`, it never blocks on
  * a long replay inside this call: it advances the search state it can already see from stored
  * `zz.candidate`/`zz.candidate_evaluation` rows and reports what the IMPROVE agent does next.
+ *
+ * `candidate_prove` (Task I-21, FR-28, FR-43, AC-28.1, AC-43.1) is this file's fifth and last
+ * tool: the sealed proof a `selected` candidate opens exactly once, planned and resolved by
+ * `candidate-prove.ts` the same way `candidate_validate`/`candidate_search` plan and resolve
+ * theirs — this file only wires the tool's own registration to `proveCandidate`. Its own two-call
+ * shape (mint the verifier_token and plan the proof runs; a later call resolves them) is that
+ * file's own module note.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parseCaller } from "@zz/contracts";
@@ -34,6 +41,7 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { runCandidateSearch } from "./candidate-search.js";
+import { proveCandidate } from "./candidate-prove.js";
 import { validateCandidate } from "./candidate-validate.js";
 import {
   complexityDelta, componentCounts, hypothesisDigest, parseUnifiedDiff, patchDigest, touchedComponents,
@@ -462,6 +470,73 @@ export function registerCandidateTools(server: McpServer): void {
         user: principal, action: "candidate_search", improvement_run_id,
         generation: outcome.generation, status: outcome.status, selected_id: outcome.selected_id,
         rejected_count: outcome.rejected.length,
+      });
+      return json(outcome);
+    },
+  );
+
+  // -----------------------------------------------------------------------------------------
+  // candidate_prove
+
+  server.registerTool(
+    "candidate_prove",
+    {
+      description:
+        "WHEN an improvement_run's own selected final candidate is ready for its sealed proof " +
+        "(Task I-21, FR-28, FR-43): opens the candidate's ONE proof allocation. A first call " +
+        "(candidate.status: selected) mints a fresh verifier_token (zz.replay_verifier_token, " +
+        "checked by replay_start/replay_read's own context: verifier gate) with no proposer/" +
+        "search capability, moves candidate.status to proving and improvement_run.status to " +
+        "proofing, and RETURNS { proof_status: null, verifier_token, token_already_issued, " +
+        "runs_required, status: 'proving' } — never resolving in the same call. The IMPROVE " +
+        "agent drives replay_start(context: 'verifier', verifier_token, split: 'proof') plus the " +
+        "launcher (packages/tools/src/replay/launch.ts --verifier-token) against every entry in " +
+        "runs_required. A LATER call against the same still-proving candidate reads back " +
+        "whatever proof-split zz.replay_run rows are now completed and scored: while any (case, " +
+        "side) pair is still short of the protocol's own minRepeats it RETURNS the same shape " +
+        "with an updated runs_required and no new verifier_token; once every case clears it (or " +
+        "the protocol's own liveness bound has passed) it computes pairedDecision (stats.ts) " +
+        "over the per-case deltas, re-screens the candidate through the search.leakage critic " +
+        "(FR-43's own 'no unresolved leakage'), and stores exactly one zz.candidate_evaluation " +
+        "(split: proof) row. RETURNS { proof_status: proof_passed|proof_failed|not_established, " +
+        "reason, release_eligible, candidate_evaluation_id, status } — never a per-case result " +
+        "(FR-28's own 'nothing per case'). proof_passed requires: an established, resolved proof " +
+        "score; pairedDecision verdict improves, OR an accepted pruning trade-off (negative " +
+        "complexity_delta with no evidence of regression); every critical guardrail passing; and " +
+        "no leakage — release_eligible is additionally true only when the base subject's plugin " +
+        "carries at least one release_owner (FR-47), otherwise proof_passed but " +
+        "release_eligible: false. Below the protocol's own proof-case minimum, or once every " +
+        "case clears minRepeats and the bootstrap interval still straddles mme at the liveness " +
+        "bound, RETURNS proof_status: not_established (reason: insufficient_proof_cases or " +
+        "proof_unresolved) instead. Every terminal proof_status (proof_passed/proof_failed/" +
+        "not_established alike) marks the allocation SPENT: candidate.status becomes " +
+        "proof_passed or proof_failed (migration 077's own vocabulary has no third value — an " +
+        "unestablished proof is exactly as spent as a failed one), improvement_run.status " +
+        "becomes ready_for_approval (passed, owners obtainable), closed (passed, no owners — a " +
+        "proposal-only outcome, FR-51) or proof_failed, and a resumed search restarts from the " +
+        "pre-proof history through a fresh improvement_start, never this same allocation. " +
+        "REFUSES a candidate_id nothing minted; a candidate whose own status is not one this " +
+        "candidate's own selection or an already-open allocation could have left it in — \"ERROR: " +
+        "only the selected candidate may open proof\"; a candidate already proof_passed or " +
+        "proof_failed — \"ERROR: proof allocation spent; a new allocation or new evidence is " +
+        "required\"; an improvement_run whose own eval_run bound no case_set_version_id; and a " +
+        "plugin with no bounded_semantic/generative_critic measure to ever score a replay with. " +
+        "A mutator whenever it actually writes (opening the allocation, or resolving it): writes " +
+        "through the FR-59 idempotency ledger — an interim runs_required response is not.",
+      inputSchema: { candidate_id: z.string(), idempotency_key: z.string().min(1) },
+    },
+    async ({ candidate_id, idempotency_key }) => {
+      const p = db();
+      if (!p) return noDb();
+      const principal = parseCaller(requestHeaders()).email;
+
+      const outcome = await proveCandidate(p, candidate_id, idempotency_key, principal);
+      if ("error" in outcome) return text(outcome.error);
+
+      logActivity(await userRoot(), null, {
+        user: principal, action: "candidate_prove", candidate_id,
+        proof_status: outcome.proof_status, release_eligible: outcome.release_eligible,
+        runs_required: outcome.runs_required?.length ?? 0,
       });
       return json(outcome);
     },

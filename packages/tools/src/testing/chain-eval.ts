@@ -173,4 +173,10 @@ export async function walkEvalDoor({ callEval, eitherOr, PLUGIN }: EvalDeps): Pr
   eitherOr("candidate_search refuses an improvement_run_id nothing minted",
     await callEval("candidate_search", { improvement_run_id: randomUUID(), idempotency_key: randomUUID() }),
     /no platform database|no improvement_run/);
+  // Task I-21: a random candidate_id decides nothing and matches no candidate — refused before
+  // any proof context (its own improvement_run, case set or protocol) is ever resolved, the same
+  // way candidate_validate's probe above is safe against any live state.
+  eitherOr("candidate_prove refuses a candidate_id nothing minted",
+    await callEval("candidate_prove", { candidate_id: randomUUID(), idempotency_key: randomUUID() }),
+    /no platform database|no candidate/);
 }

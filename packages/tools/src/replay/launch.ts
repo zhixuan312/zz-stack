@@ -89,6 +89,15 @@ export interface LaunchOpts {
   /** What commit the worktree pins to. Defaults to `HEAD` of `repoRoot`. */
   readonly ref?: string;
   readonly clientName?: string;
+  /** Task I-21's own addition: the `verifier_token` `candidate_prove` minted for this run's own
+   *  proof allocation. When present, EVERY `replay_read` this launch makes — the candidate's own
+   *  `role: actor` read included — carries `context: "verifier"` plus this token, because a
+   *  proof-split case is sealed (`ERROR: proof is sealed`) from a `context: "search"` reader
+   *  regardless of which credential asks (`sealedRows`, `replay-runs.ts`, is a function of
+   *  `context` alone). The token itself never reaches either session's own prompt — it lives only
+   *  in this process's own outgoing MCP calls. Omitted (the default) for a validation/evolve run,
+   *  which reads under the ordinary `context: "search"` default instead. */
+  readonly verifierToken?: string;
 }
 
 export interface LaunchResult { readonly status: "completed" | "failed"; readonly logPath: string }
@@ -171,9 +180,14 @@ function runtimeEnv(): RuntimeEnv {
 }
 
 async function readRole(
-  mcp: Mcp, replayRunId: string, role: "actor" | "simulated_person",
+  mcp: Mcp, replayRunId: string, role: "actor" | "simulated_person", verifierToken: string | undefined,
 ): Promise<{ read: ReplayReadResult; events: readonly ReplayEvent[] }> {
-  const said = await mcp.call("replay_read", { replay_run_id: replayRunId, role });
+  const said = await mcp.call("replay_read", {
+    replay_run_id: replayRunId, role,
+    // A proof-split case is sealed from a context: "search" reader whoever asks — see the
+    // LaunchOpts.verifierToken module note above.
+    ...(verifierToken ? { context: "verifier", verifier_token: verifierToken } : {}),
+  });
   if (/^ERROR[: ]/.test(said)) throw new Error(`replay_read(role: ${role}) refused: ${said}`);
   const read = JSON.parse(said) as ReplayReadResult;
   const events = assertRoleEvents(read.events ?? [], role);
@@ -258,8 +272,10 @@ export async function launchReplay(start: ReplayStartResult, opts: LaunchOpts): 
     // it here, rather than with the launcher's own credential, is deliberate: it is exactly the
     // read the candidate session could make itself if it reached this door directly, so a
     // regression in that guard shows up here first.
-    const { read: actorRead, events: actorEvents } = await readRole(candidateMcp, start.replay_run_id, "actor");
-    const { events: personEvents } = await readRole(ownMcp, start.replay_run_id, "simulated_person");
+    const { read: actorRead, events: actorEvents } =
+      await readRole(candidateMcp, start.replay_run_id, "actor", opts.verifierToken);
+    const { events: personEvents } =
+      await readRole(ownMcp, start.replay_run_id, "simulated_person", opts.verifierToken);
 
     const plugin = actorRead.subject_plugin;
     if (!plugin) {
@@ -363,11 +379,24 @@ async function cliMain(argv: string[]): Promise<number> {
   const ref = optional(args, "ref", "the commit/ref to pin the worktree to") ?? undefined;
   const token = (process.env.REPLAY_TOKEN ?? "").trim();
   if (!token) die("REPLAY_TOKEN is required: the run-scoped PAT replay_start returned for this run");
+  // Task I-21's own addition: a proof run's own case is split: proof, sealed from a
+  // context: "search" reader whoever asks — this CLI's own team_slug/sandbox_ref lookup below
+  // needs the SAME verifier_token candidate_prove minted for this run's own allocation, or it is
+  // refused before launchReplay is ever reached. `--verifier-token`, falling back to
+  // `$VERIFIER_TOKEN` the same way `--run`'s own token falls back to `$REPLAY_TOKEN` — a secret
+  // is better left out of argv (visible in `ps`, shell history, logs) when either works, so the
+  // flag exists for the plan's own named contract and the env var for how it is actually passed.
+  const verifierToken =
+    (optional(args, "verifier-token", "the verifier_token candidate_prove minted for this run's proof allocation")
+      ?? process.env.VERIFIER_TOKEN ?? "").trim() || undefined;
 
   const base = (gatewayUrl ?? process.env.ZZ_URL ?? "").replace(/\/+$/, "");
   if (!base) die("no gateway: pass --gateway or set ZZ_URL");
   const ownMcp = new Mcp(`${base}/eval/mcp`, { pat: platformToken(), client: DEFAULT_CLIENT });
-  const said = await ownMcp.call("replay_read", { replay_run_id: replayRunId });
+  const said = await ownMcp.call("replay_read", {
+    replay_run_id: replayRunId,
+    ...(verifierToken ? { context: "verifier", verifier_token: verifierToken } : {}),
+  });
   if (/^ERROR[: ]/.test(said)) die(`replay_read refused: ${said}`, 2);
   const row = JSON.parse(said) as { team_slug: string; sandbox_ref: string; environment_digest: string };
 
@@ -379,7 +408,7 @@ async function cliMain(argv: string[]): Promise<number> {
     // launchReplay directly with the full ReplayStartResult instead.
     dependency_modes: [],
   };
-  const result = await launchReplay(start, { repoRoot, claudeBin, gatewayUrl: base, model, ref });
+  const result = await launchReplay(start, { repoRoot, claudeBin, gatewayUrl: base, model, ref, verifierToken });
   console.log(JSON.stringify(result));
   return result.status === "completed" ? 0 : 1;
 }

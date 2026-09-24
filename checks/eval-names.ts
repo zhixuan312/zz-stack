@@ -66,7 +66,7 @@ const EXPECTED = new Set([
   "evaluator_qualify",
   "evaluation_start", "evaluation_assess", "evaluation_score",
   "replay_case_set_build", "replay_start", "replay_read", "replay_close", "replay_score",
-  "improvement_start", "candidate_record", "candidate_validate", "candidate_search",
+  "improvement_start", "candidate_record", "candidate_validate", "candidate_search", "candidate_prove",
 ]);
 for (const want of EXPECTED) {
   if (!registered.has(want)) fail.push(`${want} is no longer registered on the eval door`);

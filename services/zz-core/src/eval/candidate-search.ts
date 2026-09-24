@@ -78,7 +78,7 @@ function resolveSearchPolicy(raw: unknown): SearchPolicyLite {
 // registerEvaluator on every candidate_search call costs one upsert-and-read-back and never mints
 // a second version of the same question.
 
-const LEAKAGE_EVALUATOR: EvaluatorDefinition = {
+export const LEAKAGE_EVALUATOR: EvaluatorDefinition = {
   stable_key: "search.leakage",
   kind: "noul",
   question:
@@ -144,8 +144,18 @@ function rejectionReason(c: CandidateRow): string {
 
 interface LeakageVerdict { readonly leaked: boolean; readonly reason: string | null }
 
-async function screenLeakage(
-  evaluatorVersionId: string, candidate: CandidateRow, principal: string,
+/** Narrowed to exactly what a leakage screen reads — `candidate-prove.ts` (Task I-21) reuses this
+ *  same critic at proof time (FR-43's own "no unresolved leakage") over a candidate row shaped
+ *  quite differently from this file's own `CandidateRow`, so the parameter names only the three
+ *  fields either caller can supply, never the full row either file happens to load. */
+export interface LeakageSubject {
+  readonly hypothesis: string;
+  readonly diff: string;
+  readonly touched_components: readonly TouchedComponent[];
+}
+
+export async function screenLeakage(
+  evaluatorVersionId: string, candidate: LeakageSubject, principal: string,
 ): Promise<LeakageVerdict> {
   const touched = candidate.touched_components.map((c) => c.path).join(", ") || "(no files parsed from this patch)";
   const subject =

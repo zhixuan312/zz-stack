@@ -20,6 +20,19 @@
  *
  * Absence is an answer. With no typed-service key the reading is `unavailable`, the reason is
  * recorded, and every caller carries on with its deterministic rule alone.
+ *
+ * A third caller was added for plugin-eval's protocol-defined evaluators (FR-13, FR-15,
+ * Task I-8): `recordEvaluatorAssessment`, called directly by a measure (e.g. `discover.ts`'s
+ * ownership classification) or through `evaluators.ts`'s `askEvaluator`. Unlike a family, an
+ * evaluator's question, answer shape (`noul`/`choice`/`score`), polarity and model policy are
+ * not fixed in this file — they live in `zz.eval_evaluator_version`, written once when the
+ * evaluator is defined, and resolved here by `evaluator_version_id`. Both callers share one
+ * insert builder (`insertAssessmentRow`), so the two identity shapes (`family` xor
+ * `evaluator_version_id`, enforced by migration 077's own check) land in one table through one
+ * code path — but they keep their own error behaviour: `assessFamily`'s provenance write is
+ * best-effort (an answer in hand is not lost to a database hiccup), while
+ * `recordEvaluatorAssessment`'s is not — a plugin-eval measure with no recorded assessment_id is
+ * a measure that silently never happened, so its insert failure is thrown, not swallowed.
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -27,7 +40,7 @@ import { join } from "node:path";
 
 import { QUESTION_FAMILIES } from "@zz/contracts";
 
-import { ask, configured, NOT_CONFIGURED } from "./typed-service.js";
+import { ask, configured, NOT_CONFIGURED, type Question } from "./typed-service.js";
 import { db } from "./platform-db.js";
 import { Refusal } from "./refusal.js";
 
@@ -151,20 +164,200 @@ export async function assessFamily(opts: {
   return out;
 }
 
-/** The provenance row. Never throws: an answer in hand is not lost to a database hiccup. */
+/** One `zz.assessment` row, in the shape the table itself declares (migration 077): a family
+ *  question xor an evaluator question, and only a `choice`/`score` answer ever carries a
+ *  `distribution`. Building it in one place is what keeps `assessFamily` and
+ *  `recordEvaluatorAssessment` writing rows the table's own checks agree on. */
+interface AssessmentInsertRow {
+  family: string | null;
+  evaluator_version_id: string | null;
+  instruction_version: number;
+  question_digest: string;
+  reading: Assessment["reading"] | null;
+  probability: number | null;
+  distribution: Readonly<Record<string, number>> | null;
+  answer_kind: "noul" | "choice" | "score";
+  requested_model: string | null;
+  resolved_model: string | null;
+  identity_assurance: string | null;
+  reason: string | null;
+  initiative: string | null;
+  about: string | null;
+  asked_by: string;
+  asked_at: string;
+}
+
+/** The one insert both callers share. Returns the new row's id — `recordEvaluatorAssessment`
+ *  needs it for `assessment_id`; `assessFamily`'s `Assessment` has never carried one and does
+ *  not start now. Throws on any failure: whether that is swallowed or not is each caller's own
+ *  call, made where it decides what a failure means for it. */
+async function insertAssessmentRow(row: AssessmentInsertRow): Promise<number> {
+  const p = db();
+  if (!p) throw new Error("no platform database configured");
+  const { rows } = await p.query<{ id: string }>(`
+    insert into zz.assessment
+      (family, evaluator_version_id, instruction_version, question_digest, reading, probability,
+       distribution, answer_kind, requested_model, resolved_model, identity_assurance, reason,
+       initiative, about, asked_by, asked_at)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+    returning id`,
+    [row.family, row.evaluator_version_id, row.instruction_version, row.question_digest,
+     row.reading, row.probability, row.distribution ? JSON.stringify(row.distribution) : null,
+     row.answer_kind, row.requested_model, row.resolved_model, row.identity_assurance,
+     row.reason, row.initiative, row.about, row.asked_by, row.asked_at]);
+  return Number(rows[0]?.id);
+}
+
+/** The provenance row for a family question. Never throws: an answer in hand is not lost to a
+ *  database hiccup — the store copy under `_assessments/` is the one the next move reads. */
 async function persistAssessment(a: Assessment): Promise<void> {
   try {
-    const p = db();
-    if (!p) return;
-    await p.query(`
-      insert into zz.assessment
-        (family, instruction_version, question_digest, reading, probability, requested_model,
-         resolved_model, identity_assurance, reason, initiative, about, asked_by, asked_at)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [a.family, a.instruction_version, a.question_digest, a.reading, a.probability,
-       a.requested_model, a.resolved_model, a.identity_assurance, a.reason, a.initiative,
-       a.about, a.asked_by, a.asked_at]);
+    await insertAssessmentRow({
+      family: a.family, evaluator_version_id: null, instruction_version: a.instruction_version,
+      question_digest: a.question_digest, reading: a.reading, probability: a.probability,
+      distribution: null, answer_kind: "noul", requested_model: a.requested_model,
+      resolved_model: a.resolved_model, identity_assurance: a.identity_assurance,
+      reason: a.reason, initiative: a.initiative, about: a.about, asked_by: a.asked_by,
+      asked_at: a.asked_at,
+    });
   } catch { /* the store copy is the one the next move reads */ }
+}
+
+/** `zz.eval_evaluator_version` as `recordEvaluatorAssessment` needs to read it: the exact row
+ *  a `bounded_semantic`/`generative_critic` measure resolved to, with its stable identity. */
+interface EvaluatorVersionRow {
+  id: string;
+  version: number;
+  question: string;
+  /** One of `typed-service.ts`'s three `Question` shapes, minus `instructions` — the evaluator's
+   *  own `question` column supplies that. `type` is validated against `EVAL_STATE_ENUMS.answerKind`
+   *  wherever a version is written (`evaluators.ts`'s `registerEvaluator`), so reading it back here
+   *  is a lookup, not a second validation. */
+  answer_schema: { type: "noul" } | { type: "choice"; criteria: Record<string, string> } |
+                 { type: "score"; criteria: string[] };
+  stable_key: string;
+}
+
+const EVALUATOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The plan header's formula: the first 16 hex characters of sha256 over the evaluator's stable
+ *  key, its version, and the exact question text — pinning the wording the same way a family's
+ *  `questionDigest` pins its instruction, but keyed to a version rather than to a static map. */
+export function evaluatorQuestionDigest(stableKey: string, version: number, question: string): string {
+  return createHash("sha256").update(`${stableKey}\n${version}\n${question}`).digest("hex").slice(0, 16);
+}
+
+async function resolveEvaluatorVersion(evaluatorVersionId: string): Promise<EvaluatorVersionRow> {
+  const p = db();
+  if (!p) throw new Refusal("ERROR: this deployment has no platform database, so no evaluator can be resolved");
+  // A malformed id is refused the same way an unknown one is, rather than reaching Postgres and
+  // surfacing its own "invalid input syntax for type uuid" instead of this contract's text.
+  if (!EVALUATOR_UUID_RE.test(evaluatorVersionId)) {
+    throw new Refusal(`ERROR: "${evaluatorVersionId}" is not a registered evaluator version`);
+  }
+  const { rows } = await p.query<EvaluatorVersionRow>(`
+    select v.id, v.version, v.question, v.answer_schema, e.stable_key
+      from zz.eval_evaluator_version v
+      join zz.eval_evaluator e on e.id = v.evaluator_id
+     where v.id = $1::uuid`, [evaluatorVersionId]);
+  const row = rows[0];
+  if (!row) throw new Refusal(`ERROR: "${evaluatorVersionId}" is not a registered evaluator version`);
+  return row;
+}
+
+/** What `recordEvaluatorAssessment` hands back: exactly the plan header's response shape. */
+export interface EvaluatorAssessmentResult {
+  assessment_id: number;
+  answer_kind: "noul" | "choice" | "score";
+  probability: number | null;
+  distribution: Readonly<Record<string, number>> | null;
+  reading: Assessment["reading"] | null;
+  resolved_model: string | null;
+  identity_assurance: string | null;
+}
+
+/** Ask one registered evaluator question about one subject, and record it.
+ *
+ * "Every model-backed measure resolves to a `zz.eval_evaluator_version`": the resolve happens
+ * here, first, and an `evaluator_version_id` nothing registered is refused before any model is
+ * asked. The primitive the typed service is asked (`noul`/`choice`/`score`) is the evaluator's
+ * own declared shape, never the caller's choice — `evaluators.ts`'s `askEvaluator` is a thin
+ * positional wrapper over this, and `discover.ts` (Task I-9) calls it directly the same way.
+ *
+ * Unlike `assessFamily`, the insert here is not wrapped in a swallowing `catch`: an insert
+ * failure fails the call, because a plugin-eval measure with no `assessment_id` is a measure
+ * that silently never happened, and `zz.eval_assessment` cannot reference a row that was never
+ * written. */
+export async function recordEvaluatorAssessment(opts: {
+  evaluator_version_id: string; subject_text: string; context?: string; askedBy: string;
+}): Promise<EvaluatorAssessmentResult> {
+  const evaluator = await resolveEvaluatorVersion(opts.evaluator_version_id);
+  const digest = evaluatorQuestionDigest(evaluator.stable_key, evaluator.version, evaluator.question);
+  const asked_at = new Date().toISOString();
+  const requested_model = configured()
+    ? `typesafe/${(process.env.TYPESAFE_MODEL || "jev-latest").trim()}` : null;
+
+  let reading: Assessment["reading"] | null = null;
+  let probability: number | null = null;
+  let distribution: Readonly<Record<string, number>> | null = null;
+  let resolved_model: string | null = null;
+  let identity_assurance: string | null = null;
+  let reason: string | null = null;
+
+  if (!configured()) {
+    reading = "unavailable";
+    reason = NOT_CONFIGURED;
+  } else {
+    const state = (opts.context ? `CONTEXT:\n${clip(opts.context)}\n\n` : "") +
+      `SUBJECT:\n${clip(opts.subject_text)}`;
+    const schema = evaluator.answer_schema;
+    const question: Question = schema.type === "noul"
+      ? { type: "noul", instructions: evaluator.question }
+      : schema.type === "score"
+      ? { type: "score", instructions: evaluator.question, criteria: schema.criteria }
+      : { type: "choice", instructions: evaluator.question, criteria: schema.criteria };
+    try {
+      const answers = await ask(state, { q: question });
+      const a = answers.q;
+      resolved_model = a?.resolved_identity ?? null;
+      identity_assurance = a?.identity_assurance ?? null;
+      if (schema.type === "noul") {
+        probability = a?.readings.probability ?? null;
+        reading = readingOf(probability);
+      } else if (schema.type === "score") {
+        // The adapter's own asymmetry: a score's per-level probabilities are read straight off
+        // `readings.distribution` (`jev-reply.ts`'s `translate` sets it directly from the
+        // reply's `probabilities`, independent of the port's signal system).
+        distribution = a?.readings.distribution ?? null;
+      } else {
+        // A choice's distribution never reaches `readings.distribution` — that field is
+        // score-only in this adapter. It arrives as the port's own `native_distribution`
+        // signal instead (`assessment.ts`'s `readSignals`, from the same `probabilities` field
+        // the reply sent for a category answer).
+        distribution = (a?.signals.find((s) => s.name === "distribution")?.values as
+          Readonly<Record<string, number>> | undefined) ?? null;
+      }
+      if (schema.type !== "noul" && !distribution) {
+        reading = "unavailable";
+        reason = "the typed service answered with no distribution over this question's declared options";
+      }
+    } catch (err) {
+      reading = "unavailable";
+      reason = err instanceof Error ? err.message.replace(/^ERROR:\s*/, "").slice(0, 300) : String(err);
+    }
+  }
+
+  const assessment_id = await insertAssessmentRow({
+    family: null, evaluator_version_id: evaluator.id, instruction_version: evaluator.version,
+    question_digest: digest, reading, probability, distribution, answer_kind: evaluator.answer_schema.type,
+    requested_model, resolved_model, identity_assurance, reason,
+    initiative: null, about: null, asked_by: opts.askedBy, asked_at,
+  });
+
+  return {
+    assessment_id, answer_kind: evaluator.answer_schema.type, probability, distribution, reading,
+    resolved_model, identity_assurance,
+  };
 }
 
 /** Where an audit round's assessments live in the store. Underscore-prefixed, so no listing,

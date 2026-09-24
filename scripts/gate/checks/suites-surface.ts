@@ -88,3 +88,6 @@ check("an evaluation protocol accepts every FR-6 field and refuses unbalanced we
 
 check("a request's digest ignores key order and the idempotency key, and a stored ledger row decides proceed, replay or conflict",
       runsCheck("eval-idempotency.ts"));
+
+check("the evaluator registry's question digest matches the plan header's formula, and every entry point refuses before touching a database it does not have",
+      runsCheck("eval-evaluators.ts"));

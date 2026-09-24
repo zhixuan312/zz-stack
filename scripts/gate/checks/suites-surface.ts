@@ -103,3 +103,6 @@ check("the three-way split orders replayable cases by sha256(seed, digest), floo
 
 check("each replay role sees exactly its visibility classes, in chronological order, and an unknown role is refused rather than defaulted",
       runsCheck("eval-replay-visibility.ts"));
+
+check("team_create refuses a replay- slug for every caller, and provisionReplayTeam refuses a team-bound caller before touching the database",
+      runsCheck("replay-team-pure.ts"));

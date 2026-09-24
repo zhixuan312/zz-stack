@@ -5,6 +5,8 @@
  * and the sentence, so the MCP tool and the console route that both call it answer the same
  * way. A write that throws would make those two disagree about what a refusal looks like.
  */
+import { REPLAY_TEAM_PREFIX } from "@zz/contracts";
+
 import { platformDb } from "../db.js";
 import { PLATFORM_TEAM, auditAdmin, type Identity } from "../identity.js";
 import { principalId, superOnly, teamAuthority, teamId } from "./authority.js";
@@ -84,6 +86,14 @@ export async function createTeam(
   extraDetail: Record<string, unknown> = {},
 ): Promise<PlatformWriteOutcome> {
   if (!superOnly(id)) return { ok: false, status: 403, error: "superadmin required" };
+  // Reserved for provisionReplayTeam alone, superadmin included — checked before any database
+  // call, so this refusal never needs a live platform db and a caller cannot buy their way
+  // past it with more authority than anyone else has.
+  if (slug.startsWith(REPLAY_TEAM_PREFIX)) {
+    return { ok: false, status: 400,
+      error: `'${REPLAY_TEAM_PREFIX}' is a reserved prefix: a replay team is provisioned by a ` +
+        "run, through provisionReplayTeam, never created by hand." };
+  }
   const db = platformDb();
   const pid = await principalId(db, id.email);
   // The platform's own team is not a tenant's to take: its store holds what we have

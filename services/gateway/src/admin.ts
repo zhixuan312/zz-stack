@@ -11,7 +11,7 @@
  * here writes into a front end's own tables: the registry is the truth and clients read it.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { mintPat } from "@zz/contracts";
+import { issuePat, revokePat } from "@zz/contracts";
 import { text } from "@zz/mcp-http";
 import { z } from "zod";
 
@@ -19,7 +19,7 @@ import { principalId, superOnly, teamAuthority, teamId } from "./admin/authority
 import { addPerson, deactivatePerson, issueEnrolmentLink, listPeople } from "./admin/people.js";
 import { addMember, archiveTeam, createTeam, removeMember } from "./admin/teams.js";
 import { platformDb } from "./db.js";
-import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, sha256, type Identity, TEAM_SLUG } from "./identity.js";
+import { auditAdmin, callerIdentity as caller, isSuper, isTeamAdmin, type Identity, TEAM_SLUG } from "./identity.js";
 /** The administrative tools, registered onto /manage/mcp according to what the caller's role
  *  can execute.
  *
@@ -218,7 +218,6 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
                     `member_add ${team} ${target} first, or issue the token unbound.`);
       }
     }
-    const token = mintPat();
     // COUPLED: resolvePat refuses a token past `expires_at`. Without this write the column
     // stays null, every token lives for ever, and that check can never fire.
     const expiry = expires_in_days
@@ -227,16 +226,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     // One live token per person per label: a label names a purpose, and a purpose has one
     // current credential. Otherwise a provisioner that mints on every run leaves a pile of
     // indistinguishable tokens, and revoking that person's access means finding all of them.
-    //
-    // DELIBERATE: an unlabelled token is exempt. "" is not a purpose, so a caller who wants a
-    // second deliberate token leaves the label off or names it differently.
-    const replaced = label
-      ? (await db.query("delete from pat where principal_id = $1 and label = $2", [pid, label])).rowCount ?? 0
-      : 0;
-    await db.query(
-      "insert into pat (principal_id, token_hash, label, team_id, expires_at) values ($1,$2,$3,$4,$5)",
-      [pid, sha256(token), label ?? "", tid, expiry],
-    );
+    // issuePat is the one mint-and-store path — provisionReplayTeam (packages/contracts)
+    // goes through the same function rather than a second copy of it.
+    const { token, replaced } = await issuePat(db, { principalId: pid, teamId: tid, label, expiresAt: expiry });
     auditAdmin(id, "issue_pat", target,
                { team: team ?? null, label: label ?? "", expires_at: expiry,
                  ...(replaced ? { replaced } : {}) },
@@ -274,7 +266,9 @@ export function registerAdminTools(server: McpServer, id: Identity | null): void
     const owner = r.rows[0]?.email;
     if (!owner) return text("ERROR: no such PAT");
     if (owner !== id.email && !superOnly(id)) return text("ERROR: only the owner or superadmin can revoke");
-    await db.query("update pat set revoked_at = now() where id = $1", [pat_id]);
+    // revokePat is the one revoke path — teardownReplayTeam (packages/contracts) goes through
+    // the same function rather than a second copy of it.
+    await revokePat(db, pat_id);
     auditAdmin(id, "revoke_pat", pat_id, { owner, team: r.rows[0].team }, r.rows[0].team);
     return text(`PAT ${pat_id} revoked`);
   });

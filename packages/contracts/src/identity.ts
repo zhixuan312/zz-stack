@@ -6,7 +6,7 @@
  * Both are the platform deciding "who is this", and the token's shape and the address fold
  * each live in exactly one function here.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 
 /** Who a call is FROM. The gateway resolves it from a platform token and stamps it on the
@@ -95,6 +95,14 @@ export const PAT_TOKEN = new RegExp(`${PAT_PREFIX}[0-9a-f]{${PAT_BYTES * 2}}`);
 export function mintPat(): string {
   return PAT_PREFIX + randomBytes(PAT_BYTES).toString("hex");
 }
+
+/** sha256, hex — a pure function every consumer of this package can call for the same
+ *  digest, without importing the gateway's own copy (services/gateway/src/identity.ts), which
+ *  is gateway-local and stays that way. Two files computing the same digest of the same string
+ *  is not drift, because there is nothing to disagree about; this is that one shared spelling
+ *  for code that lives outside the gateway, such as pat.ts's issuePat and replay-team.ts's
+ *  run8. */
+export const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 /**
  * One host, one spelling.

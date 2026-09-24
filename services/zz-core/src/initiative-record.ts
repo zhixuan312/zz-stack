@@ -36,10 +36,6 @@ interface OpenRecord {
    * an unanswered question. Telling the two apart is why this file is written for a freeform
    * open as well. */
   flow: string | null;
-  /** How much of the flow's review this initiative runs: `full`, or `light` for one bounded
-   *  change a reviewer can verify from the diff. Declared at the open, like the flow, and
-   *  absent on a freeform initiative. `audit-rounds.ts` reads it. */
-  track?: "full" | "light";
   opened_by: string;
   opened_at: string;
 }
@@ -54,13 +50,10 @@ export function initiativeNameFor(slug: string): string {
 }
 
 /** Write the declaration, creating the folder. */
-export function recordOpen(root: string, name: string, flow: string | null, who: string,
-                           track: "full" | "light" = "full"): OpenRecord {
-  const governed = flow?.trim() || null;
+export function recordOpen(root: string, name: string, flow: string | null, who: string): OpenRecord {
   const record: OpenRecord = {
     initiative: name,
-    flow: governed,
-    ...(governed ? { track } : {}),
+    flow: flow?.trim() || null,
     opened_by: who,
     opened_at: isoToday(),
   };

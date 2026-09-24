@@ -1,6 +1,6 @@
 ---
 name: zz-platform
-version: 3.47
+version: 3.48
 description: "The platform spine every flow's skills stand on: file tools, gates, documents, when a plugin is reached and how it is chosen, sources. Flow-agnostic — load once at the start of ANY flow on the ZZ platform, before the flow's own entry skill. Owned by the platform team; flows never duplicate these rules."
 when_to_use: "A flow's entry skill tells you to load this first. Also load it whenever you operate on the ZZ platform's artifact store outside a flow."
 ---
@@ -30,7 +30,7 @@ read the table to know what you can do, read the prose to know what will stop yo
 
 | From | The act | To | Refused when |
 |---|---|---|---|
-| nothing | `initiative_open(slug)`, or `initiative_open(slug, flow, track)` | open | you typed a date into the slug — the platform prepends its own |
+| nothing | `initiative_open(slug)`, or `initiative_open(slug, flow)` | open | you typed a date into the slug — the platform prepends its own |
 | open | `document_write`, `document_approve`, `source_add` | open | see the document table |
 | open | `initiative_close(initiative, disposition)` | closed, with an `outcome` | a declared document is missing or its gate was never recorded |
 | closed | — | nothing reopens it | a closed initiative is a finished record, and a record's value is that it is not edited afterwards |
@@ -43,9 +43,6 @@ from your disposition: `finished` is `accepted`, because closing it is saying so
 leave it out and it answers `next_move: null` with `next_move_absent` saying why — a freeform
 initiative, which is a supported shape and not a degraded one. There is no way to adopt a flow
 afterwards, deliberately: the gates it declares would land on documents already written.
-`track` is decided with it and just as finally: `full` by default, or `light`, which the flow's
-own entry skill defines — for sdlc-flow, one audit round per document instead of as many as the
-evidence asks for. Every document and gate is the same on both.
 
 **A document.**
 

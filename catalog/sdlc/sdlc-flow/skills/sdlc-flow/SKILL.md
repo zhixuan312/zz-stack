@@ -1,6 +1,6 @@
 ---
 name: sdlc-flow
-version: 2.8
+version: 2.9
 description: Start and run software delivery — explore the ground, agree a spec, audit it, plan it, audit that, build it, review the code, then close it and hand it to zz-handover. The entry point for the SDLC flow.
 when_to_use: "Someone brings software delivery work — a brain dump to ground, an agreement to write, a plan to build from, a change to make — or you need to know which stage an initiative is at. This is the entry point: start here rather than at a stage. Requires a runtime that can dispatch subagents and reach the working tree directly."
 ---
@@ -22,20 +22,6 @@ on it. The stage a person asks for and the stage the initiative is ready for are
 questions, and the document store is the one that knows the answer.
 
 If there is no initiative yet, create it. That is the first act of the flow, not a stage.
-
-**Decide the track when you open it, with the person, because it cannot change afterwards.**
-`initiative_open(slug, flow: "sdlc-flow", track)`:
-
-| Track | For | What differs |
-|---|---|---|
-| `full` (default) | anything that adds a tool, a table, a migration, a contract, or behaviour another plugin relies on — or that takes more than one conversation to decide | audit rounds follow the evidence, up to three per document |
-| `light` | ONE bounded change a reviewer can verify by reading the diff | one audit round per document; a revision after it is not audited again |
-
-Every stage still runs on the light track — explore still recalls before it writes, every
-document is written and every gate is recorded. The light track trades away the second and third
-audit round and nothing else, and it is on the record, so a skipped round is a declared choice
-rather than a silent one. Propose the track in one line when you open; if the person does not
-answer, open `full`.
 
 ## The sequence
 

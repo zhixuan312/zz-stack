@@ -34,7 +34,13 @@ probe("every migration is applied, and every applied migration still exists", ()
   // nobody has run yet.
   const inDb = new Set(applied), onDisk = new Set(files);
   const unapplied = files.filter((f) => !inDb.has(f));
-  const orphaned = applied.filter((a) => !onDisk.has(a));
+  // COUPLED: `-- absorbs: <file>` lines in a migration name the files it replaced (001_init.sql
+  // holds the squash). A deployment that ran those files keeps their rows, and each one is covered
+  // by the file that absorbed it.
+  const absorbed = new Set(files.flatMap((f) =>
+    [...readFileSync(join(root, "services/gateway/migrations", f), "utf8")
+      .matchAll(/^--\s*absorbs:\s*(\S+)\s*$/gm)].map((m) => m[1])));
+  const orphaned = applied.filter((a) => !onDisk.has(a) && !absorbed.has(a));
 
   // A migration may be unapplied on purpose. `services/gateway/src/db.ts` defers a migration
   // declaring `-- requires-extension: X` when this cluster cannot supply X, and deliberately does

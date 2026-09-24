@@ -14,6 +14,85 @@
 -- failing half-applied; db.ts does not record a deferred file, which is what lets it be
 -- retried.
 --
+-- COUPLED: the files this one absorbed. A deployment that ran them carries their names in
+-- `zz.schema_migration`, and `scripts/doctor/layers/data.ts` counts each name listed here as
+-- covered by this file rather than as an applied migration that no longer exists. The rows
+-- stay: a rollback to a release that still carries those files must find them applied.
+--
+-- absorbs: 002_comments.sql
+-- absorbs: 003_flow_manifest.sql
+-- absorbs: 004_flow_install_clients.sql
+-- absorbs: 005_doc_body_and_title.sql
+-- absorbs: 006_doc_content_hash.sql
+-- absorbs: 007_drop_platform_credential.sql
+-- absorbs: 008_drop_doc_type_status.sql
+-- absorbs: 009_drop_doc_team_path.sql
+-- absorbs: 010_active_team.sql
+-- absorbs: 011_decision.sql
+-- absorbs: 012_drop_comment.sql
+-- absorbs: 013_doc_created_at.sql
+-- absorbs: 014_event_columns.sql
+-- absorbs: 015_doc_decision.sql
+-- absorbs: 016_reference.sql
+-- absorbs: 017_initiative_run.sql
+-- absorbs: 018_doc_attribution.sql
+-- absorbs: 019_eval.sql
+-- absorbs: 020_event_attribution.sql
+-- absorbs: 021_delegated_tokens.sql
+-- absorbs: 022_console_session.sql
+-- absorbs: 023_doc_supports.sql
+-- absorbs: 024_block_origin.sql
+-- absorbs: 025_version_released_at.sql
+-- absorbs: 026_skill_kind_two_values.sql
+-- absorbs: 027_skill_retired.sql
+-- absorbs: 028_eval_score_halves.sql
+-- absorbs: 029_eval_subject_runs.sql
+-- absorbs: 030_skill_version_body_hash.sql
+-- absorbs: 031_run_without_initiative.sql
+-- absorbs: 032_rubric_subject.sql
+-- absorbs: 033_eval_is_control.sql
+-- absorbs: 034_block_title.sql
+-- absorbs: 035_doc_blocks.sql
+-- absorbs: 036_run_follows_initiative.sql
+-- absorbs: 037_principal_password.sql
+-- absorbs: 038_console_session_door.sql
+-- absorbs: 039_discussion.sql
+-- absorbs: 040_mcp_oauth.sql
+-- absorbs: 041_oauth_resume.sql
+-- absorbs: 042_event_team_backfill.sql
+-- absorbs: 043_drop_password_door.sql
+-- absorbs: 044_passkey.sql
+-- absorbs: 045_drop_flow_install_clients.sql
+-- absorbs: 046_delete_phantom_runs.sql
+-- absorbs: 047_plugin_eval.sql
+-- absorbs: 048_drop_skill_eval.sql
+-- absorbs: 049_drop_initiative_closed_at.sql
+-- absorbs: 050_record_and_cost.sql
+-- absorbs: 051_run_bytes_nullable.sql
+-- absorbs: 052_block_tool_door.sql
+-- absorbs: 053_drop_pat_scope.sql
+-- absorbs: 054_drop_initiative_deleted_at.sql
+-- absorbs: 055_case_run_initiative.sql
+-- absorbs: 056_bug.sql
+-- absorbs: 057_drop_third_party_blocks.sql
+-- absorbs: 058_plugin_owns_its_surface.sql
+-- absorbs: 059_knowledge_is_its_own_subject.sql
+-- absorbs: 060_no_install_registry.sql
+-- absorbs: 061_refusal_owner.sql
+-- absorbs: 062_typed_judgments.sql
+-- absorbs: 063_control_names_its_round.sql
+-- absorbs: 064_the_case_half_is_gone.sql
+-- absorbs: 065_model_call_attempts_and_confusion.sql
+-- absorbs: 066_a_line_names_its_figure_and_a_finding_gets_decided.sql
+-- absorbs: 067_a_round_says_where_it_came_from_and_what_it_scored.sql
+-- absorbs: 068_two_axes_and_no_verdict.sql
+-- absorbs: 069_no_step_is_empty_and_a_run_is_indexed.sql
+-- absorbs: 070_artifacts_revisions_events_and_scoped_search.sql
+-- absorbs: 071_a_source_has_no_content_revision.sql
+-- absorbs: 072_write_path_records_its_analyzer.sql
+-- absorbs: 073_a_run_is_where_the_control_loop_keeps_what_it_was_told.sql
+-- absorbs: 074_a_later_fact_can_withdraw_an_earlier_one.sql
+--
 -- requires-extension: citext
 -- requires-extension: pg_textsearch
 -- requires-extension: pg_trgm

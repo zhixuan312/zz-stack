@@ -12,6 +12,7 @@
  *   4. a spent budget with an unaudited revision waits on the stakeholder, and a recorded
  *      decision releases it
  *   5. a round that reopens an agreement waits on the stakeholder, and a decision releases it
+ *  5b. the light track: one round settles it, unless it reopened an agreement
  *   6. `auditRoundOf` counts only a stage that produces a source supporting that document
  *   7. `readingOf` bands, and the nine families each carry an instruction
  *   8. `nextMoveLine` says the next move, and nothing for a freeform initiative
@@ -47,9 +48,9 @@ interface Fixture { name: string; chain: Resolved }
 
 let n = 0;
 /** A fresh sdlc-flow initiative with spec.md approved at `version`. */
-function fresh(version: number): Fixture {
+function fresh(version: number, track: "full" | "light" = "full"): Fixture {
   const name = `2026-09-24-audit-${++n}`;
-  rec.recordOpen(root, name, "sdlc-flow", "ada@zz.test");
+  rec.recordOpen(root, name, "sdlc-flow", "ada@zz.test", track);
   mkdirSync(join(root, name, "sources"), { recursive: true });
   writeFileSync(join(root, name, "explore.md"), doc({ title: "E", flow: "sdlc-flow" }, "# E"));
   spec(name, version);
@@ -123,6 +124,30 @@ try {
   m = move(c);
   is(m?.action === "write_document" && m?.document === "plan.md",
      `the stakeholder's decision on a reopened agreement did not release it: ${JSON.stringify(m)}`);
+
+  // 5b. the light track: one round settles it, a revision after it is not audited again, and a
+  // round that reopens an agreement still goes to the stakeholder
+  const l = fresh(1, "light");
+  m = move(l);
+  // NOT A TOOL: `add_source` is next_move's own action vocabulary; the call it asks for is source_add.
+  is(m?.action === "add_source", `a light initiative skipped its one audit round: ${JSON.stringify(m)}`);
+  round(l.name, 1, 1);
+  spec(l.name, 2);
+  m = move(l);
+  is(m?.action === "write_document" && m?.document === "plan.md",
+     `on the light track a revision after the one round owed another: ${JSON.stringify(m)}`);
+  const l2 = fresh(1, "light");
+  const lf = round(l2.name, 1, 1);
+  sem.writeRoundAssessments(root, l2.name, lf, [{
+    family: "changes_commitment", instruction_version: 1, question_digest: sem.questionDigest("changes_commitment"),
+    reading: "yes", probability: 0.8, requested_model: null, resolved_model: null, identity_assurance: null,
+    reason: null, initiative: l2.name, about: `sources/${lf}`, asked_by: "ada@zz.test", asked_at: "2026-09-24T01:00:00.000Z" }]);
+  m = move(l2);
+  is(m?.action === "decide" && m?.waiting_on === "stakeholder",
+     `on the light track a round that reopens an agreement did not go to the stakeholder: ${JSON.stringify(m)}`);
+  is(rec.openRecord(root, l.name)?.track === "light", "the light track was not recorded at the open");
+  is(rec.recordOpen(root, "2026-09-24-free-light", null, "ada@zz.test", "light").track === undefined,
+     "a freeform initiative carried a track");
 
   // 6. only a stage producing a source supporting that document is a round
   is(auditRoundOf(a.chain, "sdlc-spec-audit", ["spec.md"])?.document === "spec.md", "the spec audit stage was not recognised");
